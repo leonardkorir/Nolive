@@ -1,0 +1,75 @@
+name: nolive_app
+description: Main Flutter application for Nolive.
+publish_to: none
+
+version: 0.2.0+2
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  crypto: ^3.0.7
+  qr_flutter: ^4.1.0
+  path_provider: ^2.1.5
+  file_picker: ^10.3.10
+  package_info_plus: ^9.0.0
+  wakelock_plus: ^1.4.0
+  screen_brightness: ^2.1.7
+  floating: ^6.0.0
+  flutter_inappwebview: ^6.1.5
+  flutter_qjs:
+    git:
+      url: https://github.com/wgh136/flutter_qjs.git
+      branch: master
+  live_core:
+    path: ../../packages/live_core
+  live_providers:
+    path: ../../packages/live_providers
+  live_player:
+    path: ../../packages/live_player
+  live_danmaku:
+    path: ../../packages/live_danmaku
+  live_storage:
+    path: ../../packages/live_storage
+  live_sync:
+    path: ../../packages/live_sync
+  live_shared:
+    path: ../../packages/live_shared
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/branding/
+    - assets/js/
+  fonts:
+    - family: DroidSansFallback
+      fonts:
+        - asset: assets/fonts/DroidSansFallbackFull.ttf
+
+flutter_launcher_icons:
+  android: 'ic_launcher'
+  ios: false
+  image_path: 'assets/branding/nolive_android_icon.png'
+  min_sdk_android: 23
+  adaptive_icon_background: '#101316'
+  adaptive_icon_foreground: 'assets/branding/nolive_android_icon.png'
+
+flutter_native_splash:
+  color: '#101316'
+  image: assets/branding/nolive_android_splash.png
+  android: true
+  ios: false
+  web: false

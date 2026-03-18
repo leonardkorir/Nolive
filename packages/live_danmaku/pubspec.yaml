@@ -1,0 +1,15 @@
+name: live_danmaku
+description: Danmaku domain and filtering primitives for Nolive.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  live_core:
+    path: ../live_core
+
+dev_dependencies:
+  lints: ^5.1.1
+  test: ^1.25.8

@@ -1,0 +1,103 @@
+name: android-release
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Prepare optional signing materials
+        id: signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          has_signing=false
+          if [[ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]]; then
+            mkdir -p apps/main_app/android/keystore
+            printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > apps/main_app/android/keystore/nolive-release.jks
+          fi
+
+          if [[ -n "${{ secrets.ANDROID_KEY_PROPERTIES }}" ]]; then
+            printf '%s' "${{ secrets.ANDROID_KEY_PROPERTIES }}" > apps/main_app/android/key.properties
+          elif [[ -n "${{ secrets.ANDROID_KEY_ALIAS }}" && -n "${{ secrets.ANDROID_KEY_PASSWORD }}" && -n "${{ secrets.ANDROID_STORE_PASSWORD }}" ]]; then
+            printf '%s\n' \
+              "storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}" \
+              "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" \
+              "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" \
+              "storeFile=../keystore/nolive-release.jks" \
+              > apps/main_app/android/key.properties
+          fi
+
+          if [[ -f apps/main_app/android/key.properties ]]; then
+            has_signing=true
+          fi
+          echo "has_signing=$has_signing" >> "$GITHUB_OUTPUT"
+
+      - name: Verify workspace
+        run: |
+          export PATH="$HOME/.pub-cache/bin:$PATH"
+          scripts/build_main_app.sh verify
+
+      - name: Require signing on release tags
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.has_signing != 'true'
+        run: |
+          echo "release tag build requires Android signing secrets" >&2
+          exit 1
+
+      - name: Build Android release artifacts
+        run: |
+          export PATH="$HOME/.pub-cache/bin:$PATH"
+          if [[ "${{ steps.signing.outputs.has_signing }}" == "true" ]]; then
+            scripts/build_main_app.sh android-release-ready
+          else
+            scripts/build_main_app.sh android-mobile-release
+          fi
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nolive-android-artifacts
+          path: |
+            apps/main_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            apps/main_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            apps/main_app/build/app/outputs/flutter-apk/app-x86_64-release.apk
+            apps/main_app/build/app/outputs/bundle/release/app-release.aab
+
+      - name: Render release notes
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.has_signing == 'true'
+        run: |
+          scripts/render_release_notes.sh "${GITHUB_REF_NAME}" > /tmp/nolive-release-notes.md
+
+      - name: Publish GitHub release assets
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.has_signing == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: /tmp/nolive-release-notes.md
+          files: |
+            apps/main_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            apps/main_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            apps/main_app/build/app/outputs/flutter-apk/app-x86_64-release.apk
+            apps/main_app/build/app/outputs/bundle/release/app-release.aab

@@ -1,0 +1,6 @@
+# Copy this file to key.properties and fill in real values.
+# Do not point release signing to ~/.android/debug.keystore.
+storePassword=replace-me
+keyPassword=replace-me
+keyAlias=replace-me
+storeFile=../keystore/nolive-release.jks

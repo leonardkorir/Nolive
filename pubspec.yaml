@@ -1,0 +1,9 @@
+name: nolive_workspace
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dev_dependencies:
+  lints: ^5.1.1
+  melos: ^6.3.2

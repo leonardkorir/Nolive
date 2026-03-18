@@ -1,0 +1,26 @@
+name: live_providers
+description: Provider registry and provider implementations for Nolive.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  brotli: ^0.6.0
+  crypto: ^3.0.6
+  dart_sm: ^0.1.5
+  dart_quickjs:
+    git:
+      url: https://github.com/xiaoyaocz/dart_quickjs.git
+      ref: main
+  fixnum: ^1.1.1
+  http: ^1.5.0
+  protobuf: ^6.0.0
+  web_socket_channel: ^3.0.3
+  live_core:
+    path: ../live_core
+
+dev_dependencies:
+  lints: ^5.1.1
+  test: ^1.25.8

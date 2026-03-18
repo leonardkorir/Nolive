@@ -1,0 +1,458 @@
+import 'package:flutter/material.dart';
+import 'package:live_core/live_core.dart';
+import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+
+import 'provider_badge.dart';
+import 'streamer_avatar.dart';
+
+class FollowWatchRow extends StatelessWidget {
+  const FollowWatchRow({
+    required this.entry,
+    required this.providerDescriptor,
+    required this.onTap,
+    this.onLongPress,
+    this.onRemove,
+    this.isPlaying = false,
+    this.showChevron = false,
+    this.showSurface = true,
+    super.key,
+  });
+
+  final FollowWatchEntry entry;
+  final ProviderDescriptor providerDescriptor;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onRemove;
+  final bool isPlaying;
+  final bool showChevron;
+  final bool showSurface;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final room = entry.detail;
+    final displayStreamerName = entry.displayStreamerName;
+    final areaLabel = entry.displayAreaName;
+    final tagsLabel = entry.displayTags.join(' · ');
+    final liveDuration = _liveDuration(room?.startedAt);
+    final subtitle =
+        entry.hasError && room == null ? '状态刷新失败，点击后可继续尝试进入房间' : entry.title;
+    final titleColor = colorScheme.onSurface;
+    final subtitleColor = theme.brightness == Brightness.dark
+        ? const Color(0xFFF5C46B)
+        : const Color(0xFFB7791F);
+    final status = _FollowStatusPresentation.resolve(
+      brightness: theme.brightness,
+      isLive: entry.isLive,
+      isPlaying: isPlaying,
+      hasError: entry.hasError,
+    );
+    final avatarSize = showSurface ? 42.0 : 44.0;
+    final rowMinHeight = showSurface ? 72.0 : 82.0;
+    final rowPadding = showSurface
+        ? const EdgeInsets.fromLTRB(9, 8, 4, 8)
+        : const EdgeInsets.fromLTRB(12, 8, 6, 8);
+    final horizontalGap = showSurface ? 8.0 : 10.0;
+    final backgroundColor = showSurface
+        ? (isPlaying
+            ? Color.alphaBlend(
+                colorScheme.secondary.withValues(
+                  alpha: theme.brightness == Brightness.dark ? 0.14 : 0.08,
+                ),
+                theme.cardColor,
+              )
+            : theme.cardColor)
+        : Colors.transparent;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(showSurface ? 12 : 0),
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Ink(
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(showSurface ? 10 : 0),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: rowMinHeight),
+            child: Padding(
+              padding: rowPadding,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  StreamerAvatar(
+                    size: avatarSize,
+                    imageUrl: entry.displayStreamerAvatarUrl,
+                    fallbackText: displayStreamerName,
+                    isLive: entry.isLive,
+                    liveRingWidth: showSurface ? 1.6 : 2,
+                  ),
+                  SizedBox(width: horizontalGap),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                displayStreamerName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: titleColor,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: showSurface ? 13.4 : 14.6,
+                                  height: 1.08,
+                                ),
+                              ),
+                            ),
+                            if (areaLabel.isNotEmpty) ...[
+                              const SizedBox(width: 5),
+                              _MiniPill(
+                                label: areaLabel,
+                                foreground: theme.brightness == Brightness.dark
+                                    ? const Color(0xFF95D0FF)
+                                    : const Color(0xFF5EA2EB),
+                                background: theme.brightness == Brightness.dark
+                                    ? const Color(0xFF102438)
+                                    : const Color(0xFFF0F7FF),
+                              ),
+                            ],
+                            const SizedBox(width: 5),
+                            _MiniPill(
+                              label: status.label,
+                              foreground: status.foreground,
+                              background: status.background,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: subtitleColor,
+                            fontWeight: FontWeight.w600,
+                            fontSize: showSurface ? 10.8 : 11.2,
+                            height: 1.14,
+                          ),
+                        ),
+                        SizedBox(height: showSurface ? 2 : 3),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: _ProviderMeta(
+                                providerDescriptor: providerDescriptor,
+                                textStyle: theme.textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: showSurface ? 10.1 : 10.4,
+                                  height: 1.1,
+                                ),
+                              ),
+                            ),
+                            if (tagsLabel.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  tagsLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: showSurface ? 9.9 : 10.2,
+                                    height: 1.1,
+                                  ),
+                                ),
+                              ),
+                            ] else
+                              const Spacer(),
+                            if (liveDuration.isNotEmpty)
+                              _DurationText(
+                                label: liveDuration,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (onRemove != null || showChevron) ...[
+                    const SizedBox(width: 1),
+                    _TrailingAction(
+                      showChevron: showChevron,
+                      onRemove: onRemove,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _liveDuration(DateTime? startedAt) {
+    if (startedAt == null) {
+      return '';
+    }
+    final elapsed = DateTime.now().difference(startedAt.toLocal());
+    if (elapsed.isNegative) {
+      return '';
+    }
+    final hours = elapsed.inHours;
+    final minutes = elapsed.inMinutes.remainder(60);
+    final seconds = elapsed.inSeconds.remainder(60);
+    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
+class _TrailingAction extends StatelessWidget {
+  const _TrailingAction({
+    required this.showChevron,
+    required this.onRemove,
+  });
+
+  final bool showChevron;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (onRemove != null) {
+      return IconButton(
+        tooltip: '取消关注',
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+        onPressed: onRemove,
+        icon: Icon(
+          Icons.heart_broken_rounded,
+          size: 16,
+          color: colorScheme.error.withValues(alpha: 0.9),
+        ),
+      );
+    }
+    if (!showChevron) {
+      return const SizedBox.shrink();
+    }
+    return Icon(
+      Icons.chevron_right_rounded,
+      size: 20,
+      color: colorScheme.onSurfaceVariant,
+    );
+  }
+}
+
+class _ProviderMeta extends StatelessWidget {
+  const _ProviderMeta({
+    required this.providerDescriptor,
+    required this.textStyle,
+  });
+
+  final ProviderDescriptor providerDescriptor;
+  final TextStyle? textStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final logoAsset = ProviderBadge.logoAssetOf(providerDescriptor.id);
+    final label = switch (providerDescriptor.id.value) {
+      'douyu' => '斗鱼直播',
+      'douyin' => '抖音直播',
+      'bilibili' => '哔哩哔哩',
+      'huya' => '虎牙直播',
+      'chaturbate' => 'Chaturbate',
+      _ => providerDescriptor.displayName,
+    };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (logoAsset != null)
+          Image.asset(
+            logoAsset,
+            width: 16,
+            height: 16,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.medium,
+            errorBuilder: (context, error, stackTrace) =>
+                _ProviderMetaFallback(providerDescriptor: providerDescriptor),
+          )
+        else
+          _ProviderMetaFallback(providerDescriptor: providerDescriptor),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textStyle,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProviderMetaFallback extends StatelessWidget {
+  const _ProviderMetaFallback({required this.providerDescriptor});
+
+  final ProviderDescriptor providerDescriptor;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = ProviderBadge.accentColorOf(providerDescriptor.id);
+    return Container(
+      width: 16,
+      height: 16,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        ProviderBadge.monogramOf(providerDescriptor.id),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: accent,
+              fontWeight: FontWeight.w700,
+              fontSize: 7.4,
+              height: 1,
+            ),
+      ),
+    );
+  }
+}
+
+class _DurationText extends StatelessWidget {
+  const _DurationText({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.access_time_rounded,
+          size: 10,
+          color: colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+            fontSize: 9.6,
+            height: 1.1,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MiniPill extends StatelessWidget {
+  const _MiniPill({
+    required this.label,
+    required this.foreground,
+    required this.background,
+  });
+
+  final String label;
+  final Color foreground;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: foreground,
+              fontWeight: FontWeight.w700,
+              fontSize: 9.2,
+              height: 1.0,
+            ),
+      ),
+    );
+  }
+}
+
+class _FollowStatusPresentation {
+  const _FollowStatusPresentation({
+    required this.label,
+    required this.foreground,
+    required this.background,
+  });
+
+  final String label;
+  final Color foreground;
+  final Color background;
+
+  static _FollowStatusPresentation resolve({
+    required Brightness brightness,
+    required bool isLive,
+    required bool isPlaying,
+    required bool hasError,
+  }) {
+    if (isPlaying) {
+      return _FollowStatusPresentation(
+        label: '观看中',
+        foreground: brightness == Brightness.dark
+            ? const Color(0xFF7BE495)
+            : const Color(0xFF15803D),
+        background: brightness == Brightness.dark
+            ? const Color(0xFF12261A)
+            : const Color(0xFFEAF8EE),
+      );
+    }
+    if (isLive) {
+      return _FollowStatusPresentation(
+        label: '直播中',
+        foreground: brightness == Brightness.dark
+            ? const Color(0xFFFF8B7E)
+            : const Color(0xFFD14343),
+        background: brightness == Brightness.dark
+            ? const Color(0xFF351819)
+            : const Color(0xFFFCEBEC),
+      );
+    }
+    if (hasError) {
+      return _FollowStatusPresentation(
+        label: '异常',
+        foreground: brightness == Brightness.dark
+            ? const Color(0xFFF5C46B)
+            : const Color(0xFFB7791F),
+        background: brightness == Brightness.dark
+            ? const Color(0xFF3A2A0F)
+            : const Color(0xFFFFF4DE),
+      );
+    }
+    return _FollowStatusPresentation(
+      label: '未开播',
+      foreground: brightness == Brightness.dark
+          ? const Color(0xFFAFB7C5)
+          : const Color(0xFF667085),
+      background: brightness == Brightness.dark
+          ? const Color(0xFF1B212B)
+          : const Color(0xFFF1F4F8),
+    );
+  }
+}

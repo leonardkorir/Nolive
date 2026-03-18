@@ -1,0 +1,31 @@
+name: nolive
+packages:
+  - apps/**
+  - packages/**
+
+command:
+  bootstrap:
+    usePubspecOverrides: true
+
+scripts:
+  analyze:
+    run: |
+      flutter analyze apps/main_app && \
+      for pkg in packages/live_core packages/live_providers packages/live_player packages/live_danmaku packages/live_storage packages/live_sync packages/live_shared; do \
+        echo "==> analyzing $pkg"; \
+        (cd "$pkg" && if [ "$pkg" = "packages/live_player" ]; then flutter analyze .; else dart analyze .; fi) || exit 1; \
+      done
+    description: Run static analysis for the app and all packages.
+
+  test:
+    run: |
+      (cd apps/main_app && flutter test) && \
+      for pkg in packages/live_core packages/live_providers packages/live_player packages/live_danmaku packages/live_storage packages/live_sync packages/live_shared; do \
+        echo "==> testing $pkg"; \
+        (cd "$pkg" && if [ "$pkg" = "packages/live_player" ]; then flutter test; else dart test; fi) || exit 1; \
+      done
+    description: Run app and package tests.
+
+  format:
+    run: dart format apps packages
+    description: Format all Dart sources in the workspace.

@@ -1,0 +1,43 @@
+# Editor / system files
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Dart / Flutter artifacts
+.dart_tool/
+.packages
+.pub/
+.pub-cache/
+build/
+**/build/
+coverage/
+**/pubspec_overrides.yaml
+**/.flutter-plugins
+.flutter-plugins
+**/.flutter-plugins-dependencies
+.flutter-plugins-dependencies
+**/Flutter/ephemeral/
+**/flutter/ephemeral/
+**/Generated.xcconfig
+**/flutter_export_environment.sh
+**/GeneratedPluginRegistrant.java
+**/GeneratedPluginRegistrant.h
+**/GeneratedPluginRegistrant.m
+
+# Android local files and signing materials
+**/local.properties
+**/key.properties
+**/*.jks
+**/*.keystore
+apps/main_app/android/keystore/
+*.apk
+*.aab
+
+# Local caches and logs
+**/.gradle/
+**/.kotlin/
+*.log
+
+# Optional local Node tooling
+node_modules/

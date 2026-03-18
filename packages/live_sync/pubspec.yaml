@@ -1,0 +1,15 @@
+name: live_sync
+description: Sync contracts and payload models for Nolive.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  live_storage:
+    path: ../live_storage
+
+dev_dependencies:
+  lints: ^5.1.1
+  test: ^1.25.8

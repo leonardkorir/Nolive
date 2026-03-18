@@ -1,0 +1,24 @@
+name: live_player
+description: Player abstraction layer for Nolive.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
+  fvp: ^0.35.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: false
