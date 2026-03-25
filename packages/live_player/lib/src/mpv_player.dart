@@ -86,10 +86,30 @@ class MpvPlayer implements BasePlayer {
         clearErrorMessage: true,
       ),
     );
+    await _configureSourceOptions(player, source);
     await player.open(
       mk.Media(source.url.toString(), httpHeaders: source.headers),
       play: false,
     );
+    assert(() {
+      debugPrint(
+        '[MpvPlayer] setSource '
+        'video=${_shortSourceDescriptor(source.url)} '
+        'audio=${source.externalAudio == null ? '-' : _shortSourceDescriptor(source.externalAudio!.url)} '
+        'audioHeaders=${source.externalAudio?.headers.keys.join(',') ?? '-'}',
+      );
+      return true;
+    }());
+    if (source.externalAudio != null) {
+      await player.setAudioTrack(
+        mk.AudioTrack.uri(
+          source.externalAudio!.url.toString(),
+          title: source.externalAudio!.label,
+        ),
+      );
+    } else {
+      await player.setAudioTrack(mk.AudioTrack.auto());
+    }
     _emit(
       _currentState.copyWith(
         status: PlaybackStatus.ready,
@@ -97,6 +117,26 @@ class MpvPlayer implements BasePlayer {
         clearErrorMessage: true,
       ),
     );
+  }
+
+  Future<void> _configureSourceOptions(
+    mk.Player player,
+    PlaybackSource source,
+  ) async {
+    final dynamic platform = player.platform;
+    if (platform == null) {
+      return;
+    }
+    final forceSeekable = source.url.host == '127.0.0.1' &&
+        source.url.path.contains('/twitch-ad-guard/');
+    try {
+      await platform.setProperty(
+        'force-seekable',
+        forceSeekable ? 'yes' : 'no',
+      );
+    } catch (_) {
+      // Older media_kit backends may not expose direct mpv property writes.
+    }
   }
 
   @override
@@ -229,5 +269,23 @@ class MpvPlayer implements BasePlayer {
     if (!_stateController.isClosed) {
       _stateController.add(_currentState);
     }
+  }
+
+  String _shortSourceDescriptor(Uri uri) {
+    final itagMatch = RegExp(r'/itag/([^/]+)').firstMatch(uri.path);
+    final idMatch = RegExp(r'/id/([^/]+)').firstMatch(uri.path);
+    final parts = <String>[uri.host];
+    if (itagMatch != null) {
+      parts.add('itag=${itagMatch.group(1)}');
+    }
+    if (idMatch != null) {
+      parts.add('id=${idMatch.group(1)}');
+    }
+    if (parts.length == 1) {
+      parts.add(
+        uri.path.split('/').where((item) => item.isNotEmpty).take(2).join('/'),
+      );
+    }
+    return parts.join(' ');
   }
 }

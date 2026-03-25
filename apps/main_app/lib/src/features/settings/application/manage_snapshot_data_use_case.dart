@@ -972,6 +972,7 @@ List<String> _decodeLegacySiteSort(Object? raw) {
     'huya',
     'douyin',
     'twitch',
+    'youtube',
   };
   for (final item in _rawStringSequence(raw)) {
     if (!supported.contains(item) || !seen.add(item)) {

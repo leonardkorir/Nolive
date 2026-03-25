@@ -66,6 +66,8 @@ class ProviderBadge extends StatelessWidget {
       'douyu' => Icons.sports_esports_rounded,
       'huya' => Icons.local_fire_department_rounded,
       'douyin' => Icons.music_note_rounded,
+      'twitch' => Icons.videogame_asset_rounded,
+      'youtube' => Icons.smart_display_rounded,
       _ => Icons.play_circle_outline,
     };
   }
@@ -77,6 +79,8 @@ class ProviderBadge extends StatelessWidget {
       'douyu' => const Color(0xFFFF8A00),
       'huya' => const Color(0xFFFFB000),
       'douyin' => const Color(0xFFFC2B55),
+      'twitch' => const Color(0xFF9146FF),
+      'youtube' => const Color(0xFFFF0033),
       _ => const Color(0xFFE11D48),
     };
   }
@@ -88,6 +92,8 @@ class ProviderBadge extends StatelessWidget {
       'douyu' => 'assets/branding/douyu.png',
       'huya' => 'assets/branding/huya.png',
       'douyin' => 'assets/branding/douyin.png',
+      'twitch' => 'assets/branding/twitch.png',
+      'youtube' => 'assets/branding/youtube.png',
       _ => null,
     };
   }
@@ -99,6 +105,8 @@ class ProviderBadge extends StatelessWidget {
       'douyu' => 'DY',
       'huya' => 'HY',
       'douyin' => '抖',
+      'twitch' => 'TW',
+      'youtube' => 'YT',
       _ => providerId.value.isEmpty
           ? 'L'
           : providerId.value.substring(0, 1).toUpperCase(),

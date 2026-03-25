@@ -20,6 +20,10 @@ extension _RoomPreviewPageFullscreenExtension on _RoomPreviewPageState {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
+                if (_showFullscreenFollowDrawer) {
+                  _hideFullscreenFollowDrawer();
+                  return;
+                }
                 if (_lockFullscreenControls) {
                   return;
                 }
@@ -32,6 +36,15 @@ extension _RoomPreviewPageFullscreenExtension on _RoomPreviewPageState {
                   _fullscreenChromeTimer?.cancel();
                 }
               },
+              onLongPressStart: _lockFullscreenControls
+                  ? null
+                  : (details) {
+                      final width = MediaQuery.sizeOf(context).width;
+                      if (details.globalPosition.dx < width * 0.68) {
+                        return;
+                      }
+                      _openFullscreenFollowDrawer();
+                    },
               onDoubleTap: _lockFullscreenControls
                   ? null
                   : () {
@@ -81,6 +94,7 @@ extension _RoomPreviewPageFullscreenExtension on _RoomPreviewPageState {
                 ),
               ),
             ),
+          _buildFullscreenFollowDrawer(context),
           if (_showFullscreenChrome) ...[
             Positioned(
               left: 0,

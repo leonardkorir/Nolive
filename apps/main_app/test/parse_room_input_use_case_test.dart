@@ -99,6 +99,66 @@ void main() {
     expect(result.parsedRoom?.roomId, '3125893');
   });
 
+  test('parse room input accepts twitch channel url', () {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final result = bootstrap.parseRoomInput(
+      rawInput: 'https://www.twitch.tv/xQc',
+      fallbackProvider: ProviderId.twitch,
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.parsedRoom?.providerId, ProviderId.twitch);
+    expect(result.parsedRoom?.roomId, 'xqc');
+  });
+
+  test('parse room input accepts twitch popout chat url', () {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final result = bootstrap.parseRoomInput(
+      rawInput: 'https://www.twitch.tv/popout/arky/chat',
+      fallbackProvider: ProviderId.twitch,
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.parsedRoom?.providerId, ProviderId.twitch);
+    expect(result.parsedRoom?.roomId, 'arky');
+  });
+
+  test('parse room input accepts youtube watch url', () {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final result = bootstrap.parseRoomInput(
+      rawInput: 'https://www.youtube.com/watch?v=Z3eFGbFcaXs',
+      fallbackProvider: ProviderId.youtube,
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.parsedRoom?.providerId, ProviderId.youtube);
+    expect(result.parsedRoom?.roomId, 'Z3eFGbFcaXs');
+  });
+
+  test('parse room input accepts youtube shorthand url', () {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final result = bootstrap.parseRoomInput(
+      rawInput: 'https://youtu.be/Z3eFGbFcaXs',
+      fallbackProvider: ProviderId.youtube,
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.parsedRoom?.providerId, ProviderId.youtube);
+    expect(result.parsedRoom?.roomId, 'Z3eFGbFcaXs');
+  });
+
+  test('parse room input normalizes youtube handle page to live room id', () {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final result = bootstrap.parseRoomInput(
+      rawInput: 'https://www.youtube.com/@Wenzel_TCG',
+      fallbackProvider: ProviderId.youtube,
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.parsedRoom?.providerId, ProviderId.youtube);
+    expect(result.parsedRoom?.roomId, '@Wenzel_TCG/live');
+  });
+
   test('parse room input rejects unknown plain input without provider', () {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     final result = bootstrap.parseRoomInput(rawInput: 'not-a-room');

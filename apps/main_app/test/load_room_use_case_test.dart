@@ -148,6 +148,54 @@ void main() {
     expect(snapshot.selectedQuality.id, 'high');
     expect(snapshot.playbackUnavailableReason, contains('需要额外权限'));
   });
+
+  test('load room keeps auto quality as default for twitch startup', () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: _kTwitchDescriptor,
+          builder: _TwitchDefaultQualityProvider.new,
+        ),
+      );
+    final useCase = LoadRoomUseCase(
+      registry,
+      historyRepository: InMemoryHistoryRepository(),
+    );
+
+    final snapshot = await useCase(
+      providerId: ProviderId.twitch,
+      roomId: 'ow_esports_jp',
+    );
+
+    expect(snapshot.hasPlayback, isTrue);
+    expect(snapshot.selectedQuality.id, 'auto');
+    expect(snapshot.selectedQuality.label, 'Auto');
+    expect(snapshot.playUrls.single.url, contains('auto.m3u8'));
+  });
+
+  test('load room still honors prefer highest quality for twitch', () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: _kTwitchDescriptor,
+          builder: _TwitchDefaultQualityProvider.new,
+        ),
+      );
+    final useCase = LoadRoomUseCase(
+      registry,
+      historyRepository: InMemoryHistoryRepository(),
+    );
+
+    final snapshot = await useCase(
+      providerId: ProviderId.twitch,
+      roomId: 'ow_esports_jp',
+      preferHighestQuality: true,
+    );
+
+    expect(snapshot.hasPlayback, isTrue);
+    expect(snapshot.selectedQuality.id, '1080p60');
+    expect(snapshot.playUrls.single.url, contains('1080p60'));
+  });
 }
 
 const _kOverrideDescriptor = ProviderDescriptor(
@@ -349,5 +397,70 @@ class _RestrictedProvider extends LiveProvider
     required LivePlayQuality quality,
   }) async {
     return const [];
+  }
+}
+
+const _kTwitchDescriptor = ProviderDescriptor(
+  id: ProviderId.twitch,
+  displayName: 'Twitch',
+  capabilities: {
+    ProviderCapability.roomDetail,
+    ProviderCapability.playQualities,
+    ProviderCapability.playUrls,
+  },
+  supportedPlatforms: {ProviderPlatform.android},
+  maturity: ProviderMaturity.ready,
+);
+
+class _TwitchDefaultQualityProvider extends LiveProvider
+    implements SupportsRoomDetail, SupportsPlayQualities, SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => _kTwitchDescriptor;
+
+  @override
+  Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
+    return LiveRoomDetail(
+      providerId: ProviderId.twitch.value,
+      roomId: roomId,
+      title: roomId,
+      streamerName: roomId,
+      isLive: true,
+      sourceUrl: 'https://www.twitch.tv/$roomId',
+    );
+  }
+
+  @override
+  Future<List<LivePlayQuality>> fetchPlayQualities(
+    LiveRoomDetail detail,
+  ) async {
+    return const [
+      LivePlayQuality(
+        id: 'auto',
+        label: 'Auto',
+        isDefault: true,
+      ),
+      LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 1080,
+      ),
+      LivePlayQuality(
+        id: '720p60',
+        label: '720p60',
+        sortOrder: 720,
+      ),
+    ];
+  }
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return [
+      LivePlayUrl(
+        url: 'https://example.com/${quality.id}.m3u8',
+      ),
+    ];
   }
 }

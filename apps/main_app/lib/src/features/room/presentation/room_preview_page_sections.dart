@@ -1,10 +1,214 @@
 part of 'room_preview_page.dart';
 
 extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
+  Widget _buildLoadingRoomShell({
+    required BuildContext context,
+    required ProviderDescriptor? descriptor,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final room = _activeRoomDetail;
+    final posterUrl = room?.keyframeUrl ?? room?.coverUrl;
+    final providerLabel = descriptor?.displayName ?? widget.providerId.value;
+    final streamerName = normalizeDisplayText(room?.streamerName);
+    final avatarTextSource = streamerName.isEmpty ? providerLabel : streamerName;
+    final avatarLabel = avatarTextSource.isEmpty
+        ? '?'
+        : avatarTextSource.substring(0, 1).toUpperCase();
+
+    Widget buildTab(String label, Key key, bool selected) {
+      return Expanded(
+        child: _RoomPanelTab(
+          key: key,
+          label: label,
+          selected: selected,
+          onTap: () {},
+        ),
+      );
+    }
+
+    return ColoredBox(
+      color: colorScheme.surface,
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                DecoratedBox(
+                  decoration: const BoxDecoration(color: Colors.black),
+                  child: posterUrl == null
+                      ? null
+                      : PersistedNetworkImage(
+                          imageUrl: posterUrl,
+                          bucket: PersistedImageBucket.roomCover,
+                          fit: BoxFit.cover,
+                          fallback: const SizedBox.shrink(),
+                        ),
+                ),
+                DecoratedBox(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0x66000000),
+                        Color(0x22000000),
+                        Color(0xAA000000),
+                      ],
+                    ),
+                  ),
+                ),
+                Center(
+                  child: Container(
+                    key: const Key('room-loading-shell'),
+                    constraints: const BoxConstraints(maxWidth: 320),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator.adaptive(),
+                        const SizedBox(height: 14),
+                        Text(
+                          '正在进入 $providerLabel 房间',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          room?.title ?? '房间号 ${widget.roomId}',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Material(
+            color: colorScheme.surface,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 21,
+                    backgroundColor: colorScheme.secondaryContainer,
+                    child: Text(
+                      avatarLabel,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: colorScheme.onSecondaryContainer,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          streamerName.isEmpty ? '正在读取主播信息' : streamerName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          providerLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          IgnorePointer(
+            child: Material(
+              color: colorScheme.surface,
+              child: Row(
+                children: [
+                  buildTab('聊天', const Key('room-panel-tab-chat'), true),
+                  buildTab(
+                    'SC',
+                    const Key('room-panel-tab-super-chat'),
+                    false,
+                  ),
+                  buildTab('关注', const Key('room-panel-tab-follow'), false),
+                  buildTab(
+                    '设置',
+                    const Key('room-panel-tab-settings'),
+                    false,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: AppSurfaceCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '房间已经进入，后台继续加载播放和聊天数据',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '视频源解析中',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '弹幕与关注状态稍后补齐',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRoomBody({
     required BuildContext context,
     required _RoomPageState state,
     required LiveRoomDetail room,
+    required bool fullscreenActive,
     required ProviderDescriptor? descriptor,
     required LivePlayQuality selectedQuality,
     required LivePlayQuality effectiveQuality,
@@ -81,7 +285,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                   playbackSource: playbackSource,
                   hasPlayback: hasPlayback,
                   playerState: playerState,
-                  embedPlayer: !_isFullscreen,
+                  embedPlayer: !fullscreenActive,
                   fullscreen: false,
                   onShowQuality:
                       hasPlayback ? () => _showQualitySheet(state) : null,
@@ -128,7 +332,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                 playbackSource: playbackSource,
                 hasPlayback: hasPlayback,
                 playerState: playerState,
-                embedPlayer: !_isFullscreen,
+                embedPlayer: !fullscreenActive,
                 fullscreen: false,
                 onShowQuality:
                     hasPlayback ? () => _showQualitySheet(state) : null,

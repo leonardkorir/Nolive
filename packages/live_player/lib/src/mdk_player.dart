@@ -107,9 +107,56 @@ class MdkPlayer implements BasePlayer {
       ),
     );
 
-    player
-      ..media = source.url.toString()
-      ..prepare();
+    player.media = source.url.toString();
+    if (source.externalAudio != null) {
+      player.setMedia(
+        source.externalAudio!.url.toString(),
+        mdk.MediaType.audio,
+      );
+      player.activeAudioTracks = const [0];
+    }
+    final prepareResult = await player.prepare();
+    if (prepareResult < 0) {
+      _textureId.value = null;
+      _emit(
+        _currentState.copyWith(
+          status: PlaybackStatus.error,
+          errorMessage: 'MDK prepare failed: $prepareResult',
+        ),
+      );
+      return;
+    }
+    if (source.externalAudio != null) {
+      final audioTracks =
+          player.mediaInfo.audio?.map((item) => item.index).toList(
+                    growable: false,
+                  ) ??
+              const <int>[];
+      if (audioTracks.isNotEmpty) {
+        player.activeAudioTracks = audioTracks;
+      }
+      assert(() {
+        debugPrint(
+          '[MdkPlayer] setSource '
+          'video=${_shortSourceDescriptor(source.url)} '
+          'audio=${_shortSourceDescriptor(source.externalAudio!.url)} '
+          'prepare=$prepareResult '
+          'audioTracks=${audioTracks.join(',')} '
+          'activeAudioTracks=${player.activeAudioTracks.join(',')}',
+        );
+        return true;
+      }());
+    } else {
+      assert(() {
+        debugPrint(
+          '[MdkPlayer] setSource '
+          'video=${_shortSourceDescriptor(source.url)} '
+          'audio=- '
+          'prepare=$prepareResult',
+        );
+        return true;
+      }());
+    }
 
     final textureId = await player.updateTexture(tunnel: androidTunnel);
     if (textureId < 0) {
@@ -230,5 +277,23 @@ class MdkPlayer implements BasePlayer {
     if (!_stateController.isClosed) {
       _stateController.add(_currentState);
     }
+  }
+
+  String _shortSourceDescriptor(Uri uri) {
+    final itagMatch = RegExp(r'/itag/([^/]+)').firstMatch(uri.path);
+    final idMatch = RegExp(r'/id/([^/]+)').firstMatch(uri.path);
+    final parts = <String>[uri.host];
+    if (itagMatch != null) {
+      parts.add('itag=${itagMatch.group(1)}');
+    }
+    if (idMatch != null) {
+      parts.add('id=${idMatch.group(1)}');
+    }
+    if (parts.length == 1) {
+      parts.add(
+        uri.path.split('/').where((item) => item.isNotEmpty).take(2).join('/'),
+      );
+    }
+    return parts.join(' ');
   }
 }

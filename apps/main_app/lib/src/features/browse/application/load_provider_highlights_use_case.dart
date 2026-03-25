@@ -19,10 +19,15 @@ class LoadProviderHighlightsUseCase {
     'douyu': ['架构', '王者荣耀'],
     'huya': ['架构', '王者荣耀'],
     'douyin': ['架构', '王者荣耀'],
+    'twitch': ['xqc', 'just chatting'],
+    'youtube': ['live news', 'gaming live'],
   };
 
-  Future<List<ProviderHighlightSection>> call() async {
-    final descriptors = listAvailableProviders();
+  Future<List<ProviderHighlightSection>> call({ProviderId? providerId}) async {
+    final descriptors = listAvailableProviders()
+        .where(
+            (descriptor) => providerId == null || descriptor.id == providerId)
+        .toList(growable: false);
     final futures = descriptors.map(_loadForDescriptor);
     final sections = await Future.wait(futures);
     return sections
@@ -35,17 +40,32 @@ class LoadProviderHighlightsUseCase {
   ) async {
     try {
       final provider = registry.create(descriptor.id);
-      final search = provider.requireContract<SupportsRoomSearch>(
-        ProviderCapability.searchRooms,
-      );
-      final queries = _queries[descriptor.id.value] ?? const ['架构'];
-      for (final query in [...queries, '']) {
-        final response = await search.searchRooms(query);
+      if (provider.supports(ProviderCapability.searchRooms)) {
+        final search = provider.requireContract<SupportsRoomSearch>(
+          ProviderCapability.searchRooms,
+        );
+        final queries = _queries[descriptor.id.value] ?? const ['架构'];
+        for (final query in [...queries, '']) {
+          final response = await search.searchRooms(query);
+          if (response.items.isNotEmpty) {
+            return ProviderHighlightSection(
+              descriptor: descriptor,
+              query: query,
+              rooms: response.items.take(6).toList(growable: false),
+            );
+          }
+        }
+      }
+      if (provider.supports(ProviderCapability.recommendRooms)) {
+        final recommendRooms = provider.requireContract<SupportsRecommendRooms>(
+          ProviderCapability.recommendRooms,
+        );
+        final response = await recommendRooms.fetchRecommendRooms(page: 1);
         if (response.items.isNotEmpty) {
           return ProviderHighlightSection(
             descriptor: descriptor,
-            query: query,
-            rooms: response.items.take(4).toList(growable: false),
+            query: '',
+            rooms: response.items.take(6).toList(growable: false),
           );
         }
       }

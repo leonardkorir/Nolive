@@ -1,36 +1,62 @@
+import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:live_providers/live_providers.dart';
 
+import 'twitch_ad_guard_proxy.dart';
+
 class ResolvePlaySourceUseCase {
-  const ResolvePlaySourceUseCase(this.registry);
+  const ResolvePlaySourceUseCase(
+    this.registry, {
+    this.twitchAdGuardProxy,
+  });
 
   final ProviderRegistry registry;
+  final TwitchAdGuardProxy? twitchAdGuardProxy;
 
   Future<ResolvedPlaySource> call({
     required ProviderId providerId,
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
     bool preferHttps = false,
+    List<LivePlayUrl>? preloadedPlayUrls,
   }) async {
     final provider = registry.create(providerId);
-    final playUrlsContract = provider.requireContract<SupportsPlayUrls>(
-      ProviderCapability.playUrls,
-    );
-    final urls = await playUrlsContract.fetchPlayUrls(
-      detail: detail,
-      quality: quality,
-    );
+    final urls = preloadedPlayUrls ??
+        await provider
+            .requireContract<SupportsPlayUrls>(
+              ProviderCapability.playUrls,
+            )
+            .fetchPlayUrls(
+              detail: detail,
+              quality: quality,
+            );
     if (urls.isEmpty) {
       throw ProviderParseException(
         providerId: providerId,
         message: '${provider.descriptor.displayName} 当前没有返回可用播放地址。',
       );
     }
+    var effectiveUrls = urls;
+    if (providerId == ProviderId.twitch) {
+      final proxied = await twitchAdGuardProxy?.wrapPlayUrls(
+        quality: quality,
+        playUrls: urls,
+      );
+      if (proxied != null && proxied.isNotEmpty) {
+        effectiveUrls = proxied;
+      }
+      _debugTrace(
+        'twitch resolve quality=${quality.id}/${quality.label} '
+        'source=${preloadedPlayUrls == null ? 'network' : 'preloaded'} '
+        'urls=${urls.length} proxied=${effectiveUrls.length} '
+        'lines=${_describeLines(effectiveUrls)}',
+      );
+    }
     final primary = _selectPrimaryUrl(
       providerId: providerId,
       requestedQuality: quality,
-      urls: urls,
+      urls: effectiveUrls,
       preferHttps: preferHttps,
     );
     final effectiveQuality = _resolveEffectiveQuality(
@@ -38,15 +64,21 @@ class ResolvePlaySourceUseCase {
       requestedQuality: quality,
       selectedUrl: primary,
     );
+    if (providerId == ProviderId.twitch) {
+      _debugTrace(
+        'twitch selected quality=${quality.id} '
+        'effective=${effectiveQuality.id}/${effectiveQuality.label} '
+        'line=${primary.lineLabel ?? '-'} '
+        'playerType=${primary.metadata?['playerType'] ?? '-'} '
+        'url=${_summarizeUrl(primary.url)}',
+      );
+    }
 
     return ResolvedPlaySource(
       quality: quality,
       effectiveQuality: effectiveQuality,
-      playUrls: urls,
-      playbackSource: PlaybackSource(
-        url: Uri.parse(primary.url),
-        headers: primary.headers,
-      ),
+      playUrls: effectiveUrls,
+      playbackSource: playbackSourceFromLivePlayUrl(primary),
     );
   }
 
@@ -76,6 +108,19 @@ class ResolvePlaySourceUseCase {
     required LivePlayQuality requestedQuality,
     required List<LivePlayUrl> urls,
   }) {
+    if (providerId == ProviderId.twitch) {
+      final ordered = List<LivePlayUrl>.from(urls);
+      ordered.sort((left, right) {
+        return _twitchPlayerTypePriority(
+          left.metadata?['playerType']?.toString(),
+        ).compareTo(
+          _twitchPlayerTypePriority(
+            right.metadata?['playerType']?.toString(),
+          ),
+        );
+      });
+      return ordered;
+    }
     if (providerId != ProviderId.douyu) {
       return urls;
     }
@@ -87,6 +132,20 @@ class ResolvePlaySourceUseCase {
       return _extractIntMetadataValue(item, const ['rate']) == requestedRate;
     }).toList(growable: false);
     return exactMatch.isEmpty ? urls : exactMatch;
+  }
+
+  int _twitchPlayerTypePriority(String? playerType) {
+    switch (playerType?.trim().toLowerCase()) {
+      case 'popout':
+        return 0;
+      case 'embed':
+        return 1;
+      case 'site':
+        return 2;
+      case 'autoplay':
+        return 3;
+    }
+    return 99;
   }
 
   LivePlayQuality _resolveEffectiveQuality({
@@ -163,6 +222,91 @@ class ResolvePlaySourceUseCase {
     }
     return result;
   }
+
+  void _debugTrace(String message) {
+    if (!kDebugMode) {
+      return;
+    }
+    debugPrint('[ResolvePlaySource] $message');
+  }
+
+  String _describeLines(List<LivePlayUrl> urls) {
+    return urls
+        .map(
+          (item) =>
+              '${item.lineLabel ?? '-'}:${item.metadata?['playerType'] ?? '-'}',
+        )
+        .join(', ');
+  }
+
+  String _summarizeUrl(String rawUrl) {
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null) {
+      return rawUrl;
+    }
+    return '${uri.host}${uri.path}';
+  }
+}
+
+PlaybackSource playbackSourceFromLivePlayUrl(LivePlayUrl playUrl) {
+  final audioUrl = playUrl.metadata?['audioUrl']?.toString().trim() ?? '';
+  if (kDebugMode) {
+    debugPrint(
+      '[ResolvePlaySource] build playback source '
+      'line=${playUrl.lineLabel ?? '-'} '
+      'video=${_shortPlaybackDescriptor(playUrl.url)} '
+      'audio=${audioUrl.isEmpty ? '-' : _shortPlaybackDescriptor(audioUrl)}',
+    );
+  }
+  return PlaybackSource(
+    url: Uri.parse(playUrl.url),
+    headers: playUrl.headers,
+    externalAudio: audioUrl.isEmpty
+        ? null
+        : PlaybackExternalMedia(
+            url: Uri.parse(audioUrl),
+            headers: _readHeadersMap(playUrl.metadata?['audioHeaders']),
+            label: playUrl.metadata?['audioLineLabel']?.toString(),
+            mimeType: playUrl.metadata?['audioMimeType']?.toString(),
+          ),
+  );
+}
+
+Map<String, String> _readHeadersMap(Object? raw) {
+  if (raw is! Map) {
+    return const {};
+  }
+  final headers = <String, String>{};
+  for (final entry in raw.entries) {
+    final key = entry.key.toString().trim();
+    final value = entry.value?.toString().trim() ?? '';
+    if (key.isEmpty || value.isEmpty) {
+      continue;
+    }
+    headers[key] = value;
+  }
+  return headers;
+}
+
+String _shortPlaybackDescriptor(String rawUrl) {
+  final uri = Uri.tryParse(rawUrl);
+  if (uri == null) {
+    return rawUrl;
+  }
+  final itagMatch = RegExp(r'/itag/([^/]+)').firstMatch(uri.path);
+  final idMatch = RegExp(r'/id/([^/]+)').firstMatch(uri.path);
+  final parts = <String>[uri.host];
+  if (itagMatch != null) {
+    parts.add('itag=${itagMatch.group(1)}');
+  }
+  if (idMatch != null) {
+    parts.add('id=${idMatch.group(1)}');
+  }
+  if (parts.length == 1) {
+    parts.add(
+        uri.path.split('/').where((item) => item.isNotEmpty).take(2).join('/'));
+  }
+  return parts.join(' ');
 }
 
 class ResolvedPlaySource {

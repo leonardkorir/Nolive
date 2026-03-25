@@ -139,6 +139,8 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
       'douyu' => '斗鱼',
       'huya' => '虎牙',
       'douyin' => '抖音直播',
+      'twitch' => 'Twitch',
+      'youtube' => 'YouTube 直播',
       _ => record.providerId,
     };
   }

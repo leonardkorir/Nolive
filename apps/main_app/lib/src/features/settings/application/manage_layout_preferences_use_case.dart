@@ -43,6 +43,8 @@ class LayoutPreferences {
     'douyu',
     'huya',
     'douyin',
+    'twitch',
+    'youtube',
   ];
 
   final List<ShellTabId> shellTabOrder;

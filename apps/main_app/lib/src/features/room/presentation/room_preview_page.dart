@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:floating/floating.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:live_core/live_core.dart';
@@ -14,7 +15,10 @@ import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/platform/android_playback_bridge.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_backend_policy.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_startup_quality_policy.dart';
 import 'package:nolive_app/src/features/room/application/resolve_play_source_use_case.dart';
+import 'package:nolive_app/src/features/room/application/twitch_playback_recovery.dart';
 import 'package:nolive_app/src/features/room/presentation/room_danmaku_batch.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
@@ -34,6 +38,7 @@ part 'room_preview_page_player_surface.dart';
 part 'room_preview_page_fullscreen.dart';
 part 'room_preview_page_danmaku.dart';
 part 'room_preview_page_follow.dart';
+part 'room_preview_page_state_support.dart';
 part 'room_preview_page_sections.dart';
 part 'room_preview_page_panels.dart';
 part 'room_preview_page_section_widgets.dart';
@@ -43,12 +48,14 @@ class RoomPreviewPage extends StatefulWidget {
     required this.bootstrap,
     required this.providerId,
     required this.roomId,
+    this.startInFullscreen = false,
     super.key,
   });
 
   final AppBootstrap bootstrap;
   final ProviderId providerId;
   final String roomId;
+  final bool startInFullscreen;
 
   @override
   State<RoomPreviewPage> createState() => _RoomPreviewPageState();
@@ -65,12 +72,18 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   LivePlayQuality? _effectiveQuality;
   PlaybackSource? _playbackSource;
   List<LivePlayUrl> _playUrls = const [];
+  PlaybackSource? _pendingPlaybackSource;
+  bool _pendingPlaybackAvailable = false;
+  bool _pendingPlaybackAutoPlay = false;
+  bool _playbackBootstrapScheduled = false;
   bool _isFollowed = false;
   bool _autoPlayEnabled = true;
   bool _forceHttpsEnabled = false;
   bool _showDanmakuOverlay = true;
   DanmakuPreferences _danmakuPreferences = DanmakuPreferences.defaults;
   bool _isFullscreen = false;
+  bool _fullscreenBootstrapPending = false;
+  bool _fullscreenBootstrapScheduled = false;
   bool _showInlinePlayerChrome = true;
   bool _showFullscreenChrome = true;
   bool _lockFullscreenControls = false;
@@ -101,6 +114,8 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       ValueNotifier<List<LiveMessage>>(const []);
   final ValueNotifier<List<LiveMessage>> _superChatMessagesNotifier =
       ValueNotifier<List<LiveMessage>>(const []);
+  final ValueNotifier<List<LiveMessage>> _playerSuperChatMessagesNotifier =
+      ValueNotifier<List<LiveMessage>>(const []);
   _RoomPanel _selectedPanel = _RoomPanel.chat;
   Timer? _danmakuFlushTimer;
   Timer? _fullscreenChromeTimer;
@@ -111,15 +126,76 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   double _chatTextGap = 4;
   bool _chatBubbleStyle = false;
   bool _showPlayerSuperChat = true;
+  int _playerSuperChatDisplaySeconds = 8;
   final ScrollController _chatScrollController = ScrollController();
   final PageController _panelPageController = PageController();
   bool _isLeavingRoom = false;
   bool _playbackCleanedUp = false;
   bool _darkThemeActive = false;
   Size? _inlinePlayerViewportSize;
+  LiveRoomDetail? _activeRoomDetail;
+  List<String> _blockedDanmakuKeywords = const [];
+  bool _showFullscreenFollowDrawer = false;
+  Timer? _gestureTipTimer;
+  Timer? _playerSuperChatOverlayTimer;
+  Timer? _danmakuReconnectTimer;
+  bool _danmakuReconnectInFlight = false;
+  int _danmakuReconnectAttempt = 0;
+  bool _preserveRoomTransitionOnDispose = false;
+  StreamSubscription<PlayerState>? _playerStateLogSubscription;
+  String? _lastPlayerStateLogSignature;
+  int _ancillaryLoadToken = 0;
+  bool _ancillaryLoading = false;
+  int _twitchRecoveryToken = 0;
+  String? _twitchRecoverySourceKey;
+  int _twitchRecoveryAttempts = 0;
+  LivePlayQuality? _twitchStartupPromotionQuality;
 
-  FollowWatchlist? get _runtimeFollowWatchlistSnapshot =>
-      widget.bootstrap.followWatchlistSnapshot.value;
+  void _roomTrace(String message) {
+    if (!kDebugMode) {
+      return;
+    }
+    debugPrint(
+      '[RoomPreview/${widget.providerId.value}/${widget.roomId}] $message',
+    );
+  }
+
+  String _summarizePlaybackSource(PlaybackSource? source) {
+    final url = source?.url;
+    if (url == null) {
+      return '-';
+    }
+    final audio = source?.externalAudio?.url;
+    final base = '${url.host}${url.path}';
+    if (audio == null) {
+      return base;
+    }
+    return '$base + audio=${audio.host}${audio.path}';
+  }
+
+  void _attachPlayerStateLogging() {
+    _playerStateLogSubscription ??= widget.bootstrap.player.states.listen((
+      state,
+    ) {
+      final signature = [
+        state.status.name,
+        state.errorMessage ?? '',
+        _summarizePlaybackSource(state.source),
+        (state.buffered.inSeconds / 5).floor(),
+      ].join('|');
+      if (_lastPlayerStateLogSignature == signature) {
+        return;
+      }
+      _lastPlayerStateLogSignature = signature;
+      _roomTrace(
+        'player status=${state.status.name} '
+        'buffer=${state.buffered.inMilliseconds}ms '
+        'pos=${state.position.inMilliseconds}ms '
+        'source=${_summarizePlaybackSource(state.source)} '
+        'error=${state.errorMessage ?? '-'}',
+      );
+    });
+  }
 
   void _updateViewState(VoidCallback updater) {
     if (!mounted) {
@@ -133,9 +209,15 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.startInFullscreen) {
+      _fullscreenBootstrapPending = true;
+    }
     _future = _load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (!mounted) {
+        return;
+      }
+      if (!widget.startInFullscreen) {
         _scheduleInlineChromeAutoHide();
       }
     });
@@ -145,6 +227,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     _followWatchlistHydrated = _runtimeFollowWatchlistSnapshot != null;
     unawaited(_setScreenAwake(true));
     unawaited(_primeAndroidPlaybackState());
+    _attachPlayerStateLogging();
   }
 
   @override
@@ -156,31 +239,53 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _ancillaryLoadToken += 1;
     widget.bootstrap.followWatchlistSnapshot
         .removeListener(_handleFollowWatchlistSnapshotChanged);
     _fullscreenChromeTimer?.cancel();
     _inlineChromeTimer?.cancel();
     _autoCloseTimer?.cancel();
-    unawaited(_restoreSystemUi());
-    unawaited(_setScreenAwake(false));
-    unawaited(_cleanupPlaybackOnLeave());
+    _gestureTipTimer?.cancel();
+    _playerSuperChatOverlayTimer?.cancel();
+    _danmakuReconnectTimer?.cancel();
+    unawaited(_playerStateLogSubscription?.cancel());
+    if (!_preserveRoomTransitionOnDispose) {
+      unawaited(_restoreSystemUi());
+      unawaited(_setScreenAwake(false));
+      unawaited(_cleanupPlaybackOnLeave());
+    }
     unawaited(_pipStatusSubscription?.cancel());
     _chatScrollController.dispose();
     _panelPageController.dispose();
-    _disposeDanmakuSession();
+    _disposeDanmakuSessionNow();
     _messagesNotifier.dispose();
     _superChatMessagesNotifier.dispose();
+    _playerSuperChatMessagesNotifier.dispose();
     super.dispose();
   }
 
   Future<_RoomPageState> _load({String? preferredQualityId}) async {
+    final startedAt = DateTime.now();
+    _roomTrace('load start preferredQuality=${preferredQualityId ?? '-'}');
     final preferences = await widget.bootstrap.loadPlayerPreferences();
     final blockedKeywords = await widget.bootstrap.loadBlockedKeywords();
     final danmakuPreferences = await widget.bootstrap.loadDanmakuPreferences();
     final roomUiPreferences = await widget.bootstrap.loadRoomUiPreferences();
     final player = widget.bootstrap.player;
-    if (player is SwitchablePlayer && player.backend != preferences.backend) {
-      await player.switchBackend(preferences.backend);
+    final runtimeBackend = resolveRoomPlaybackBackend(
+      providerId: widget.providerId,
+      preferredBackend: preferences.backend,
+      targetPlatform: defaultTargetPlatform,
+      isWeb: kIsWeb,
+    );
+    if (runtimeBackend != preferences.backend) {
+      _roomTrace(
+        'runtime backend override '
+        '${preferences.backend.name} -> ${runtimeBackend.name}',
+      );
+    }
+    if (player is SwitchablePlayer && player.backend != runtimeBackend) {
+      await player.switchBackend(runtimeBackend);
     }
     await player.initialize();
     await player.setVolume(Platform.isAndroid ? 1.0 : preferences.volume);
@@ -190,33 +295,54 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       roomId: widget.roomId,
       preferHighestQuality: preferences.preferHighestQuality,
     );
-    final quality = preferredQualityId == null
+    _roomTrace(
+      'loadRoom done in ${DateTime.now().difference(startedAt).inMilliseconds}ms '
+      'qualities=${snapshot.qualities.length} '
+      'playUrls=${snapshot.playUrls.length} '
+      'selected=${snapshot.selectedQuality.id}/${snapshot.selectedQuality.label}',
+    );
+    final requestedQuality = preferredQualityId == null
         ? snapshot.selectedQuality
         : snapshot.qualities.firstWhere(
             (item) => item.id == preferredQualityId,
             orElse: () => snapshot.selectedQuality,
           );
-    ResolvedPlaySource? resolved;
-    if (snapshot.hasPlayback) {
-      resolved = await widget.bootstrap.resolvePlaySource(
-        providerId: widget.providerId,
-        detail: snapshot.detail,
-        quality: quality,
-        preferHttps: preferences.forceHttpsEnabled,
-      );
-      await player.setSource(resolved.playbackSource);
-      if (preferences.autoPlayEnabled) {
-        await player.play();
-      }
-    } else {
-      await player.stop();
-    }
-
-    final danmakuSession = await widget.bootstrap.openRoomDanmaku(
-      providerId: widget.providerId,
-      detail: snapshot.detail,
+    final startupRequestedQuality = resolveRoomStartupRequestedQuality(
+      providerId: snapshot.providerId,
+      qualities: snapshot.qualities,
+      requestedQuality: requestedQuality,
+      targetPlatform: defaultTargetPlatform,
+      explicitSelection: preferredQualityId != null,
+      isWeb: kIsWeb,
     );
-    await _bindDanmakuSession(danmakuSession, blockedKeywords);
+    final startupPlan = _resolveTwitchStartupPlan(
+      snapshot: snapshot,
+      requestedQuality: startupRequestedQuality,
+    );
+    final playbackQuality = startupPlan.startupQuality;
+    _applyTwitchStartupPlan(startupPlan);
+    if (playbackQuality.id != requestedQuality.id ||
+        playbackQuality.label != requestedQuality.label) {
+      _roomTrace(
+        'startup quality adjusted '
+        '${requestedQuality.id}/${requestedQuality.label} -> '
+        '${playbackQuality.id}/${playbackQuality.label}',
+      );
+    }
+    final resolved = await _resolveRoomPlayback(
+      snapshot: snapshot,
+      quality: playbackQuality,
+      preferHttps: preferences.forceHttpsEnabled,
+    );
+
+    _chatTextSize = roomUiPreferences.chatTextSize;
+    _chatTextGap = roomUiPreferences.chatTextGap;
+    _chatBubbleStyle = roomUiPreferences.chatBubbleStyle;
+    _showPlayerSuperChat = roomUiPreferences.showPlayerSuperChat;
+    _playerSuperChatDisplaySeconds =
+        roomUiPreferences.playerSuperChatDisplaySeconds;
+    _activeRoomDetail = snapshot.detail;
+    _blockedDanmakuKeywords = blockedKeywords;
 
     _autoPlayEnabled = preferences.autoPlayEnabled;
     _forceHttpsEnabled = preferences.forceHttpsEnabled;
@@ -228,17 +354,17 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     _volume = preferences.volume;
     _danmakuPreferences = danmakuPreferences;
     _showDanmakuOverlay = danmakuPreferences.enabledByDefault;
-    _chatTextSize = roomUiPreferences.chatTextSize;
-    _chatTextGap = roomUiPreferences.chatTextGap;
-    _chatBubbleStyle = roomUiPreferences.chatBubbleStyle;
-    _showPlayerSuperChat = roomUiPreferences.showPlayerSuperChat;
-    _selectedQuality = quality;
-    _effectiveQuality = resolved?.effectiveQuality ?? quality;
+    _selectedQuality = playbackQuality;
+    _effectiveQuality = resolved?.effectiveQuality ?? playbackQuality;
     _playbackSource = resolved?.playbackSource;
     _playUrls = resolved?.playUrls ?? snapshot.playUrls;
-    _isFollowed = await widget.bootstrap.isFollowedRoom(
-      providerId: widget.providerId.value,
-      roomId: snapshot.detail.roomId,
+    _scheduleAncillaryLoad(
+      snapshot: snapshot,
+      blockedKeywords: blockedKeywords,
+    );
+    _roomTrace(
+      'load core complete in ${DateTime.now().difference(startedAt).inMilliseconds}ms '
+      'playback=${_summarizePlaybackSource(_playbackSource)}',
     );
     return _RoomPageState(
       snapshot: snapshot,
@@ -247,12 +373,118 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     );
   }
 
-  RoomUiPreferences get _roomUiPreferences => RoomUiPreferences(
-        chatTextSize: _chatTextSize,
-        chatTextGap: _chatTextGap,
-        chatBubbleStyle: _chatBubbleStyle,
-        showPlayerSuperChat: _showPlayerSuperChat,
+  Future<ResolvedPlaySource?> _resolveRoomPlayback({
+    required LoadedRoomSnapshot snapshot,
+    required LivePlayQuality quality,
+    required bool preferHttps,
+  }) async {
+    if (!snapshot.hasPlayback) {
+      return null;
+    }
+    final startedAt = DateTime.now();
+    final resolved = await widget.bootstrap.resolvePlaySource(
+      providerId: widget.providerId,
+      detail: snapshot.detail,
+      quality: quality,
+      preferHttps: preferHttps,
+      preloadedPlayUrls: _canReuseSnapshotPlayUrls(
+        snapshot: snapshot,
+        requestedQuality: quality,
+      )
+          ? snapshot.playUrls
+          : null,
+    );
+    _roomTrace(
+      'resolvePlaySource done in ${DateTime.now().difference(startedAt).inMilliseconds}ms '
+      'quality=${quality.id}/${quality.label} '
+      'effective=${resolved.effectiveQuality.id}/${resolved.effectiveQuality.label} '
+      'playback=${_summarizePlaybackSource(resolved.playbackSource)}',
+    );
+    return resolved;
+  }
+
+  bool _canReuseSnapshotPlayUrls({
+    required LoadedRoomSnapshot snapshot,
+    required LivePlayQuality requestedQuality,
+  }) {
+    return snapshot.selectedQuality.id == requestedQuality.id &&
+        snapshot.selectedQuality.label == requestedQuality.label;
+  }
+
+  void _scheduleAncillaryLoad({
+    required LoadedRoomSnapshot snapshot,
+    required List<String> blockedKeywords,
+  }) {
+    final token = ++_ancillaryLoadToken;
+    _updateViewState(() {
+      _ancillaryLoading = true;
+    });
+    unawaited(
+      _loadAncillaryRoomState(
+        token: token,
+        snapshot: snapshot,
+        blockedKeywords: blockedKeywords,
+      ),
+    );
+  }
+
+  Future<void> _loadAncillaryRoomState({
+    required int token,
+    required LoadedRoomSnapshot snapshot,
+    required List<String> blockedKeywords,
+  }) async {
+    final startedAt = DateTime.now();
+    _roomTrace('ancillary start room=${snapshot.detail.roomId}');
+    final danmakuFuture = widget.bootstrap.openRoomDanmaku(
+      providerId: widget.providerId,
+      detail: snapshot.detail,
+    );
+    final followFuture = widget.bootstrap.isFollowedRoom(
+      providerId: widget.providerId.value,
+      roomId: snapshot.detail.roomId,
+    );
+
+    DanmakuSession? danmakuSession;
+    try {
+      danmakuSession = await danmakuFuture;
+      if (!mounted || token != _ancillaryLoadToken) {
+        await danmakuSession?.disconnect();
+        return;
+      }
+      await _bindDanmakuSession(danmakuSession, blockedKeywords);
+      if (!mounted || token != _ancillaryLoadToken) {
+        await _disposeDanmakuSession();
+        return;
+      }
+    } catch (error) {
+      _roomTrace(
+        'ancillary danmaku failed after '
+        '${DateTime.now().difference(startedAt).inMilliseconds}ms: $error',
       );
+    }
+
+    var isFollowed = _isFollowed;
+    try {
+      isFollowed = await followFuture;
+    } catch (error) {
+      _roomTrace(
+        'ancillary follow failed after '
+        '${DateTime.now().difference(startedAt).inMilliseconds}ms: $error',
+      );
+    }
+
+    if (!mounted || token != _ancillaryLoadToken) {
+      return;
+    }
+    _updateViewState(() {
+      _isFollowed = isFollowed;
+      _ancillaryLoading = false;
+    });
+    _roomTrace(
+      'ancillary complete in ${DateTime.now().difference(startedAt).inMilliseconds}ms '
+      'danmaku=${danmakuSession != null} followed=$isFollowed',
+    );
+  }
 
   Future<void> _updateRoomUiPreferences(RoomUiPreferences preferences) async {
     setState(() {
@@ -260,18 +492,11 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       _chatTextGap = preferences.chatTextGap;
       _chatBubbleStyle = preferences.chatBubbleStyle;
       _showPlayerSuperChat = preferences.showPlayerSuperChat;
+      _playerSuperChatDisplaySeconds =
+          preferences.playerSuperChatDisplaySeconds;
     });
     await widget.bootstrap.updateRoomUiPreferences(preferences);
-  }
-
-  void _handleFollowWatchlistSnapshotChanged() {
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _followWatchlistCache = _runtimeFollowWatchlistSnapshot;
-      _followWatchlistHydrated = _runtimeFollowWatchlistSnapshot != null;
-    });
+    _syncPlayerSuperChatOverlay();
   }
 
   Future<void> _ensureFollowWatchlistLoaded({bool force = false}) async {
@@ -311,46 +536,6 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     }
   }
 
-  void _selectPanel(_RoomPanel panel) {
-    if (_selectedPanel == panel) {
-      return;
-    }
-    setState(() {
-      _selectedPanel = panel;
-    });
-    if (_panelPageController.hasClients) {
-      unawaited(
-        _panelPageController.animateToPage(
-          panel.index,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-        ),
-      );
-    }
-    if (panel == _RoomPanel.chat) {
-      _scheduleChatScrollToBottom(force: true);
-    }
-    if (panel == _RoomPanel.follow) {
-      unawaited(_ensureFollowWatchlistLoaded());
-    }
-  }
-
-  void _handlePanelPageChanged(int index) {
-    final nextPanel = _RoomPanel.values[index];
-    if (_selectedPanel == nextPanel || !mounted) {
-      return;
-    }
-    setState(() {
-      _selectedPanel = nextPanel;
-    });
-    if (nextPanel == _RoomPanel.chat) {
-      _scheduleChatScrollToBottom(force: true);
-    }
-    if (nextPanel == _RoomPanel.follow) {
-      unawaited(_ensureFollowWatchlistLoaded());
-    }
-  }
-
   Future<void> _refreshRoom({
     bool showFeedback = false,
     bool reloadPlayer = false,
@@ -365,8 +550,10 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     setState(() {
       _future = future;
     });
+    _resetDanmakuReconnectState();
     _messagesNotifier.value = const [];
     _superChatMessagesNotifier.value = const [];
+    _playerSuperChatMessagesNotifier.value = const [];
     try {
       await future;
       if (!mounted || !showFeedback) {
@@ -413,47 +600,66 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       preferHighestQuality: preferences.preferHighestQuality,
       recordHistory: false,
     );
-    final quality = preferredQualityId == null
+    final requestedQuality = preferredQualityId == null
         ? snapshot.selectedQuality
         : snapshot.qualities.firstWhere(
             (item) => item.id == preferredQualityId,
             orElse: () => snapshot.selectedQuality,
           );
-    final player = widget.bootstrap.player;
-    ResolvedPlaySource? resolved;
-    if (snapshot.hasPlayback) {
-      resolved = await widget.bootstrap.resolvePlaySource(
-        providerId: widget.providerId,
-        detail: snapshot.detail,
-        quality: quality,
-        preferHttps: preferences.forceHttpsEnabled,
-      );
-      await player.setSource(resolved.playbackSource);
-      if (preferences.autoPlayEnabled) {
-        await player.play();
-      }
-    } else {
-      await player.stop();
-    }
-
-    final danmakuSession = await widget.bootstrap.openRoomDanmaku(
-      providerId: widget.providerId,
-      detail: snapshot.detail,
+    final startupRequestedQuality = resolveRoomStartupRequestedQuality(
+      providerId: snapshot.providerId,
+      qualities: snapshot.qualities,
+      requestedQuality: requestedQuality,
+      targetPlatform: defaultTargetPlatform,
+      explicitSelection: preferredQualityId != null,
+      isWeb: kIsWeb,
     );
-    await _bindDanmakuSession(danmakuSession, blockedKeywords);
+    final startupPlan = _resolveTwitchStartupPlan(
+      snapshot: snapshot,
+      requestedQuality: startupRequestedQuality,
+    );
+    final playbackQuality = startupPlan.startupQuality;
+    _applyTwitchStartupPlan(startupPlan);
+    final resolved = await _resolveRoomPlayback(
+      snapshot: snapshot,
+      quality: playbackQuality,
+      preferHttps: preferences.forceHttpsEnabled,
+    );
 
-    _selectedQuality = quality;
-    _effectiveQuality = resolved?.effectiveQuality ?? quality;
+    _activeRoomDetail = snapshot.detail;
+    _blockedDanmakuKeywords = blockedKeywords;
+    _selectedQuality = playbackQuality;
+    _effectiveQuality = resolved?.effectiveQuality ?? playbackQuality;
     _playbackSource = resolved?.playbackSource;
     _playUrls = resolved?.playUrls ?? snapshot.playUrls;
-    _isFollowed = await widget.bootstrap.isFollowedRoom(
-      providerId: widget.providerId.value,
-      roomId: snapshot.detail.roomId,
+    _scheduleAncillaryLoad(
+      snapshot: snapshot,
+      blockedKeywords: blockedKeywords,
     );
     return _RoomPageState(
       snapshot: snapshot,
       resolved: resolved,
       preferences: preferences,
+    );
+  }
+
+  void _applyTwitchStartupPlan(TwitchStartupPlan plan) {
+    _twitchStartupPromotionQuality = plan.promotionQuality;
+    _twitchRecoveryToken += 1;
+    _twitchRecoverySourceKey = null;
+    _twitchRecoveryAttempts = 0;
+  }
+
+  TwitchStartupPlan _resolveTwitchStartupPlan({
+    required LoadedRoomSnapshot snapshot,
+    required LivePlayQuality requestedQuality,
+  }) {
+    if (snapshot.providerId != ProviderId.twitch) {
+      return TwitchStartupPlan(startupQuality: requestedQuality);
+    }
+    return resolveTwitchStartupPlan(
+      qualities: snapshot.qualities,
+      requestedQuality: requestedQuality,
     );
   }
 
@@ -562,16 +768,6 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     });
   }
 
-  BoxFit _fitForScaleMode() {
-    return switch (_scaleMode) {
-      PlayerScaleMode.contain => BoxFit.contain,
-      PlayerScaleMode.cover => BoxFit.cover,
-      PlayerScaleMode.fill => BoxFit.fill,
-      PlayerScaleMode.fitWidth => BoxFit.fitWidth,
-      PlayerScaleMode.fitHeight => BoxFit.fitHeight,
-    };
-  }
-
   void _maybeApplyAutoFullscreen(
     PlayerState? playerState, {
     required bool playbackAvailable,
@@ -602,9 +798,11 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   Widget build(BuildContext context) {
     final descriptor =
         widget.bootstrap.providerRegistry.findDescriptor(widget.providerId);
+    final fullscreenSessionActive =
+        _isFullscreen || _fullscreenBootstrapPending;
 
     final page = PopScope(
-      canPop: _isLeavingRoom && !_isFullscreen,
+      canPop: _isLeavingRoom && !fullscreenSessionActive,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) {
           return;
@@ -613,12 +811,16 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
           await _exitFullscreen();
           return;
         }
+        if (_fullscreenBootstrapPending) {
+          _cancelPendingFullscreenBootstrap(scheduleInlineChrome: true);
+          return;
+        }
         if (!_isLeavingRoom) {
           await _leaveRoom();
         }
       },
       child: Scaffold(
-        appBar: _isFullscreen
+        appBar: fullscreenSessionActive
             ? null
             : AppBar(
                 leading: IconButton(
@@ -631,7 +833,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                   future: _future,
                   builder: (context, snapshot) {
                     return Text(
-                      snapshot.data?.snapshot.detail.title ?? '直播间',
+                      snapshot.data?.snapshot.detail.title ??
+                          _activeRoomDetail?.title ??
+                          '${descriptor?.displayName ?? widget.providerId.value} · ${widget.roomId}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     );
@@ -650,6 +854,10 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
           future: _future,
           builder: (context, snapshot) {
             if (snapshot.hasError && !snapshot.hasData) {
+              _resolveFullscreenBootstrap(
+                roomLoaded: true,
+                playbackAvailable: false,
+              );
               final presentation = _describeRoomLoadError(snapshot.error);
               return _RoomErrorState(
                 title: presentation.$1,
@@ -660,7 +868,10 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
               );
             }
             if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator.adaptive());
+              return _buildLoadingRoomShell(
+                context: context,
+                descriptor: descriptor,
+              );
             }
 
             final state = snapshot.data!;
@@ -674,6 +885,22 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
             final playUrls =
                 _playUrls.isEmpty ? state.snapshot.playUrls : _playUrls;
             final hasPlayback = playbackSource != null && playUrls.isNotEmpty;
+            _schedulePlaybackBootstrap(
+              playbackSource: playbackSource,
+              hasPlayback: hasPlayback,
+              autoPlay: state.preferences.autoPlayEnabled,
+            );
+            _scheduleTwitchPlaybackRecovery(
+              snapshot: state.snapshot,
+              playbackSource: playbackSource,
+              playUrls: playUrls,
+              qualities: state.snapshot.qualities,
+              selectedQuality: selectedQuality,
+            );
+            _resolveFullscreenBootstrap(
+              roomLoaded: snapshot.connectionState == ConnectionState.done,
+              playbackAvailable: hasPlayback,
+            );
             final availableBackends =
                 widget.bootstrap.player is SwitchablePlayer
                     ? (widget.bootstrap.player as SwitchablePlayer)
@@ -699,6 +926,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                       context: context,
                       state: state,
                       room: room,
+                      fullscreenActive: fullscreenSessionActive,
                       descriptor: descriptor,
                       selectedQuality: selectedQuality,
                       effectiveQuality: effectiveQuality,
@@ -740,7 +968,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                           ),
                         ),
                       ),
-                    if (_isFullscreen && hasPlayback)
+                    if (fullscreenSessionActive && hasPlayback)
                       Positioned.fill(
                         child: _buildFullscreenOverlay(
                           context: context,
@@ -772,33 +1000,4 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       childWhenEnabled: _buildPictureInPictureChild(),
     );
   }
-}
-
-enum _RoomPanel {
-  chat,
-  superChat,
-  follow,
-  settings,
-}
-
-class _RoomPageState {
-  const _RoomPageState({
-    required this.snapshot,
-    required this.resolved,
-    required this.preferences,
-  });
-
-  final LoadedRoomSnapshot snapshot;
-  final ResolvedPlaySource? resolved;
-  final PlayerPreferences preferences;
-}
-
-class _ChaturbateRoomStatusPresentation {
-  const _ChaturbateRoomStatusPresentation({
-    required this.label,
-    required this.description,
-  });
-
-  final String label;
-  final String description;
 }

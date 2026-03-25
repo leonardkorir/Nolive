@@ -83,31 +83,27 @@ class _ProviderLogoFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final accent = ProviderBadge.accentColorOf(descriptor.id);
-    final monogram = ProviderBadge.monogramOf(descriptor.id);
     return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: theme.brightness == Brightness.dark
+        color: Theme.of(context).brightness == Brightness.dark
             ? accent.withValues(alpha: 0.18)
             : accent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(7),
         border: Border.all(
           color: accent.withValues(
-              alpha: theme.brightness == Brightness.dark ? 0.34 : 0.22),
+              alpha: Theme.of(context).brightness == Brightness.dark
+                  ? 0.34
+                  : 0.22),
         ),
       ),
-      child: Text(
-        monogram,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: accent,
-          fontWeight: FontWeight.w700,
-          fontSize: monogram.length > 1 ? 9.5 : 11,
-          height: 1,
-        ),
+      child: Icon(
+        ProviderBadge.iconOf(descriptor.id),
+        size: size * 0.62,
+        color: accent,
       ),
     );
   }

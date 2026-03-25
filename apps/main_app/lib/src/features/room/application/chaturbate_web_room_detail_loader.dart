@@ -23,6 +23,9 @@ class ChaturbateWebRoomDetailLoader {
         _realtimeBootstrapGracePeriod = realtimeBootstrapGracePeriod;
 
   static const String homeUrl = 'https://chaturbate.com/';
+  static const String embeddedBrowserUserAgent =
+      'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36';
 
   final LoadProviderAccountSettingsUseCase? _loadProviderAccountSettings;
   final CookieManager _cookieManager;
@@ -58,11 +61,24 @@ class ChaturbateWebRoomDetailLoader {
         url: WebUri(_buildRoomUrl(normalizedRoomId)),
       ),
       initialSettings: InAppWebViewSettings(
-        userAgent: ChaturbateProvider.browserUserAgent,
+        userAgent: embeddedBrowserUserAgent,
         mediaPlaybackRequiresUserGesture: false,
+        javaScriptCanOpenWindowsAutomatically: true,
+        supportMultipleWindows: true,
         thirdPartyCookiesEnabled: true,
         sharedCookiesEnabled: true,
         allowsInlineMediaPlayback: true,
+        supportZoom: true,
+        builtInZoomControls: true,
+        displayZoomControls: false,
+        useWideViewPort: true,
+        loadWithOverviewMode: true,
+        databaseEnabled: true,
+        domStorageEnabled: true,
+        cacheEnabled: true,
+        clearSessionCache: false,
+        mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+        useHybridComposition: true,
       ),
       onWebViewCreated: controllerCompleter.complete,
       onReceivedError: (controller, request, error) {

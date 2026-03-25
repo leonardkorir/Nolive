@@ -62,9 +62,9 @@ class LoadRoomUseCase {
       qualities = loadedQualities;
       selectedQuality = preferHighestQuality
           ? _selectHighestQuality(qualities)
-          : qualities.firstWhere(
-              (item) => item.isDefault,
-              orElse: () => qualities.first,
+          : _selectDefaultQuality(
+              providerId: providerId,
+              qualities: qualities,
             );
       urls = await playUrls.fetchPlayUrls(
         detail: detail,
@@ -131,6 +131,20 @@ class LoadRoomUseCase {
     final sorted = [...qualities]
       ..sort((a, b) => b.sortOrder.compareTo(a.sortOrder));
     return sorted.first;
+  }
+
+  LivePlayQuality _selectDefaultQuality({
+    required ProviderId providerId,
+    required List<LivePlayQuality> qualities,
+  }) {
+    final defaultQuality = qualities.firstWhere(
+      (item) => item.isDefault,
+      orElse: () => qualities.first,
+    );
+    if (providerId == ProviderId.twitch) {
+      return defaultQuality;
+    }
+    return defaultQuality;
   }
 
   String? _playbackUnavailableReason({

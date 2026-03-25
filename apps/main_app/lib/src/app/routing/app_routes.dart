@@ -30,10 +30,12 @@ class RoomRouteArguments {
   const RoomRouteArguments({
     required this.providerId,
     required this.roomId,
+    this.startInFullscreen = false,
   });
 
   final ProviderId providerId;
   final String roomId;
+  final bool startInFullscreen;
 }
 
 class ProviderCategoriesRouteArguments {

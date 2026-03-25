@@ -66,6 +66,8 @@ class ParseRoomInputUseCase {
       'douyu' => ProviderId.douyu,
       'huya' => ProviderId.huya,
       'douyin' => ProviderId.douyin,
+      'twitch' || 'ttv' => ProviderId.twitch,
+      'youtube' || 'yt' => ProviderId.youtube,
       _ => null,
     };
     if (provider == null || roomId.isEmpty) {
@@ -120,6 +122,56 @@ class ParseRoomInputUseCase {
         segments.isNotEmpty) {
       return (ProviderId.douyin, segments.last);
     }
+    if ((host == 'twitch.tv' ||
+            host == 'www.twitch.tv' ||
+            host == 'm.twitch.tv') &&
+        segments.isNotEmpty) {
+      if (segments.length >= 2 && segments.first == 'popout') {
+        final roomId = segments[1].trim();
+        if (roomId.isNotEmpty &&
+            !_reservedTwitchSegments.contains(roomId.toLowerCase())) {
+          return (ProviderId.twitch, roomId);
+        }
+      }
+      final roomId = segments.first.trim();
+      if (roomId.isNotEmpty &&
+          !_reservedTwitchSegments.contains(roomId.toLowerCase())) {
+        return (ProviderId.twitch, roomId);
+      }
+    }
+    if (host == 'youtu.be' && segments.isNotEmpty) {
+      return (ProviderId.youtube, segments.first);
+    }
+    if (host == 'youtube.com' ||
+        host == 'www.youtube.com' ||
+        host == 'm.youtube.com') {
+      final videoId = _firstNonEmpty([
+        uri.queryParameters['v'],
+        segments.length >= 2 && segments.first == 'live' ? segments[1] : null,
+      ]);
+      if (videoId != null) {
+        return (ProviderId.youtube, videoId);
+      }
+      if (segments.isNotEmpty) {
+        if (segments.first.startsWith('@')) {
+          return (
+            ProviderId.youtube,
+            segments.length >= 2 && segments[1] == 'live'
+                ? '${segments.first}/live'
+                : '${segments.first}/live',
+          );
+        }
+        if (segments.length >= 2 &&
+            _youtubeChannelRoots.contains(segments.first)) {
+          return (
+            ProviderId.youtube,
+            segments.length >= 3 && segments[2] == 'live'
+                ? '${segments[0]}/${segments[1]}/live'
+                : '${segments[0]}/${segments[1]}/live',
+          );
+        }
+      }
+    }
     return null;
   }
 
@@ -129,6 +181,32 @@ class ParseRoomInputUseCase {
     'discover',
     'statsapi',
     'tag',
+  };
+
+  static const Set<String> _reservedTwitchSegments = {
+    'directory',
+    'downloads',
+    'jobs',
+    'login',
+    'messages',
+    'p',
+    'payments',
+    'popout',
+    'products',
+    'search',
+    'settings',
+    'signup',
+    'store',
+    'subscriptions',
+    'turbo',
+    'videos',
+    'wallet',
+  };
+
+  static const Set<String> _youtubeChannelRoots = {
+    'channel',
+    'c',
+    'user',
   };
 
   String _normalizeRoomId(ProviderId providerId, String roomId) {
@@ -141,6 +219,9 @@ class ParseRoomInputUseCase {
         return 'yy/$trimmed';
       }
       return trimmed;
+    }
+    if (providerId == ProviderId.twitch) {
+      return trimmed.toLowerCase();
     }
     return trimmed;
   }

@@ -9,7 +9,15 @@ void main() {
 
     expect(
       ids,
-      containsAll({'bilibili', 'chaturbate', 'douyu', 'huya', 'douyin'}),
+      containsAll({
+        'bilibili',
+        'chaturbate',
+        'douyu',
+        'huya',
+        'douyin',
+        'twitch',
+        'youtube',
+      }),
     );
     expect(
         registry
@@ -34,11 +42,43 @@ void main() {
           ?.supports(ProviderCapability.danmaku),
       isTrue,
     );
+    expect(
+      registry
+          .findDescriptor(ProviderId.youtube)
+          ?.supports(ProviderCapability.categories),
+      isTrue,
+    );
+    expect(
+      registry
+          .findDescriptor(ProviderId.youtube)
+          ?.supports(ProviderCapability.recommendRooms),
+      isTrue,
+    );
+    expect(
+      registry
+          .findDescriptor(ProviderId.twitch)
+          ?.supports(ProviderCapability.categories),
+      isTrue,
+    );
+    expect(
+      registry
+          .findDescriptor(ProviderId.twitch)
+          ?.supports(ProviderCapability.recommendRooms),
+      isTrue,
+    );
+    expect(
+      registry
+          .findDescriptor(ProviderId.youtube)
+          ?.supports(ProviderCapability.danmaku),
+      isTrue,
+    );
     expect(registry.hasImplementation(ProviderId.bilibili), isTrue);
     expect(registry.hasImplementation(ProviderId.chaturbate), isTrue);
     expect(registry.hasImplementation(ProviderId.douyu), isTrue);
     expect(registry.hasImplementation(ProviderId.huya), isTrue);
     expect(registry.hasImplementation(ProviderId.douyin), isTrue);
+    expect(registry.hasImplementation(ProviderId.twitch), isTrue);
+    expect(registry.hasImplementation(ProviderId.youtube), isTrue);
   });
 
   test('registry creates chaturbate provider runtime', () {
@@ -79,6 +119,22 @@ void main() {
     final provider = registry.create(ProviderId.douyin);
 
     expect(provider, isA<DouyinProvider>());
+  });
+
+  test('registry creates twitch provider runtime', () {
+    final registry = ReferenceProviderCatalog.buildDefaultRegistry();
+
+    final provider = registry.create(ProviderId.twitch);
+
+    expect(provider, isA<TwitchProvider>());
+  });
+
+  test('registry creates youtube provider runtime', () {
+    final registry = ReferenceProviderCatalog.buildDefaultRegistry();
+
+    final provider = registry.create(ProviderId.youtube);
+
+    expect(provider, isA<YouTubeProvider>());
   });
 
   test('live registry creates chaturbate provider runtime', () {

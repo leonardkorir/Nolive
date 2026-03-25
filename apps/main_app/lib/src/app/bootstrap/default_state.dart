@@ -34,7 +34,7 @@ void seedDefaultAppState({
   settingsRepository.writeValue('danmaku_font_size', 16.0);
   settingsRepository.writeValue('danmaku_font_weight', 3);
   settingsRepository.writeValue('danmaku_area', 0.8);
-  settingsRepository.writeValue('danmaku_speed', 18.0);
+  settingsRepository.writeValue('danmaku_speed', 12.0);
   settingsRepository.writeValue('danmaku_opacity', 1.0);
   settingsRepository.writeValue('danmaku_stroke_width', 2.0);
   settingsRepository.writeValue('danmaku_line_height', 1.25);

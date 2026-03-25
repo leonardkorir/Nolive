@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:live_providers/live_providers.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 
 class ChaturbateWebLoginPage extends StatelessWidget {
@@ -13,8 +12,8 @@ class ChaturbateWebLoginPage extends StatelessWidget {
       config: _WebCookieLoginConfig(
         title: 'Chaturbate 网页登录',
         initialUrl: 'https://chaturbate.com/',
-        userAgent: ChaturbateProvider.browserUserAgent,
-        instructions: '完成登录或验证后，直接保存当前 Cookie。',
+        userAgent: _kEmbeddedAndroidBrowserUserAgent,
+        instructions: '完成 Cloudflare 验证或登录后直接保存 Cookie。',
         seedUrls: ['https://chaturbate.com/'],
         allowedHostSuffixes: ['chaturbate.com'],
         quickLinks: [
@@ -39,12 +38,13 @@ class DouyinWebLoginPage extends StatelessWidget {
         title: '抖音网页登录',
         initialUrl: 'https://live.douyin.com/',
         userAgent: _kDouyinBrowserUserAgent,
-        instructions: '完成登录后保存当前 Cookie。',
+        instructions: '如需右上角登录入口，可先缩小页面后再登录；浏览直播通常只需要游客 Cookie。',
         seedUrls: [
           'https://live.douyin.com/',
           'https://www.douyin.com/',
         ],
         allowedHostSuffixes: ['douyin.com'],
+        preferDesktopContent: true,
         quickLinks: [
           _WebCookieQuickLink(
             label: '直播页',
@@ -55,6 +55,40 @@ class DouyinWebLoginPage extends StatelessWidget {
             label: '抖音首页',
             url: 'https://www.douyin.com/',
             icon: Icons.home_outlined,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class TwitchWebLoginPage extends StatelessWidget {
+  const TwitchWebLoginPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _WebCookieLoginPage(
+      config: _WebCookieLoginConfig(
+        title: 'Twitch 网页登录',
+        initialUrl: 'https://www.twitch.tv/',
+        userAgent: _kEmbeddedAndroidBrowserUserAgent,
+        instructions: '如需补强 Twitch Web 辅助播放，可先完成网页登录后再保存 Cookie。',
+        seedUrls: [
+          'https://www.twitch.tv/',
+          'https://m.twitch.tv/',
+        ],
+        allowedHostSuffixes: ['twitch.tv'],
+        preferDesktopContent: true,
+        quickLinks: [
+          _WebCookieQuickLink(
+            label: 'Twitch 首页',
+            url: 'https://www.twitch.tv/',
+            icon: Icons.home_outlined,
+          ),
+          _WebCookieQuickLink(
+            label: '移动页',
+            url: 'https://m.twitch.tv/',
+            icon: Icons.smartphone_outlined,
           ),
         ],
       ),
@@ -166,6 +200,14 @@ class _WebCookieLoginPageState extends State<_WebCookieLoginPage> {
     );
   }
 
+  Future<void> _handleCreateWindow(CreateWindowAction action) async {
+    final targetUrl = action.request.url;
+    if (targetUrl == null) {
+      return;
+    }
+    _controller?.loadUrl(urlRequest: URLRequest(url: targetUrl));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -242,13 +284,33 @@ class _WebCookieLoginPageState extends State<_WebCookieLoginPage> {
                 isInspectable: kDebugMode,
                 userAgent: widget.config.userAgent,
                 useShouldOverrideUrlLoading: true,
+                javaScriptCanOpenWindowsAutomatically: true,
                 mediaPlaybackRequiresUserGesture: false,
+                supportMultipleWindows: true,
                 thirdPartyCookiesEnabled: true,
                 sharedCookiesEnabled: true,
                 allowsInlineMediaPlayback: true,
+                supportZoom: true,
+                builtInZoomControls: true,
+                displayZoomControls: false,
+                useWideViewPort: true,
+                loadWithOverviewMode: true,
+                databaseEnabled: true,
+                domStorageEnabled: true,
+                cacheEnabled: true,
+                clearSessionCache: false,
+                mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                useHybridComposition: true,
+                preferredContentMode: widget.config.preferDesktopContent
+                    ? UserPreferredContentMode.DESKTOP
+                    : UserPreferredContentMode.RECOMMENDED,
               ),
               onWebViewCreated: (controller) {
                 _controller = controller;
+              },
+              onCreateWindow: (controller, createWindowAction) async {
+                await _handleCreateWindow(createWindowAction);
+                return false;
               },
               onLoadStart: (controller, url) {
                 setState(() {
@@ -299,6 +361,7 @@ class _WebCookieLoginConfig {
     required this.seedUrls,
     required this.allowedHostSuffixes,
     required this.quickLinks,
+    this.preferDesktopContent = false,
   });
 
   final String title;
@@ -308,6 +371,7 @@ class _WebCookieLoginConfig {
   final List<String> seedUrls;
   final List<String> allowedHostSuffixes;
   final List<_WebCookieQuickLink> quickLinks;
+  final bool preferDesktopContent;
 }
 
 class _WebCookieQuickLink {
@@ -325,3 +389,7 @@ class _WebCookieQuickLink {
 const String _kDouyinBrowserUserAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0';
+
+const String _kEmbeddedAndroidBrowserUserAgent =
+    'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36';

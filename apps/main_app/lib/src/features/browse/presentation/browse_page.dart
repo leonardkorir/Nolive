@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/features/browse/application/load_provider_highlights_use_case.dart';
 import 'package:nolive_app/src/features/category/application/load_provider_categories_use_case.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/provider_tab_label.dart';
 
@@ -24,7 +26,12 @@ class BrowsePage extends StatelessWidget {
         final preferences = bootstrap.layoutPreferences.value;
         final providers = bootstrap
             .listAvailableProviders()
-            .where((item) => item.supports(ProviderCapability.categories))
+            .where(
+              (item) =>
+                  item.supports(ProviderCapability.categories) ||
+                  item.supports(ProviderCapability.searchRooms) ||
+                  item.supports(ProviderCapability.recommendRooms),
+            )
             .toList(growable: false)
           ..sort((a, b) => preferences
               .providerSortIndex(a.id.value)
@@ -58,10 +65,15 @@ class BrowsePage extends StatelessWidget {
             body: TabBarView(
               children: [
                 for (final descriptor in providers)
-                  _ProviderCategoriesTab(
-                    bootstrap: bootstrap,
-                    descriptor: descriptor,
-                  ),
+                  descriptor.supports(ProviderCapability.categories)
+                      ? _ProviderCategoriesTab(
+                          bootstrap: bootstrap,
+                          descriptor: descriptor,
+                        )
+                      : _ProviderDiscoveryTab(
+                          bootstrap: bootstrap,
+                          descriptor: descriptor,
+                        ),
               ],
             ),
           ),
@@ -98,6 +110,118 @@ class _ProviderTabs extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _ProviderDiscoveryTab extends StatefulWidget {
+  const _ProviderDiscoveryTab({
+    required this.bootstrap,
+    required this.descriptor,
+  });
+
+  final AppBootstrap bootstrap;
+  final ProviderDescriptor descriptor;
+
+  @override
+  State<_ProviderDiscoveryTab> createState() => _ProviderDiscoveryTabState();
+}
+
+class _ProviderDiscoveryTabState extends State<_ProviderDiscoveryTab>
+    with AutomaticKeepAliveClientMixin<_ProviderDiscoveryTab> {
+  late Future<List<ProviderHighlightSection>> _future;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<ProviderHighlightSection>> _load() {
+    return widget.bootstrap.loadProviderHighlights(
+      providerId: widget.descriptor.id,
+    );
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _future = _load();
+    });
+    await _future;
+  }
+
+  void _openRoom(LiveRoom room) {
+    Navigator.of(context).pushNamed(
+      AppRoutes.room,
+      arguments: RoomRouteArguments(
+        providerId: widget.descriptor.id,
+        roomId: room.roomId,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: FutureBuilder<List<ProviderHighlightSection>>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator.adaptive());
+          }
+          if (snapshot.hasError) {
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              children: [
+                EmptyStateCard(
+                  title: '发现内容加载失败',
+                  message: '${snapshot.error}',
+                  icon: Icons.travel_explore_rounded,
+                ),
+              ],
+            );
+          }
+          final sections = snapshot.data ?? const [];
+          if (sections.isEmpty) {
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              children: const [
+                EmptyStateCard(
+                  title: '暂无发现内容',
+                  message: '当前平台还没有可用的推荐或搜索结果。',
+                  icon: Icons.explore_off_rounded,
+                ),
+              ],
+            );
+          }
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 96),
+            children: [
+              _DiscoveryIntroCard(descriptor: widget.descriptor),
+              const SizedBox(height: 10),
+              for (var index = 0; index < sections.length; index++) ...[
+                _DiscoverySection(
+                  key: Key(
+                    'browse-discover-section-'
+                    '${widget.descriptor.id.value}-$index',
+                  ),
+                  section: sections[index],
+                  onOpenRoom: _openRoom,
+                ),
+                if (index != sections.length - 1) const SizedBox(height: 18),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -260,6 +384,111 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
           );
         },
       ),
+    );
+  }
+}
+
+class _DiscoveryIntroCard extends StatelessWidget {
+  const _DiscoveryIntroCard({
+    required this.descriptor,
+  });
+
+  final ProviderDescriptor descriptor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = Theme.of(context).colorScheme.primary;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.travel_explore_rounded, color: accent, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '${descriptor.displayName} 暂未接入原生分类页，当前发现流使用推荐房间和预设搜索结果组合生成。',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 11.6,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DiscoverySection extends StatelessWidget {
+  const _DiscoverySection({
+    required this.section,
+    required this.onOpenRoom,
+    super.key,
+  });
+
+  final ProviderHighlightSection section;
+  final ValueChanged<LiveRoom> onOpenRoom;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                section.query.isEmpty ? '平台推荐' : '搜索发现',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            if (section.query.isNotEmpty)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  section.query,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: buildLiveRoomGridDelegate(context),
+          itemCount: section.rooms.length,
+          itemBuilder: (context, index) {
+            final room = section.rooms[index];
+            return LiveRoomGridCard(
+              key: Key(
+                'browse-discover-room-'
+                '${section.descriptor.id.value}-${room.roomId}',
+              ),
+              room: room,
+              descriptor: section.descriptor,
+              onTap: () => onOpenRoom(room),
+            );
+          },
+        ),
+      ],
     );
   }
 }

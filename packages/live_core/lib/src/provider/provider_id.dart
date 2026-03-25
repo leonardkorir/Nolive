@@ -8,6 +8,8 @@ class ProviderId {
   static const douyu = ProviderId('douyu');
   static const huya = ProviderId('huya');
   static const douyin = ProviderId('douyin');
+  static const twitch = ProviderId('twitch');
+  static const youtube = ProviderId('youtube');
 
   static final knownValues = {
     bilibili,
@@ -15,6 +17,8 @@ class ProviderId {
     douyu,
     huya,
     douyin,
+    twitch,
+    youtube,
   };
 
   @override

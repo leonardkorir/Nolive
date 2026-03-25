@@ -62,8 +62,24 @@ class PlaybackSource {
   const PlaybackSource({
     required this.url,
     this.headers = const {},
+    this.externalAudio,
   });
 
   final Uri url;
   final Map<String, String> headers;
+  final PlaybackExternalMedia? externalAudio;
+}
+
+class PlaybackExternalMedia {
+  const PlaybackExternalMedia({
+    required this.url,
+    this.headers = const {},
+    this.label,
+    this.mimeType,
+  });
+
+  final Uri url;
+  final Map<String, String> headers;
+  final String? label;
+  final String? mimeType;
 }

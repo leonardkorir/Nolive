@@ -6,6 +6,7 @@ class RoomUiPreferences {
     required this.chatTextGap,
     required this.chatBubbleStyle,
     required this.showPlayerSuperChat,
+    required this.playerSuperChatDisplaySeconds,
   });
 
   static const RoomUiPreferences defaults = RoomUiPreferences(
@@ -13,24 +14,29 @@ class RoomUiPreferences {
     chatTextGap: 4,
     chatBubbleStyle: false,
     showPlayerSuperChat: true,
+    playerSuperChatDisplaySeconds: 8,
   );
 
   final double chatTextSize;
   final double chatTextGap;
   final bool chatBubbleStyle;
   final bool showPlayerSuperChat;
+  final int playerSuperChatDisplaySeconds;
 
   RoomUiPreferences copyWith({
     double? chatTextSize,
     double? chatTextGap,
     bool? chatBubbleStyle,
     bool? showPlayerSuperChat,
+    int? playerSuperChatDisplaySeconds,
   }) {
     return RoomUiPreferences(
       chatTextSize: chatTextSize ?? this.chatTextSize,
       chatTextGap: chatTextGap ?? this.chatTextGap,
       chatBubbleStyle: chatBubbleStyle ?? this.chatBubbleStyle,
       showPlayerSuperChat: showPlayerSuperChat ?? this.showPlayerSuperChat,
+      playerSuperChatDisplaySeconds:
+          playerSuperChatDisplaySeconds ?? this.playerSuperChatDisplaySeconds,
     );
   }
 }
@@ -61,6 +67,13 @@ class LoadRoomUiPreferencesUseCase {
       showPlayerSuperChat: await settingsRepository
               .readValue<bool>('room_show_player_super_chat') ??
           defaults.showPlayerSuperChat,
+      playerSuperChatDisplaySeconds: _clampInt(
+        await settingsRepository
+            .readValue<int>('room_player_super_chat_display_seconds'),
+        min: 3,
+        max: 30,
+        fallback: defaults.playerSuperChatDisplaySeconds,
+      ),
     );
   }
 
@@ -71,6 +84,15 @@ class LoadRoomUiPreferencesUseCase {
     required double fallback,
   }) {
     return (value ?? fallback).clamp(min, max).toDouble();
+  }
+
+  int _clampInt(
+    int? value, {
+    required int min,
+    required int max,
+    required int fallback,
+  }) {
+    return (value ?? fallback).clamp(min, max).toInt();
   }
 }
 
@@ -95,6 +117,10 @@ class UpdateRoomUiPreferencesUseCase {
     await settingsRepository.writeValue(
       'room_show_player_super_chat',
       preferences.showPlayerSuperChat,
+    );
+    await settingsRepository.writeValue(
+      'room_player_super_chat_display_seconds',
+      preferences.playerSuperChatDisplaySeconds.clamp(3, 30),
     );
   }
 }

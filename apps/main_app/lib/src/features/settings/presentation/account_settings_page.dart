@@ -53,6 +53,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             ProviderAccountKind.bilibili => '确定要清除哔哩哔哩账号信息吗？',
             ProviderAccountKind.chaturbate => '确定要清除 Chaturbate Cookie 吗？',
             ProviderAccountKind.douyin => '确定要清除抖音账号 Cookie 吗？',
+            ProviderAccountKind.twitch => '确定要清除 Twitch Cookie 吗？',
           },
         ),
         actions: [
@@ -167,6 +168,42 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     }
     await widget.bootstrap.updateProviderAccountSettings(
       dashboard.settings.copyWith(douyinCookie: result.trim()),
+    );
+    if (!mounted) {
+      return;
+    }
+    await _reload();
+  }
+
+  Future<void> _editTwitchCookie(ProviderAccountDashboard dashboard) async {
+    final result = await _showCookieEditor(
+      title: 'Twitch Cookie',
+      subtitle: '可粘贴网页登录保存的完整 Cookie；建议保留 `unique_id` 与登录态 Cookie。',
+      initialCookie: dashboard.settings.twitchCookie,
+    );
+    if (result == null) {
+      return;
+    }
+    await widget.bootstrap.updateProviderAccountSettings(
+      dashboard.settings.copyWith(twitchCookie: result.cookie),
+    );
+    if (!mounted) {
+      return;
+    }
+    await _reload();
+  }
+
+  Future<void> _openTwitchWebLogin(ProviderAccountDashboard dashboard) async {
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => const TwitchWebLoginPage(),
+      ),
+    );
+    if (result == null || result.trim().isEmpty) {
+      return;
+    }
+    await widget.bootstrap.updateProviderAccountSettings(
+      dashboard.settings.copyWith(twitchCookie: result.trim()),
     );
     if (!mounted) {
       return;
@@ -455,6 +492,43 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                           onPressed: _reload,
                           icon: const Icon(Icons.verified_outlined),
                           label: const Text('校验状态'),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 32),
+                    _ProviderAccountListItem(
+                      providerId: dashboard.twitch.providerId,
+                      title: dashboard.twitch.providerName,
+                      status: _statusMeta(
+                        dashboard.twitch.health,
+                        scheme,
+                      ),
+                      credentialSummary: dashboard.twitch.credentialSummary,
+                      identitySummary: dashboard.twitch.identitySummary,
+                      errorMessage: dashboard.twitch.errorMessage,
+                      actions: [
+                        if (_supportsEmbeddedWebLogin)
+                          FilledButton.tonalIcon(
+                            onPressed: () => _openTwitchWebLogin(dashboard),
+                            icon: const Icon(Icons.language_outlined),
+                            label: const Text('网页登录'),
+                          ),
+                        OutlinedButton.icon(
+                          onPressed: () => _editTwitchCookie(dashboard),
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('编辑 Cookie'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: dashboard.twitch.isConfigured
+                              ? () => _clearAccount(ProviderAccountKind.twitch)
+                              : null,
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('清除 Cookie'),
+                        ),
+                        TextButton.icon(
+                          onPressed: _reload,
+                          icon: const Icon(Icons.verified_outlined),
+                          label: const Text('刷新状态'),
                         ),
                       ],
                     ),

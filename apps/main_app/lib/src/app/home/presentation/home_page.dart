@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
@@ -119,6 +121,7 @@ class _ProviderTabs extends StatelessWidget {
         tabs: [
           for (final descriptor in providers)
             Tab(
+              key: Key('home-provider-tab-${descriptor.id.value}'),
               height: 34,
               child: ProviderTabLabel(
                 descriptor: descriptor,
@@ -212,6 +215,7 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
         _hasMore = response.hasMore;
         _loadingInitial = false;
       });
+      _scheduleAutoLoadMoreIfNeeded();
     } catch (error) {
       if (!mounted) {
         return;
@@ -244,6 +248,7 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
         _hasMore = response.hasMore;
         _loadingMore = false;
       });
+      _scheduleAutoLoadMoreIfNeeded();
     } catch (error) {
       if (!mounted) {
         return;
@@ -253,6 +258,23 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
         _loadingMore = false;
       });
     }
+  }
+
+  void _scheduleAutoLoadMoreIfNeeded() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _loadingInitial || _loadingMore || !_hasMore) {
+        return;
+      }
+      if (!_scrollController.hasClients) {
+        unawaited(_loadMore());
+        return;
+      }
+      final position = _scrollController.position;
+      if (position.maxScrollExtent <= 0 ||
+          position.pixels >= position.maxScrollExtent - 360) {
+        unawaited(_loadMore());
+      }
+    });
   }
 
   Future<PagedResponse<LiveRoom>> _loadRecommendPage({required int page}) {
@@ -387,10 +409,16 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
                           child: CircularProgressIndicator.adaptive(),
                         )
                       : _hasMore
-                          ? FilledButton.tonalIcon(
-                              onPressed: _loadMore,
-                              icon: const Icon(Icons.expand_more),
-                              label: const Text('加载更多'),
+                          ? Text(
+                              '继续滑动自动加载更多',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
                             )
                           : Text(
                               '已经到底了',

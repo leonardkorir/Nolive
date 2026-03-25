@@ -7,6 +7,9 @@ import 'package:live_providers/src/danmaku/douyu_danmaku_session.dart';
 import 'package:live_providers/src/danmaku/huya_danmaku_session.dart';
 import 'package:live_providers/src/danmaku/provider_ticker_danmaku_session.dart';
 import 'package:live_providers/src/danmaku/provider_unavailable_danmaku_session.dart';
+import 'package:live_providers/src/danmaku/twitch_danmaku_session.dart';
+import 'package:live_providers/src/danmaku/youtube_danmaku_session.dart';
+import 'package:live_providers/src/providers/youtube/youtube_api_client.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -152,4 +155,102 @@ void main() {
 
     expect(session, isA<DouyinDanmakuSession>());
   });
+
+  test('twitch preview detail keeps deterministic ticker danmaku', () async {
+    final provider = TwitchProvider.preview();
+    final detail = await provider.fetchRoomDetail('xqc');
+
+    final session = await provider.createDanmakuSession(detail);
+
+    expect(session, isA<ProviderTickerDanmakuSession>());
+  });
+
+  test('twitch live-like detail uses real twitch danmaku session', () async {
+    final provider = TwitchProvider.preview();
+    final detail = LiveRoomDetail(
+      providerId: ProviderId.twitch.value,
+      roomId: 'xqc',
+      title: 'test',
+      streamerName: 'tester',
+      danmakuToken: {
+        'roomId': 'xqc',
+      },
+    );
+
+    final session = await provider.createDanmakuSession(detail);
+
+    expect(session, isA<TwitchDanmakuSession>());
+  });
+
+  test('youtube preview detail keeps deterministic ticker danmaku', () async {
+    final provider = YouTubeProvider.preview();
+    final detail = await provider.fetchRoomDetail('@ChinaStreetObserver/live');
+
+    final session = await provider.createDanmakuSession(detail);
+
+    expect(session, isA<ProviderTickerDanmakuSession>());
+  });
+
+  test('youtube live-like detail uses real youtube danmaku session', () async {
+    final provider = YouTubeProvider.live(apiClient: _NoopYouTubeApiClient());
+    final detail = LiveRoomDetail(
+      providerId: ProviderId.youtube.value,
+      roomId: '@demo/live',
+      title: 'test',
+      streamerName: 'tester',
+      danmakuToken: {
+        'apiKey': 'AIzaTest',
+        'clientVersion': YouTubeApiClient.defaultWebClientVersion,
+        'continuation': 'test-continuation',
+        'liveChatPageUrl': 'https://www.youtube.com/live_chat?continuation=1',
+        'visitorData': 'visitor-data',
+      },
+    );
+
+    final session = await provider.createDanmakuSession(detail);
+
+    expect(session, isA<YouTubeDanmakuSession>());
+  });
+}
+
+class _NoopYouTubeApiClient implements YouTubeApiClient {
+  @override
+  Future<String> fetchText(
+    String url, {
+    Map<String, String> headers = const {},
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<int> probeStatus(
+    String url, {
+    Map<String, String> headers = const {},
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, dynamic>> postLiveChat({
+    required String apiKey,
+    required String continuation,
+    required String visitorData,
+    required String referer,
+    String clientVersion = YouTubeApiClient.defaultWebClientVersion,
+  }) async {
+    return const {};
+  }
+
+  @override
+  Future<Map<String, dynamic>> postPlayer({
+    required String apiKey,
+    required String videoId,
+    required String originalUrl,
+    Map<String, dynamic> innertubeContext = const {},
+    String rolloutToken = '',
+    String poToken = '',
+    YouTubePlayerClientProfile clientProfile = YouTubePlayerClientProfile.web,
+  }) async {
+    throw UnimplementedError();
+  }
 }

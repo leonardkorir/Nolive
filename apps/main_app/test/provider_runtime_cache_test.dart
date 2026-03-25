@@ -35,6 +35,7 @@ void main() {
         bilibiliUserId: 0,
         chaturbateCookie: '',
         douyinCookie: 'fresh-cookie',
+        twitchCookie: '',
       ),
     );
     final second = registry.create(ProviderId.douyin);

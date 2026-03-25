@@ -2,6 +2,12 @@ part of 'room_preview_page.dart';
 
 extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
   Future<void> _toggleFollow(LoadedRoomSnapshot snapshot) async {
+    if (_isFollowed) {
+      final confirmed = await _confirmUnfollow(snapshot);
+      if (confirmed != true || !mounted) {
+        return;
+      }
+    }
     final followed = await widget.bootstrap.toggleFollowRoom(
       providerId: snapshot.providerId.value,
       roomId: snapshot.detail.roomId,
@@ -70,6 +76,39 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
     }
   }
 
+  Future<bool?> _confirmUnfollow(LoadedRoomSnapshot snapshot) {
+    final displayName = _displayFollowTarget(snapshot);
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('取消关注'),
+        content: Text('确认取消关注“$displayName”吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('保留关注'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('确认取消'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _displayFollowTarget(LoadedRoomSnapshot snapshot) {
+    final streamerName = snapshot.detail.streamerName.trim();
+    if (streamerName.isNotEmpty) {
+      return streamerName;
+    }
+    final title = snapshot.detail.title.trim();
+    if (title.isNotEmpty) {
+      return title;
+    }
+    return snapshot.detail.roomId;
+  }
+
   Future<FollowRecord?> _findFollowRecord({
     required String providerId,
     required String roomId,
@@ -91,13 +130,73 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
       );
       return;
     }
+    final preserveFullscreen = _isFullscreen || _fullscreenBootstrapPending;
+    _preserveRoomTransitionOnDispose = preserveFullscreen;
+    _hideFullscreenFollowDrawer();
     Navigator.of(context).pushReplacementNamed(
       AppRoutes.room,
       arguments: RoomRouteArguments(
         providerId: ProviderId(entry.record.providerId),
         roomId: entry.roomId,
+        startInFullscreen: preserveFullscreen,
       ),
     );
+  }
+
+  List<FollowWatchEntry> _resolveLiveFollowEntries(FollowWatchlist watchlist) {
+    return watchlist.entries
+        .where((entry) => entry.isLive)
+        .toList(growable: false)
+      ..sort((left, right) {
+        final leftCurrent = left.record.providerId == widget.providerId.value &&
+            left.roomId == widget.roomId;
+        final rightCurrent =
+            right.record.providerId == widget.providerId.value &&
+                right.roomId == widget.roomId;
+        if (leftCurrent != rightCurrent) {
+          return leftCurrent ? -1 : 1;
+        }
+        final liveCompare =
+            (right.isLive ? 1 : 0).compareTo(left.isLive ? 1 : 0);
+        if (liveCompare != 0) {
+          return liveCompare;
+        }
+        return left.displayStreamerName.compareTo(right.displayStreamerName);
+      });
+  }
+
+  ProviderDescriptor _providerDescriptorForFollowEntry(FollowWatchEntry entry) {
+    return widget.bootstrap.providerRegistry.findDescriptorById(
+          entry.record.providerId,
+        ) ??
+        ProviderDescriptor(
+          id: ProviderId(entry.record.providerId),
+          displayName: entry.record.providerId,
+          capabilities: const {},
+          supportedPlatforms: const {ProviderPlatform.android},
+          maturity: ProviderMaturity.inMigration,
+        );
+  }
+
+  void _openFullscreenFollowDrawer() {
+    if (_showFullscreenFollowDrawer) {
+      return;
+    }
+    _fullscreenChromeTimer?.cancel();
+    _updateViewState(() {
+      _showFullscreenChrome = false;
+      _showFullscreenFollowDrawer = true;
+    });
+    unawaited(_ensureFollowWatchlistLoaded());
+  }
+
+  void _hideFullscreenFollowDrawer() {
+    if (!_showFullscreenFollowDrawer) {
+      return;
+    }
+    _updateViewState(() {
+      _showFullscreenFollowDrawer = false;
+    });
   }
 
   (String, String) _describeRoomLoadError(Object? error) {
@@ -183,27 +282,7 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
 
         final resolvedWatchlist =
             watchlist ?? const FollowWatchlist(entries: []);
-        final entries = resolvedWatchlist.entries
-            .where((entry) => entry.isLive)
-            .toList(growable: false)
-          ..sort((left, right) {
-            final leftCurrent =
-                left.record.providerId == widget.providerId.value &&
-                    left.roomId == widget.roomId;
-            final rightCurrent =
-                right.record.providerId == widget.providerId.value &&
-                    right.roomId == widget.roomId;
-            if (leftCurrent != rightCurrent) {
-              return leftCurrent ? -1 : 1;
-            }
-            final liveCompare =
-                (right.isLive ? 1 : 0).compareTo(left.isLive ? 1 : 0);
-            if (liveCompare != 0) {
-              return liveCompare;
-            }
-            return left.displayStreamerName
-                .compareTo(right.displayStreamerName);
-          });
+        final entries = _resolveLiveFollowEntries(resolvedWatchlist);
 
         if (entries.isEmpty) {
           final emptyMessage = watchlist == null
@@ -270,16 +349,8 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
                     'room-follow-entry-${entries[index].record.providerId}-${entries[index].roomId}',
                   ),
                   entry: entries[index],
-                  providerDescriptor: widget.bootstrap.providerRegistry
-                          .findDescriptorById(
-                              entries[index].record.providerId) ??
-                      ProviderDescriptor(
-                        id: ProviderId(entries[index].record.providerId),
-                        displayName: entries[index].record.providerId,
-                        capabilities: const {},
-                        supportedPlatforms: const {ProviderPlatform.android},
-                        maturity: ProviderMaturity.inMigration,
-                      ),
+                  providerDescriptor:
+                      _providerDescriptorForFollowEntry(entries[index]),
                   isPlaying: entries[index].record.providerId ==
                           widget.providerId.value &&
                       entries[index].roomId == widget.roomId,
@@ -427,6 +498,129 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFullscreenFollowDrawer(BuildContext context) {
+    final theme = Theme.of(context);
+    final drawerWidth =
+        math.min(MediaQuery.sizeOf(context).width * 0.54, 388.0).toDouble();
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      top: MediaQuery.paddingOf(context).top + 12,
+      bottom: MediaQuery.paddingOf(context).bottom + 12,
+      right: _showFullscreenFollowDrawer ? 12 : -(drawerWidth + 24),
+      child: IgnorePointer(
+        ignoring: !_showFullscreenFollowDrawer,
+        child: SizedBox(
+          width: drawerWidth,
+          child: DecoratedBox(
+            key: const Key('room-fullscreen-follow-drawer'),
+            decoration: BoxDecoration(
+              color: const Color(0xED11161D),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0x33FFFFFF)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.32),
+                  blurRadius: 24,
+                  offset: const Offset(-8, 12),
+                ),
+              ],
+            ),
+            child: FutureBuilder<FollowWatchlist>(
+              future: _followWatchlistFuture,
+              initialData: _followWatchlistCache,
+              builder: (context, snapshot) {
+                final watchlist = snapshot.data;
+                final entries = _resolveLiveFollowEntries(
+                  watchlist ?? const FollowWatchlist(entries: []),
+                );
+                final isLoading =
+                    snapshot.connectionState == ConnectionState.waiting;
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '关注中正在直播',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: const Color(0xFFF8FAFC),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            key: const Key(
+                              'room-fullscreen-follow-close-button',
+                            ),
+                            onPressed: _hideFullscreenFollowDrawer,
+                            color: Colors.white,
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        isLoading
+                            ? '正在同步关注页开播结果…'
+                            : entries.isEmpty
+                                ? '当前没有正在直播的关注房间'
+                                : '${entries.length} 个房间可直接切换',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: const Color(0xCCD5DAE1),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: entries.isEmpty
+                            ? Center(
+                                child: Text(
+                                  '长按右侧时会显示这里。\n等关注页同步到开播结果后，就能直接切房。',
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: const Color(0xCCD5DAE1),
+                                    height: 1.45,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: entries.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 6),
+                                itemBuilder: (context, index) {
+                                  final entry = entries[index];
+                                  return FollowWatchRow(
+                                    key: Key(
+                                      'room-fullscreen-follow-entry-${entry.record.providerId}-${entry.roomId}',
+                                    ),
+                                    entry: entry,
+                                    providerDescriptor:
+                                        _providerDescriptorForFollowEntry(
+                                            entry),
+                                    isPlaying: entry.record.providerId ==
+                                            widget.providerId.value &&
+                                        entry.roomId == widget.roomId,
+                                    highContrastOverlay: true,
+                                    showSurface: false,
+                                    showChevron: true,
+                                    onTap: () => _openFollowRoom(entry),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ),

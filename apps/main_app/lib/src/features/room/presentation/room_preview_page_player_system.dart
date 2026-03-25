@@ -1,6 +1,369 @@
 part of 'room_preview_page.dart';
 
 extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
+  void _schedulePlaybackBootstrap({
+    required PlaybackSource? playbackSource,
+    required bool hasPlayback,
+    required bool autoPlay,
+  }) {
+    if (_pendingPlaybackAvailable == hasPlayback &&
+        _pendingPlaybackAutoPlay == autoPlay &&
+        _samePlaybackSource(_pendingPlaybackSource, playbackSource)) {
+      return;
+    }
+    _pendingPlaybackAvailable = hasPlayback;
+    _pendingPlaybackAutoPlay = autoPlay;
+    _pendingPlaybackSource = playbackSource;
+    if (_playbackBootstrapScheduled) {
+      return;
+    }
+    _playbackBootstrapScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _playbackBootstrapScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      final targetAvailable = _pendingPlaybackAvailable;
+      final targetAutoPlay = _pendingPlaybackAutoPlay;
+      final targetSource = _pendingPlaybackSource;
+      final player = widget.bootstrap.player;
+      final currentSource = player.currentState.source;
+      final isInitialTwitchBootstrap =
+          widget.providerId == ProviderId.twitch && currentSource == null;
+
+      if (!targetAvailable || targetSource == null) {
+        final status = player.currentState.status;
+        if (player.currentState.source != null ||
+            status == PlaybackStatus.playing ||
+            status == PlaybackStatus.ready ||
+            status == PlaybackStatus.buffering ||
+            status == PlaybackStatus.paused) {
+          _roomTrace('playback bootstrap stop current=${status.name}');
+          await player.stop();
+        }
+        return;
+      }
+
+      if (isInitialTwitchBootstrap) {
+        _roomTrace('twitch initial bootstrap wait-surface');
+        await WidgetsBinding.instance.endOfFrame;
+        await Future<void>.delayed(const Duration(milliseconds: 220));
+        if (!mounted) {
+          return;
+        }
+        if (_pendingPlaybackAvailable != targetAvailable ||
+            _pendingPlaybackAutoPlay != targetAutoPlay ||
+            !_samePlaybackSource(_pendingPlaybackSource, targetSource)) {
+          _schedulePlaybackBootstrap(
+            playbackSource: _pendingPlaybackSource,
+            hasPlayback: _pendingPlaybackAvailable,
+            autoPlay: _pendingPlaybackAutoPlay,
+          );
+          return;
+        }
+      }
+
+      if (!_samePlaybackSource(currentSource, targetSource)) {
+        _roomTrace(
+          'playback bootstrap setSource '
+          '${_summarizePlaybackSource(targetSource)}',
+        );
+        await player.setSource(targetSource);
+        if (widget.providerId == ProviderId.twitch) {
+          await Future<void>.delayed(
+            isInitialTwitchBootstrap
+                ? const Duration(milliseconds: 220)
+                : const Duration(milliseconds: 120),
+          );
+        }
+      }
+      if (targetAutoPlay &&
+          player.currentState.status != PlaybackStatus.playing) {
+        _roomTrace(
+          'playback bootstrap play source=${_summarizePlaybackSource(targetSource)}',
+        );
+        await player.play();
+      }
+
+      if (_pendingPlaybackAvailable != targetAvailable ||
+          _pendingPlaybackAutoPlay != targetAutoPlay ||
+          !_samePlaybackSource(_pendingPlaybackSource, targetSource)) {
+        _schedulePlaybackBootstrap(
+          playbackSource: _pendingPlaybackSource,
+          hasPlayback: _pendingPlaybackAvailable,
+          autoPlay: _pendingPlaybackAutoPlay,
+        );
+      }
+    });
+  }
+
+  void _scheduleTwitchPlaybackRecovery({
+    required LoadedRoomSnapshot snapshot,
+    required PlaybackSource? playbackSource,
+    required List<LivePlayUrl> playUrls,
+    required List<LivePlayQuality> qualities,
+    required LivePlayQuality selectedQuality,
+  }) {
+    if (widget.providerId != ProviderId.twitch || playbackSource == null) {
+      return;
+    }
+    final sourceKey = playbackSource.url.toString();
+    if (_twitchRecoverySourceKey == sourceKey) {
+      return;
+    }
+    _twitchRecoverySourceKey = sourceKey;
+    final token = ++_twitchRecoveryToken;
+    final delay = resolveTwitchRecoveryDelay(
+      currentQuality: _selectedQuality ?? selectedQuality,
+      recoveryAttempts: _twitchRecoveryAttempts,
+    );
+    Future<void>.delayed(delay, () async {
+      if (!mounted || token != _twitchRecoveryToken) {
+        return;
+      }
+      final currentState = widget.bootstrap.player.currentState;
+      if (!_samePlaybackSource(currentState.source, playbackSource)) {
+        return;
+      }
+      final currentQuality = _selectedQuality ?? selectedQuality;
+      final promotionQuality = _twitchStartupPromotionQuality;
+      if (promotionQuality != null && currentQuality.id == 'auto') {
+        if (shouldPromoteTwitchPlaybackQuality(currentState)) {
+          _roomTrace(
+            'twitch startup promotion '
+            'pos=${currentState.position.inMilliseconds}ms '
+            'buffer=${currentState.buffered.inMilliseconds}ms '
+            'switch-quality=${promotionQuality.id}/${promotionQuality.label}',
+          );
+          _twitchRecoveryAttempts = 0;
+          _twitchStartupPromotionQuality = null;
+          await _switchQuality(
+            snapshot,
+            promotionQuality,
+            resetTwitchRecoveryAttempts: false,
+          );
+          return;
+        }
+        if (shouldAttemptTwitchPlaybackRecovery(currentState) &&
+            _twitchRecoveryAttempts == 1) {
+          _twitchRecoveryAttempts = 2;
+          _roomTrace(
+            'twitch startup promotion refresh '
+            'pos=${currentState.position.inMilliseconds}ms '
+            'buffer=${currentState.buffered.inMilliseconds}ms '
+            'quality=${currentQuality.id}/${currentQuality.label}',
+          );
+          await _refreshPlaybackSource(
+            snapshot,
+            currentQuality,
+            twitchStartupPromotionQuality: promotionQuality,
+            resetTwitchRecoveryAttempts: false,
+          );
+          return;
+        }
+        if (shouldAttemptTwitchPlaybackRecovery(currentState) &&
+            _twitchRecoveryAttempts >= 2) {
+          _roomTrace(
+            'twitch startup promotion recovery '
+            'pos=${currentState.position.inMilliseconds}ms '
+            'buffer=${currentState.buffered.inMilliseconds}ms '
+            'switch-quality=${promotionQuality.id}/${promotionQuality.label}',
+          );
+          _twitchStartupPromotionQuality = null;
+          _twitchRecoveryAttempts = 0;
+          await _switchQuality(
+            snapshot,
+            promotionQuality,
+            resetTwitchRecoveryAttempts: false,
+          );
+          return;
+        }
+        if (_twitchRecoveryAttempts == 0) {
+          _twitchRecoveryAttempts = 1;
+        }
+        _roomTrace(
+          'twitch startup promotion wait '
+          'pos=${currentState.position.inMilliseconds}ms '
+          'buffer=${currentState.buffered.inMilliseconds}ms '
+          'target=${promotionQuality.id}/${promotionQuality.label}',
+        );
+        _twitchRecoverySourceKey = null;
+        _scheduleTwitchPlaybackRecovery(
+          snapshot: snapshot,
+          playbackSource: playbackSource,
+          playUrls: playUrls,
+          qualities: qualities,
+          selectedQuality: currentQuality,
+        );
+        return;
+      }
+      final fixedRecovery = resolveTwitchFixedRecoveryDecision(
+        state: currentState,
+        recoveryAttempts: _twitchRecoveryAttempts,
+        playbackSource: playbackSource,
+        playUrls: playUrls,
+      );
+      switch (fixedRecovery.action) {
+        case TwitchFixedRecoveryAction.none:
+          return;
+        case TwitchFixedRecoveryAction.switchLine:
+          _twitchRecoveryAttempts = 1;
+          final recoveryLine = fixedRecovery.recoveryLine;
+          if (recoveryLine == null) {
+            return;
+          }
+          _roomTrace(
+            'twitch startup recovery '
+            'pos=${currentState.position.inMilliseconds}ms '
+            'buffer=${currentState.buffered.inMilliseconds}ms '
+            'switch-line=${recoveryLine.lineLabel ?? '-'} '
+            'playerType=${recoveryLine.metadata?['playerType'] ?? '-'}',
+          );
+          await _switchLine(
+            recoveryLine,
+            resetTwitchRecoveryAttempts: false,
+          );
+          return;
+        case TwitchFixedRecoveryAction.refreshCurrentLine:
+          _twitchRecoveryAttempts = 2;
+          _roomTrace(
+            'twitch startup recovery '
+            'pos=${currentState.position.inMilliseconds}ms '
+            'buffer=${currentState.buffered.inMilliseconds}ms '
+            'action=refresh-current-line '
+            'quality=${currentQuality.id}/${currentQuality.label}',
+          );
+          await _refreshPlaybackSource(
+            snapshot,
+            currentQuality,
+            resetTwitchRecoveryAttempts: false,
+            preferredPlaybackSource: playbackSource,
+            currentPlayUrls: playUrls,
+          );
+          return;
+        case TwitchFixedRecoveryAction.stop:
+          _roomTrace(
+            'twitch startup recovery '
+            'pos=${currentState.position.inMilliseconds}ms '
+            'buffer=${currentState.buffered.inMilliseconds}ms '
+            'action=stop-after-line-refresh',
+          );
+          return;
+      }
+    });
+  }
+
+  bool _samePlaybackSource(PlaybackSource? left, PlaybackSource? right) {
+    if (left == null || right == null) {
+      return left == right;
+    }
+    return left.url == right.url &&
+        mapEquals(left.headers, right.headers) &&
+        _sameExternalMedia(left.externalAudio, right.externalAudio);
+  }
+
+  bool _sameExternalMedia(
+    PlaybackExternalMedia? left,
+    PlaybackExternalMedia? right,
+  ) {
+    if (left == null || right == null) {
+      return left == right;
+    }
+    return left.url == right.url && mapEquals(left.headers, right.headers);
+  }
+
+  void _resolveFullscreenBootstrap({
+    required bool roomLoaded,
+    required bool playbackAvailable,
+  }) {
+    if (!_fullscreenBootstrapPending || _isFullscreen) {
+      return;
+    }
+    if (!roomLoaded) {
+      return;
+    }
+    if (!playbackAvailable) {
+      if (_fullscreenBootstrapScheduled) {
+        return;
+      }
+      _fullscreenBootstrapScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fullscreenBootstrapScheduled = false;
+        if (!mounted || !_fullscreenBootstrapPending) {
+          return;
+        }
+        _cancelPendingFullscreenBootstrap(scheduleInlineChrome: true);
+      });
+      return;
+    }
+    if (_fullscreenBootstrapScheduled) {
+      return;
+    }
+    _fullscreenBootstrapScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _fullscreenBootstrapScheduled = false;
+      if (!mounted || !_fullscreenBootstrapPending || _isFullscreen) {
+        return;
+      }
+      _updateViewState(() {
+        _fullscreenBootstrapPending = false;
+        _isFullscreen = true;
+        _showInlinePlayerChrome = false;
+        _showFullscreenChrome = true;
+        _showFullscreenFollowDrawer = false;
+      });
+      _clearGestureTip();
+      _scheduleFullscreenChromeAutoHide();
+      await _applyFullscreenSystemUi();
+    });
+  }
+
+  void _cancelPendingFullscreenBootstrap({
+    required bool scheduleInlineChrome,
+  }) {
+    if (!_fullscreenBootstrapPending && !_fullscreenBootstrapScheduled) {
+      return;
+    }
+    _fullscreenBootstrapScheduled = false;
+    _updateViewState(() {
+      _fullscreenBootstrapPending = false;
+      _showInlinePlayerChrome = true;
+      _showFullscreenChrome = true;
+      _showFullscreenFollowDrawer = false;
+    });
+    _clearGestureTip();
+    unawaited(_restoreSystemUi());
+    if (scheduleInlineChrome) {
+      _scheduleInlineChromeAutoHide();
+    }
+  }
+
+  void _showGestureTip(String text) {
+    _gestureTipTimer?.cancel();
+    _updateViewState(() {
+      _gestureTipText = text;
+    });
+    _gestureTipTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted) {
+        return;
+      }
+      _updateViewState(() {
+        _gestureTipText = null;
+      });
+    });
+  }
+
+  void _clearGestureTip() {
+    _gestureTipTimer?.cancel();
+    _gestureTipTimer = null;
+    if (_gestureTipText == null) {
+      return;
+    }
+    _updateViewState(() {
+      _gestureTipText = null;
+    });
+  }
+
   Future<void> _applyOverlayStyle({required bool darkBackground}) async {
     final style = (darkBackground
             ? SystemUiOverlayStyle.light
@@ -12,18 +375,7 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
     SystemChrome.setSystemUIOverlayStyle(style);
   }
 
-  Future<void> _enterFullscreen() async {
-    if (_isFullscreen) {
-      return;
-    }
-    _inlineChromeTimer?.cancel();
-    _updateViewState(() {
-      _isFullscreen = true;
-      _showInlinePlayerChrome = false;
-      _showFullscreenChrome = true;
-      _gestureTipText = null;
-    });
-    _scheduleFullscreenChromeAutoHide();
+  Future<void> _applyFullscreenSystemUi() async {
     await _applyOverlayStyle(darkBackground: true);
     if (Platform.isAndroid) {
       await AndroidPlaybackBridge.instance.enableSensorLandscape();
@@ -36,6 +388,22 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
     }
   }
 
+  Future<void> _enterFullscreen() async {
+    if (_isFullscreen) {
+      return;
+    }
+    _inlineChromeTimer?.cancel();
+    _updateViewState(() {
+      _isFullscreen = true;
+      _showInlinePlayerChrome = false;
+      _showFullscreenChrome = true;
+      _showFullscreenFollowDrawer = false;
+    });
+    _clearGestureTip();
+    _scheduleFullscreenChromeAutoHide();
+    await _applyFullscreenSystemUi();
+  }
+
   Future<void> _exitFullscreen() async {
     if (!_isFullscreen) {
       return;
@@ -46,8 +414,9 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
       _showInlinePlayerChrome = true;
       _showFullscreenChrome = true;
       _lockFullscreenControls = false;
-      _gestureTipText = null;
+      _showFullscreenFollowDrawer = false;
     });
+    _clearGestureTip();
     _scheduleInlineChromeAutoHide();
     await _restoreSystemUi();
   }
@@ -88,8 +457,9 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
         _updateViewState(() {
           _showInlinePlayerChrome = false;
           _showFullscreenChrome = false;
-          _gestureTipText = null;
+          _showFullscreenFollowDrawer = false;
         });
+        _clearGestureTip();
         return;
       }
       if (status == PiPStatus.disabled) {
@@ -118,7 +488,9 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
 
   void _scheduleFullscreenChromeAutoHide() {
     _fullscreenChromeTimer?.cancel();
-    if (!_isFullscreen || _lockFullscreenControls) {
+    if (!_isFullscreen ||
+        _lockFullscreenControls ||
+        _showFullscreenFollowDrawer) {
       return;
     }
     _fullscreenChromeTimer = Timer(const Duration(seconds: 2), () {
@@ -195,12 +567,13 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
       _updateViewState(() {
         _showInlinePlayerChrome = false;
         _showFullscreenChrome = false;
-        _gestureTipText = null;
+        _showFullscreenFollowDrawer = false;
         if (shouldRestoreDanmaku) {
           _showDanmakuOverlay = false;
           _restoreDanmakuAfterPip = true;
         }
       });
+      _clearGestureTip();
     } else if (shouldRestoreDanmaku) {
       _restoreDanmakuAfterPip = true;
     }
@@ -257,9 +630,7 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
       if (!mounted) {
         return;
       }
-      _updateViewState(() {
-        _gestureTipText = '亮度 ${(brightness * 100).round()}%';
-      });
+      _showGestureTip('亮度 ${(brightness * 100).round()}%');
       return;
     }
     final nextVolume = (_gestureStartVolume + delta).clamp(0.0, 1.0);
@@ -269,8 +640,8 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
     }
     _updateViewState(() {
       _volume = nextVolume;
-      _gestureTipText = '音量 ${(nextVolume * 100).round()}%';
     });
+    _showGestureTip('音量 ${(nextVolume * 100).round()}%');
   }
 
   Future<void> _handleVerticalDragEnd(DragEndDetails details) async {
@@ -278,11 +649,5 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
       return;
     }
     _gestureTracking = false;
-    if (!mounted) {
-      return;
-    }
-    _updateViewState(() {
-      _gestureTipText = null;
-    });
   }
 }

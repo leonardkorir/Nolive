@@ -314,18 +314,19 @@ extension _RoomPreviewPagePlayerSurfaceExtension on _RoomPreviewPageState {
                   bottom: fullscreen ? 18 : (_showInlinePlayerChrome ? 62 : 12),
                   child: IgnorePointer(
                     child: ValueListenableBuilder<List<LiveMessage>>(
-                      valueListenable: _superChatMessagesNotifier,
+                      valueListenable: _playerSuperChatMessagesNotifier,
                       builder: (context, superChatMessages, _) {
                         if (superChatMessages.isEmpty) {
                           return const SizedBox.shrink();
                         }
                         return ConstrainedBox(
+                          key: const Key('room-player-super-chat-overlay'),
                           constraints:
                               BoxConstraints(maxWidth: fullscreen ? 300 : 220),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              for (final message in superChatMessages.take(2))
+                              for (final message in superChatMessages.reversed)
                                 Container(
                                   margin: const EdgeInsets.only(top: 8),
                                   padding: const EdgeInsets.symmetric(

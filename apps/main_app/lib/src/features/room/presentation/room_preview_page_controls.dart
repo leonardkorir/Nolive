@@ -1,42 +1,137 @@
 part of 'room_preview_page.dart';
 
 extension _RoomPreviewPageControlsExtension on _RoomPreviewPageState {
-  Future<void> _switchQuality(
+  Future<ResolvedPlaySource> _resolveTwitchPlaybackRefresh(
     LoadedRoomSnapshot snapshot,
     LivePlayQuality quality,
-  ) async {
-    if (!snapshot.hasPlayback) {
-      _showPlaybackUnavailableHint(snapshot.playbackUnavailableReason);
-      return;
-    }
-    final resolved = await widget.bootstrap.resolvePlaySource(
+  ) {
+    return widget.bootstrap.resolvePlaySource(
       providerId: snapshot.providerId,
       detail: snapshot.detail,
       quality: quality,
       preferHttps: _forceHttpsEnabled,
     );
+  }
+
+  Future<void> _applyResolvedPlaybackSource(
+    ResolvedPlaySource resolved, {
+    LivePlayQuality? selectedQuality,
+    LivePlayQuality? twitchStartupPromotionQuality,
+    bool resetTwitchRecoveryAttempts = true,
+  }) async {
+    if (widget.providerId == ProviderId.twitch) {
+      _twitchStartupPromotionQuality = twitchStartupPromotionQuality;
+      _twitchRecoveryToken += 1;
+      _twitchRecoverySourceKey = null;
+      if (resetTwitchRecoveryAttempts) {
+        _twitchRecoveryAttempts = 0;
+      }
+    }
     await widget.bootstrap.player.setSource(resolved.playbackSource);
+    if (widget.providerId == ProviderId.twitch) {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
     if (_autoPlayEnabled) {
       await widget.bootstrap.player.play();
     }
     _updateViewState(() {
-      _selectedQuality = quality;
+      if (selectedQuality != null) {
+        _selectedQuality = selectedQuality;
+      }
       _effectiveQuality = resolved.effectiveQuality;
       _playbackSource = resolved.playbackSource;
       _playUrls = resolved.playUrls;
     });
+  }
+
+  Future<void> _switchQuality(
+    LoadedRoomSnapshot snapshot,
+    LivePlayQuality quality, {
+    bool resetTwitchRecoveryAttempts = true,
+    LivePlayQuality? twitchStartupPromotionQuality,
+  }) async {
+    if (!snapshot.hasPlayback) {
+      _showPlaybackUnavailableHint(snapshot.playbackUnavailableReason);
+      return;
+    }
+    final resolved = await _resolveTwitchPlaybackRefresh(snapshot, quality);
+    _roomTrace(
+      'manual switch quality=${quality.id}/${quality.label} '
+      'playback=${_summarizePlaybackSource(resolved.playbackSource)}',
+    );
+    await _applyResolvedPlaybackSource(
+      resolved,
+      selectedQuality: quality,
+      twitchStartupPromotionQuality: twitchStartupPromotionQuality,
+      resetTwitchRecoveryAttempts: resetTwitchRecoveryAttempts,
+    );
     _showQualityFallbackHint(
       requestedQuality: quality,
       effectiveQuality: resolved.effectiveQuality,
     );
   }
 
-  Future<void> _switchLine(LivePlayUrl playUrl) async {
-    final source = PlaybackSource(
-      url: Uri.parse(playUrl.url),
-      headers: playUrl.headers,
+  Future<void> _refreshPlaybackSource(
+    LoadedRoomSnapshot snapshot,
+    LivePlayQuality quality, {
+    LivePlayQuality? twitchStartupPromotionQuality,
+    bool resetTwitchRecoveryAttempts = false,
+    PlaybackSource? preferredPlaybackSource,
+    List<LivePlayUrl>? currentPlayUrls,
+  }) async {
+    var resolved = await _resolveTwitchPlaybackRefresh(snapshot, quality);
+    LivePlayUrl? refreshedLine;
+    if (preferredPlaybackSource != null && currentPlayUrls != null) {
+      refreshedLine = selectTwitchRefreshLine(
+        playbackSource: preferredPlaybackSource,
+        currentPlayUrls: currentPlayUrls,
+        refreshedPlayUrls: resolved.playUrls,
+      );
+      if (refreshedLine != null) {
+        resolved = ResolvedPlaySource(
+          quality: resolved.quality,
+          effectiveQuality: resolved.effectiveQuality,
+          playUrls: resolved.playUrls,
+          playbackSource: playbackSourceFromLivePlayUrl(refreshedLine),
+        );
+      }
+    }
+    _roomTrace(
+      'refresh playback quality=${quality.id}/${quality.label} '
+      'line=${refreshedLine?.lineLabel ?? '-'} '
+      'playerType=${refreshedLine?.metadata?['playerType'] ?? '-'} '
+      'playback=${_summarizePlaybackSource(resolved.playbackSource)}',
     );
+    await _applyResolvedPlaybackSource(
+      resolved,
+      selectedQuality: quality,
+      twitchStartupPromotionQuality: twitchStartupPromotionQuality,
+      resetTwitchRecoveryAttempts: resetTwitchRecoveryAttempts,
+    );
+  }
+
+  Future<void> _switchLine(
+    LivePlayUrl playUrl, {
+    bool resetTwitchRecoveryAttempts = true,
+  }) async {
+    final source = playbackSourceFromLivePlayUrl(playUrl);
+    _roomTrace(
+      'manual switch line=${playUrl.lineLabel ?? '-'} '
+      'playerType=${playUrl.metadata?['playerType'] ?? '-'} '
+      'playback=${_summarizePlaybackSource(source)}',
+    );
+    if (widget.providerId == ProviderId.twitch) {
+      _twitchStartupPromotionQuality = null;
+      _twitchRecoveryToken += 1;
+      _twitchRecoverySourceKey = null;
+      if (resetTwitchRecoveryAttempts) {
+        _twitchRecoveryAttempts = 0;
+      }
+    }
     await widget.bootstrap.player.setSource(source);
+    if (widget.providerId == ProviderId.twitch) {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
     if (_autoPlayEnabled) {
       await widget.bootstrap.player.play();
     }

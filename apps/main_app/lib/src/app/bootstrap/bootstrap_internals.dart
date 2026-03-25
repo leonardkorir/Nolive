@@ -149,7 +149,18 @@ class _BootstrapAssemblyContext {
 }
 
 AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
-  final providerRegistry = _buildProviderRegistry(context);
+  final loadProviderAccountSettings = LoadProviderAccountSettingsUseCase(
+    context.repositories.settingsRepository,
+  );
+  final twitchAdGuardProxy = _buildTwitchAdGuardProxy(mode: context.mode);
+  final twitchWebPlaybackBridge = _buildTwitchWebPlaybackBridge(
+    mode: context.mode,
+    loadProviderAccountSettings: loadProviderAccountSettings,
+  );
+  final providerRegistry = _buildProviderRegistry(
+    context,
+    twitchWebPlaybackBridge: twitchWebPlaybackBridge,
+  );
   final player = _buildPlayer(context);
   final snapshotService = RepositorySyncSnapshotService(
     settingsRepository: context.repositories.settingsRepository,
@@ -191,9 +202,6 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     tagRepository: context.repositories.tagRepository,
   );
   final loadSyncSnapshot = LoadSyncSnapshotUseCase(snapshotService);
-  final loadProviderAccountSettings = LoadProviderAccountSettingsUseCase(
-    context.repositories.settingsRepository,
-  );
   final updateProviderAccountSettings = UpdateProviderAccountSettingsUseCase(
     context.repositories.settingsRepository,
     providerRegistry: providerRegistry,
@@ -256,7 +264,10 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
       },
     ),
     openRoomDanmaku: OpenRoomDanmakuUseCase(providerRegistry),
-    resolvePlaySource: ResolvePlaySourceUseCase(providerRegistry),
+    resolvePlaySource: ResolvePlaySourceUseCase(
+      providerRegistry,
+      twitchAdGuardProxy: twitchAdGuardProxy,
+    ),
     searchProviderRooms: SearchProviderRoomsUseCase(providerRegistry),
     listLibrarySnapshot: listLibrarySnapshot,
     loadLibraryDashboard: LoadLibraryDashboardUseCase(
@@ -410,7 +421,10 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
   );
 }
 
-ProviderRegistry _buildProviderRegistry(_BootstrapAssemblyContext context) {
+ProviderRegistry _buildProviderRegistry(
+  _BootstrapAssemblyContext context, {
+  TwitchWebPlaybackBridge? twitchWebPlaybackBridge,
+}) {
   return switch (context.mode) {
     AppRuntimeMode.preview => ReferenceProviderCatalog.buildPreviewRegistry(),
     AppRuntimeMode.live => ReferenceProviderCatalog.buildLiveRegistry(
@@ -423,6 +437,7 @@ ProviderRegistry _buildProviderRegistry(_BootstrapAssemblyContext context) {
                   userUniqueId: userUniqueId,
                 )
             : null,
+        twitchPlaybackBootstrapResolver: twitchWebPlaybackBridge?.call,
       ),
   };
 }
@@ -475,4 +490,35 @@ ChaturbateWebRoomDetailLoader? _buildChaturbateRoomDetailLoader({
   return ChaturbateWebRoomDetailLoader(
     loadProviderAccountSettings: loadProviderAccountSettings,
   );
+}
+
+TwitchWebPlaybackBridge? _buildTwitchWebPlaybackBridge({
+  required AppRuntimeMode mode,
+  required LoadProviderAccountSettingsUseCase loadProviderAccountSettings,
+}) {
+  if (mode != AppRuntimeMode.live) {
+    return null;
+  }
+  if (!Platform.isAndroid && !Platform.isIOS) {
+    return null;
+  }
+  final bridge = TwitchWebPlaybackBridge(
+    loadProviderAccountSettings: loadProviderAccountSettings,
+    timeout: const Duration(seconds: 6),
+    bootstrapScriptTimeout: const Duration(milliseconds: 2500),
+  );
+  unawaited(bridge.warmUp());
+  return bridge;
+}
+
+TwitchAdGuardProxy? _buildTwitchAdGuardProxy({
+  required AppRuntimeMode mode,
+}) {
+  if (mode != AppRuntimeMode.live) {
+    return null;
+  }
+  if (!Platform.isAndroid && !Platform.isIOS) {
+    return null;
+  }
+  return TwitchAdGuardProxy();
 }

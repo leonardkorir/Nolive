@@ -209,6 +209,19 @@ class _RoomSettingsPageState extends State<RoomSettingsPage> {
                     );
                   },
                 ),
+                const Divider(height: 1),
+                _StepperTile(
+                  title: 'SC 展示时长',
+                  value: roomUiPreferences.playerSuperChatDisplaySeconds,
+                  suffix: '秒',
+                  onChanged: (next) {
+                    _updateRoomUi(
+                      roomUiPreferences.copyWith(
+                        playerSuperChatDisplaySeconds: next.clamp(3, 30),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -272,11 +285,13 @@ class _StepperTile extends StatelessWidget {
     required this.title,
     required this.value,
     required this.onChanged,
+    this.suffix = '',
   });
 
   final String title;
   final int value;
   final ValueChanged<int> onChanged;
+  final String suffix;
 
   @override
   Widget build(BuildContext context) {
@@ -291,9 +306,9 @@ class _StepperTile extends StatelessWidget {
             icon: const Icon(Icons.remove_rounded),
           ),
           SizedBox(
-            width: 36,
+            width: suffix.isEmpty ? 36 : 56,
             child: Text(
-              '$value',
+              '$value$suffix',
               textAlign: TextAlign.center,
             ),
           ),

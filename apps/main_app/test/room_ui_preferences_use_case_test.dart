@@ -10,12 +10,14 @@ void main() {
     expect(defaults.chatTextGap, 4);
     expect(defaults.chatBubbleStyle, isFalse);
     expect(defaults.showPlayerSuperChat, isTrue);
+    expect(defaults.playerSuperChatDisplaySeconds, 8);
 
     final next = defaults.copyWith(
       chatTextSize: 18,
       chatTextGap: 8,
       chatBubbleStyle: true,
       showPlayerSuperChat: false,
+      playerSuperChatDisplaySeconds: 12,
     );
     await bootstrap.updateRoomUiPreferences(next);
 
@@ -24,5 +26,6 @@ void main() {
     expect(reloaded.chatTextGap, 8);
     expect(reloaded.chatBubbleStyle, isTrue);
     expect(reloaded.showPlayerSuperChat, isFalse);
+    expect(reloaded.playerSuperChatDisplaySeconds, 12);
   });
 }

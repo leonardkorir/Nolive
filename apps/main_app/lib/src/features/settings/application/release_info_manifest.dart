@@ -2,7 +2,7 @@ class ReleaseInfoManifest {
   const ReleaseInfoManifest._();
 
   static const fallbackAppName = 'Nolive';
-  static const fallbackVersion = '0.2.0+2';
+  static const fallbackVersion = '0.3.0+3';
   static const fallbackBundleId = 'app.nolive.mobile';
   static const primaryPlatform = 'Android mobile';
   static const flutterBaseline = 'Flutter 3.35+ stable / Dart 3.6+';

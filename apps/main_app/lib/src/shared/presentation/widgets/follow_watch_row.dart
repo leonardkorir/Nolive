@@ -13,6 +13,7 @@ class FollowWatchRow extends StatelessWidget {
     this.onLongPress,
     this.onRemove,
     this.isPlaying = false,
+    this.highContrastOverlay = false,
     this.showChevron = false,
     this.showSurface = true,
     super.key,
@@ -24,6 +25,7 @@ class FollowWatchRow extends StatelessWidget {
   final VoidCallback? onLongPress;
   final VoidCallback? onRemove;
   final bool isPlaying;
+  final bool highContrastOverlay;
   final bool showChevron;
   final bool showSurface;
 
@@ -31,6 +33,8 @@ class FollowWatchRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final presentationBrightness =
+        highContrastOverlay ? Brightness.dark : theme.brightness;
     final room = entry.detail;
     final displayStreamerName = entry.displayStreamerName;
     final areaLabel = entry.displayAreaName;
@@ -38,43 +42,68 @@ class FollowWatchRow extends StatelessWidget {
     final liveDuration = _liveDuration(room?.startedAt);
     final subtitle =
         entry.hasError && room == null ? '状态刷新失败，点击后可继续尝试进入房间' : entry.title;
-    final titleColor = colorScheme.onSurface;
-    final subtitleColor = theme.brightness == Brightness.dark
-        ? const Color(0xFFF5C46B)
-        : const Color(0xFFB7791F);
+    final titleColor =
+        highContrastOverlay ? const Color(0xFFF8FAFC) : colorScheme.onSurface;
+    final subtitleColor = highContrastOverlay
+        ? const Color(0xFFFFC978)
+        : theme.brightness == Brightness.dark
+            ? const Color(0xFFF5C46B)
+            : const Color(0xFFB7791F);
+    final metaColor = highContrastOverlay
+        ? const Color(0xFFD5DAE1)
+        : colorScheme.onSurfaceVariant;
     final status = _FollowStatusPresentation.resolve(
-      brightness: theme.brightness,
+      brightness: presentationBrightness,
       isLive: entry.isLive,
       isPlaying: isPlaying,
       hasError: entry.hasError,
     );
-    final avatarSize = showSurface ? 42.0 : 44.0;
-    final rowMinHeight = showSurface ? 72.0 : 82.0;
-    final rowPadding = showSurface
-        ? const EdgeInsets.fromLTRB(9, 8, 4, 8)
-        : const EdgeInsets.fromLTRB(12, 8, 6, 8);
-    final horizontalGap = showSurface ? 8.0 : 10.0;
-    final backgroundColor = showSurface
-        ? (isPlaying
-            ? Color.alphaBlend(
-                colorScheme.secondary.withValues(
-                  alpha: theme.brightness == Brightness.dark ? 0.14 : 0.08,
-                ),
-                theme.cardColor,
-              )
-            : theme.cardColor)
-        : Colors.transparent;
+    final avatarSize = highContrastOverlay ? 44.0 : (showSurface ? 42.0 : 44.0);
+    final rowMinHeight =
+        highContrastOverlay ? 84.0 : (showSurface ? 72.0 : 82.0);
+    final rowPadding = highContrastOverlay
+        ? const EdgeInsets.fromLTRB(12, 10, 8, 10)
+        : showSurface
+            ? const EdgeInsets.fromLTRB(9, 8, 4, 8)
+            : const EdgeInsets.fromLTRB(12, 8, 6, 8);
+    final horizontalGap =
+        highContrastOverlay ? 10.0 : (showSurface ? 8.0 : 10.0);
+    final backgroundColor = highContrastOverlay
+        ? (isPlaying ? const Color(0xF24B2E18) : const Color(0xD91D232C))
+        : showSurface
+            ? (isPlaying
+                ? Color.alphaBlend(
+                    colorScheme.secondary.withValues(
+                      alpha: theme.brightness == Brightness.dark ? 0.14 : 0.08,
+                    ),
+                    theme.cardColor,
+                  )
+                : theme.cardColor)
+            : Colors.transparent;
+    final borderRadius = BorderRadius.circular(
+      highContrastOverlay ? 14 : (showSurface ? 10 : 0),
+    );
+    final border = highContrastOverlay
+        ? Border.all(
+            color: isPlaying
+                ? const Color(0x66FFB36A)
+                : Colors.white.withValues(alpha: 0.12),
+          )
+        : null;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(showSurface ? 12 : 0),
+        borderRadius: BorderRadius.circular(
+          highContrastOverlay ? 16 : (showSurface ? 12 : 0),
+        ),
         onTap: onTap,
         onLongPress: onLongPress,
         child: Ink(
           decoration: BoxDecoration(
             color: backgroundColor,
-            borderRadius: BorderRadius.circular(showSurface ? 10 : 0),
+            borderRadius: borderRadius,
+            border: border,
           ),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: rowMinHeight),
@@ -116,12 +145,16 @@ class FollowWatchRow extends StatelessWidget {
                               const SizedBox(width: 5),
                               _MiniPill(
                                 label: areaLabel,
-                                foreground: theme.brightness == Brightness.dark
-                                    ? const Color(0xFF95D0FF)
-                                    : const Color(0xFF5EA2EB),
-                                background: theme.brightness == Brightness.dark
-                                    ? const Color(0xFF102438)
-                                    : const Color(0xFFF0F7FF),
+                                foreground: highContrastOverlay
+                                    ? const Color(0xFF8ED9FF)
+                                    : theme.brightness == Brightness.dark
+                                        ? const Color(0xFF95D0FF)
+                                        : const Color(0xFF5EA2EB),
+                                background: highContrastOverlay
+                                    ? const Color(0xFF13283A)
+                                    : theme.brightness == Brightness.dark
+                                        ? const Color(0xFF102438)
+                                        : const Color(0xFFF0F7FF),
                               ),
                             ],
                             const SizedBox(width: 5),
@@ -152,7 +185,7 @@ class FollowWatchRow extends StatelessWidget {
                               child: _ProviderMeta(
                                 providerDescriptor: providerDescriptor,
                                 textStyle: theme.textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
+                                  color: metaColor,
                                   fontWeight: FontWeight.w500,
                                   fontSize: showSurface ? 10.1 : 10.4,
                                   height: 1.1,
@@ -167,7 +200,7 @@ class FollowWatchRow extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.bodySmall?.copyWith(
-                                    color: colorScheme.onSurfaceVariant,
+                                    color: metaColor,
                                     fontWeight: FontWeight.w500,
                                     fontSize: showSurface ? 9.9 : 10.2,
                                     height: 1.1,
@@ -179,6 +212,7 @@ class FollowWatchRow extends StatelessWidget {
                             if (liveDuration.isNotEmpty)
                               _DurationText(
                                 label: liveDuration,
+                                foregroundColor: metaColor,
                               ),
                           ],
                         ),
@@ -190,6 +224,8 @@ class FollowWatchRow extends StatelessWidget {
                     _TrailingAction(
                       showChevron: showChevron,
                       onRemove: onRemove,
+                      chevronColor:
+                          highContrastOverlay ? const Color(0xFFF8FAFC) : null,
                     ),
                   ],
                 ],
@@ -220,10 +256,12 @@ class _TrailingAction extends StatelessWidget {
   const _TrailingAction({
     required this.showChevron,
     required this.onRemove,
+    this.chevronColor,
   });
 
   final bool showChevron;
   final VoidCallback? onRemove;
+  final Color? chevronColor;
 
   @override
   Widget build(BuildContext context) {
@@ -248,7 +286,7 @@ class _TrailingAction extends StatelessWidget {
     return Icon(
       Icons.chevron_right_rounded,
       size: 20,
-      color: colorScheme.onSurfaceVariant,
+      color: chevronColor ?? colorScheme.onSurfaceVariant,
     );
   }
 }
@@ -271,6 +309,8 @@ class _ProviderMeta extends StatelessWidget {
       'bilibili' => '哔哩哔哩',
       'huya' => '虎牙直播',
       'chaturbate' => 'Chaturbate',
+      'twitch' => 'Twitch',
+      'youtube' => 'YouTube 直播',
       _ => providerDescriptor.displayName,
     };
     return Row(
@@ -332,9 +372,13 @@ class _ProviderMetaFallback extends StatelessWidget {
 }
 
 class _DurationText extends StatelessWidget {
-  const _DurationText({required this.label});
+  const _DurationText({
+    required this.label,
+    this.foregroundColor,
+  });
 
   final String label;
+  final Color? foregroundColor;
 
   @override
   Widget build(BuildContext context) {
@@ -346,13 +390,13 @@ class _DurationText extends StatelessWidget {
         Icon(
           Icons.access_time_rounded,
           size: 10,
-          color: colorScheme.onSurfaceVariant,
+          color: foregroundColor ?? colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: 3),
         Text(
           label,
           style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant,
+            color: foregroundColor ?? colorScheme.onSurfaceVariant,
             fontWeight: FontWeight.w500,
             fontSize: 9.6,
             height: 1.1,

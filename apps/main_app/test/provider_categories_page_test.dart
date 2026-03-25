@@ -74,23 +74,13 @@ void main() {
 
     expect(find.byKey(const Key('provider-category-room-douyin-room-1')),
         findsOneWidget);
-    expect(find.text('加载更多'), findsOneWidget);
-
-    await tester.tap(find.text('加载更多'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
-
-    expect(find.byKey(const Key('provider-category-room-douyin-room-1')),
-        findsOneWidget);
-    expect(find.text('加载更多'), findsOneWidget);
-
-    await tester.tap(find.text('加载更多'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.byKey(const Key('provider-category-room-douyin-room-2')),
         findsOneWidget);
     expect(find.text('已经到底了'), findsOneWidget);
+    expect(find.text('加载更多'), findsNothing);
   });
 
   testWidgets('category page follows provider resolved page after sparse page',
@@ -123,22 +113,14 @@ void main() {
 
     expect(find.byKey(const Key('provider-category-room-douyin-room-1')),
         findsOneWidget);
-
-    await tester.tap(find.text('加载更多'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
-
-    expect(find.byKey(const Key('provider-category-room-douyin-room-2')),
-        findsOneWidget);
-    expect(find.text('加载更多'), findsOneWidget);
-
-    await tester.tap(find.text('加载更多'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.byKey(const Key('provider-category-room-douyin-room-3')),
         findsOneWidget);
     expect(find.text('已经到底了'), findsOneWidget);
+    expect(find.text('加载更多'), findsNothing);
   });
 }
 

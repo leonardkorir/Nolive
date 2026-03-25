@@ -181,6 +181,75 @@ void main() {
     );
   });
 
+  testWidgets('library page confirms before removing a followed room',
+      (tester) async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    const record = FollowRecord(
+      providerId: 'bilibili',
+      roomId: '6',
+      streamerName: '系统演示主播',
+      lastTitle: '系统演示直播间',
+    );
+    await bootstrap.followRepository.upsert(record);
+    bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
+      entries: const [
+        FollowWatchEntry(
+          record: record,
+          detail: LiveRoomDetail(
+            providerId: 'bilibili',
+            roomId: '6',
+            title: '系统演示直播间',
+            streamerName: '系统演示主播',
+            isLive: true,
+          ),
+        ),
+      ],
+    );
+
+    final payload = jsonEncode({
+      'type': 'simple_live',
+      'platform': 'android',
+      'version': 1,
+      'time': 1773384011720,
+      'config': {
+        'FollowStyleNotGrid': true,
+      },
+      'shield': <String, String>{},
+    });
+    await bootstrap.importSyncSnapshotJson(payload);
+
+    await tester.pumpWidget(
+      MaterialApp(home: LibraryPage(bootstrap: bootstrap)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('取消关注'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('确认取消'), findsOneWidget);
+    expect(await bootstrap.followRepository.listAll(), hasLength(1));
+
+    await tester.tap(find.text('保留关注'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('library-follow-card-bilibili-6')),
+      findsOneWidget,
+    );
+    expect(await bootstrap.followRepository.listAll(), hasLength(1));
+
+    await tester.tap(find.byTooltip('取消关注'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认取消'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('library-follow-card-bilibili-6')),
+      findsNothing,
+    );
+    expect(await bootstrap.followRepository.listAll(), isEmpty);
+  });
+
   testWidgets('library page does not classify error entries as offline',
       (tester) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);

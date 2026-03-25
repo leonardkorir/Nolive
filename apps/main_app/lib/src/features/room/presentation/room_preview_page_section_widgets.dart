@@ -68,11 +68,13 @@ class _RoomStepperRow extends StatelessWidget {
     required this.title,
     required this.value,
     required this.onChanged,
+    this.suffix = '',
   });
 
   final String title;
   final int value;
   final ValueChanged<int> onChanged;
+  final String suffix;
 
   @override
   Widget build(BuildContext context) {
@@ -106,9 +108,9 @@ class _RoomStepperRow extends StatelessWidget {
                   icon: const Icon(Icons.remove),
                 ),
                 SizedBox(
-                  width: 32,
+                  width: suffix.isEmpty ? 32 : 52,
                   child: Center(
-                    child: Text('$value'),
+                    child: Text('$value$suffix'),
                   ),
                 ),
                 IconButton(

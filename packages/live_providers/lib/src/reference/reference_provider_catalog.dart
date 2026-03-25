@@ -9,6 +9,9 @@ import '../providers/douyin/douyin_provider.dart';
 import '../providers/douyu/douyu_provider.dart';
 import '../providers/huya/huya_provider.dart';
 import '../providers/migration_placeholder_provider.dart';
+import '../providers/twitch/twitch_playback_bootstrap.dart';
+import '../providers/twitch/twitch_provider.dart';
+import '../providers/youtube/youtube_provider.dart';
 
 class ReferenceProviderCatalog {
   static ProviderRegistry buildDefaultRegistry() => buildPreviewRegistry();
@@ -21,12 +24,14 @@ class ReferenceProviderCatalog {
     String Function(String key)? stringSetting,
     int Function(String key)? intSetting,
     DouyinWebsocketSignatureBuilder? douyinDanmakuSignatureBuilder,
+    TwitchPlaybackBootstrapResolver? twitchPlaybackBootstrapResolver,
   }) {
     return _buildRegistry(
       liveRegistrations(
         stringSetting: stringSetting,
         intSetting: intSetting,
         douyinDanmakuSignatureBuilder: douyinDanmakuSignatureBuilder,
+        twitchPlaybackBootstrapResolver: twitchPlaybackBootstrapResolver,
       ),
     );
   }
@@ -62,12 +67,21 @@ class ReferenceProviderCatalog {
       descriptor: DouyinProvider.kDescriptor,
       builder: DouyinProvider.preview,
     ),
+    const ProviderRegistration(
+      descriptor: TwitchProvider.kDescriptor,
+      builder: TwitchProvider.preview,
+    ),
+    const ProviderRegistration(
+      descriptor: YouTubeProvider.kDescriptor,
+      builder: YouTubeProvider.preview,
+    ),
   ];
 
   static List<ProviderRegistration> liveRegistrations({
     String Function(String key)? stringSetting,
     int Function(String key)? intSetting,
     DouyinWebsocketSignatureBuilder? douyinDanmakuSignatureBuilder,
+    TwitchPlaybackBootstrapResolver? twitchPlaybackBootstrapResolver,
   }) =>
       [
         ProviderRegistration(
@@ -97,6 +111,17 @@ class ReferenceProviderCatalog {
             cookie: stringSetting?.call('account_douyin_cookie') ?? '',
             websocketSignatureBuilder: douyinDanmakuSignatureBuilder,
           ),
+        ),
+        ProviderRegistration(
+          descriptor: TwitchProvider.kDescriptor,
+          builder: () => TwitchProvider.live(
+            cookie: stringSetting?.call('account_twitch_cookie') ?? '',
+            playbackBootstrapResolver: twitchPlaybackBootstrapResolver,
+          ),
+        ),
+        ProviderRegistration(
+          descriptor: YouTubeProvider.kDescriptor,
+          builder: YouTubeProvider.live,
         ),
       ];
 

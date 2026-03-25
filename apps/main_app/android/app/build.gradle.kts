@@ -67,6 +67,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         release {
             if (keystorePropertiesFile.exists() && !releaseSigningReady) {
                 logger.warn(

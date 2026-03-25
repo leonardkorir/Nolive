@@ -20,7 +20,7 @@ class DanmakuPreferences {
     fontSize: 16,
     fontWeight: 3,
     area: 0.8,
-    speed: 18,
+    speed: 12,
     opacity: 1,
     strokeWidth: 2,
     lineHeight: 1.25,

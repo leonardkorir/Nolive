@@ -151,6 +151,21 @@ extension _RoomPreviewPagePanelsExtension on _RoomPreviewPageState {
                     );
                   },
                 ),
+                const Divider(height: 1),
+                _RoomStepperRow(
+                  title: 'SC 展示时长',
+                  value: _playerSuperChatDisplaySeconds,
+                  suffix: '秒',
+                  onChanged: (next) {
+                    unawaited(
+                      _updateRoomUiPreferences(
+                        _roomUiPreferences.copyWith(
+                          playerSuperChatDisplaySeconds: next.clamp(3, 30),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -288,7 +303,7 @@ extension _RoomPreviewPagePanelsExtension on _RoomPreviewPageState {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '正在读取直播间信息',
+                      _ancillaryLoading ? '房间页已进入，正在补齐聊天数据' : '当前还没有聊天消息',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontSize: _chatTextSize,
                         height: 1.28,
@@ -296,7 +311,7 @@ extension _RoomPreviewPagePanelsExtension on _RoomPreviewPageState {
                     ),
                     SizedBox(height: _chatTextGap + 6),
                     Text(
-                      '开始连接弹幕服务器',
+                      _ancillaryLoading ? '正在连接弹幕服务器' : '可以稍后手动刷新房间状态',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontSize: _chatTextSize,
                         height: 1.28,
@@ -304,7 +319,7 @@ extension _RoomPreviewPagePanelsExtension on _RoomPreviewPageState {
                     ),
                     SizedBox(height: _chatTextGap + 6),
                     Text(
-                      '弹幕服务器连接正常',
+                      _ancillaryLoading ? '视频和关注状态会继续在后台加载' : '弹幕建立后会在这里继续滚动',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontSize: _chatTextSize,
                         height: 1.28,

@@ -46,6 +46,7 @@ class AppRouter {
             bootstrap: bootstrap,
             providerId: arguments.providerId,
             roomId: arguments.roomId,
+            startInFullscreen: arguments.startInFullscreen,
           ),
         );
       case AppRoutes.providerCategories:

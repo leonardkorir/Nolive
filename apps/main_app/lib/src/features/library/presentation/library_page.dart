@@ -338,6 +338,42 @@ class _LibraryPageState extends State<LibraryPage> {
     await _reloadLocalState();
   }
 
+  Future<void> _confirmRemoveFollow(FollowRecord record) async {
+    final displayName = _displayFollowName(record);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('取消关注'),
+        content: Text('确认取消关注“$displayName”吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('保留关注'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('确认取消'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _removeFollow(record);
+    }
+  }
+
+  String _displayFollowName(FollowRecord record) {
+    final streamerName = record.streamerName.trim();
+    if (streamerName.isNotEmpty) {
+      return streamerName;
+    }
+    final title = record.lastTitle?.trim();
+    if (title != null && title.isNotEmpty) {
+      return title;
+    }
+    return record.roomId;
+  }
+
   Future<void> _showCreateTagDialog() async {
     final controller = TextEditingController();
     final created = await showDialog<bool>(
@@ -488,7 +524,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   title: const Text('取消关注'),
                   onTap: () async {
                     Navigator.of(context).pop();
-                    await _removeFollow(entry.record);
+                    await _confirmRemoveFollow(entry.record);
                   },
                 ),
               ],
@@ -789,7 +825,7 @@ class _LibraryPageState extends State<LibraryPage> {
                             showSurface: false,
                             onTap: () => _openRoom(
                                 entry.record.providerId, entry.roomId),
-                            onRemove: () => _removeFollow(entry.record),
+                            onRemove: () => _confirmRemoveFollow(entry.record),
                             onLongPress: () =>
                                 _showFollowActions(entry, data.tags),
                           );

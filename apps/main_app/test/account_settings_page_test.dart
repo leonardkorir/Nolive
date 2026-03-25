@@ -26,11 +26,12 @@ void main() {
     expect(find.text('虎牙直播'), findsOneWidget);
     expect(find.text('Chaturbate'), findsOneWidget);
     expect(find.text('抖音直播'), findsOneWidget);
+    expect(find.text('Twitch'), findsOneWidget);
     expect(find.text('扫码登录'), findsOneWidget);
-    expect(find.text('网页登录'), findsNWidgets(2));
-    expect(find.text('编辑 Cookie'), findsNWidgets(3));
+    expect(find.text('网页登录'), findsNWidgets(3));
+    expect(find.text('编辑 Cookie'), findsNWidgets(4));
     expect(find.text('校验状态'), findsNWidgets(2));
-    expect(find.text('刷新状态'), findsNWidgets(2));
+    expect(find.text('刷新状态'), findsNWidgets(3));
     expect(find.text('无需登录'), findsNWidgets(2));
   });
 }

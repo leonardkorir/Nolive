@@ -9,24 +9,28 @@ class ProviderAccountSettings {
     required this.bilibiliUserId,
     required this.chaturbateCookie,
     required this.douyinCookie,
+    required this.twitchCookie,
   });
 
   final String bilibiliCookie;
   final int bilibiliUserId;
   final String chaturbateCookie;
   final String douyinCookie;
+  final String twitchCookie;
 
   ProviderAccountSettings copyWith({
     String? bilibiliCookie,
     int? bilibiliUserId,
     String? chaturbateCookie,
     String? douyinCookie,
+    String? twitchCookie,
   }) {
     return ProviderAccountSettings(
       bilibiliCookie: bilibiliCookie ?? this.bilibiliCookie,
       bilibiliUserId: bilibiliUserId ?? this.bilibiliUserId,
       chaturbateCookie: chaturbateCookie ?? this.chaturbateCookie,
       douyinCookie: douyinCookie ?? this.douyinCookie,
+      twitchCookie: twitchCookie ?? this.twitchCookie,
     );
   }
 }
@@ -49,6 +53,9 @@ class LoadProviderAccountSettingsUseCase {
           '',
       douyinCookie:
           await settingsRepository.readValue<String>('account_douyin_cookie') ??
+              '',
+      twitchCookie:
+          await settingsRepository.readValue<String>('account_twitch_cookie') ??
               '',
     );
   }
@@ -82,9 +89,14 @@ class UpdateProviderAccountSettingsUseCase {
       'account_douyin_cookie',
       settings.douyinCookie,
     );
+    await settingsRepository.writeValue(
+      'account_twitch_cookie',
+      settings.twitchCookie,
+    );
     providerRegistry?.invalidate(ProviderId.bilibili);
     providerRegistry?.invalidate(ProviderId.chaturbate);
     providerRegistry?.invalidate(ProviderId.douyin);
+    providerRegistry?.invalidate(ProviderId.twitch);
     if (providerCatalogRevision != null) {
       providerCatalogRevision!.value += 1;
     }
@@ -93,7 +105,7 @@ class UpdateProviderAccountSettingsUseCase {
 
 enum ProviderAccountHealth { notConfigured, verified, invalid }
 
-enum ProviderAccountKind { bilibili, chaturbate, douyin }
+enum ProviderAccountKind { bilibili, chaturbate, douyin, twitch }
 
 class ProviderAccountView {
   const ProviderAccountView({
@@ -129,12 +141,14 @@ class ProviderAccountDashboard {
     required this.bilibili,
     required this.chaturbate,
     required this.douyin,
+    required this.twitch,
   });
 
   final ProviderAccountSettings settings;
   final ProviderAccountView bilibili;
   final ProviderAccountView chaturbate;
   final ProviderAccountView douyin;
+  final ProviderAccountView twitch;
 }
 
 class LoadProviderAccountDashboardUseCase {
@@ -161,11 +175,13 @@ class LoadProviderAccountDashboardUseCase {
     }
     final chaturbate = _loadChaturbate(settings);
     final douyin = await _loadDouyin(settings);
+    final twitch = _loadTwitch(settings);
     return ProviderAccountDashboard(
       settings: settings,
       bilibili: bilibili,
       chaturbate: chaturbate,
       douyin: douyin,
+      twitch: twitch,
     );
   }
 
@@ -223,7 +239,7 @@ class LoadProviderAccountDashboardUseCase {
         providerName: '抖音直播',
         health: ProviderAccountHealth.notConfigured,
         credentialSummary: '未配置 Cookie',
-        identitySummary: '可网页登录或手动填写 Cookie',
+        identitySummary: '浏览直播通常只需游客 Cookie；只有识别账号身份时才需要登录 Cookie',
         supportsQrLogin: false,
       );
     }
@@ -248,7 +264,7 @@ class LoadProviderAccountDashboardUseCase {
         providerName: '抖音直播',
         health: ProviderAccountHealth.invalid,
         credentialSummary: 'Cookie 已配置，但校验失败',
-        identitySummary: '建议重新登录并更新 Cookie',
+        identitySummary: '如果只是浏览直播，可继续使用游客 Cookie；若要识别账号身份，请重新登录',
         supportsQrLogin: false,
         errorMessage: error.toString(),
       );
@@ -281,13 +297,47 @@ class LoadProviderAccountDashboardUseCase {
       supportsQrLogin: false,
     );
   }
+
+  ProviderAccountView _loadTwitch(
+    ProviderAccountSettings settings,
+  ) {
+    if (settings.twitchCookie.isEmpty) {
+      return const ProviderAccountView(
+        providerId: ProviderId.twitch,
+        providerName: 'Twitch',
+        health: ProviderAccountHealth.notConfigured,
+        credentialSummary: '未配置 Cookie',
+        identitySummary: '如需补强 Web 辅助播放，可保存网页登录 Cookie',
+        supportsQrLogin: false,
+      );
+    }
+
+    final hasAuthToken = containsCookie(settings.twitchCookie, 'auth-token');
+    final hasUniqueId = containsCookie(settings.twitchCookie, 'unique_id');
+    return ProviderAccountView(
+      providerId: ProviderId.twitch,
+      providerName: 'Twitch',
+      health: ProviderAccountHealth.verified,
+      credentialSummary: '已配置 ${settings.twitchCookie.length} 字符 Cookie',
+      identitySummary: hasAuthToken
+          ? '已保存登录会话${hasUniqueId ? '，包含 unique_id' : ''}'
+          : hasUniqueId
+              ? '已保存浏览器会话，包含 unique_id'
+              : '已保存浏览器会话',
+      supportsQrLogin: false,
+    );
+  }
 }
 
 bool containsChaturbateClearance(String cookie) {
+  return containsCookie(cookie, 'cf_clearance');
+}
+
+bool containsCookie(String cookie, String name) {
   return cookie
       .split(';')
       .map((part) => part.trim())
-      .any((part) => part.startsWith('cf_clearance='));
+      .any((part) => part.startsWith('$name='));
 }
 
 class CreateBilibiliQrLoginSessionUseCase {
@@ -389,6 +439,9 @@ class ClearProviderAccountUseCase {
         return;
       case ProviderAccountKind.douyin:
         await updateSettings(settings.copyWith(douyinCookie: ''));
+        return;
+      case ProviderAccountKind.twitch:
+        await updateSettings(settings.copyWith(twitchCookie: ''));
         return;
     }
   }
