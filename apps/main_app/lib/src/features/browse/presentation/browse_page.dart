@@ -3,11 +3,15 @@ import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/browse/application/load_provider_highlights_use_case.dart';
+import 'package:nolive_app/src/features/category/application/manage_favorite_category_tags_use_case.dart';
 import 'package:nolive_app/src/features/category/application/load_provider_categories_use_case.dart';
+import 'package:nolive_app/src/features/category/presentation/category_search_support.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
+import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/provider_badge.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/provider_tab_label.dart';
 
 class BrowsePage extends StatelessWidget {
@@ -36,45 +40,62 @@ class BrowsePage extends StatelessWidget {
           ..sort((a, b) => preferences
               .providerSortIndex(a.id.value)
               .compareTo(preferences.providerSortIndex(b.id.value)));
+        final adaptive = AppAdaptiveLayoutSpec.of(context);
 
         return DefaultTabController(
           length: providers.length,
-          child: Scaffold(
-            appBar: AppBar(
-              centerTitle: false,
-              toolbarHeight: 52,
-              titleSpacing: 8,
-              title: _ProviderTabs(providers: providers),
-              actions: [
-                IconButton(
-                  tooltip: '搜索',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (context) =>
-                            SearchPage(bootstrap: bootstrap, standalone: true),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.search_rounded),
+          child: Builder(
+            builder: (tabContext) => Scaffold(
+              appBar: AppBar(
+                centerTitle: false,
+                toolbarHeight: 52,
+                titleSpacing: 8,
+                title: _ProviderTabs(
+                  providers: providers,
+                  logoSize: adaptive.providerTabLogoSize,
+                  labelPadding: adaptive.providerTabLabelPadding,
                 ),
-                const SizedBox(width: 4),
-              ],
-            ),
-            body: TabBarView(
-              children: [
-                for (final descriptor in providers)
-                  descriptor.supports(ProviderCapability.categories)
-                      ? _ProviderCategoriesTab(
-                          bootstrap: bootstrap,
-                          descriptor: descriptor,
-                        )
-                      : _ProviderDiscoveryTab(
-                          bootstrap: bootstrap,
-                          descriptor: descriptor,
+                actions: [
+                  IconButton(
+                    key: const Key('browse-appbar-search-button'),
+                    tooltip: '搜索',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      final controller =
+                          DefaultTabController.maybeOf(tabContext);
+                      final selectedIndex = controller?.index ?? 0;
+                      final selectedProvider = providers[selectedIndex];
+                      Navigator.of(tabContext).push(
+                        MaterialPageRoute<void>(
+                          builder: (context) => SearchPage(
+                            bootstrap: bootstrap,
+                            standalone: true,
+                            initialProviderId: selectedProvider.id,
+                          ),
                         ),
-              ],
+                      );
+                    },
+                    icon: const Icon(Icons.search_rounded),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+              ),
+              body: TabBarView(
+                children: [
+                  for (final descriptor in providers)
+                    descriptor.supports(ProviderCapability.categories)
+                        ? _ProviderCategoriesTab(
+                            bootstrap: bootstrap,
+                            descriptor: descriptor,
+                          )
+                        : _ProviderDiscoveryTab(
+                            bootstrap: bootstrap,
+                            descriptor: descriptor,
+                            pageHorizontalPadding:
+                                adaptive.pageHorizontalPadding,
+                          ),
+                ],
+              ),
             ),
           ),
         );
@@ -84,9 +105,15 @@ class BrowsePage extends StatelessWidget {
 }
 
 class _ProviderTabs extends StatelessWidget {
-  const _ProviderTabs({required this.providers});
+  const _ProviderTabs({
+    required this.providers,
+    required this.logoSize,
+    required this.labelPadding,
+  });
 
   final List<ProviderDescriptor> providers;
+  final double logoSize;
+  final EdgeInsetsGeometry labelPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +124,7 @@ class _ProviderTabs extends StatelessWidget {
         tabAlignment: TabAlignment.center,
         dividerColor: Colors.transparent,
         indicatorSize: TabBarIndicatorSize.label,
-        labelPadding: const EdgeInsets.symmetric(horizontal: 18),
+        labelPadding: labelPadding,
         overlayColor: WidgetStateProperty.all(Colors.transparent),
         splashBorderRadius: BorderRadius.circular(999),
         tabs: [
@@ -107,6 +134,7 @@ class _ProviderTabs extends StatelessWidget {
               height: 34,
               child: ProviderTabLabel(
                 descriptor: descriptor,
+                logoSize: logoSize,
               ),
             ),
         ],
@@ -119,10 +147,12 @@ class _ProviderDiscoveryTab extends StatefulWidget {
   const _ProviderDiscoveryTab({
     required this.bootstrap,
     required this.descriptor,
+    required this.pageHorizontalPadding,
   });
 
   final AppBootstrap bootstrap;
   final ProviderDescriptor descriptor;
+  final double pageHorizontalPadding;
 
   @override
   State<_ProviderDiscoveryTab> createState() => _ProviderDiscoveryTabState();
@@ -178,7 +208,7 @@ class _ProviderDiscoveryTabState extends State<_ProviderDiscoveryTab>
           if (snapshot.hasError) {
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.all(widget.pageHorizontalPadding),
               children: [
                 EmptyStateCard(
                   title: '发现内容加载失败',
@@ -192,7 +222,7 @@ class _ProviderDiscoveryTabState extends State<_ProviderDiscoveryTab>
           if (sections.isEmpty) {
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.all(widget.pageHorizontalPadding),
               children: const [
                 EmptyStateCard(
                   title: '暂无发现内容',
@@ -204,7 +234,12 @@ class _ProviderDiscoveryTabState extends State<_ProviderDiscoveryTab>
           }
           return ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 96),
+            padding: EdgeInsets.fromLTRB(
+              widget.pageHorizontalPadding * 0.75,
+              10,
+              widget.pageHorizontalPadding * 0.75,
+              96,
+            ),
             children: [
               _DiscoveryIntroCard(descriptor: widget.descriptor),
               const SizedBox(height: 10),
@@ -243,7 +278,10 @@ class _ProviderCategoriesTab extends StatefulWidget {
 class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
     with AutomaticKeepAliveClientMixin<_ProviderCategoriesTab> {
   late Future<ProviderCategoriesPayload> _future;
+  late final TextEditingController _searchController;
   final Set<String> _expandedCategoryIds = <String>{};
+  List<FavoriteCategoryTag> _favoriteTags = const <FavoriteCategoryTag>[];
+  String _categoryQuery = '';
 
   @override
   bool get wantKeepAlive => true;
@@ -251,7 +289,15 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
   @override
   void initState() {
     super.initState();
+    _searchController = TextEditingController();
     _future = widget.bootstrap.loadProviderCategories(widget.descriptor.id);
+    _reloadFavoriteTags();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _refresh() async {
@@ -259,7 +305,20 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
       _future = widget.bootstrap.loadProviderCategories(widget.descriptor.id);
       _expandedCategoryIds.clear();
     });
+    await _reloadFavoriteTags();
     await _future;
+  }
+
+  Future<void> _reloadFavoriteTags() async {
+    final tags = await widget.bootstrap.loadFavoriteCategoryTags();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _favoriteTags = tags
+          .where((item) => item.providerId == widget.descriptor.id)
+          .toList(growable: false);
+    });
   }
 
   List<LiveSubCategory> _childrenOf(LiveCategory category) {
@@ -283,9 +342,24 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
     return children.take(15).toList(growable: false);
   }
 
+  Future<void> _openCategory(LiveSubCategory category) async {
+    await Navigator.of(context).pushNamed(
+      AppRoutes.providerCategories,
+      arguments: ProviderCategoriesRouteArguments(
+        providerId: widget.descriptor.id,
+        initialCategoryId: category.id,
+      ),
+    );
+    if (mounted) {
+      await _reloadFavoriteTags();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final adaptive = AppAdaptiveLayoutSpec.of(context);
+    final queryActive = _categoryQuery.trim().isNotEmpty;
     return RefreshIndicator(
       onRefresh: _refresh,
       child: FutureBuilder<ProviderCategoriesPayload>(
@@ -297,7 +371,7 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
           if (snapshot.hasError || !snapshot.hasData) {
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.all(adaptive.pageHorizontalPadding),
               children: [
                 EmptyStateCard(
                   title: '分类加载失败',
@@ -309,50 +383,171 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
           }
 
           final payload = snapshot.data!;
+          final filteredGroups = filterCategoryGroups(
+            payload.categories,
+            _categoryQuery,
+            childrenOf: _childrenOf,
+          );
           return LayoutBuilder(
             builder: (context, constraints) {
-              final width = constraints.maxWidth;
-              final crossAxisCount = (width / 88).floor().clamp(4, 6);
+              final horizontalPadding = adaptive.pageHorizontalPadding;
+              final width = constraints.maxWidth - (horizontalPadding * 2);
+              final crossAxisCount =
+                  adaptive.browseCategoryCrossAxisCount(width);
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(0, 6, 0, 96),
+                padding: EdgeInsets.fromLTRB(0, 6, 0, 96),
                 children: [
-                  for (final category in payload.categories) ...[
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      horizontalPadding,
+                      8,
+                      horizontalPadding,
+                      8,
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: adaptive.categorySearchMaxWidth,
+                        ),
+                        child: TextField(
+                          key: Key(
+                            'browse-category-search-field-${widget.descriptor.id.value}',
+                          ),
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: '搜索分类',
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: _categoryQuery.trim().isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: '清空',
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() {
+                                        _categoryQuery = '';
+                                      });
+                                    },
+                                    icon: const Icon(Icons.close_rounded),
+                                  ),
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _categoryQuery = value;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_favoriteTags.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        0,
+                        horizontalPadding,
+                        12,
+                      ),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final tag in _favoriteTags)
+                            ActionChip(
+                              key: Key(
+                                'browse-favorite-category-chip-'
+                                '${widget.descriptor.id.value}-${tag.categoryId}',
+                              ),
+                              avatar: _FavoriteCategoryAvatar(
+                                descriptor: widget.descriptor,
+                                imageUrl: tag.imageUrl,
+                              ),
+                              label: Text(tag.label),
+                              onPressed: () {
+                                _openCategory(
+                                  LiveSubCategory(
+                                    id: tag.categoryId,
+                                    parentId: tag.categoryId,
+                                    name: tag.label,
+                                    pic: tag.imageUrl,
+                                  ),
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                  if (queryActive && filteredGroups.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        24,
+                        horizontalPadding,
+                        96,
+                      ),
+                      child: const EmptyStateCard(
+                        title: '没有找到匹配分类',
+                        message: '换个关键词再试试。',
+                        icon: Icons.search_off_rounded,
+                      ),
+                    ),
+                  for (final category in filteredGroups) ...[
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        8,
+                        horizontalPadding,
+                        6,
+                      ),
                       child: Text(
-                        category.name,
+                        category.group.name,
                         style:
                             Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 13.2,
+                                  fontSize: adaptive.categoryTileTextSize + 2,
                                 ),
                       ),
                     ),
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        0,
+                        horizontalPadding,
+                        0,
+                      ),
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: crossAxisCount,
                         crossAxisSpacing: 8,
                         mainAxisSpacing: 8,
-                        childAspectRatio: 1,
+                        childAspectRatio: adaptive.categoryTileChildAspectRatio,
                       ),
-                      itemCount: _visibleChildren(category).length +
-                          (_childrenOf(category).length > 15 &&
-                                  !_expandedCategoryIds.contains(category.id)
+                      itemCount: (queryActive
+                                  ? category.items
+                                  : _visibleChildren(category.group))
+                              .length +
+                          (!queryActive &&
+                                  _childrenOf(category.group).length > 15 &&
+                                  !_expandedCategoryIds
+                                      .contains(category.group.id)
                               ? 1
                               : 0),
                       itemBuilder: (context, index) {
-                        final visibleChildren = _visibleChildren(category);
+                        final visibleChildren = queryActive
+                            ? category.items
+                            : _visibleChildren(category.group);
                         if (index >= visibleChildren.length) {
                           return _CategoryTile(
                             label: '显示全部',
                             showAllTile: true,
+                            descriptor: widget.descriptor,
+                            visualExtent: adaptive.categoryTileVisualExtent,
+                            labelFontSize: adaptive.categoryTileTextSize,
                             onTap: () {
                               setState(() {
-                                _expandedCategoryIds.add(category.id);
+                                _expandedCategoryIds.add(category.group.id);
                               });
                             },
                           );
@@ -362,21 +557,17 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
                           key: Key(
                             'browse-category-${widget.descriptor.id.value}-${subCategory.id}',
                           ),
+                          descriptor: widget.descriptor,
+                          categoryId: subCategory.id,
                           label: subCategory.name,
                           imageUrl: subCategory.pic,
-                          onTap: () {
-                            Navigator.of(context).pushNamed(
-                              AppRoutes.providerCategories,
-                              arguments: ProviderCategoriesRouteArguments(
-                                providerId: widget.descriptor.id,
-                                initialCategoryId: subCategory.id,
-                              ),
-                            );
-                          },
+                          visualExtent: adaptive.categoryTileVisualExtent,
+                          labelFontSize: adaptive.categoryTileTextSize,
+                          onTap: () => _openCategory(subCategory),
                         );
                       },
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: adaptive.sectionGap + 2),
                   ],
                 ],
               );
@@ -495,22 +686,31 @@ class _DiscoverySection extends StatelessWidget {
 
 class _CategoryTile extends StatelessWidget {
   const _CategoryTile({
+    required this.descriptor,
     required this.label,
     required this.onTap,
+    required this.visualExtent,
+    required this.labelFontSize,
     this.imageUrl,
+    this.categoryId,
     this.showAllTile = false,
     super.key,
   });
 
+  final ProviderDescriptor descriptor;
   final String label;
   final String? imageUrl;
+  final String? categoryId;
   final VoidCallback onTap;
   final bool showAllTile;
+  final double visualExtent;
+  final double labelFontSize;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
+    final normalizedImageUrl = imageUrl?.trim() ?? '';
+    final hasImage = normalizedImageUrl.isNotEmpty;
     return Material(
       color: theme.cardColor,
       borderRadius: BorderRadius.circular(12),
@@ -518,7 +718,7 @@ class _CategoryTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
           child: showAllTile
               ? Center(
                   child: Text(
@@ -528,47 +728,45 @@ class _CategoryTile extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w600,
-                      fontSize: 11.2,
+                      fontSize: labelFontSize,
                       height: 1.08,
                     ),
                   ),
                 )
               : Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      clipBehavior: Clip.antiAlias,
-                      decoration: BoxDecoration(
-                        color: theme.brightness == Brightness.dark
-                            ? colorScheme.surfaceContainerHighest
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: colorScheme.outlineVariant,
-                        ),
-                      ),
-                      child: PersistedNetworkImage(
-                        imageUrl: imageUrl ?? '',
-                        bucket: PersistedImageBucket.categoryIcon,
-                        fallback: Center(
-                          child: Text(
-                            label.trim().isEmpty
-                                ? '分'
-                                : label.trim().substring(0, 1),
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: theme.brightness == Brightness.dark
-                                  ? const Color(0xFFE3C9AD)
-                                  : const Color(0xFF7A5230),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                            ),
-                          ),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          key: categoryId == null
+                              ? null
+                              : Key(
+                                  'browse-category-visual-'
+                                  '${descriptor.id.value}-$categoryId',
+                                ),
+                          width: double.infinity,
+                          height: visualExtent,
+                          child: hasImage
+                              ? ClipRect(
+                                  child: Transform.scale(
+                                    scale: _categoryImageScale(descriptor.id),
+                                    child: PersistedNetworkImage(
+                                      imageUrl: normalizedImageUrl,
+                                      bucket: PersistedImageBucket.categoryIcon,
+                                      fit: _categoryImageFit(descriptor.id),
+                                      filterQuality: FilterQuality.high,
+                                      fallback:
+                                          _CategoryTileFallback(label: label),
+                                    ),
+                                  ),
+                                )
+                              : _CategoryTileFallback(label: label),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Text(
                       label,
                       maxLines: 2,
@@ -577,11 +775,88 @@ class _CategoryTile extends StatelessWidget {
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontWeight: FontWeight.w500,
                         height: 1.08,
-                        fontSize: 11.1,
+                        fontSize: labelFontSize,
                       ),
                     ),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+
+  BoxFit _categoryImageFit(ProviderId providerId) {
+    return switch (providerId) {
+      ProviderId.douyu || ProviderId.twitch => BoxFit.cover,
+      _ => BoxFit.contain,
+    };
+  }
+
+  double _categoryImageScale(ProviderId providerId) {
+    return switch (providerId) {
+      ProviderId.douyu => 1.32,
+      ProviderId.twitch => 1.16,
+      _ => 1.0,
+    };
+  }
+}
+
+class _CategoryTileFallback extends StatelessWidget {
+  const _CategoryTileFallback({
+    required this.label,
+  });
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final trimmed = label.trim();
+    final monogram = trimmed.isEmpty ? '分' : trimmed.substring(0, 1);
+    final displayFontSize = theme.textTheme.displaySmall?.fontSize ?? 36;
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          monogram,
+          style: theme.textTheme.displaySmall?.copyWith(
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w700,
+            height: 1,
+            letterSpacing: -0.4,
+            fontSize: displayFontSize * 0.6,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FavoriteCategoryAvatar extends StatelessWidget {
+  const _FavoriteCategoryAvatar({
+    required this.descriptor,
+    required this.imageUrl,
+  });
+
+  final ProviderDescriptor descriptor;
+  final String? imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 18,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: PersistedNetworkImage(
+          imageUrl: imageUrl ?? '',
+          bucket: PersistedImageBucket.categoryIcon,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          fallback: Icon(
+            ProviderBadge.iconOf(descriptor.id),
+            size: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );

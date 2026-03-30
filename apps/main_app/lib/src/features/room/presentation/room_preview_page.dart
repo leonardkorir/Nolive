@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:floating/floating.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_danmaku/live_danmaku.dart';
 import 'package:live_player/live_player.dart';
@@ -14,6 +17,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/platform/android_playback_bridge.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/rust/danmaku_batch_mask.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_playback_backend_policy.dart';
 import 'package:nolive_app/src/features/room/application/room_playback_startup_quality_policy.dart';
@@ -31,6 +35,7 @@ import 'package:nolive_app/src/shared/presentation/widgets/follow_watch_row.dart
 import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/streamer_avatar.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:window_manager/window_manager.dart';
 
 part 'room_preview_page_controls.dart';
 part 'room_preview_page_player_system.dart';
@@ -64,14 +69,17 @@ class RoomPreviewPage extends StatefulWidget {
 class _RoomPreviewPageState extends State<RoomPreviewPage>
     with WidgetsBindingObserver {
   late Future<_RoomPageState> _future;
+  _RoomPageState? _latestLoadedState;
   Future<FollowWatchlist>? _followWatchlistFuture;
   FollowWatchlist? _followWatchlistCache;
   bool _followWatchlistHydrated = false;
   int _followWatchlistRequestId = 0;
+  int _roomFutureToken = 0;
   LivePlayQuality? _selectedQuality;
   LivePlayQuality? _effectiveQuality;
   PlaybackSource? _playbackSource;
   List<LivePlayUrl> _playUrls = const [];
+  bool _roomPlaybackAvailable = false;
   PlaybackSource? _pendingPlaybackSource;
   bool _pendingPlaybackAvailable = false;
   bool _pendingPlaybackAutoPlay = false;
@@ -106,6 +114,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   PlayerScaleMode _scaleMode = PlayerScaleMode.contain;
   final ScreenBrightness _screenBrightness = ScreenBrightness();
   final Floating _floating = Floating();
+  DanmakuBatchMask _danmakuBatchMask = WindowedDanmakuBatchMask();
   DanmakuSession? _danmakuSession;
   StreamSubscription<LiveMessage>? _danmakuSubscription;
   StreamSubscription<PiPStatus>? _pipStatusSubscription;
@@ -142,6 +151,14 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   bool _danmakuReconnectInFlight = false;
   int _danmakuReconnectAttempt = 0;
   bool _preserveRoomTransitionOnDispose = false;
+  bool _usingNativeDanmakuBatchMask = false;
+  bool _desktopMiniWindowActive = false;
+  Rect? _desktopWindowBoundsBeforeMini;
+  bool? _desktopWindowWasAlwaysOnTop;
+  bool? _desktopWindowWasResizable;
+  bool _inlineChromeBeforeLifecycle = true;
+  bool _fullscreenChromeBeforeLifecycle = true;
+  StreamSubscription<PlayerState>? _playerRuntimeSubscription;
   StreamSubscription<PlayerState>? _playerStateLogSubscription;
   String? _lastPlayerStateLogSignature;
   int _ancillaryLoadToken = 0;
@@ -150,6 +167,13 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   String? _twitchRecoverySourceKey;
   int _twitchRecoveryAttempts = 0;
   LivePlayQuality? _twitchStartupPromotionQuality;
+
+  bool get _supportsPlayerCapture => widget.bootstrap.player.supportsScreenshot;
+
+  bool get _supportsDesktopMiniWindow {
+    return !kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+  }
 
   void _roomTrace(String message) {
     if (!kDebugMode) {
@@ -205,6 +229,78 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     setState(updater);
   }
 
+  void _replaceDanmakuBatchMask({required bool preferNative}) {
+    _danmakuBatchMask.dispose();
+    final resolution = resolveAppDanmakuBatchMask(
+      preferNative: preferNative,
+    );
+    _danmakuBatchMask = resolution.mask;
+    _usingNativeDanmakuBatchMask = resolution.usingNative;
+  }
+
+  Future<_RoomPageState> _trackRoomFuture(Future<_RoomPageState> future) {
+    final token = ++_roomFutureToken;
+    return future.then((state) {
+      if (mounted && token == _roomFutureToken) {
+        _handleResolvedRoomState(state);
+      }
+      return state;
+    }, onError: (Object error, StackTrace stackTrace) {
+      if (mounted && token == _roomFutureToken) {
+        _handleRoomLoadFailure();
+      }
+      throw error;
+    });
+  }
+
+  void _handleResolvedRoomState(_RoomPageState state) {
+    _latestLoadedState = state;
+    final playbackSource = _playbackSource ?? state.resolved?.playbackSource;
+    final playUrls = _playUrls.isEmpty ? state.snapshot.playUrls : _playUrls;
+    final hasPlayback = playbackSource != null && playUrls.isNotEmpty;
+    _roomPlaybackAvailable = hasPlayback;
+    _schedulePlaybackBootstrap(
+      playbackSource: playbackSource,
+      hasPlayback: hasPlayback,
+      autoPlay: state.preferences.autoPlayEnabled,
+    );
+    _scheduleTwitchPlaybackRecovery(
+      snapshot: state.snapshot,
+      playbackSource: playbackSource,
+      playUrls: playUrls,
+      qualities: state.snapshot.qualities,
+      selectedQuality: _requestedQualityOf(state),
+    );
+    _resolveFullscreenBootstrap(
+      roomLoaded: true,
+      playbackAvailable: hasPlayback,
+    );
+    _maybeApplyAutoFullscreen(
+      widget.bootstrap.player.currentState,
+      playbackAvailable: hasPlayback,
+    );
+  }
+
+  void _handleRoomLoadFailure() {
+    _latestLoadedState = null;
+    _roomPlaybackAvailable = false;
+    _resolveFullscreenBootstrap(
+      roomLoaded: true,
+      playbackAvailable: false,
+    );
+  }
+
+  void _attachPlayerRuntimeObservers() {
+    _playerRuntimeSubscription ??= widget.bootstrap.player.states.listen((
+      state,
+    ) {
+      _maybeApplyAutoFullscreen(
+        state,
+        playbackAvailable: _roomPlaybackAvailable,
+      );
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -212,7 +308,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     if (widget.startInFullscreen) {
       _fullscreenBootstrapPending = true;
     }
-    _future = _load();
+    _future = _trackRoomFuture(_load());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -228,6 +324,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     unawaited(_setScreenAwake(true));
     unawaited(_primeAndroidPlaybackState());
     _attachPlayerStateLogging();
+    _attachPlayerRuntimeObservers();
   }
 
   @override
@@ -248,6 +345,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     _gestureTipTimer?.cancel();
     _playerSuperChatOverlayTimer?.cancel();
     _danmakuReconnectTimer?.cancel();
+    unawaited(_playerRuntimeSubscription?.cancel());
     unawaited(_playerStateLogSubscription?.cancel());
     if (!_preserveRoomTransitionOnDispose) {
       unawaited(_restoreSystemUi());
@@ -261,6 +359,10 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     _messagesNotifier.dispose();
     _superChatMessagesNotifier.dispose();
     _playerSuperChatMessagesNotifier.dispose();
+    _danmakuBatchMask.dispose();
+    if (_desktopMiniWindowActive && !_preserveRoomTransitionOnDispose) {
+      unawaited(_exitDesktopMiniWindow());
+    }
     super.dispose();
   }
 
@@ -353,6 +455,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     _fullscreenAutoApplied = false;
     _volume = preferences.volume;
     _danmakuPreferences = danmakuPreferences;
+    _replaceDanmakuBatchMask(
+      preferNative: danmakuPreferences.nativeBatchMaskEnabled,
+    );
     _showDanmakuOverlay = danmakuPreferences.enabledByDefault;
     _selectedQuality = playbackQuality;
     _effectiveQuality = resolved?.effectiveQuality ?? playbackQuality;
@@ -541,12 +646,14 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     bool reloadPlayer = false,
   }) async {
     final previousFuture = _future;
-    final future = reloadPlayer
-        ? _load(preferredQualityId: _selectedQuality?.id)
-        : _refreshRoomData(
-            previousFuture: previousFuture,
-            preferredQualityId: _selectedQuality?.id,
-          );
+    final future = _trackRoomFuture(
+      reloadPlayer
+          ? _load(preferredQualityId: _selectedQuality?.id)
+          : _refreshRoomData(
+              previousFuture: previousFuture,
+              preferredQualityId: _selectedQuality?.id,
+            ),
+    );
     setState(() {
       _future = future;
     });
@@ -728,6 +835,17 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
           _restoreDanmakuAfterPip = false;
         });
       }
+      if (mounted) {
+        setState(() {
+          _showInlinePlayerChrome = _inlineChromeBeforeLifecycle;
+          _showFullscreenChrome = _fullscreenChromeBeforeLifecycle;
+        });
+      }
+      if (_isFullscreen && _showFullscreenChrome) {
+        _scheduleFullscreenChromeAutoHide();
+      } else if (!_isFullscreen && _showInlinePlayerChrome) {
+        _scheduleInlineChromeAutoHide();
+      }
       if (!inPip && _pausedByLifecycle) {
         _pausedByLifecycle = false;
         await player.play();
@@ -748,6 +866,8 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       if (!_backgroundAutoPauseEnabled) {
         return;
       }
+      _inlineChromeBeforeLifecycle = _showInlinePlayerChrome;
+      _fullscreenChromeBeforeLifecycle = _showFullscreenChrome;
       if (player.currentState.status == PlaybackStatus.playing) {
         _pausedByLifecycle = true;
         await player.pause();
@@ -885,22 +1005,6 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
             final playUrls =
                 _playUrls.isEmpty ? state.snapshot.playUrls : _playUrls;
             final hasPlayback = playbackSource != null && playUrls.isNotEmpty;
-            _schedulePlaybackBootstrap(
-              playbackSource: playbackSource,
-              hasPlayback: hasPlayback,
-              autoPlay: state.preferences.autoPlayEnabled,
-            );
-            _scheduleTwitchPlaybackRecovery(
-              snapshot: state.snapshot,
-              playbackSource: playbackSource,
-              playUrls: playUrls,
-              qualities: state.snapshot.qualities,
-              selectedQuality: selectedQuality,
-            );
-            _resolveFullscreenBootstrap(
-              roomLoaded: snapshot.connectionState == ConnectionState.done,
-              playbackAvailable: hasPlayback,
-            );
             final availableBackends =
                 widget.bootstrap.player is SwitchablePlayer
                     ? (widget.bootstrap.player as SwitchablePlayer)
@@ -911,78 +1015,65 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                         .toList(growable: false)
                     : [widget.bootstrap.player.backend];
 
-            return StreamBuilder<PlayerState>(
-              initialData: widget.bootstrap.player.currentState,
-              stream: widget.bootstrap.player.states,
-              builder: (context, playerSnapshot) {
-                final playerState = playerSnapshot.data;
-                _maybeApplyAutoFullscreen(
-                  playerState,
-                  playbackAvailable: hasPlayback,
-                );
-                return Stack(
-                  children: [
-                    _buildRoomBody(
+            return Stack(
+              children: [
+                _buildRoomBody(
+                  context: context,
+                  state: state,
+                  room: room,
+                  fullscreenActive: fullscreenSessionActive,
+                  descriptor: descriptor,
+                  selectedQuality: selectedQuality,
+                  effectiveQuality: effectiveQuality,
+                  playbackSource: playbackSource,
+                  playUrls: playUrls,
+                  hasPlayback: hasPlayback,
+                  availableBackends: availableBackends,
+                ),
+                if (isRefreshing)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surface
+                              .withValues(alpha: 0.24),
+                        ),
+                        child: const Center(
+                          child: CircularProgressIndicator.adaptive(),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_isLeavingRoom)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surface
+                              .withValues(alpha: 0.32),
+                        ),
+                        child: const Center(
+                          child: CircularProgressIndicator.adaptive(),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (fullscreenSessionActive && hasPlayback)
+                  Positioned.fill(
+                    child: _buildFullscreenOverlay(
                       context: context,
                       state: state,
                       room: room,
-                      fullscreenActive: fullscreenSessionActive,
                       descriptor: descriptor,
-                      selectedQuality: selectedQuality,
-                      effectiveQuality: effectiveQuality,
                       playbackSource: playbackSource,
                       playUrls: playUrls,
-                      hasPlayback: hasPlayback,
-                      availableBackends: availableBackends,
-                      playerState: playerState,
                     ),
-                    if (isRefreshing)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surface
-                                  .withValues(alpha: 0.24),
-                            ),
-                            child: const Center(
-                              child: CircularProgressIndicator.adaptive(),
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (_isLeavingRoom)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surface
-                                  .withValues(alpha: 0.32),
-                            ),
-                            child: const Center(
-                              child: CircularProgressIndicator.adaptive(),
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (fullscreenSessionActive && hasPlayback)
-                      Positioned.fill(
-                        child: _buildFullscreenOverlay(
-                          context: context,
-                          state: state,
-                          room: room,
-                          descriptor: descriptor,
-                          playerState: playerState,
-                          playbackSource: playbackSource,
-                          playUrls: playUrls,
-                        ),
-                      ),
-                  ],
-                );
-              },
+                  ),
+              ],
             );
           },
         ),

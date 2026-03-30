@@ -36,6 +36,7 @@ void main() {
         chaturbateCookie: '',
         douyinCookie: 'fresh-cookie',
         twitchCookie: '',
+        youtubeCookie: '',
       ),
     );
     final second = registry.create(ProviderId.douyin);

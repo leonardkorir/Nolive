@@ -8,5 +8,28 @@ PlayerBackend resolveRoomPlaybackBackend({
   required TargetPlatform targetPlatform,
   bool isWeb = kIsWeb,
 }) {
-  return preferredBackend;
+  if (isWeb) {
+    return preferredBackend;
+  }
+
+  final sanitizedPreferred = preferredBackend == PlayerBackend.memory
+      ? PlayerBackend.mpv
+      : preferredBackend;
+
+  if (targetPlatform != TargetPlatform.android) {
+    return sanitizedPreferred;
+  }
+
+  if (_prefersMpvOnAndroid(providerId)) {
+    return PlayerBackend.mpv;
+  }
+
+  return sanitizedPreferred;
+}
+
+bool _prefersMpvOnAndroid(ProviderId providerId) {
+  return switch (providerId) {
+    ProviderId.youtube || ProviderId.twitch || ProviderId.chaturbate => true,
+    _ => false,
+  };
 }

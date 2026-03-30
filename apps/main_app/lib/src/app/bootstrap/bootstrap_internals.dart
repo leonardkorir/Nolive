@@ -168,20 +168,39 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     followRepository: context.repositories.followRepository,
     tagRepository: context.repositories.tagRepository,
   );
-  final localDiscoveryService = ManualLocalDiscoveryService();
+  Future<LocalSyncPeerInfo> readLocalPeerInfo() async {
+    final storedName = await context.repositories.settingsRepository
+        .readValue<String>('sync_local_device_name');
+    final storedDeviceId = await context.repositories.settingsRepository
+        .readValue<String>('sync_local_device_id');
+    final displayName = storedName?.trim();
+    final nextDeviceId = storedDeviceId?.trim().isNotEmpty == true
+        ? storedDeviceId!.trim()
+        : 'nolive-${DateTime.now().microsecondsSinceEpoch}';
+    if (storedDeviceId?.trim().isNotEmpty != true) {
+      await context.repositories.settingsRepository.writeValue(
+        'sync_local_device_id',
+        nextDeviceId,
+      );
+    }
+    return LocalSyncPeerInfo(
+      displayName: displayName == null || displayName.isEmpty
+          ? 'nolive-device'
+          : displayName,
+      deviceId: nextDeviceId,
+      platform: Platform.operatingSystem,
+    );
+  }
+
+  final localDiscoveryService = UdpLocalDiscoveryService(
+    readInfo: readLocalPeerInfo,
+  );
   final localSyncServer = HttpLocalSyncServer(
     exportSnapshot: snapshotService.exportSnapshot,
     importSnapshot: snapshotService.importSnapshot,
-    readInfo: () async {
-      final storedName = await context.repositories.settingsRepository
-          .readValue<String>('sync_local_device_name');
-      final deviceName = storedName?.trim();
-      return LocalSyncPeerInfo(
-        displayName: deviceName == null || deviceName.isEmpty
-            ? 'nolive-device'
-            : deviceName,
-      );
-    },
+    exportCategory: snapshotService.exportCategory,
+    importCategory: snapshotService.importCategory,
+    readInfo: readLocalPeerInfo,
   );
   final localSyncClient = HttpLocalSyncClient();
 
@@ -253,6 +272,12 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     loadProviderRecommendRooms:
         LoadProviderRecommendRoomsUseCase(providerRegistry),
     loadProviderCategories: LoadProviderCategoriesUseCase(providerRegistry),
+    loadFavoriteCategoryTags: LoadFavoriteCategoryTagsUseCase(
+      context.repositories.settingsRepository,
+    ),
+    toggleFavoriteCategoryTag: ToggleFavoriteCategoryTagUseCase(
+      context.repositories.settingsRepository,
+    ),
     loadCategoryRooms: LoadCategoryRoomsUseCase(providerRegistry),
     loadRoom: LoadRoomUseCase(
       providerRegistry,
@@ -462,6 +487,21 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
             ),
             compatMode: _decodeBoolSetting(
               context.settings.stringSetting('player_mpv_compat_mode'),
+            ),
+            doubleBufferingEnabled: _decodeBoolSetting(
+              context.settings.stringSetting('player_mpv_double_buffering'),
+            ),
+            customOutputEnabled: _decodeBoolSetting(
+              context.settings.stringSetting('player_mpv_custom_output'),
+            ),
+            videoOutputDriver: context.settings.stringSetting(
+              'player_mpv_video_output_driver',
+            ),
+            hardwareDecoder: context.settings.stringSetting(
+              'player_mpv_hardware_decoder',
+            ),
+            logEnabled: _decodeBoolSetting(
+              context.settings.stringSetting('player_mpv_log_enable'),
             ),
           ),
       PlayerBackend.mdk: () => MdkPlayer(

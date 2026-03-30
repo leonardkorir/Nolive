@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -121,8 +122,8 @@ void main() {
 
     expect(find.text('切换清晰度'), findsOneWidget);
     expect(find.text('切换线路'), findsOneWidget);
-    expect(find.text('截图'), findsOneWidget);
-    expect(find.text('播放信息'), findsOneWidget);
+    expect(find.text('截图'), findsNothing);
+    expect(find.text('调试面板'), findsOneWidget);
     expect(
       find.byKey(const Key('room-quick-force-https-switch')),
       findsNothing,
@@ -194,6 +195,52 @@ void main() {
     expect(playIndex, isNonNegative);
     expect(buildIndex, lessThan(setSourceIndex));
     expect(setSourceIndex, lessThan(playIndex));
+  });
+
+  testWidgets(
+      'room preview debug sheet renders current diagnostics immediately',
+      (tester) async {
+    final base = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final player = _RecordingPlayer(
+      currentDiagnostics: const PlayerDiagnostics(
+        backend: PlayerBackend.mpv,
+        width: 1920,
+        height: 1080,
+        buffered: Duration(milliseconds: 2048),
+      ),
+    );
+    addTearDown(player.dispose);
+    final bootstrap = _copyBootstrapWithPlayer(base, player);
+
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RoomPreviewPage(
+          bootstrap: bootstrap,
+          providerId: ProviderId.bilibili,
+          roomId: '66666',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+
+    await tester.tap(find.byKey(const Key('room-appbar-more-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('调试面板'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('1920 x 1080'), findsOneWidget);
+    expect(find.text('2048 ms'), findsOneWidget);
   });
 
   testWidgets('room preview panels can switch by horizontal swipe', (
@@ -1122,6 +1169,8 @@ AppBootstrap _copyBootstrapWithPlayer(
     loadProviderHighlights: base.loadProviderHighlights,
     loadProviderRecommendRooms: base.loadProviderRecommendRooms,
     loadProviderCategories: base.loadProviderCategories,
+    loadFavoriteCategoryTags: base.loadFavoriteCategoryTags,
+    toggleFavoriteCategoryTag: base.toggleFavoriteCategoryTag,
     loadCategoryRooms: base.loadCategoryRooms,
     loadRoom: base.loadRoom,
     openRoomDanmaku: base.openRoomDanmaku,
@@ -1183,11 +1232,19 @@ AppBootstrap _copyBootstrapWithPlayer(
 }
 
 class _RecordingPlayer implements BasePlayer {
+  _RecordingPlayer({
+    PlayerDiagnostics? currentDiagnostics,
+  }) : _currentDiagnostics = currentDiagnostics ??
+            const PlayerDiagnostics(backend: PlayerBackend.mpv);
+
   final List<String> events = <String>[];
   final StreamController<PlayerState> _states =
       StreamController<PlayerState>.broadcast();
+  final StreamController<PlayerDiagnostics> _diagnostics =
+      StreamController<PlayerDiagnostics>.broadcast();
 
   PlayerState _currentState = const PlayerState(backend: PlayerBackend.mpv);
+  final PlayerDiagnostics _currentDiagnostics;
 
   @override
   PlayerBackend get backend => PlayerBackend.mpv;
@@ -1196,10 +1253,19 @@ class _RecordingPlayer implements BasePlayer {
   Stream<PlayerState> get states => _states.stream;
 
   @override
+  Stream<PlayerDiagnostics> get diagnostics => _diagnostics.stream;
+
+  @override
   PlayerState get currentState => _currentState;
 
   @override
+  PlayerDiagnostics get currentDiagnostics => _currentDiagnostics;
+
+  @override
   bool get supportsEmbeddedView => true;
+
+  @override
+  bool get supportsScreenshot => true;
 
   @override
   Future<void> initialize() async {
@@ -1249,6 +1315,10 @@ class _RecordingPlayer implements BasePlayer {
   }
 
   @override
+  Future<Uint8List?> captureScreenshot() async =>
+      Uint8List.fromList(<int>[1, 2, 3]);
+
+  @override
   Widget buildView({
     Key? key,
     double? aspectRatio,
@@ -1263,6 +1333,7 @@ class _RecordingPlayer implements BasePlayer {
   @override
   Future<void> dispose() async {
     await _states.close();
+    await _diagnostics.close();
   }
 
   void _emit(PlayerState next) {

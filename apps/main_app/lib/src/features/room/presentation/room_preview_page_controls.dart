@@ -1,6 +1,21 @@
 part of 'room_preview_page.dart';
 
 extension _RoomPreviewPageControlsExtension on _RoomPreviewPageState {
+  void _scheduleCurrentTwitchRecovery({
+    required LoadedRoomSnapshot snapshot,
+    required PlaybackSource playbackSource,
+    required List<LivePlayUrl> playUrls,
+    required LivePlayQuality selectedQuality,
+  }) {
+    _scheduleTwitchPlaybackRecovery(
+      snapshot: snapshot,
+      playbackSource: playbackSource,
+      playUrls: playUrls,
+      qualities: snapshot.qualities,
+      selectedQuality: selectedQuality,
+    );
+  }
+
   Future<ResolvedPlaySource> _resolveTwitchPlaybackRefresh(
     LoadedRoomSnapshot snapshot,
     LivePlayQuality quality,
@@ -41,6 +56,7 @@ extension _RoomPreviewPageControlsExtension on _RoomPreviewPageState {
       _effectiveQuality = resolved.effectiveQuality;
       _playbackSource = resolved.playbackSource;
       _playUrls = resolved.playUrls;
+      _roomPlaybackAvailable = resolved.playUrls.isNotEmpty;
     });
   }
 
@@ -64,6 +80,12 @@ extension _RoomPreviewPageControlsExtension on _RoomPreviewPageState {
       selectedQuality: quality,
       twitchStartupPromotionQuality: twitchStartupPromotionQuality,
       resetTwitchRecoveryAttempts: resetTwitchRecoveryAttempts,
+    );
+    _scheduleCurrentTwitchRecovery(
+      snapshot: snapshot,
+      playbackSource: resolved.playbackSource,
+      playUrls: resolved.playUrls,
+      selectedQuality: quality,
     );
     _showQualityFallbackHint(
       requestedQuality: quality,
@@ -108,6 +130,12 @@ extension _RoomPreviewPageControlsExtension on _RoomPreviewPageState {
       twitchStartupPromotionQuality: twitchStartupPromotionQuality,
       resetTwitchRecoveryAttempts: resetTwitchRecoveryAttempts,
     );
+    _scheduleCurrentTwitchRecovery(
+      snapshot: snapshot,
+      playbackSource: resolved.playbackSource,
+      playUrls: resolved.playUrls,
+      selectedQuality: quality,
+    );
   }
 
   Future<void> _switchLine(
@@ -137,7 +165,22 @@ extension _RoomPreviewPageControlsExtension on _RoomPreviewPageState {
     }
     _updateViewState(() {
       _playbackSource = source;
+      _roomPlaybackAvailable = true;
     });
+    final latestState = _latestLoadedState;
+    if (latestState == null) {
+      return;
+    }
+    final selectedQuality =
+        _selectedQuality ?? latestState.snapshot.selectedQuality;
+    final playUrls =
+        _playUrls.isEmpty ? latestState.snapshot.playUrls : _playUrls;
+    _scheduleCurrentTwitchRecovery(
+      snapshot: latestState.snapshot,
+      playbackSource: source,
+      playUrls: playUrls,
+      selectedQuality: selectedQuality,
+    );
   }
 
   LivePlayQuality _requestedQualityOf(_RoomPageState state) {
@@ -261,43 +304,228 @@ extension _RoomPreviewPageControlsExtension on _RoomPreviewPageState {
     );
   }
 
-  Future<void> _showPlaybackInfoSheet(
+  Future<void> _captureScreenshot() async {
+    if (!_supportsPlayerCapture) {
+      _showCaptureUnavailableMessage();
+      return;
+    }
+    try {
+      final bytes = await widget.bootstrap.player.captureScreenshot();
+      if (bytes == null || bytes.isEmpty) {
+        throw const FormatException('未获取到图像数据');
+      }
+      final fileName =
+          'nolive-${widget.providerId.value}-${widget.roomId}-${DateTime.now().millisecondsSinceEpoch}.png';
+      final savedTarget = await _persistScreenshot(
+        bytes: bytes,
+        fileName: fileName,
+      );
+      if (!mounted) {
+        return;
+      }
+      final message = switch (savedTarget) {
+        null => '已取消截图保存',
+        String path when path == 'gallery' => '已保存截图到系统相册',
+        String path => '已保存截图到 $path',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('截图失败：$error')),
+      );
+    }
+  }
+
+  Future<String?> _persistScreenshot({
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      final result = await ImageGallerySaverPlus.saveImage(
+        bytes,
+        name: fileName.replaceAll('.png', ''),
+        quality: 100,
+      );
+      return _resolveGallerySaveResult(result);
+    }
+    final path = await FilePicker.platform.saveFile(
+      dialogTitle: '保存截图',
+      fileName: fileName,
+      type: FileType.image,
+      allowedExtensions: const ['png'],
+    );
+    if (path == null || path.trim().isEmpty) {
+      return null;
+    }
+    final file = File(path);
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  String _resolveGallerySaveResult(dynamic result) {
+    if (result is Map) {
+      final normalized = Map<Object?, Object?>.from(result);
+      final isSuccess = normalized['isSuccess'] == true ||
+          normalized['success'] == true ||
+          normalized['ok'] == true;
+      if (!isSuccess) {
+        throw StateError('系统相册返回保存失败');
+      }
+      final filePath = normalized['filePath']?.toString().trim();
+      if (filePath != null && filePath.isNotEmpty) {
+        return filePath;
+      }
+      return 'gallery';
+    }
+    if (result == true || result == 1 || result?.toString() == '1') {
+      return 'gallery';
+    }
+    throw StateError('系统相册返回未知结果');
+  }
+
+  Future<void> _showPlayerDebugSheet(
     _RoomPageState state,
-    PlaybackSource playbackSource,
+    PlaybackSource? playbackSource,
   ) async {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: false,
       builder: (context) {
-        return SafeArea(
-          child: _buildFlatTileScope(
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-              children: [
-                const ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('播放信息'),
+        return StreamBuilder<PlayerDiagnostics>(
+          stream: widget.bootstrap.player.diagnostics,
+          initialData: widget.bootstrap.player.currentDiagnostics,
+          builder: (context, snapshot) {
+            final diagnostics =
+                snapshot.data ?? widget.bootstrap.player.currentDiagnostics;
+            final children = <Widget>[
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('调试面板'),
+                subtitle: Text('当前播放器状态、音视频参数与最近日志。'),
+              ),
+              _MetadataRow(
+                label: '播放器内核',
+                value: widget.bootstrap.player.backend.name.toUpperCase(),
+              ),
+              _MetadataRow(
+                label: '播放器状态',
+                value: widget.bootstrap.player.currentState.status.name,
+              ),
+              _MetadataRow(
+                label: '请求清晰度',
+                value: _requestedQualityOf(state).label,
+              ),
+              _MetadataRow(
+                label: '实际清晰度',
+                value: _effectiveQualityOf(state).label,
+              ),
+              _MetadataRow(
+                label: '当前线路',
+                value: playbackSource?.url.toString() ?? '暂无',
+              ),
+              _MetadataRow(
+                label: '画面尺寸',
+                value: diagnostics.width == null
+                    ? '未知'
+                    : '${diagnostics.width} x ${diagnostics.height ?? '-'}',
+              ),
+              _MetadataRow(
+                label: '缓冲状态',
+                value: diagnostics.buffering ? 'buffering' : 'ready',
+              ),
+              _MetadataRow(
+                label: '已缓冲',
+                value: '${diagnostics.buffered.inMilliseconds} ms',
+              ),
+              _MetadataRow(
+                label: '画面缩放',
+                value: _labelOfScaleMode(_scaleMode),
+              ),
+              _MetadataRow(
+                label: '弹幕频控',
+                value: _usingNativeDanmakuBatchMask ? '原生' : 'Dart',
+              ),
+              _MetadataRow(
+                label: '调试日志',
+                value: diagnostics.debugLogEnabled ? '已开启' : '未开启',
+              ),
+              if (diagnostics.error?.isNotEmpty ?? false)
+                _MetadataRow(label: '最近错误', value: diagnostics.error!),
+            ];
+
+            if (diagnostics.videoParams.isNotEmpty) {
+              children.add(
+                const Padding(
+                  padding: EdgeInsets.only(top: 16, bottom: 8),
+                  child: Text('视频参数'),
                 ),
-                _MetadataRow(
-                    label: '请求清晰度', value: _requestedQualityOf(state).label),
-                _MetadataRow(
-                    label: '实际清晰度', value: _effectiveQualityOf(state).label),
-                _MetadataRow(
-                  label: '当前线路',
-                  value: playbackSource.url.toString(),
+              );
+              children.addAll(
+                diagnostics.videoParams.entries.map(
+                  (entry) => _MetadataRow(
+                    label: entry.key,
+                    value: entry.value,
+                  ),
                 ),
-                _MetadataRow(
-                  label: '播放器内核',
-                  value: widget.bootstrap.player.backend.name.toUpperCase(),
+              );
+            }
+
+            if (diagnostics.audioParams.isNotEmpty) {
+              children.add(
+                const Padding(
+                  padding: EdgeInsets.only(top: 16, bottom: 8),
+                  child: Text('音频参数'),
                 ),
-                _MetadataRow(
-                  label: '画面尺寸',
-                  value: _labelOfScaleMode(_scaleMode),
+              );
+              children.addAll(
+                diagnostics.audioParams.entries.map(
+                  (entry) => _MetadataRow(
+                    label: entry.key,
+                    value: entry.value,
+                  ),
                 ),
-              ],
-            ),
-          ),
+              );
+            }
+
+            if (diagnostics.recentLogs.isNotEmpty) {
+              children.add(
+                const Padding(
+                  padding: EdgeInsets.only(top: 16, bottom: 8),
+                  child: Text('最近日志'),
+                ),
+              );
+              children.add(
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    diagnostics.recentLogs.join('\n'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              );
+            }
+
+            return SafeArea(
+              child: _buildFlatTileScope(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                  children: children,
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -410,6 +638,9 @@ extension _RoomPreviewPageControlsExtension on _RoomPreviewPageState {
       _danmakuPreferences = danmakuPreferences;
       _showDanmakuOverlay = danmakuPreferences.enabledByDefault;
     });
+    _replaceDanmakuBatchMask(
+      preferNative: danmakuPreferences.nativeBatchMaskEnabled,
+    );
     try {
       final state = await _future;
       final session = await widget.bootstrap.openRoomDanmaku(
@@ -568,16 +799,33 @@ extension _RoomPreviewPageControlsExtension on _RoomPreviewPageState {
                               }
                             : null,
                       ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.camera_alt_outlined),
-                      title: const Text('截图'),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () {
-                        Navigator.of(sheetContext).pop();
-                        _showCaptureUnavailableMessage();
-                      },
-                    ),
+                    if (_supportsDesktopMiniWindow)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.open_in_new_rounded),
+                        title: Text(
+                          _desktopMiniWindowActive ? '退出桌面小窗' : '桌面小窗',
+                        ),
+                        subtitle: hasPlayback ? null : Text(unavailableReason),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: hasPlayback
+                            ? () async {
+                                Navigator.of(sheetContext).pop();
+                                await _toggleDesktopMiniWindow();
+                              }
+                            : null,
+                      ),
+                    if (_supportsPlayerCapture)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.camera_alt_outlined),
+                        title: const Text('截图'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () {
+                          Navigator.of(sheetContext).pop();
+                          unawaited(_captureScreenshot());
+                        },
+                      ),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.timer_outlined),
@@ -590,18 +838,13 @@ extension _RoomPreviewPageControlsExtension on _RoomPreviewPageState {
                     ),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.info_outline_rounded),
-                      title: const Text('播放信息'),
+                      leading: const Icon(Icons.bug_report_outlined),
+                      title: const Text('调试面板'),
                       trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: hasPlayback
-                          ? () async {
-                              Navigator.of(sheetContext).pop();
-                              await _showPlaybackInfoSheet(
-                                state,
-                                playbackSource,
-                              );
-                            }
-                          : null,
+                      onTap: () async {
+                        Navigator.of(sheetContext).pop();
+                        await _showPlayerDebugSheet(state, playbackSource);
+                      },
                     ),
                   ],
                 ),

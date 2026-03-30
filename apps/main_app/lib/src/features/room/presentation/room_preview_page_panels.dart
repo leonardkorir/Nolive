@@ -9,7 +9,6 @@ extension _RoomPreviewPagePanelsExtension on _RoomPreviewPageState {
     required List<LivePlayUrl> playUrls,
     required PlaybackSource? playbackSource,
     required bool hasPlayback,
-    required PlayerState? playerState,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -82,6 +81,33 @@ extension _RoomPreviewPagePanelsExtension on _RoomPreviewPageState {
                     onTap: hasPlayback ? _enterPictureInPicture : null,
                   ),
                 ],
+                if (_supportsDesktopMiniWindow) ...[
+                  const Divider(height: 1),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _desktopMiniWindowActive ? '退出桌面小窗' : '桌面小窗',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: hasPlayback ? _toggleDesktopMiniWindow : null,
+                  ),
+                ],
+                if (_supportsPlayerCapture) ...[
+                  const Divider(height: 1),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('截图'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: _captureScreenshot,
+                  ),
+                ],
+                const Divider(height: 1),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('调试面板'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _showPlayerDebugSheet(state, playbackSource),
+                ),
               ],
             ),
           ),

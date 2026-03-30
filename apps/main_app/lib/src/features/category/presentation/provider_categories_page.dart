@@ -4,9 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/features/category/application/manage_favorite_category_tags_use_case.dart';
 import 'package:nolive_app/src/features/category/application/load_provider_categories_use_case.dart';
+import 'package:nolive_app/src/features/category/presentation/category_search_support.dart';
+import 'package:nolive_app/src/features/search/presentation/search_page.dart';
+import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/provider_badge.dart';
 
 class ProviderCategoriesPage extends StatefulWidget {
   const ProviderCategoriesPage({
@@ -26,11 +32,14 @@ class ProviderCategoriesPage extends StatefulWidget {
 
 class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
   final ScrollController _scrollController = ScrollController();
+  late final TextEditingController _searchController;
 
   ProviderCategoriesPayload? _payload;
   LiveCategory? _selectedGroup;
   LiveSubCategory? _selectedCategory;
+  List<FavoriteCategoryTag> _favoriteTags = const <FavoriteCategoryTag>[];
   List<LiveRoom> _rooms = const [];
+  String _categoryQuery = '';
   bool _loadingCategories = true;
   bool _loadingRooms = false;
   bool _loadingMore = false;
@@ -42,12 +51,15 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
   @override
   void initState() {
     super.initState();
+    _searchController = TextEditingController();
     _scrollController.addListener(_handleScroll);
     _loadCategories();
+    unawaited(_reloadFavoriteTags());
   }
 
   @override
   void dispose() {
+    _searchController.dispose();
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -98,6 +110,18 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
         _loadingCategories = false;
       });
     }
+  }
+
+  Future<void> _reloadFavoriteTags() async {
+    final tags = await widget.bootstrap.loadFavoriteCategoryTags();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _favoriteTags = tags
+          .where((item) => item.providerId == widget.providerId)
+          .toList(growable: false);
+    });
   }
 
   Future<void> _loadRooms({
@@ -357,9 +381,89 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
     );
   }
 
+  FavoriteCategoryTag? _currentFavoriteTag() {
+    final category = _selectedCategory;
+    final group = _selectedGroup;
+    if (category == null || group == null) {
+      return null;
+    }
+    for (final item in _favoriteTags) {
+      if (item.matches(
+          providerId: widget.providerId, categoryId: category.id)) {
+        return item;
+      }
+    }
+    return FavoriteCategoryTag(
+      providerId: widget.providerId,
+      categoryId: category.id,
+      groupName: group.name,
+      label: category.name,
+      imageUrl: category.pic,
+    );
+  }
+
+  bool _selectedCategoryIsFavorite() {
+    final category = _selectedCategory;
+    if (category == null) {
+      return false;
+    }
+    return _favoriteTags.any(
+      (item) => item.matches(
+        providerId: widget.providerId,
+        categoryId: category.id,
+      ),
+    );
+  }
+
+  Future<void> _toggleSelectedFavorite() async {
+    final tag = _currentFavoriteTag();
+    if (tag == null) {
+      return;
+    }
+    final next = await widget.bootstrap.toggleFavoriteCategoryTag(tag);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _favoriteTags = next
+          .where((item) => item.providerId == widget.providerId)
+          .toList(growable: false);
+    });
+  }
+
+  Future<void> _selectCategory(
+    LiveSubCategory category, {
+    LiveCategory? group,
+    bool clearQuery = false,
+  }) async {
+    if (clearQuery) {
+      _searchController.clear();
+    }
+    setState(() {
+      _selectedGroup = group ?? _selectedGroup;
+      if (clearQuery) {
+        _categoryQuery = '';
+      }
+    });
+    await _loadRooms(category: category);
+  }
+
+  void _openProviderSearch() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => SearchPage(
+          bootstrap: widget.bootstrap,
+          standalone: true,
+          initialProviderId: widget.providerId,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final payload = _payload;
+    final adaptive = AppAdaptiveLayoutSpec.of(context);
     final fallbackCategory = payload == null
         ? null
         : (_selectedCategory ?? _resolveInitialCategory(payload.categories));
@@ -371,11 +475,37 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                 _resolveGroupForCategory(payload.categories, fallbackCategory));
     final chips =
         group == null ? const <LiveSubCategory>[] : _childrenOf(group);
+    final filteredGroups = payload == null
+        ? const <FilteredCategoryGroup>[]
+        : filterCategoryGroups(
+            payload.categories,
+            _categoryQuery,
+            childrenOf: _childrenOf,
+          );
+    final queryActive = _categoryQuery.trim().isNotEmpty;
+    final searchHorizontalPadding = adaptive.pageHorizontalPadding;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(_selectedCategory?.name ?? '分区浏览'),
         actions: [
+          IconButton(
+            key: const Key('provider-category-search-button'),
+            tooltip: '搜索直播间',
+            onPressed: _openProviderSearch,
+            icon: const Icon(Icons.search_rounded),
+          ),
+          if (_selectedCategory != null)
+            IconButton(
+              key: const Key('provider-category-favorite-button'),
+              tooltip: _selectedCategoryIsFavorite() ? '取消收藏分类' : '收藏分类',
+              onPressed: _toggleSelectedFavorite,
+              icon: Icon(
+                _selectedCategoryIsFavorite()
+                    ? Icons.star_rounded
+                    : Icons.star_border_rounded,
+              ),
+            ),
           if (payload != null)
             IconButton(
               tooltip: '切换分组',
@@ -391,7 +521,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
             : _categoriesError != null || payload == null
                 ? ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(20),
+                    padding: EdgeInsets.all(searchHorizontalPadding),
                     children: [
                       EmptyStateCard(
                         title: '分区加载失败',
@@ -412,10 +542,184 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                       controller: _scrollController,
                       physics: const AlwaysScrollableScrollPhysics(),
                       slivers: [
-                        if (chips.isNotEmpty)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              searchHorizontalPadding,
+                              8,
+                              searchHorizontalPadding,
+                              8,
+                            ),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: adaptive.categorySearchMaxWidth,
+                                ),
+                                child: TextField(
+                                  key: Key(
+                                    'provider-category-search-field-${widget.providerId.value}',
+                                  ),
+                                  controller: _searchController,
+                                  decoration: InputDecoration(
+                                    hintText: '搜索分类',
+                                    prefixIcon:
+                                        const Icon(Icons.search_rounded),
+                                    suffixIcon: queryActive
+                                        ? IconButton(
+                                            tooltip: '清空',
+                                            onPressed: () {
+                                              _searchController.clear();
+                                              setState(() {
+                                                _categoryQuery = '';
+                                              });
+                                            },
+                                            icon: const Icon(
+                                              Icons.close_rounded,
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _categoryQuery = value;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (_favoriteTags.isNotEmpty)
                           SliverToBoxAdapter(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                              padding: EdgeInsets.fromLTRB(
+                                searchHorizontalPadding,
+                                0,
+                                searchHorizontalPadding,
+                                8,
+                              ),
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  for (final tag in _favoriteTags)
+                                    ActionChip(
+                                      key: Key(
+                                        'provider-category-favorite-chip-'
+                                        '${widget.providerId.value}-${tag.categoryId}',
+                                      ),
+                                      avatar: _FavoriteCategoryAvatar(
+                                        providerId: widget.providerId,
+                                        imageUrl: tag.imageUrl,
+                                      ),
+                                      label: Text(tag.label),
+                                      onPressed: () {
+                                        final nextGroup =
+                                            _resolveGroupForCategory(
+                                          payload.categories,
+                                          LiveSubCategory(
+                                            id: tag.categoryId,
+                                            parentId: tag.categoryId,
+                                            name: tag.label,
+                                            pic: tag.imageUrl,
+                                          ),
+                                        );
+                                        _selectCategory(
+                                          LiveSubCategory(
+                                            id: tag.categoryId,
+                                            parentId: tag.categoryId,
+                                            name: tag.label,
+                                            pic: tag.imageUrl,
+                                          ),
+                                          group: nextGroup,
+                                          clearQuery: true,
+                                        );
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if (queryActive)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                searchHorizontalPadding,
+                                0,
+                                searchHorizontalPadding,
+                                12,
+                              ),
+                              child: filteredGroups.isEmpty
+                                  ? const EmptyStateCard(
+                                      title: '没有找到匹配分类',
+                                      message: '换个关键词再试试。',
+                                      icon: Icons.search_off_rounded,
+                                    )
+                                  : Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        for (final group in filteredGroups) ...[
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 8,
+                                              bottom: 6,
+                                            ),
+                                            child: Text(
+                                              group.group.name,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleSmall
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                          ),
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 6,
+                                            children: [
+                                              for (final subCategory
+                                                  in group.items)
+                                                ChoiceChip(
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  materialTapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                  key: Key(
+                                                    'provider-category-search-chip-'
+                                                    '${widget.providerId.value}-${subCategory.id}',
+                                                  ),
+                                                  label: Text(subCategory.name),
+                                                  selected:
+                                                      _selectedCategory?.id ==
+                                                          subCategory.id,
+                                                  onSelected: (_) {
+                                                    _selectCategory(
+                                                      subCategory,
+                                                      group: group.group,
+                                                      clearQuery: true,
+                                                    );
+                                                  },
+                                                ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                            ),
+                          )
+                        else if (chips.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                searchHorizontalPadding * 0.75,
+                                6,
+                                searchHorizontalPadding * 0.75,
+                                6,
+                              ),
                               child: SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
                                 child: Row(
@@ -428,18 +732,24 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                                         key: Key(
                                           'provider-category-chip-${widget.providerId.value}-${subCategory.id}',
                                         ),
-                                        label: Text(subCategory.name,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelLarge
-                                                ?.copyWith(
-                                                    fontSize: 11.5,
-                                                    fontWeight:
-                                                        FontWeight.w500)),
+                                        label: Text(
+                                          subCategory.name,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelLarge
+                                              ?.copyWith(
+                                                fontSize: adaptive
+                                                    .categoryTileTextSize,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                        ),
                                         selected: _selectedCategory?.id ==
                                             subCategory.id,
                                         onSelected: (_) {
-                                          _loadRooms(category: subCategory);
+                                          _selectCategory(
+                                            subCategory,
+                                            group: group,
+                                          );
                                         },
                                       ),
                                       const SizedBox(width: 6),
@@ -459,8 +769,12 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                         else if (_roomsError != null)
                           SliverToBoxAdapter(
                             child: Padding(
-                              padding:
-                                  const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                              padding: EdgeInsets.fromLTRB(
+                                searchHorizontalPadding,
+                                8,
+                                searchHorizontalPadding,
+                                120,
+                              ),
                               child: EmptyStateCard(
                                 title: '分区房间加载失败',
                                 message: '$_roomsError',
@@ -492,7 +806,12 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                           )
                         else ...[
                           SliverPadding(
-                            padding: const EdgeInsets.fromLTRB(8, 0, 8, 20),
+                            padding: EdgeInsets.fromLTRB(
+                              searchHorizontalPadding / 2,
+                              0,
+                              searchHorizontalPadding / 2,
+                              20,
+                            ),
                             sliver: SliverGrid(
                               delegate: SliverChildBuilderDelegate(
                                 (context, index) {
@@ -525,7 +844,12 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                           ),
                           SliverToBoxAdapter(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                              padding: EdgeInsets.fromLTRB(
+                                searchHorizontalPadding,
+                                0,
+                                searchHorizontalPadding,
+                                96,
+                              ),
                               child: Center(
                                 child: _loadingMore
                                     ? const Padding(
@@ -564,6 +888,41 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                       ],
                     ),
                   ),
+      ),
+    );
+  }
+}
+
+class _FavoriteCategoryAvatar extends StatelessWidget {
+  const _FavoriteCategoryAvatar({
+    required this.providerId,
+    required this.imageUrl,
+  });
+
+  final ProviderId providerId;
+  final String? imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = ProviderBadge.accentColorOf(providerId);
+    return SizedBox.square(
+      dimension: 18,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: ColoredBox(
+          color: accent.withValues(alpha: 0.08),
+          child: PersistedNetworkImage(
+            imageUrl: imageUrl ?? '',
+            bucket: PersistedImageBucket.categoryIcon,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.high,
+            fallback: Icon(
+              ProviderBadge.iconOf(providerId),
+              size: 14,
+              color: accent,
+            ),
+          ),
+        ),
       ),
     );
   }

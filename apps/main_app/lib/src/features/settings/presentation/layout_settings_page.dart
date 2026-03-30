@@ -51,7 +51,7 @@ class LayoutSettingsPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _ReorderCard<String>(
+                _ProviderReorderCard(
                   title: '平台顺序',
                   items: preferences.providerOrder,
                   itemLabel: (providerId) => _providerLabel(providerId),
@@ -59,6 +59,17 @@ class LayoutSettingsPage extends StatelessWidget {
                   onReorder: (items) => bootstrap.updateLayoutPreferences(
                     preferences.copyWith(providerOrder: items),
                   ),
+                  isEnabled: preferences.isProviderEnabled,
+                  onToggle: (providerId, enabled) {
+                    final nextEnabled = _toggleProvider(
+                      preferences,
+                      providerId,
+                      enabled,
+                    );
+                    bootstrap.updateLayoutPreferences(
+                      preferences.copyWith(enabledProviderIds: nextEnabled),
+                    );
+                  },
                 ),
               ],
             ),
@@ -127,6 +138,22 @@ class LayoutSettingsPage extends StatelessWidget {
       ),
     );
   }
+
+  List<String> _toggleProvider(
+    LayoutPreferences preferences,
+    String providerId,
+    bool enabled,
+  ) {
+    final enabledIds = preferences.enabledProviderIds.toSet();
+    if (enabled) {
+      enabledIds.add(providerId);
+    } else {
+      enabledIds.remove(providerId);
+    }
+    return preferences.providerOrder
+        .where(enabledIds.contains)
+        .toList(growable: false);
+  }
 }
 
 class _ReorderCard<T> extends StatelessWidget {
@@ -177,6 +204,84 @@ class _ReorderCard<T> extends StatelessWidget {
                 trailing: ReorderableDragStartListener(
                   index: index,
                   child: const Icon(Icons.drag_handle_rounded),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProviderReorderCard extends StatelessWidget {
+  const _ProviderReorderCard({
+    required this.title,
+    required this.items,
+    required this.itemLabel,
+    required this.itemLeading,
+    required this.isEnabled,
+    required this.onToggle,
+    required this.onReorder,
+  });
+
+  final String title;
+  final List<String> items;
+  final String Function(String item) itemLabel;
+  final Widget Function(String item) itemLeading;
+  final bool Function(String providerId) isEnabled;
+  final void Function(String providerId, bool enabled) onToggle;
+  final ValueChanged<List<String>> onReorder;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            buildDefaultDragHandles: false,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: items.length,
+            onReorder: (oldIndex, newIndex) {
+              final nextItems = List<String>.from(items);
+              if (newIndex > oldIndex) {
+                newIndex -= 1;
+              }
+              final item = nextItems.removeAt(oldIndex);
+              nextItems.insert(newIndex, item);
+              onReorder(nextItems);
+            },
+            itemBuilder: (context, index) {
+              final item = items[index];
+              final enabled = isEnabled(item);
+              return ListTile(
+                key: ValueKey('$title-$item'),
+                contentPadding: EdgeInsets.zero,
+                leading: itemLeading(item),
+                title: Text(itemLabel(item)),
+                subtitle: Text(
+                  enabled ? '已开启，长按拖动即可重新排序' : '已关闭，不会在首页、发现和搜索中显示',
+                ),
+                trailing: SizedBox(
+                  width: 120,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Switch.adaptive(
+                        key: Key('layout-provider-toggle-$item'),
+                        value: enabled,
+                        onChanged: (value) => onToggle(item, value),
+                      ),
+                      ReorderableDragStartListener(
+                        index: index,
+                        child: const Icon(Icons.drag_handle_rounded),
+                      ),
+                    ],
+                  ),
                 ),
               );
             },

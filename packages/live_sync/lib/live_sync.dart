@@ -4,6 +4,7 @@ export 'src/local_sync/local_sync_client.dart';
 export 'src/local_sync/local_sync_server.dart';
 export 'src/model/discovered_peer.dart';
 export 'src/model/local_sync_peer_info.dart';
+export 'src/model/sync_data_category.dart';
 export 'src/model/sync_snapshot.dart';
 export 'src/model/sync_snapshot_codec.dart';
 export 'src/runtime/repository_sync_snapshot_service.dart';

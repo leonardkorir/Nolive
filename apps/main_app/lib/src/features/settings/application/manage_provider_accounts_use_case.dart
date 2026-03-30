@@ -10,6 +10,7 @@ class ProviderAccountSettings {
     required this.chaturbateCookie,
     required this.douyinCookie,
     required this.twitchCookie,
+    required this.youtubeCookie,
   });
 
   final String bilibiliCookie;
@@ -17,6 +18,7 @@ class ProviderAccountSettings {
   final String chaturbateCookie;
   final String douyinCookie;
   final String twitchCookie;
+  final String youtubeCookie;
 
   ProviderAccountSettings copyWith({
     String? bilibiliCookie,
@@ -24,6 +26,7 @@ class ProviderAccountSettings {
     String? chaturbateCookie,
     String? douyinCookie,
     String? twitchCookie,
+    String? youtubeCookie,
   }) {
     return ProviderAccountSettings(
       bilibiliCookie: bilibiliCookie ?? this.bilibiliCookie,
@@ -31,6 +34,7 @@ class ProviderAccountSettings {
       chaturbateCookie: chaturbateCookie ?? this.chaturbateCookie,
       douyinCookie: douyinCookie ?? this.douyinCookie,
       twitchCookie: twitchCookie ?? this.twitchCookie,
+      youtubeCookie: youtubeCookie ?? this.youtubeCookie,
     );
   }
 }
@@ -57,6 +61,9 @@ class LoadProviderAccountSettingsUseCase {
       twitchCookie:
           await settingsRepository.readValue<String>('account_twitch_cookie') ??
               '',
+      youtubeCookie: await settingsRepository
+              .readValue<String>('account_youtube_cookie') ??
+          '',
     );
   }
 }
@@ -93,6 +100,10 @@ class UpdateProviderAccountSettingsUseCase {
       'account_twitch_cookie',
       settings.twitchCookie,
     );
+    await settingsRepository.writeValue(
+      'account_youtube_cookie',
+      settings.youtubeCookie,
+    );
     providerRegistry?.invalidate(ProviderId.bilibili);
     providerRegistry?.invalidate(ProviderId.chaturbate);
     providerRegistry?.invalidate(ProviderId.douyin);
@@ -105,7 +116,7 @@ class UpdateProviderAccountSettingsUseCase {
 
 enum ProviderAccountHealth { notConfigured, verified, invalid }
 
-enum ProviderAccountKind { bilibili, chaturbate, douyin, twitch }
+enum ProviderAccountKind { bilibili, chaturbate, douyin, twitch, youtube }
 
 class ProviderAccountView {
   const ProviderAccountView({
@@ -142,6 +153,7 @@ class ProviderAccountDashboard {
     required this.chaturbate,
     required this.douyin,
     required this.twitch,
+    required this.youtube,
   });
 
   final ProviderAccountSettings settings;
@@ -149,6 +161,7 @@ class ProviderAccountDashboard {
   final ProviderAccountView chaturbate;
   final ProviderAccountView douyin;
   final ProviderAccountView twitch;
+  final ProviderAccountView youtube;
 }
 
 class LoadProviderAccountDashboardUseCase {
@@ -176,12 +189,14 @@ class LoadProviderAccountDashboardUseCase {
     final chaturbate = _loadChaturbate(settings);
     final douyin = await _loadDouyin(settings);
     final twitch = _loadTwitch(settings);
+    final youtube = _loadYouTube(settings);
     return ProviderAccountDashboard(
       settings: settings,
       bilibili: bilibili,
       chaturbate: chaturbate,
       douyin: douyin,
       twitch: twitch,
+      youtube: youtube,
     );
   }
 
@@ -327,6 +342,35 @@ class LoadProviderAccountDashboardUseCase {
       supportsQrLogin: false,
     );
   }
+
+  ProviderAccountView _loadYouTube(
+    ProviderAccountSettings settings,
+  ) {
+    if (settings.youtubeCookie.isEmpty) {
+      return const ProviderAccountView(
+        providerId: ProviderId.youtube,
+        providerName: 'YouTube',
+        health: ProviderAccountHealth.notConfigured,
+        credentialSummary: '未配置 Cookie',
+        identitySummary: '可手动保存网页登录 Cookie；当前播放链路不会直接使用',
+        supportsQrLogin: false,
+      );
+    }
+
+    final hasAuthSession =
+        containsCookie(settings.youtubeCookie, '__Secure-1PSID') ||
+            containsCookie(settings.youtubeCookie, 'SID') ||
+            containsCookie(settings.youtubeCookie, 'SAPISID');
+    return ProviderAccountView(
+      providerId: ProviderId.youtube,
+      providerName: 'YouTube',
+      health: ProviderAccountHealth.verified,
+      credentialSummary: '已配置 ${settings.youtubeCookie.length} 字符 Cookie',
+      identitySummary:
+          hasAuthSession ? '已保存登录会话；当前播放链路不会直接使用' : '已保存浏览器会话；当前播放链路不会直接使用',
+      supportsQrLogin: false,
+    );
+  }
 }
 
 bool containsChaturbateClearance(String cookie) {
@@ -442,6 +486,9 @@ class ClearProviderAccountUseCase {
         return;
       case ProviderAccountKind.twitch:
         await updateSettings(settings.copyWith(twitchCookie: ''));
+        return;
+      case ProviderAccountKind.youtube:
+        await updateSettings(settings.copyWith(youtubeCookie: ''));
         return;
     }
   }

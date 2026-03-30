@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../model/local_sync_peer_info.dart';
+import '../model/sync_data_category.dart';
 import '../model/sync_snapshot.dart';
 import '../model/sync_snapshot_codec.dart';
 
@@ -12,6 +13,13 @@ abstract class LocalSyncServer {
 
   Future<SyncSnapshot> exportSnapshot();
 
+  Future<SyncSnapshot> exportCategory(SyncDataCategory category);
+
+  Future<void> importCategory(
+    SyncDataCategory category,
+    SyncSnapshot snapshot,
+  );
+
   Future<LocalSyncPeerInfo> readInfo();
 }
 
@@ -19,16 +27,34 @@ class HttpLocalSyncServer implements LocalSyncServer {
   HttpLocalSyncServer({
     required Future<SyncSnapshot> Function() exportSnapshot,
     required Future<void> Function(SyncSnapshot snapshot) importSnapshot,
+    required Future<SyncSnapshot> Function(SyncDataCategory category)
+        exportCategory,
+    required Future<void> Function(
+      SyncDataCategory category,
+      SyncSnapshot snapshot,
+    ) importCategory,
     Future<LocalSyncPeerInfo> Function()? readInfo,
     this.host = '0.0.0.0',
     this.port = 23234,
   })  : _exportSnapshot = exportSnapshot,
         _importSnapshot = importSnapshot,
+        _exportCategory = exportCategory,
+        _importCategory = importCategory,
         _readInfo = readInfo ??
-            (() async => const LocalSyncPeerInfo(displayName: 'nolive-device'));
+            (() async => const LocalSyncPeerInfo(
+                  displayName: 'nolive-device',
+                  deviceId: 'nolive-device',
+                  platform: 'unknown',
+                ));
 
   final Future<SyncSnapshot> Function() _exportSnapshot;
   final Future<void> Function(SyncSnapshot snapshot) _importSnapshot;
+  final Future<SyncSnapshot> Function(SyncDataCategory category)
+      _exportCategory;
+  final Future<void> Function(
+    SyncDataCategory category,
+    SyncSnapshot snapshot,
+  ) _importCategory;
   final Future<LocalSyncPeerInfo> Function() _readInfo;
   final String host;
   final int port;
@@ -59,6 +85,17 @@ class HttpLocalSyncServer implements LocalSyncServer {
   Future<SyncSnapshot> exportSnapshot() => _exportSnapshot();
 
   @override
+  Future<SyncSnapshot> exportCategory(SyncDataCategory category) =>
+      _exportCategory(category);
+
+  @override
+  Future<void> importCategory(
+    SyncDataCategory category,
+    SyncSnapshot snapshot,
+  ) =>
+      _importCategory(category, snapshot);
+
+  @override
   Future<LocalSyncPeerInfo> readInfo() => _readInfo();
 
   Future<void> _handleRequest(HttpRequest request) async {
@@ -69,6 +106,31 @@ class HttpLocalSyncServer implements LocalSyncServer {
         request.response.write(jsonEncode(info.toJson()));
         await request.response.close();
         return;
+      }
+      if (request.uri.pathSegments.length == 2 &&
+          request.uri.pathSegments.first == 'sync') {
+        final category = SyncDataCategory.tryParse(request.uri.pathSegments[1]);
+        if (category == null) {
+          request.response.statusCode = HttpStatus.notFound;
+          await request.response.close();
+          return;
+        }
+        if (request.method == 'GET') {
+          final snapshot = await exportCategory(category);
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(SyncSnapshotJsonCodec.encode(snapshot));
+          await request.response.close();
+          return;
+        }
+        if (request.method == 'POST') {
+          final payload = await utf8.decoder.bind(request).join();
+          final snapshot = SyncSnapshotJsonCodec.decode(payload);
+          await importCategory(category, snapshot);
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(jsonEncode({'ok': true}));
+          await request.response.close();
+          return;
+        }
       }
       if (request.uri.path != '/snapshot') {
         request.response.statusCode = HttpStatus.notFound;

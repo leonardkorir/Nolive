@@ -7,10 +7,12 @@ void main() {
   testWidgets('layout settings page shows shell and provider ordering tools', (
     tester,
   ) async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+
     await tester.pumpWidget(
       MaterialApp(
         home: LayoutSettingsPage(
-          bootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
+          bootstrap: bootstrap,
         ),
       ),
     );
@@ -22,6 +24,22 @@ void main() {
     expect(find.text('恢复默认'), findsOneWidget);
     expect(find.text('首页'), findsOneWidget);
     expect(find.text('哔哩哔哩'), findsOneWidget);
+    final youtubeToggle = find.byKey(
+      const Key('layout-provider-toggle-youtube'),
+    );
+    expect(youtubeToggle, findsOneWidget);
     expect(find.byType(CircleAvatar), findsNothing);
+
+    await tester.ensureVisible(youtubeToggle);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Switch>(youtubeToggle).value, isTrue);
+
+    await tester.tap(youtubeToggle);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Switch>(youtubeToggle).value, isFalse);
+    expect(bootstrap.layoutPreferences.value.isProviderEnabled('youtube'),
+        isFalse);
   });
 }

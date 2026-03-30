@@ -51,7 +51,12 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
     return switch (next.backend) {
       PlayerBackend.mpv => current.mpvHardwareAccelerationEnabled !=
               next.mpvHardwareAccelerationEnabled ||
-          current.mpvCompatModeEnabled != next.mpvCompatModeEnabled,
+          current.mpvCompatModeEnabled != next.mpvCompatModeEnabled ||
+          current.mpvDoubleBufferingEnabled != next.mpvDoubleBufferingEnabled ||
+          current.mpvCustomOutputEnabled != next.mpvCustomOutputEnabled ||
+          current.mpvVideoOutputDriver != next.mpvVideoOutputDriver ||
+          current.mpvHardwareDecoder != next.mpvHardwareDecoder ||
+          current.mpvLogEnabled != next.mpvLogEnabled,
       PlayerBackend.mdk =>
         current.mdkLowLatencyEnabled != next.mdkLowLatencyEnabled ||
             current.mdkAndroidTunnelEnabled != next.mdkAndroidTunnelEnabled,
@@ -337,6 +342,115 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 );
               },
             ),
+            const Divider(height: 1),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              key: const Key('player-mpv-double-buffering-switch'),
+              value: preferences.mpvDoubleBufferingEnabled,
+              title: const Text('双缓冲'),
+              subtitle: const Text('直播弱网场景下更稳，但会占用更多缓存'),
+              onChanged: (value) {
+                _update(
+                  current: preferences,
+                  next: preferences.copyWith(
+                    mpvDoubleBufferingEnabled: value,
+                  ),
+                );
+              },
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              key: const Key('player-mpv-custom-output-switch'),
+              value: preferences.mpvCustomOutputEnabled,
+              title: const Text('自定义输出驱动'),
+              subtitle: const Text('手动指定 MPV 输出驱动，优先级高于兼容模式'),
+              onChanged: (value) {
+                _update(
+                  current: preferences,
+                  next: preferences.copyWith(mpvCustomOutputEnabled: value),
+                );
+              },
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              key: const Key('player-mpv-log-enable-switch'),
+              value: preferences.mpvLogEnabled,
+              title: const Text('调试日志'),
+              subtitle: const Text('打开后会采集更多播放器日志，便于定位问题'),
+              onChanged: (value) {
+                _update(
+                  current: preferences,
+                  next: preferences.copyWith(mpvLogEnabled: value),
+                );
+              },
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Text(
+                '视频输出驱动',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              key: const Key('player-mpv-video-output-dropdown'),
+              initialValue: preferences.mpvVideoOutputDriver,
+              items: kMpvVideoOutputDrivers.entries
+                  .map(
+                    (entry) => DropdownMenuItem<String>(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                _update(
+                  current: preferences,
+                  next: preferences.copyWith(mpvVideoOutputDriver: value),
+                );
+              },
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '硬件解码器',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              key: const Key('player-mpv-hardware-decoder-dropdown'),
+              initialValue: preferences.mpvHardwareDecoder,
+              items: kMpvHardwareDecoders.entries
+                  .map(
+                    (entry) => DropdownMenuItem<String>(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                _update(
+                  current: preferences,
+                  next: preferences.copyWith(mpvHardwareDecoder: value),
+                );
+              },
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
           ],
         PlayerBackend.mdk => [
             Text('MDK 高级设置', style: titleStyle),
@@ -409,6 +523,11 @@ const PlayerPreferences _fallbackPreferences = PlayerPreferences(
   volume: 1,
   mpvHardwareAccelerationEnabled: true,
   mpvCompatModeEnabled: false,
+  mpvDoubleBufferingEnabled: false,
+  mpvCustomOutputEnabled: false,
+  mpvVideoOutputDriver: kDefaultMpvVideoOutputDriver,
+  mpvHardwareDecoder: kDefaultMpvHardwareDecoder,
+  mpvLogEnabled: false,
   mdkLowLatencyEnabled: true,
   mdkAndroidTunnelEnabled: false,
   forceHttpsEnabled: false,

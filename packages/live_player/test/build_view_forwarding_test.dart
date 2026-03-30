@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,19 +34,50 @@ void main() {
 
     await player.dispose();
   });
+
+  test('switchable player exposes delegate current diagnostics immediately',
+      () async {
+    final mpvPlayer = _CapturingPlayer(
+      PlayerBackend.mpv,
+      diagnostics: const PlayerDiagnostics(
+        backend: PlayerBackend.mpv,
+        width: 1920,
+        height: 1080,
+      ),
+    );
+    final player = SwitchablePlayer(
+      initialBackend: PlayerBackend.mpv,
+      builders: {
+        PlayerBackend.memory: () => _CapturingPlayer(PlayerBackend.memory),
+        PlayerBackend.mpv: () => mpvPlayer,
+        PlayerBackend.mdk: () => _CapturingPlayer(PlayerBackend.mdk),
+      },
+    );
+
+    expect(player.currentDiagnostics.width, 1920);
+    expect(player.currentDiagnostics.height, 1080);
+
+    await player.dispose();
+  });
 }
 
 class _CapturingPlayer implements BasePlayer {
-  _CapturingPlayer(this.backend)
-      : _currentState = PlayerState(backend: backend);
+  _CapturingPlayer(
+    this.backend, {
+    PlayerDiagnostics? diagnostics,
+  })  : _currentState = PlayerState(backend: backend),
+        _currentDiagnostics = diagnostics ?? PlayerDiagnostics.empty(backend);
 
   final StreamController<PlayerState> _stateController =
       StreamController<PlayerState>.broadcast();
+  final StreamController<PlayerDiagnostics> _diagnosticsController =
+      StreamController<PlayerDiagnostics>.broadcast();
 
   @override
   final PlayerBackend backend;
 
   PlayerState _currentState;
+  final PlayerDiagnostics _currentDiagnostics;
   Key? lastKey;
   double? lastAspectRatio;
   BoxFit? lastFit;
@@ -56,10 +88,19 @@ class _CapturingPlayer implements BasePlayer {
   Stream<PlayerState> get states => _stateController.stream;
 
   @override
+  Stream<PlayerDiagnostics> get diagnostics => _diagnosticsController.stream;
+
+  @override
   PlayerState get currentState => _currentState;
 
   @override
+  PlayerDiagnostics get currentDiagnostics => _currentDiagnostics;
+
+  @override
   bool get supportsEmbeddedView => true;
+
+  @override
+  bool get supportsScreenshot => false;
 
   @override
   Future<void> initialize() async {}
@@ -90,6 +131,9 @@ class _CapturingPlayer implements BasePlayer {
   }
 
   @override
+  Future<Uint8List?> captureScreenshot() async => null;
+
+  @override
   Widget buildView({
     Key? key,
     double? aspectRatio,
@@ -106,5 +150,8 @@ class _CapturingPlayer implements BasePlayer {
   }
 
   @override
-  Future<void> dispose() => _stateController.close();
+  Future<void> dispose() async {
+    await _stateController.close();
+    await _diagnosticsController.close();
+  }
 }

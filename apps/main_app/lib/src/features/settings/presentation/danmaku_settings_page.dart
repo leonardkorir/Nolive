@@ -106,6 +106,18 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
                     _update(preferences.copyWith(enabledByDefault: value));
                   },
                 ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: preferences.nativeBatchMaskEnabled,
+                  title: const Text('原生弹幕频控'),
+                  subtitle: const Text('Android 优先尝试原生批处理过滤，失败时自动回退 Dart'),
+                  onChanged: (value) {
+                    _update(
+                      preferences.copyWith(nativeBatchMaskEnabled: value),
+                    );
+                  },
+                ),
               ],
             ),
           ),

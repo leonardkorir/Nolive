@@ -42,6 +42,7 @@ void main() {
 
     const next = DanmakuPreferences(
       enabledByDefault: false,
+      nativeBatchMaskEnabled: false,
       fontSize: 22,
       fontWeight: 7,
       area: 0.5,

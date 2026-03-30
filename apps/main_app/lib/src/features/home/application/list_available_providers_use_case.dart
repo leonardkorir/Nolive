@@ -31,6 +31,10 @@ class ListAvailableProvidersUseCase {
   }
 
   bool _shouldHideDescriptor(ProviderDescriptor descriptor) {
+    final preferences = layoutPreferences.value;
+    if (!preferences.isProviderEnabled(descriptor.id.value)) {
+      return true;
+    }
     if (descriptor.id != ProviderId.chaturbate) {
       return false;
     }

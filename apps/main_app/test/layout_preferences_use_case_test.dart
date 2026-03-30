@@ -19,6 +19,7 @@ void main() {
           ShellTabId.profile,
         ],
         providerOrder: ['douyin', 'chaturbate', 'bilibili', 'douyu', 'huya'],
+        enabledProviderIds: ['douyin', 'huya'],
       ),
     );
 
@@ -27,21 +28,32 @@ void main() {
     expect(reloaded.shellTabOrder.first, ShellTabId.home);
     expect(reloaded.providerOrder.first, 'douyin');
     expect(reloaded.providerOrder, contains('chaturbate'));
+    expect(reloaded.enabledProviderIds, ['douyin', 'huya']);
 
-    final orderedProviders = bootstrap.listAvailableProviders();
-    expect(orderedProviders.first.id.value, 'douyin');
+    final orderedProviders = bootstrap
+        .listAvailableProviders()
+        .map((item) => item.id.value)
+        .toList();
+    expect(orderedProviders.first, 'douyin');
+    expect(orderedProviders, contains('huya'));
+    expect(orderedProviders, isNot(contains('bilibili')));
     expect(
       bootstrap.layoutPreferences.value.shellTabOrder,
       isNot(contains(ShellTabId.search)),
     );
   });
 
-  test('layout preferences defaults keep chaturbate in provider order', () {
+  test('layout preferences defaults keep providers enabled by default', () {
     expect(LayoutPreferences.defaultProviderOrder, contains('chaturbate'));
+    expect(LayoutPreferences.defaultEnabledProviderIds, contains('youtube'));
     expect(
       LoadLayoutPreferencesUseCase.normalizeProviderOrder(
         const ['douyu', 'bilibili'],
       ),
+      contains('chaturbate'),
+    );
+    expect(
+      LoadLayoutPreferencesUseCase.normalizeEnabledProviderIds(null),
       contains('chaturbate'),
     );
   });
@@ -71,5 +83,22 @@ void main() {
 
     final providers = useCase();
     expect(providers.map((item) => item.id.value), contains('chaturbate'));
+  });
+
+  test('live provider list respects provider enable switches', () {
+    final useCase = ListAvailableProvidersUseCase(
+      ReferenceProviderCatalog.buildLiveRegistry(
+        stringSetting: (key) => 'csrftoken=demo; __cf_bm=demo',
+      ),
+      ValueNotifier(
+        LayoutPreferences.defaults().copyWith(
+          enabledProviderIds: const ['chaturbate'],
+        ),
+      ),
+      stringSetting: (key) => 'csrftoken=demo; __cf_bm=demo',
+    );
+
+    final providers = useCase().map((item) => item.id.value).toList();
+    expect(providers, ['chaturbate']);
   });
 }

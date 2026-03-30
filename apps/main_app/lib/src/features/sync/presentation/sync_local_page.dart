@@ -45,6 +45,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
   @override
   void dispose() {
     _peerSubscription?.cancel();
+    unawaited(widget.bootstrap.localDiscoveryService.stop());
     super.dispose();
   }
 
@@ -103,6 +104,8 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
         displayName: preferences.localDeviceName,
         address: host,
         port: widget.bootstrap.localSyncServer.endpoint.port,
+        platform: Platform.operatingSystem,
+        lastSeenAt: DateTime.now(),
       ),
     );
   }
@@ -196,6 +199,8 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
           displayName: nextPreferences.localDeviceName,
           address: nextPreferences.localPeerAddress.trim(),
           port: nextPreferences.localPeerPort,
+          platform: 'manual',
+          lastSeenAt: DateTime.now(),
         ),
       );
     }
@@ -268,6 +273,8 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       displayName: preferences.localDeviceName,
       address: peerAddress,
       port: preferences.localPeerPort,
+      platform: 'manual',
+      lastSeenAt: DateTime.now(),
     );
   }
 
@@ -297,6 +304,24 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     });
   }
 
+  Future<void> _pushCategory(
+    SyncPreferences preferences,
+    SyncDataCategory category,
+  ) async {
+    await _runBusy(() async {
+      await widget.bootstrap.pushLocalSyncSnapshot(
+        preferences,
+        categories: <SyncDataCategory>{category},
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已同步 ${_labelOfCategory(category)}')),
+      );
+    });
+  }
+
   Future<void> _savePeerAsTarget(
     SyncPreferences preferences,
     DiscoveredPeer peer,
@@ -312,6 +337,8 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
         displayName: peer.displayName,
         address: peer.address,
         port: peer.port,
+        platform: peer.platform,
+        lastSeenAt: DateTime.now(),
       ),
     );
     if (!mounted) {
@@ -331,6 +358,29 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('同步地址已复制')),
     );
+  }
+
+  String _labelOfCategory(SyncDataCategory category) {
+    return switch (category) {
+      SyncDataCategory.settings => '设置',
+      SyncDataCategory.library => '资料库',
+      SyncDataCategory.history => '历史',
+      SyncDataCategory.blockedKeywords => '屏蔽词',
+    };
+  }
+
+  String _relativeLastSeen(DateTime value) {
+    final diff = DateTime.now().difference(value);
+    if (diff.inSeconds < 5) {
+      return '刚刚在线';
+    }
+    if (diff.inMinutes < 1) {
+      return '${diff.inSeconds} 秒前';
+    }
+    if (diff.inHours < 1) {
+      return '${diff.inMinutes} 分钟前';
+    }
+    return '${diff.inHours} 小时前';
   }
 
   @override
@@ -454,8 +504,32 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                                 ? null
                                 : () => _pushLocal(preferences),
                             icon: const Icon(Icons.send_outlined),
-                            label: const Text('推送到目标'),
+                            label: const Text('一键全量同步'),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          for (final category in SyncDataCategory.values)
+                            OutlinedButton.icon(
+                              key: Key(
+                                'sync-local-category-${category.apiValue}',
+                              ),
+                              onPressed: _busy ||
+                                      preferences.localPeerAddress
+                                          .trim()
+                                          .isEmpty
+                                  ? null
+                                  : () => _pushCategory(
+                                        preferences,
+                                        category,
+                                      ),
+                              icon: const Icon(Icons.sync_alt_rounded),
+                              label: Text(_labelOfCategory(category)),
+                            ),
                         ],
                       ),
                     ],
@@ -493,7 +567,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '已记录设备',
+                        '已发现设备',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 8),
@@ -505,14 +579,16 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(Icons.devices_other_outlined),
                             title: Text(peer.displayName),
-                            subtitle: Text('${peer.address}:${peer.port}'),
+                            subtitle: Text(
+                              '${peer.platform} · ${peer.address}:${peer.port}',
+                            ),
                             trailing: Text(
                               preferences.localPeerAddress == peer.address &&
                                       preferences.localPeerPort == peer.port
                                   ? '已选中'
                                   : peer.deviceId == 'self'
                                       ? '本机'
-                                      : '点击使用',
+                                      : _relativeLastSeen(peer.lastSeenAt),
                             ),
                             onTap: _busy
                                 ? null

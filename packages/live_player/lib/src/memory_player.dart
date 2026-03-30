@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 
 import 'base_player.dart';
 import 'player_backend.dart';
+import 'player_diagnostics.dart';
 import 'player_state.dart';
 
 class MemoryPlayer implements BasePlayer {
@@ -11,9 +13,14 @@ class MemoryPlayer implements BasePlayer {
 
   final StreamController<PlayerState> _stateController =
       StreamController<PlayerState>.broadcast();
+  final StreamController<PlayerDiagnostics> _diagnosticsController =
+      StreamController<PlayerDiagnostics>.broadcast();
 
   PlaybackSource? _currentSource;
   PlayerState _currentState = const PlayerState(backend: PlayerBackend.memory);
+  final PlayerDiagnostics _currentDiagnostics = const PlayerDiagnostics(
+    backend: PlayerBackend.memory,
+  );
   bool _initialized = false;
 
   @override
@@ -23,10 +30,19 @@ class MemoryPlayer implements BasePlayer {
   Stream<PlayerState> get states => _stateController.stream;
 
   @override
+  Stream<PlayerDiagnostics> get diagnostics => _diagnosticsController.stream;
+
+  @override
   PlayerState get currentState => _currentState;
 
   @override
+  PlayerDiagnostics get currentDiagnostics => _currentDiagnostics;
+
+  @override
   bool get supportsEmbeddedView => false;
+
+  @override
+  bool get supportsScreenshot => false;
 
   PlaybackSource? get currentSource => _currentSource;
 
@@ -82,6 +98,9 @@ class MemoryPlayer implements BasePlayer {
   }
 
   @override
+  Future<Uint8List?> captureScreenshot() async => null;
+
+  @override
   Widget buildView({
     Key? key,
     double? aspectRatio,
@@ -95,6 +114,7 @@ class MemoryPlayer implements BasePlayer {
   @override
   Future<void> dispose() async {
     await _stateController.close();
+    await _diagnosticsController.close();
   }
 
   void _emit(PlayerState state) {

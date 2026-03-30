@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/app/bootstrap/default_state.dart';
 import 'package:nolive_app/src/features/settings/presentation/other_settings_page.dart';
 
 class _FakeBilibiliAccountClient implements BilibiliAccountClient {
@@ -99,7 +100,7 @@ void main() {
     final snapshot = await bootstrap.loadSyncSnapshot();
     expect(snapshot.follows, isEmpty);
     expect(snapshot.tags, ['常看', '收藏']);
-    expect(snapshot.blockedKeywords, ['剧透']);
+    expect(snapshot.blockedKeywords, kDefaultBlockedKeywords);
   });
 
   testWidgets('other settings page imports legacy-compatible config json', (

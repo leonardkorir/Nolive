@@ -7,6 +7,28 @@ import 'package:live_providers/src/providers/douyu/douyu_transport.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('live douyu runtime prefers square category icon when available',
+      () async {
+    final transport = _FakeDouyuTransport();
+    final signService = _FakeDouyuSignService();
+    final provider = DouyuProvider(
+      dataSource: DouyuLiveDataSource(
+        transport: transport,
+        signService: signService,
+      ),
+    );
+
+    final categories = await provider.fetchCategories();
+    final gaming = categories.firstWhere((item) => item.id == '1');
+    final lol = gaming.children.firstWhere((item) => item.id == '1');
+
+    expect(lol.name, '英雄联盟');
+    expect(
+      lol.pic,
+      'https://sta-op.douyucdn.cn/dycatr/1de1ea5215b513cf4f5b3c326f5f9657.png',
+    );
+  });
+
   test('live douyu runtime maps search/detail/play flow', () async {
     final transport = _FakeDouyuTransport();
     final signService = _FakeDouyuSignService();
@@ -139,6 +161,33 @@ class _FakeDouyuTransport implements DouyuTransport {
     );
     requestedUrls.add(uri.toString());
 
+    if (uri.toString().startsWith(
+          'https://m.douyu.com/api/cate/list',
+        )) {
+      return jsonEncode({
+        'data': {
+          'cate1Info': [
+            {
+              'cate1Id': 1,
+              'cate1Name': '网游竞技',
+            },
+          ],
+          'cate2Info': [
+            {
+              'cate1Id': 1,
+              'cate2Id': 1,
+              'cate2Name': '英雄联盟',
+              'pic':
+                  'https://sta-op.douyucdn.cn/dycatr/f72ebc4febe52280ef460494e3026459.png',
+              'icon':
+                  'https://sta-op.douyucdn.cn/dycatr/1de1ea5215b513cf4f5b3c326f5f9657.png',
+              'smallIcon':
+                  'https://sta-op.douyucdn.cn/dycatr/e2c1b85bdc1082e534a1f70001d69249.png',
+            },
+          ],
+        },
+      });
+    }
     if (uri.toString().startsWith(
           'https://www.douyu.com/japi/search/api/searchShow',
         )) {

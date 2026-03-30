@@ -11,7 +11,8 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
     final posterUrl = room?.keyframeUrl ?? room?.coverUrl;
     final providerLabel = descriptor?.displayName ?? widget.providerId.value;
     final streamerName = normalizeDisplayText(room?.streamerName);
-    final avatarTextSource = streamerName.isEmpty ? providerLabel : streamerName;
+    final avatarTextSource =
+        streamerName.isEmpty ? providerLabel : streamerName;
     final avatarLabel = avatarTextSource.isEmpty
         ? '?'
         : avatarTextSource.substring(0, 1).toUpperCase();
@@ -216,7 +217,6 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
     required List<LivePlayUrl> playUrls,
     required bool hasPlayback,
     required List<PlayerBackend> availableBackends,
-    required PlayerState? playerState,
   }) {
     final tabSwitcher = Material(
       color: Theme.of(context).colorScheme.surface,
@@ -267,7 +267,6 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
       playUrls: playUrls,
       playbackSource: playbackSource,
       hasPlayback: hasPlayback,
-      playerState: playerState,
     );
 
     return ColoredBox(
@@ -284,7 +283,6 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                   room: room,
                   playbackSource: playbackSource,
                   hasPlayback: hasPlayback,
-                  playerState: playerState,
                   embedPlayer: !fullscreenActive,
                   fullscreen: false,
                   onShowQuality:
@@ -331,7 +329,6 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                 room: room,
                 playbackSource: playbackSource,
                 hasPlayback: hasPlayback,
-                playerState: playerState,
                 embedPlayer: !fullscreenActive,
                 fullscreen: false,
                 onShowQuality:
@@ -381,7 +378,6 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
     required List<LivePlayUrl> playUrls,
     required PlaybackSource? playbackSource,
     required bool hasPlayback,
-    required PlayerState? playerState,
   }) {
     return PageView(
       key: const Key('room-panel-page-view'),
@@ -404,7 +400,6 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
             playUrls: playUrls,
             playbackSource: playbackSource,
             hasPlayback: hasPlayback,
-            playerState: playerState,
           ),
         ),
       ],

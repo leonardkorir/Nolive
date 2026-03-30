@@ -34,7 +34,15 @@ void main() {
       await tester.pumpAndSettle();
       await _maybeTapBackButton(tester);
 
-      await tester.tap(find.byIcon(Icons.search_rounded).first);
+      final providerCategorySearchButton =
+          find.byKey(const Key('provider-category-search-button'));
+      final browseSearchButton =
+          find.byKey(const Key('browse-appbar-search-button'));
+      if (providerCategorySearchButton.evaluate().isNotEmpty) {
+        await tester.tap(providerCategorySearchButton);
+      } else {
+        await tester.tap(browseSearchButton);
+      }
       await tester.pumpAndSettle();
       expect(find.text('等待搜索'), findsOneWidget);
 

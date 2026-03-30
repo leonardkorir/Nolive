@@ -10,17 +10,22 @@ void main() {
       importSnapshot: (snapshot) async {
         current = snapshot;
       },
+      exportCategory: (_) async => current,
+      importCategory: (_, snapshot) async {
+        current = snapshot;
+      },
       port: 28234,
     );
     await server.start();
 
     final client = HttpLocalSyncClient();
     await client.pushSnapshot(
-      peer: const DiscoveredPeer(
+      peer: DiscoveredPeer(
         deviceId: 'dev-1',
         displayName: '桌面端',
         address: '127.0.0.1',
         port: 28234,
+        lastSeenAt: DateTime(2026, 3, 30),
       ),
       snapshot: const SyncSnapshot(
         tags: ['常看'],
@@ -41,22 +46,31 @@ void main() {
     final server = HttpLocalSyncServer(
       exportSnapshot: () async => const SyncSnapshot(),
       importSnapshot: (_) async {},
-      readInfo: () async => const LocalSyncPeerInfo(displayName: '测试设备'),
+      exportCategory: (_) async => const SyncSnapshot(),
+      importCategory: (_, __) async {},
+      readInfo: () async => const LocalSyncPeerInfo(
+        displayName: '测试设备',
+        deviceId: 'test-device',
+        platform: 'linux',
+      ),
       port: 28235,
     );
     await server.start();
 
     final client = HttpLocalSyncClient();
     final info = await client.fetchInfo(
-      peer: const DiscoveredPeer(
+      peer: DiscoveredPeer(
         deviceId: 'dev-2',
         displayName: '手机',
         address: '127.0.0.1',
         port: 28235,
+        lastSeenAt: DateTime(2026, 3, 30),
       ),
     );
 
     expect(info.displayName, '测试设备');
+    expect(info.deviceId, 'test-device');
+    expect(info.platform, 'linux');
     expect(info.snapshotPath, '/snapshot');
 
     await server.stop();

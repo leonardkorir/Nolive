@@ -78,6 +78,8 @@ class TwitchLiveDataSource implements TwitchDataSource {
   static const String _defaultAcmb =
       'eyJBcHBWZXJzaW9uIjoiNTZiZDRjMDAtNTk1Ny00ODc3LThlNzQtNGQxOTM0NDZi'
       'MjBiIiwiQ2xpZW50QXBwIjoid2ViIn0=';
+  static const int _directoryCategoryImageWidth = 144;
+  static const int _directoryCategoryImageHeight = 192;
   static const int _browsePageSize = 30;
   static const int _categoryPageSize = 30;
   static const int _maxDirectoryCategoryLimit = 100;
@@ -697,7 +699,9 @@ class TwitchLiveDataSource implements TwitchDataSource {
     if (raw.isEmpty) {
       return null;
     }
-    return raw.replaceAll('{width}', '144').replaceAll('{height}', '192');
+    return raw
+        .replaceAll('{width}', '$_directoryCategoryImageWidth')
+        .replaceAll('{height}', '$_directoryCategoryImageHeight');
   }
 
   Future<PagedResponse<LiveRoom>> _fetchBrowsePopularRooms({

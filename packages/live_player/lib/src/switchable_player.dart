@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 
 import 'base_player.dart';
 import 'memory_player.dart';
 import 'player_backend.dart';
+import 'player_diagnostics.dart';
 import 'player_state.dart';
 import 'simulated_mdk_player.dart';
 import 'simulated_mpv_player.dart';
@@ -34,10 +36,13 @@ class SwitchablePlayer implements BasePlayer {
   final Map<PlayerBackend, PlayerBuilder> _builders;
   final StreamController<PlayerState> _stateController =
       StreamController<PlayerState>.broadcast();
+  final StreamController<PlayerDiagnostics> _diagnosticsController =
+      StreamController<PlayerDiagnostics>.broadcast();
 
   late BasePlayer _delegate;
   late PlayerBackend _activeBackend;
   StreamSubscription<PlayerState>? _delegateSubscription;
+  StreamSubscription<PlayerDiagnostics>? _delegateDiagnosticsSubscription;
   bool _initialized = false;
 
   List<PlayerBackend> get supportedBackends =>
@@ -50,10 +55,19 @@ class SwitchablePlayer implements BasePlayer {
   Stream<PlayerState> get states => _stateController.stream;
 
   @override
+  Stream<PlayerDiagnostics> get diagnostics => _diagnosticsController.stream;
+
+  @override
   PlayerState get currentState => _delegate.currentState;
 
   @override
+  PlayerDiagnostics get currentDiagnostics => _delegate.currentDiagnostics;
+
+  @override
   bool get supportsEmbeddedView => _delegate.supportsEmbeddedView;
+
+  @override
+  bool get supportsScreenshot => _delegate.supportsScreenshot;
 
   Future<void> switchBackend(PlayerBackend nextBackend) async {
     if (nextBackend == _activeBackend) {
@@ -89,6 +103,9 @@ class SwitchablePlayer implements BasePlayer {
   Future<void> setVolume(double value) => _delegate.setVolume(value);
 
   @override
+  Future<Uint8List?> captureScreenshot() => _delegate.captureScreenshot();
+
+  @override
   Widget buildView({
     Key? key,
     double? aspectRatio,
@@ -108,8 +125,10 @@ class SwitchablePlayer implements BasePlayer {
   @override
   Future<void> dispose() async {
     await _delegateSubscription?.cancel();
+    await _delegateDiagnosticsSubscription?.cancel();
     await _delegate.dispose();
     await _stateController.close();
+    await _diagnosticsController.close();
   }
 
   Future<void> _replaceDelegate(PlayerBackend nextBackend) async {
@@ -117,6 +136,7 @@ class SwitchablePlayer implements BasePlayer {
     final status = currentState.status;
     final volume = currentState.volume;
     await _delegateSubscription?.cancel();
+    await _delegateDiagnosticsSubscription?.cancel();
     await _delegate.dispose();
     _activeBackend = nextBackend;
     _delegate = _builders[nextBackend]!();
@@ -139,6 +159,15 @@ class SwitchablePlayer implements BasePlayer {
     _delegateSubscription = _delegate.states.listen((state) {
       if (!_stateController.isClosed) {
         _stateController.add(state.copyWith(backend: _activeBackend));
+      }
+    });
+    _delegateDiagnosticsSubscription = _delegate.diagnostics.listen((
+      diagnostics,
+    ) {
+      if (!_diagnosticsController.isClosed) {
+        _diagnosticsController.add(
+          diagnostics.copyWith(backend: _activeBackend),
+        );
       }
     });
   }

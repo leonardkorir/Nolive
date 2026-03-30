@@ -3,7 +3,15 @@ import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/features/profile/application/manage_theme_mode_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_layout_preferences_use_case.dart';
 
-const List<String> kDefaultBlockedKeywords = ['剧透'];
+const List<String> kDefaultBlockedKeywords = [
+  r're:(https?://|www\.|[A-Za-z0-9.-]+\.[A-Za-z]{2,})(/\S*)?',
+  '进入了',
+  '送出了',
+  'token',
+  '点击前往',
+  'Tip',
+  'Menu',
+];
 const List<String> kDefaultTags = ['常看', '收藏'];
 
 void seedDefaultAppState({
@@ -53,6 +61,10 @@ void seedDefaultAppState({
   settingsRepository.writeValue(
     'layout_provider_order',
     LayoutPreferences.defaultProviderOrder,
+  );
+  settingsRepository.writeValue(
+    'layout_provider_enabled_ids',
+    LayoutPreferences.defaultEnabledProviderIds,
   );
   settingsRepository.writeValue('follow_auto_refresh_enabled', true);
   settingsRepository.writeValue('follow_auto_refresh_interval_minutes', 10);
@@ -224,6 +236,11 @@ Future<void> ensureDefaultAppState({
     settingsRepository,
     'layout_provider_order',
     LayoutPreferences.defaultProviderOrder,
+  );
+  await _writeDefaultIfMissing<List<String>>(
+    settingsRepository,
+    'layout_provider_enabled_ids',
+    LayoutPreferences.defaultEnabledProviderIds,
   );
   await _writeDefaultIfMissing<bool>(
     settingsRepository,

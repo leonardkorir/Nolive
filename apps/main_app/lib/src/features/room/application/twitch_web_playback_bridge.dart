@@ -384,7 +384,8 @@ return await (async () => {
     }
   }
 
-  Future<void> _waitUntilDocumentReady(InAppWebViewController controller) async {
+  Future<void> _waitUntilDocumentReady(
+      InAppWebViewController controller) async {
     final deadline = DateTime.now().add(_timeout);
     while (DateTime.now().isBefore(deadline)) {
       if (await _isDocumentReady(controller)) {
@@ -392,7 +393,8 @@ return await (async () => {
       }
       await Future<void>.delayed(_pollInterval);
     }
-    throw TimeoutException('Twitch web playback bridge document readiness timed out.');
+    throw TimeoutException(
+        'Twitch web playback bridge document readiness timed out.');
   }
 
   Future<void> _disposeHeadlessWebView() async {

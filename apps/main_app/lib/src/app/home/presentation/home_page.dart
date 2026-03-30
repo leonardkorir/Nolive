@@ -5,6 +5,7 @@ import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
+import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/provider_tab_label.dart';
@@ -39,60 +40,74 @@ class _HomePageState extends State<HomePage> {
         if (providers.isEmpty) {
           return const Scaffold(body: Center(child: Text('暂无可用平台')));
         }
+        final adaptive = AppAdaptiveLayoutSpec.of(context);
 
         return DefaultTabController(
           length: providers.length,
-          child: Scaffold(
-            appBar: AppBar(
-              centerTitle: false,
-              toolbarHeight: 52,
-              titleSpacing: 8,
-              title: _ProviderTabs(providers: providers),
-              actions: [
-                IconButton(
-                  tooltip: '搜索',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (context) => SearchPage(
-                          bootstrap: widget.bootstrap,
-                          standalone: true,
-                        ),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.search_rounded),
+          child: Builder(
+            builder: (tabContext) => Scaffold(
+              appBar: AppBar(
+                centerTitle: false,
+                toolbarHeight: 52,
+                titleSpacing: 8,
+                title: _ProviderTabs(
+                  providers: providers,
+                  logoSize: adaptive.providerTabLogoSize,
+                  labelPadding: adaptive.providerTabLabelPadding,
                 ),
-                const SizedBox(width: 4),
-              ],
-            ),
-            body: TabBarView(
-              children: [
-                for (final descriptor in providers)
-                  _HomeProviderFeedTab(
-                    key: PageStorageKey('home-${descriptor.id.value}'),
-                    bootstrap: widget.bootstrap,
-                    descriptor: descriptor,
-                    onOpenRoom: (room) {
-                      Navigator.of(context).pushNamed(
-                        AppRoutes.room,
-                        arguments: RoomRouteArguments(
-                          providerId: descriptor.id,
-                          roomId: room.roomId,
+                actions: [
+                  IconButton(
+                    key: const Key('home-appbar-search-button'),
+                    tooltip: '搜索',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      final controller =
+                          DefaultTabController.maybeOf(tabContext);
+                      final selectedIndex = controller?.index ?? 0;
+                      final selectedProvider = providers[selectedIndex];
+                      Navigator.of(tabContext).push(
+                        MaterialPageRoute<void>(
+                          builder: (context) => SearchPage(
+                            bootstrap: widget.bootstrap,
+                            standalone: true,
+                            initialProviderId: selectedProvider.id,
+                          ),
                         ),
                       );
                     },
-                    onOpenCategories: () {
-                      Navigator.of(context).pushNamed(
-                        AppRoutes.providerCategories,
-                        arguments: ProviderCategoriesRouteArguments(
-                          providerId: descriptor.id,
-                        ),
-                      );
-                    },
+                    icon: const Icon(Icons.search_rounded),
                   ),
-              ],
+                  const SizedBox(width: 4),
+                ],
+              ),
+              body: TabBarView(
+                children: [
+                  for (final descriptor in providers)
+                    _HomeProviderFeedTab(
+                      key: PageStorageKey('home-${descriptor.id.value}'),
+                      bootstrap: widget.bootstrap,
+                      descriptor: descriptor,
+                      pageHorizontalPadding: adaptive.pageHorizontalPadding,
+                      onOpenRoom: (room) {
+                        Navigator.of(tabContext).pushNamed(
+                          AppRoutes.room,
+                          arguments: RoomRouteArguments(
+                            providerId: descriptor.id,
+                            roomId: room.roomId,
+                          ),
+                        );
+                      },
+                      onOpenCategories: () {
+                        Navigator.of(tabContext).pushNamed(
+                          AppRoutes.providerCategories,
+                          arguments: ProviderCategoriesRouteArguments(
+                            providerId: descriptor.id,
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
             ),
           ),
         );
@@ -102,9 +117,15 @@ class _HomePageState extends State<HomePage> {
 }
 
 class _ProviderTabs extends StatelessWidget {
-  const _ProviderTabs({required this.providers});
+  const _ProviderTabs({
+    required this.providers,
+    required this.logoSize,
+    required this.labelPadding,
+  });
 
   final List<ProviderDescriptor> providers;
+  final double logoSize;
+  final EdgeInsetsGeometry labelPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -115,7 +136,7 @@ class _ProviderTabs extends StatelessWidget {
         tabAlignment: TabAlignment.center,
         dividerColor: Colors.transparent,
         indicatorSize: TabBarIndicatorSize.label,
-        labelPadding: const EdgeInsets.symmetric(horizontal: 18),
+        labelPadding: labelPadding,
         overlayColor: WidgetStateProperty.all(Colors.transparent),
         splashBorderRadius: BorderRadius.circular(999),
         tabs: [
@@ -125,6 +146,7 @@ class _ProviderTabs extends StatelessWidget {
               height: 34,
               child: ProviderTabLabel(
                 descriptor: descriptor,
+                logoSize: logoSize,
               ),
             ),
         ],
@@ -137,6 +159,7 @@ class _HomeProviderFeedTab extends StatefulWidget {
   const _HomeProviderFeedTab({
     required this.bootstrap,
     required this.descriptor,
+    required this.pageHorizontalPadding,
     required this.onOpenRoom,
     required this.onOpenCategories,
     super.key,
@@ -144,6 +167,7 @@ class _HomeProviderFeedTab extends StatefulWidget {
 
   final AppBootstrap bootstrap;
   final ProviderDescriptor descriptor;
+  final double pageHorizontalPadding;
   final ValueChanged<LiveRoom> onOpenRoom;
   final VoidCallback onOpenCategories;
 
@@ -329,7 +353,12 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
         onRefresh: _loadFirstPage,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+          padding: EdgeInsets.fromLTRB(
+            widget.pageHorizontalPadding,
+            16,
+            widget.pageHorizontalPadding,
+            120,
+          ),
           children: [
             EmptyStateCard(
               title: '${widget.descriptor.displayName} 首页加载失败',
@@ -351,7 +380,12 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
         onRefresh: _loadFirstPage,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+          padding: EdgeInsets.fromLTRB(
+            widget.pageHorizontalPadding,
+            16,
+            widget.pageHorizontalPadding,
+            120,
+          ),
           children: [
             EmptyStateCard(
               title: '${widget.descriptor.displayName} 暂时没有内容',
@@ -383,7 +417,12 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(6, 6, 6, 18),
+              padding: EdgeInsets.fromLTRB(
+                widget.pageHorizontalPadding / 2,
+                6,
+                widget.pageHorizontalPadding / 2,
+                18,
+              ),
               sliver: SliverGrid(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
@@ -401,7 +440,12 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
             ),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                padding: EdgeInsets.fromLTRB(
+                  widget.pageHorizontalPadding,
+                  0,
+                  widget.pageHorizontalPadding,
+                  96,
+                ),
                 child: Center(
                   child: _loadingMore
                       ? const Padding(

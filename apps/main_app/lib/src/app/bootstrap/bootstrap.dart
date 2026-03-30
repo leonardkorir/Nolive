@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:nolive_app/src/app/bootstrap/default_state.dart';
 import 'package:nolive_app/src/app/platform/douyin_danmaku_signature_service.dart';
 import 'package:nolive_app/src/features/browse/application/load_provider_highlights_use_case.dart';
+import 'package:nolive_app/src/features/category/application/manage_favorite_category_tags_use_case.dart';
 import 'package:nolive_app/src/features/category/application/load_category_rooms_use_case.dart';
 import 'package:nolive_app/src/features/category/application/load_provider_categories_use_case.dart';
 import 'package:nolive_app/src/features/home/application/list_available_providers_use_case.dart';
@@ -150,6 +151,8 @@ class AppBootstrap {
     required this.loadProviderHighlights,
     required this.loadProviderRecommendRooms,
     required this.loadProviderCategories,
+    required this.loadFavoriteCategoryTags,
+    required this.toggleFavoriteCategoryTag,
     required this.loadCategoryRooms,
     required this.loadRoom,
     required this.openRoomDanmaku,
@@ -229,6 +232,8 @@ class AppBootstrap {
   final LoadProviderHighlightsUseCase loadProviderHighlights;
   final LoadProviderRecommendRoomsUseCase loadProviderRecommendRooms;
   final LoadProviderCategoriesUseCase loadProviderCategories;
+  final LoadFavoriteCategoryTagsUseCase loadFavoriteCategoryTags;
+  final ToggleFavoriteCategoryTagUseCase toggleFavoriteCategoryTag;
   final LoadCategoryRoomsUseCase loadCategoryRooms;
   final LoadRoomUseCase loadRoom;
   final OpenRoomDanmakuUseCase openRoomDanmaku;
@@ -266,7 +271,7 @@ class AppBootstrap {
   final CreateBilibiliQrLoginSessionUseCase createBilibiliQrLoginSession;
   final PollBilibiliQrLoginSessionUseCase pollBilibiliQrLoginSession;
   final ClearProviderAccountUseCase clearProviderAccount;
-  final ManualLocalDiscoveryService localDiscoveryService;
+  final UdpLocalDiscoveryService localDiscoveryService;
   final HttpLocalSyncServer localSyncServer;
   final HttpLocalSyncClient localSyncClient;
   final ExportLegacyConfigJsonUseCase exportLegacyConfigJson;

@@ -12,6 +12,11 @@ val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
     FileInputStream(keystorePropertiesFile).use(keystoreProperties::load)
 }
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    FileInputStream(localPropertiesFile).use(localProperties::load)
+}
 val releaseStoreFilePath = keystoreProperties.getProperty("storeFile")?.trim()
 val releaseKeyAlias = keystoreProperties.getProperty("keyAlias")?.trim()
 val releaseStorePassword = keystoreProperties.getProperty("storePassword")?.trim()
@@ -23,6 +28,52 @@ val releaseSigningReady =
         !releaseKeyPassword.isNullOrBlank() &&
         !releaseStoreFilePath.contains("debug.keystore") &&
         releaseKeyAlias != "androiddebugkey"
+val androidSdkDir =
+    localProperties.getProperty("sdk.dir")?.trim()
+        ?: System.getenv("ANDROID_SDK_ROOT")?.trim()
+        ?: System.getenv("ANDROID_HOME")?.trim()
+val rustDanmakuMaskEnabled =
+    (
+        localProperties.getProperty("nolive.buildRustDanmakuMask")?.trim()
+            ?: System.getenv("NOLIVE_BUILD_RUST_DANMAKU_MASK")?.trim()
+            ?: "false"
+        ).equals("true", ignoreCase = true)
+val rustJniLibsDir = layout.buildDirectory.dir("generated/rustJniLibs")
+val rustBuildScript = rootProject.file("../rust/build_android_danmaku_mask.sh")
+
+val buildRustDanmakuMask by tasks.registering(Exec::class) {
+    inputs.dir(rootProject.file("../rust/danmaku_mask"))
+    inputs.file(rustBuildScript)
+    inputs.property("rustDanmakuMaskEnabled", rustDanmakuMaskEnabled)
+    outputs.dir(rustJniLibsDir)
+    isIgnoreExitValue = true
+
+    doFirst {
+        delete(rustJniLibsDir)
+        rustJniLibsDir.get().asFile.mkdirs()
+    }
+
+    commandLine(
+        "bash",
+        rustBuildScript.absolutePath,
+        rustJniLibsDir.get().asFile.absolutePath,
+        androidSdkDir ?: "",
+        rustDanmakuMaskEnabled.toString(),
+    )
+
+    doLast {
+        val exitCode = executionResult.get().exitValue
+        if (exitCode != 0) {
+            logger.warn(
+                "Rust danmaku mask build skipped or failed (exit code: $exitCode); Android runtime will use Dart fallback.",
+            )
+        } else if (!rustDanmakuMaskEnabled) {
+            logger.lifecycle(
+                "Rust danmaku mask build disabled; Android runtime will use Dart fallback.",
+            )
+        }
+    }
+}
 
 android {
     namespace = "app.nolive.mobile"
@@ -34,6 +85,10 @@ android {
         jniLibs {
             useLegacyPackaging = true
         }
+    }
+
+    sourceSets {
+        getByName("main").jniLibs.srcDir(rustJniLibsDir)
     }
 
     compileOptions {
@@ -95,4 +150,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildRustDanmakuMask)
 }

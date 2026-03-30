@@ -55,7 +55,6 @@ extension _RoomPreviewPagePlayerSurfaceExtension on _RoomPreviewPageState {
     required LiveRoomDetail room,
     required PlaybackSource? playbackSource,
     required bool hasPlayback,
-    required PlayerState? playerState,
     required bool embedPlayer,
     required bool fullscreen,
     VoidCallback? onShowQuality,

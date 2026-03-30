@@ -5,13 +5,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/features/settings/application/manage_follow_preferences_use_case.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/app/bootstrap/default_state.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/features/settings/application/manage_layout_preferences_use_case.dart';
 
 void main() {
   test('snapshot management exports imports and resets app state', () async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
     await bootstrap.updateThemeMode(ThemeMode.dark);
+    await bootstrap.updateLayoutPreferences(
+      LayoutPreferences.defaults().copyWith(
+        enabledProviderIds: const ['bilibili', 'youtube'],
+      ),
+    );
     await bootstrap.addBlockedKeyword('广告');
     await bootstrap.createTag('夜班');
     await bootstrap.toggleFollowRoom(
@@ -34,7 +41,7 @@ void main() {
     final resetSnapshot = await bootstrap.loadSyncSnapshot();
     expect(resetSnapshot.follows, isEmpty);
     expect(resetSnapshot.tags, ['常看', '收藏']);
-    expect(resetSnapshot.blockedKeywords, ['剧透']);
+    expect(resetSnapshot.blockedKeywords, kDefaultBlockedKeywords);
     expect(bootstrap.followWatchlistSnapshot.value?.entries, isEmpty);
     expect(bootstrap.followDataRevision.value, revisionBeforeReset + 1);
 
@@ -58,6 +65,11 @@ void main() {
     expect(bootstrap.themeMode.value, ThemeMode.dark);
     expect(bootstrap.followWatchlistSnapshot.value, isNull);
     expect(bootstrap.followDataRevision.value, revisionBeforeImport + 1);
+    final importedLayoutPreferences = await bootstrap.loadLayoutPreferences();
+    expect(
+      importedLayoutPreferences.enabledProviderIds,
+      ['bilibili', 'youtube'],
+    );
   });
 
   test('snapshot management imports legacy-compatible config export', () async {
@@ -117,6 +129,7 @@ void main() {
         'BilibiliCookie': 'SESSDATA=demo;bili_jct=test;',
         'ChaturbateCookie': 'cf_clearance=demo-clearance; __cf_bm=demo-bm',
         'DouyinCookie': 'douyin-session-demo',
+        'YouTubeCookie': 'VISITOR_INFO1_LIVE=demo-youtube',
         'FollowStyleNotGrid': true,
         'ChatBubbleStyle': true,
         'DanmuArea': 0.4,
@@ -147,6 +160,8 @@ void main() {
     expect(snapshot.settings['account_chaturbate_cookie'],
         'cf_clearance=demo-clearance; __cf_bm=demo-bm');
     expect(snapshot.settings['account_douyin_cookie'], 'douyin-session-demo');
+    expect(snapshot.settings['account_youtube_cookie'],
+        'VISITOR_INFO1_LIVE=demo-youtube');
     expect(snapshot.settings['theme_mode'], 'dark');
     expect(snapshot.blockedKeywords, unorderedEquals(['人气', '关注']));
 
@@ -155,6 +170,7 @@ void main() {
     expect(accountSettings.chaturbateCookie,
         'cf_clearance=demo-clearance; __cf_bm=demo-bm');
     expect(accountSettings.douyinCookie, 'douyin-session-demo');
+    expect(accountSettings.youtubeCookie, 'VISITOR_INFO1_LIVE=demo-youtube');
 
     final playerPreferences = await bootstrap.loadPlayerPreferences();
     expect(playerPreferences.preferHighestQuality, isTrue);
@@ -272,6 +288,11 @@ void main() {
     final viewedAt = DateTime.utc(2026, 3, 15, 8, 0, 0);
 
     await bootstrap.updateThemeMode(ThemeMode.dark);
+    await bootstrap.updateLayoutPreferences(
+      LayoutPreferences.defaults().copyWith(
+        enabledProviderIds: const ['bilibili', 'youtube'],
+      ),
+    );
     await bootstrap.addBlockedKeyword('广告');
     await bootstrap.createTag('夜班');
     await bootstrap.toggleFollowRoom(
@@ -345,6 +366,12 @@ void main() {
     expect(
       importedSnapshot.follows.single.lastKeyframeUrl,
       'https://example.com/demo-keyframe.png',
+    );
+    final importedLayoutPreferences =
+        await importedBootstrap.loadLayoutPreferences();
+    expect(
+      importedLayoutPreferences.enabledProviderIds,
+      ['bilibili', 'youtube'],
     );
   });
 }

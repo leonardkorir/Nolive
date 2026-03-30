@@ -54,6 +54,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             ProviderAccountKind.chaturbate => '确定要清除 Chaturbate Cookie 吗？',
             ProviderAccountKind.douyin => '确定要清除抖音账号 Cookie 吗？',
             ProviderAccountKind.twitch => '确定要清除 Twitch Cookie 吗？',
+            ProviderAccountKind.youtube => '确定要清除 YouTube Cookie 吗？',
           },
         ),
         actions: [
@@ -186,6 +187,24 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     }
     await widget.bootstrap.updateProviderAccountSettings(
       dashboard.settings.copyWith(twitchCookie: result.cookie),
+    );
+    if (!mounted) {
+      return;
+    }
+    await _reload();
+  }
+
+  Future<void> _editYouTubeCookie(ProviderAccountDashboard dashboard) async {
+    final result = await _showCookieEditor(
+      title: 'YouTube Cookie',
+      subtitle: '可粘贴网页登录保存的完整 Cookie；当前播放链路不会直接消费这份设置。',
+      initialCookie: dashboard.settings.youtubeCookie,
+    );
+    if (result == null) {
+      return;
+    }
+    await widget.bootstrap.updateProviderAccountSettings(
+      dashboard.settings.copyWith(youtubeCookie: result.cookie),
     );
     if (!mounted) {
       return;
@@ -521,6 +540,37 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                         OutlinedButton.icon(
                           onPressed: dashboard.twitch.isConfigured
                               ? () => _clearAccount(ProviderAccountKind.twitch)
+                              : null,
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('清除 Cookie'),
+                        ),
+                        TextButton.icon(
+                          onPressed: _reload,
+                          icon: const Icon(Icons.verified_outlined),
+                          label: const Text('刷新状态'),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 32),
+                    _ProviderAccountListItem(
+                      providerId: dashboard.youtube.providerId,
+                      title: dashboard.youtube.providerName,
+                      status: _statusMeta(
+                        dashboard.youtube.health,
+                        scheme,
+                      ),
+                      credentialSummary: dashboard.youtube.credentialSummary,
+                      identitySummary: dashboard.youtube.identitySummary,
+                      errorMessage: dashboard.youtube.errorMessage,
+                      actions: [
+                        OutlinedButton.icon(
+                          onPressed: () => _editYouTubeCookie(dashboard),
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('编辑 Cookie'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: dashboard.youtube.isConfigured
+                              ? () => _clearAccount(ProviderAccountKind.youtube)
                               : null,
                           icon: const Icon(Icons.delete_outline),
                           label: const Text('清除 Cookie'),

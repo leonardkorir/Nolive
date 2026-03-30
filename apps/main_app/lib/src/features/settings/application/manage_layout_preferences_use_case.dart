@@ -28,6 +28,7 @@ class LayoutPreferences {
   const LayoutPreferences({
     required this.shellTabOrder,
     required this.providerOrder,
+    required this.enabledProviderIds,
   });
 
   static const List<ShellTabId> defaultShellTabOrder = [
@@ -47,29 +48,39 @@ class LayoutPreferences {
     'youtube',
   ];
 
+  static const List<String> defaultEnabledProviderIds = defaultProviderOrder;
+
   final List<ShellTabId> shellTabOrder;
   final List<String> providerOrder;
+  final List<String> enabledProviderIds;
 
   factory LayoutPreferences.defaults() {
     return const LayoutPreferences(
       shellTabOrder: defaultShellTabOrder,
       providerOrder: defaultProviderOrder,
+      enabledProviderIds: defaultEnabledProviderIds,
     );
   }
 
   LayoutPreferences copyWith({
     List<ShellTabId>? shellTabOrder,
     List<String>? providerOrder,
+    List<String>? enabledProviderIds,
   }) {
     return LayoutPreferences(
       shellTabOrder: shellTabOrder ?? this.shellTabOrder,
       providerOrder: providerOrder ?? this.providerOrder,
+      enabledProviderIds: enabledProviderIds ?? this.enabledProviderIds,
     );
   }
 
   int providerSortIndex(String providerId) {
     final index = providerOrder.indexOf(providerId);
     return index == -1 ? providerOrder.length : index;
+  }
+
+  bool isProviderEnabled(String providerId) {
+    return enabledProviderIds.contains(providerId);
   }
 }
 
@@ -85,9 +96,17 @@ class LoadLayoutPreferencesUseCase {
     final providerOrder = await settingsRepository.readValue<List>(
       'layout_provider_order',
     );
+    final enabledProviderIds = await settingsRepository.readValue<List>(
+      'layout_provider_enabled_ids',
+    );
+    final normalizedProviderOrder = normalizeProviderOrder(providerOrder);
     return LayoutPreferences(
       shellTabOrder: normalizeShellTabOrder(shellTabOrder),
-      providerOrder: normalizeProviderOrder(providerOrder),
+      providerOrder: normalizedProviderOrder,
+      enabledProviderIds: normalizeEnabledProviderIds(
+        enabledProviderIds,
+        fallbackValues: normalizedProviderOrder,
+      ),
     );
   }
 
@@ -143,6 +162,30 @@ class LoadLayoutPreferencesUseCase {
     }
     return List<String>.unmodifiable(ordered);
   }
+
+  static List<String> normalizeEnabledProviderIds(
+    Iterable<Object?>? rawValues, {
+    Iterable<String>? fallbackValues,
+  }) {
+    if (rawValues == null) {
+      return List<String>.unmodifiable(
+        normalizeProviderOrder(
+          fallbackValues ?? LayoutPreferences.defaultEnabledProviderIds,
+        ),
+      );
+    }
+
+    final ordered = <String>[];
+    final seen = <String>{};
+    for (final raw in rawValues) {
+      final decoded = raw?.toString().trim() ?? '';
+      if (decoded.isEmpty || !seen.add(decoded)) {
+        continue;
+      }
+      ordered.add(decoded);
+    }
+    return List<String>.unmodifiable(ordered);
+  }
 }
 
 class UpdateLayoutPreferencesUseCase {
@@ -155,12 +198,19 @@ class UpdateLayoutPreferencesUseCase {
   final ValueNotifier<LayoutPreferences> preferencesNotifier;
 
   Future<void> call(LayoutPreferences preferences) async {
+    final normalizedProviderOrder =
+        LoadLayoutPreferencesUseCase.normalizeProviderOrder(
+      preferences.providerOrder,
+    );
     final normalized = LayoutPreferences(
       shellTabOrder: LoadLayoutPreferencesUseCase.normalizeShellTabOrder(
         preferences.shellTabOrder.map((item) => item.value),
       ),
-      providerOrder: LoadLayoutPreferencesUseCase.normalizeProviderOrder(
-        preferences.providerOrder,
+      providerOrder: normalizedProviderOrder,
+      enabledProviderIds:
+          LoadLayoutPreferencesUseCase.normalizeEnabledProviderIds(
+        preferences.enabledProviderIds,
+        fallbackValues: normalizedProviderOrder,
       ),
     );
     await settingsRepository.writeValue(
@@ -172,6 +222,10 @@ class UpdateLayoutPreferencesUseCase {
     await settingsRepository.writeValue(
       'layout_provider_order',
       normalized.providerOrder,
+    );
+    await settingsRepository.writeValue(
+      'layout_provider_enabled_ids',
+      normalized.enabledProviderIds,
     );
     preferencesNotifier.value = normalized;
   }

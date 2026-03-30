@@ -349,6 +349,11 @@ Map<String, Object?> _encodeLegacyConfigPayload(
     _trimmedString(settings['account_chaturbate_cookie']),
   );
   _putIfNotNull(
+    encoded,
+    'YouTubeCookie',
+    _trimmedString(settings['account_youtube_cookie']),
+  );
+  _putIfNotNull(
       encoded, 'DanmuEnable', _asBool(settings['danmaku_enabled_by_default']));
   _putIfNotNull(encoded, 'DanmuSize', _asDouble(settings['danmaku_font_size']));
   _putIfNotNull(encoded, 'DanmuArea', _asDouble(settings['danmaku_area']));
@@ -748,6 +753,14 @@ Map<String, Object?> _normalizeLegacyConfigSettings(
           _trimmedString(entry.value, allowEmpty: true),
         );
         break;
+      case 'account_youtube_cookie':
+      case 'YouTubeCookie':
+        _putIfNotNull(
+          normalized,
+          'account_youtube_cookie',
+          _trimmedString(entry.value, allowEmpty: true),
+        );
+        break;
       case 'layout_shell_tab_order':
         final currentOrder = _normalizeCurrentShellTabOrder(entry.value);
         if (currentOrder.isNotEmpty) {
@@ -766,6 +779,10 @@ Map<String, Object?> _normalizeLegacyConfigSettings(
         if (currentProviderOrder.isNotEmpty) {
           normalized['layout_provider_order'] = currentProviderOrder;
         }
+        break;
+      case 'layout_provider_enabled_ids':
+        normalized['layout_provider_enabled_ids'] =
+            _normalizeCurrentProviderEnabledIds(entry.value);
         break;
       case 'SiteSort':
         final legacyProviderOrder = _decodeLegacySiteSort(entry.value);
@@ -960,6 +977,12 @@ List<String> _normalizeCurrentProviderOrder(Object? raw) {
     return const <String>[];
   }
   return LoadLayoutPreferencesUseCase.normalizeProviderOrder(values);
+}
+
+List<String> _normalizeCurrentProviderEnabledIds(Object? raw) {
+  return LoadLayoutPreferencesUseCase.normalizeEnabledProviderIds(
+    _rawStringSequence(raw),
+  );
 }
 
 List<String> _decodeLegacySiteSort(Object? raw) {

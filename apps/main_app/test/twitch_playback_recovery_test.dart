@@ -4,7 +4,9 @@ import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/application/twitch_playback_recovery.dart';
 
 void main() {
-  test('twitch startup prefers auto and keeps requested fixed quality for promotion', () {
+  test(
+      'twitch startup prefers auto and keeps requested fixed quality for promotion',
+      () {
     const auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
     const q1080 = LivePlayQuality(
       id: '1080p60',
@@ -98,7 +100,8 @@ void main() {
     );
   });
 
-  test('twitch startup recovery retries with promotion quality when auto stalls',
+  test(
+      'twitch startup recovery retries with promotion quality when auto stalls',
       () {
     const auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
     const q1080 = LivePlayQuality(
@@ -235,7 +238,8 @@ void main() {
     expect(stopDecision.action, TwitchFixedRecoveryAction.stop);
   });
 
-  test('twitch refresh line keeps same upstream when proxy session changes', () {
+  test('twitch refresh line keeps same upstream when proxy session changes',
+      () {
     final playbackSource = PlaybackSource(
       url: Uri.parse(
         'http://127.0.0.1:33101/twitch-ad-guard/session-a/stream.m3u8',

@@ -4,6 +4,7 @@ import 'package:live_storage/live_storage.dart';
 class DanmakuPreferences {
   const DanmakuPreferences({
     required this.enabledByDefault,
+    required this.nativeBatchMaskEnabled,
     required this.fontSize,
     required this.fontWeight,
     required this.area,
@@ -17,6 +18,7 @@ class DanmakuPreferences {
 
   static const DanmakuPreferences defaults = DanmakuPreferences(
     enabledByDefault: true,
+    nativeBatchMaskEnabled: true,
     fontSize: 16,
     fontWeight: 3,
     area: 0.8,
@@ -29,6 +31,7 @@ class DanmakuPreferences {
   );
 
   final bool enabledByDefault;
+  final bool nativeBatchMaskEnabled;
   final double fontSize;
   final int fontWeight;
   final double area;
@@ -41,6 +44,7 @@ class DanmakuPreferences {
 
   DanmakuPreferences copyWith({
     bool? enabledByDefault,
+    bool? nativeBatchMaskEnabled,
     double? fontSize,
     int? fontWeight,
     double? area,
@@ -53,6 +57,8 @@ class DanmakuPreferences {
   }) {
     return DanmakuPreferences(
       enabledByDefault: enabledByDefault ?? this.enabledByDefault,
+      nativeBatchMaskEnabled:
+          nativeBatchMaskEnabled ?? this.nativeBatchMaskEnabled,
       fontSize: fontSize ?? this.fontSize,
       fontWeight: fontWeight ?? this.fontWeight,
       area: area ?? this.area,
@@ -85,6 +91,7 @@ class DanmakuPreferences {
         other is DanmakuPreferences &&
             runtimeType == other.runtimeType &&
             enabledByDefault == other.enabledByDefault &&
+            nativeBatchMaskEnabled == other.nativeBatchMaskEnabled &&
             fontSize == other.fontSize &&
             fontWeight == other.fontWeight &&
             area == other.area &&
@@ -99,6 +106,7 @@ class DanmakuPreferences {
   @override
   int get hashCode => Object.hash(
         enabledByDefault,
+        nativeBatchMaskEnabled,
         fontSize,
         fontWeight,
         area,
@@ -122,6 +130,9 @@ class LoadDanmakuPreferencesUseCase {
       enabledByDefault: await settingsRepository
               .readValue<bool>('danmaku_enabled_by_default') ??
           defaults.enabledByDefault,
+      nativeBatchMaskEnabled: await settingsRepository
+              .readValue<bool>('danmaku_native_batch_mask_enabled') ??
+          defaults.nativeBatchMaskEnabled,
       fontSize: _clampDouble(
         await settingsRepository.readValue<double>('danmaku_font_size'),
         min: 8,
@@ -207,6 +218,10 @@ class UpdateDanmakuPreferencesUseCase {
     await settingsRepository.writeValue(
       'danmaku_enabled_by_default',
       preferences.enabledByDefault,
+    );
+    await settingsRepository.writeValue(
+      'danmaku_native_batch_mask_enabled',
+      preferences.nativeBatchMaskEnabled,
     );
     await settingsRepository.writeValue(
       'danmaku_font_size',

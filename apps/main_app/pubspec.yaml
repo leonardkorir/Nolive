@@ -2,7 +2,7 @@ name: nolive_app
 description: Main Flutter application for Nolive.
 publish_to: none
 
-version: 0.3.0+3
+version: 0.3.1+4
 
 environment:
   sdk: ^3.6.0
@@ -17,8 +17,11 @@ dependencies:
   qr_flutter: ^4.1.0
   path_provider: ^2.1.5
   file_picker: ^10.3.10
+  ffi: ^2.1.4
+  image_gallery_saver_plus: ^4.0.1
   package_info_plus: ^9.0.0
   wakelock_plus: ^1.4.0
+  window_manager: ^0.5.1
   screen_brightness: ^2.1.7
   floating: ^6.0.0
   flutter_inappwebview: ^6.1.5

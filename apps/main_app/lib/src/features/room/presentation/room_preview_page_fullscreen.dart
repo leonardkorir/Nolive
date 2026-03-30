@@ -6,7 +6,6 @@ extension _RoomPreviewPageFullscreenExtension on _RoomPreviewPageState {
     required _RoomPageState state,
     required LiveRoomDetail room,
     required ProviderDescriptor? descriptor,
-    required PlayerState? playerState,
     required PlaybackSource playbackSource,
     required List<LivePlayUrl> playUrls,
   }) {
@@ -68,7 +67,6 @@ extension _RoomPreviewPageFullscreenExtension on _RoomPreviewPageState {
                 room: room,
                 playbackSource: playbackSource,
                 hasPlayback: true,
-                playerState: playerState,
                 embedPlayer: true,
                 fullscreen: true,
               ),
@@ -144,6 +142,36 @@ extension _RoomPreviewPageFullscreenExtension on _RoomPreviewPageState {
                         color: Colors.white,
                         icon: const Icon(Icons.picture_in_picture_alt_outlined),
                       ),
+                    if (_supportsDesktopMiniWindow)
+                      IconButton(
+                        onPressed: () {
+                          _scheduleFullscreenChromeAutoHide();
+                          unawaited(_toggleDesktopMiniWindow());
+                        },
+                        color: Colors.white,
+                        icon: Icon(
+                          _desktopMiniWindowActive
+                              ? Icons.close_fullscreen_rounded
+                              : Icons.open_in_new_rounded,
+                        ),
+                      ),
+                    if (_supportsPlayerCapture)
+                      IconButton(
+                        onPressed: () {
+                          _scheduleFullscreenChromeAutoHide();
+                          unawaited(_captureScreenshot());
+                        },
+                        color: Colors.white,
+                        icon: const Icon(Icons.camera_alt_outlined),
+                      ),
+                    IconButton(
+                      onPressed: () {
+                        _scheduleFullscreenChromeAutoHide();
+                        unawaited(_showPlayerDebugSheet(state, playbackSource));
+                      },
+                      color: Colors.white,
+                      icon: const Icon(Icons.bug_report_outlined),
+                    ),
                     IconButton(
                       onPressed: () {
                         _showQuickActionsSheet();

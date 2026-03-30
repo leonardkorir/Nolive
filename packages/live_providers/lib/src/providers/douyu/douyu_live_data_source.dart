@@ -33,9 +33,7 @@ class DouyuLiveDataSource implements DouyuDataSource {
               id: subItem['cate2Id']?.toString() ?? '',
               parentId: categoryId,
               name: subItem['cate2Name']?.toString() ?? '',
-              pic: subItem['smallIcon']?.toString() ??
-                  subItem['icon']?.toString() ??
-                  subItem['pic']?.toString(),
+              pic: _resolveCategoryImage(subItem),
             ),
           )
           .where((item) => item.id.isNotEmpty && item.name.isNotEmpty)
@@ -53,6 +51,24 @@ class DouyuLiveDataSource implements DouyuDataSource {
             .compareTo(int.tryParse(right.id) ?? 0);
       });
     return categories;
+  }
+
+  String? _resolveCategoryImage(Map<String, dynamic> payload) {
+    for (final candidate in [
+      payload['icon'],
+      payload['pic'],
+      payload['smallIcon'],
+    ]) {
+      final value = candidate?.toString().trim() ?? '';
+      if (value.isEmpty) {
+        continue;
+      }
+      if (value.startsWith('//')) {
+        return 'https:$value';
+      }
+      return value;
+    }
+    return null;
   }
 
   @override

@@ -185,14 +185,15 @@ extension _RoomPreviewPageDanmakuExtension on _RoomPreviewPageState {
     final batch = List<LiveMessage>.from(_pendingDanmakuMessages);
     _pendingDanmakuMessages.clear();
     final filtered = filter.apply(batch);
-    if (filtered.isEmpty) {
+    final allowListed = _danmakuBatchMask.allowListBatch(filtered);
+    if (allowListed.isEmpty) {
       return;
     }
 
     final merged = mergeRoomDanmakuBatch(
       messages: _messagesNotifier.value,
       superChats: _superChatMessagesNotifier.value,
-      incoming: filtered,
+      incoming: allowListed,
     );
     if (merged.hasSuperChatUpdate) {
       _superChatMessagesNotifier.value = merged.superChats;
@@ -238,8 +239,11 @@ class _DanmakuOverlay extends StatefulWidget {
 }
 
 class _DanmakuOverlayState extends State<_DanmakuOverlay> {
+  static const int _maxSeenMessageIds = 512;
   final List<_DanmakuTrackEntry> _entries = [];
   final Set<String> _seenMessageIds = <String>{};
+  final Queue<String> _seenMessageQueue = ListQueue<String>();
+  final Map<String, double> _textWidthCache = <String, double>{};
   List<DateTime> _laneAvailableAt = const <DateTime>[];
 
   int get _laneCount {
@@ -286,6 +290,7 @@ class _DanmakuOverlayState extends State<_DanmakuOverlay> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _resetLanes();
+    _textWidthCache.clear();
   }
 
   @override
@@ -295,6 +300,7 @@ class _DanmakuOverlayState extends State<_DanmakuOverlay> {
         oldWidget.preferences != widget.preferences ||
         _laneAvailableAt.length != _laneCount) {
       _resetLanes();
+      _textWidthCache.clear();
     }
     _ingest(widget.messages);
   }
@@ -348,7 +354,7 @@ class _DanmakuOverlayState extends State<_DanmakuOverlay> {
         milliseconds: (duration.inMilliseconds * occupyRatio).round(),
       );
       _laneAvailableAt[lane] = now.add(occupy);
-      _seenMessageIds.add(id);
+      _rememberSeenMessageId(id);
       _entries.add(
         _DanmakuTrackEntry(
           id: id,
@@ -365,6 +371,16 @@ class _DanmakuOverlayState extends State<_DanmakuOverlay> {
     }
   }
 
+  void _rememberSeenMessageId(String id) {
+    if (_seenMessageIds.add(id)) {
+      _seenMessageQueue.addLast(id);
+    }
+    while (_seenMessageQueue.length > _maxSeenMessageIds) {
+      final removed = _seenMessageQueue.removeFirst();
+      _seenMessageIds.remove(removed);
+    }
+  }
+
   int? _pickAvailableLane(DateTime now) {
     for (var index = 0; index < _laneAvailableAt.length; index += 1) {
       if (!_laneAvailableAt[index].isAfter(now)) {
@@ -375,6 +391,12 @@ class _DanmakuOverlayState extends State<_DanmakuOverlay> {
   }
 
   double _measureTextWidth(String text, double viewportWidth) {
+    final cacheKey =
+        '${viewportWidth.round()}|${widget.fullscreen}|${widget.preferences.fontSize}|${widget.preferences.lineHeight}|${widget.preferences.fontWeight}|$text';
+    final cached = _textWidthCache[cacheKey];
+    if (cached != null) {
+      return cached;
+    }
     final maxBubbleWidth = viewportWidth * (widget.fullscreen ? 0.96 : 0.98);
     final textPainter = TextPainter(
       text: TextSpan(
@@ -388,7 +410,12 @@ class _DanmakuOverlayState extends State<_DanmakuOverlay> {
       textDirection: Directionality.of(context),
       maxLines: 1,
     )..layout(maxWidth: maxBubbleWidth);
-    return textPainter.width.clamp(32.0, maxBubbleWidth);
+    final measured = textPainter.width.clamp(32.0, maxBubbleWidth);
+    if (_textWidthCache.length > 256) {
+      _textWidthCache.clear();
+    }
+    _textWidthCache[cacheKey] = measured;
+    return measured;
   }
 
   Duration _durationFor({

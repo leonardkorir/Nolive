@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/provider_tab_label.dart';
@@ -10,11 +11,13 @@ class SearchPage extends StatefulWidget {
   const SearchPage({
     required this.bootstrap,
     this.standalone = false,
+    this.initialProviderId,
     super.key,
   });
 
   final AppBootstrap bootstrap;
   final bool standalone;
+  final ProviderId? initialProviderId;
 
   @override
   State<SearchPage> createState() => _SearchPageState();
@@ -48,6 +51,23 @@ class _SearchPageState extends State<SearchPage> {
     });
   }
 
+  void _clearSearch() {
+    _queryController.clear();
+    setState(() {
+      _submittedQuery = '';
+      _searchVersion += 1;
+    });
+  }
+
+  int _resolveInitialProviderIndex(List<ProviderDescriptor> providers) {
+    final initialProviderId = widget.initialProviderId;
+    if (initialProviderId == null) {
+      return 0;
+    }
+    final index = providers.indexWhere((item) => item.id == initialProviderId);
+    return index == -1 ? 0 : index;
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -68,9 +88,11 @@ class _SearchPageState extends State<SearchPage> {
         if (providers.isEmpty) {
           return const Scaffold(body: Center(child: Text('暂无可搜索平台')));
         }
+        final adaptive = AppAdaptiveLayoutSpec.of(context);
 
         return DefaultTabController(
           length: providers.length,
+          initialIndex: _resolveInitialProviderIndex(providers),
           child: Scaffold(
             appBar: AppBar(
               automaticallyImplyLeading: widget.standalone,
@@ -87,12 +109,7 @@ class _SearchPageState extends State<SearchPage> {
                       if (_queryController.text.isNotEmpty)
                         IconButton(
                           tooltip: '清空',
-                          onPressed: () {
-                            _queryController.clear();
-                            setState(() {
-                              _submittedQuery = '';
-                            });
-                          },
+                          onPressed: _clearSearch,
                           icon: const Icon(Icons.close_rounded),
                         ),
                       IconButton(
@@ -113,14 +130,17 @@ class _SearchPageState extends State<SearchPage> {
                 tabAlignment: TabAlignment.center,
                 dividerColor: Colors.transparent,
                 indicatorSize: TabBarIndicatorSize.label,
-                labelPadding: const EdgeInsets.symmetric(horizontal: 18),
+                labelPadding: adaptive.providerTabLabelPadding,
                 overlayColor: WidgetStateProperty.all(Colors.transparent),
                 tabs: [
                   for (final descriptor in providers)
                     Tab(
                       key: Key('search-provider-tab-${descriptor.id.value}'),
                       height: 36,
-                      child: ProviderTabLabel(descriptor: descriptor),
+                      child: ProviderTabLabel(
+                        descriptor: descriptor,
+                        logoSize: adaptive.providerTabLogoSize,
+                      ),
                     ),
                 ],
               ),
@@ -196,10 +216,21 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
   @override
   void didUpdateWidget(covariant _SearchResultsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.searchVersion != oldWidget.searchVersion &&
-        widget.query.trim().isNotEmpty) {
-      _runSearch();
+    if (widget.searchVersion == oldWidget.searchVersion) {
+      return;
     }
+    if (widget.query.trim().isEmpty) {
+      setState(() {
+        _rooms.clear();
+        _error = null;
+        _loading = false;
+        _loadingMore = false;
+        _hasMore = false;
+        _currentPage = 0;
+      });
+      return;
+    }
+    _runSearch();
   }
 
   @override
@@ -314,11 +345,13 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final adaptive = AppAdaptiveLayoutSpec.of(context);
+    final gridHorizontalPadding = adaptive.pageHorizontalPadding / 2;
 
     if (widget.query.trim().isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(20),
+          padding: EdgeInsets.all(adaptive.pageHorizontalPadding),
           child: EmptyStateCard(
             title: '等待搜索',
             message: '输入关键词后，结果会按平台页签连续展示。',
@@ -335,7 +368,7 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
     if (_error != null && _rooms.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(adaptive.pageHorizontalPadding),
           child: EmptyStateCard(
             title: '搜索失败',
             message: '$_error',
@@ -351,9 +384,9 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
     }
 
     if (_rooms.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(20),
+          padding: EdgeInsets.all(adaptive.pageHorizontalPadding),
           child: EmptyStateCard(
             title: '没有找到直播间',
             message: '换个关键词，或者切换到别的平台再试试。',
@@ -376,7 +409,12 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 20),
+            padding: EdgeInsets.fromLTRB(
+              gridHorizontalPadding,
+              8,
+              gridHorizontalPadding,
+              20,
+            ),
             sliver: SliverGrid(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
@@ -399,7 +437,12 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+              padding: EdgeInsets.fromLTRB(
+                adaptive.pageHorizontalPadding,
+                0,
+                adaptive.pageHorizontalPadding,
+                96,
+              ),
               child: Center(
                 child: _loadingMore
                     ? const Padding(

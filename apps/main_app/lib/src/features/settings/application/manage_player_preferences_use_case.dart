@@ -9,6 +9,25 @@ enum PlayerScaleMode {
   fitHeight,
 }
 
+const String kDefaultMpvVideoOutputDriver = 'gpu-next';
+const String kDefaultMpvHardwareDecoder = 'auto-safe';
+
+const Map<String, String> kMpvVideoOutputDrivers = <String, String>{
+  'gpu': 'gpu',
+  'gpu-next': 'gpu-next',
+  'libmpv': 'libmpv',
+  'mediacodec_embed': 'mediacodec_embed',
+};
+
+const Map<String, String> kMpvHardwareDecoders = <String, String>{
+  'auto': '自动',
+  'auto-safe': '自动（稳妥）',
+  'auto-copy': '自动（拷贝）',
+  'mediacodec': 'MediaCodec',
+  'mediacodec-copy': 'MediaCodec Copy',
+  'no': '关闭硬解',
+};
+
 class PlayerPreferences {
   const PlayerPreferences({
     required this.autoPlayEnabled,
@@ -17,6 +36,11 @@ class PlayerPreferences {
     required this.volume,
     required this.mpvHardwareAccelerationEnabled,
     required this.mpvCompatModeEnabled,
+    required this.mpvDoubleBufferingEnabled,
+    required this.mpvCustomOutputEnabled,
+    required this.mpvVideoOutputDriver,
+    required this.mpvHardwareDecoder,
+    required this.mpvLogEnabled,
     required this.mdkLowLatencyEnabled,
     required this.mdkAndroidTunnelEnabled,
     required this.forceHttpsEnabled,
@@ -32,6 +56,11 @@ class PlayerPreferences {
   final double volume;
   final bool mpvHardwareAccelerationEnabled;
   final bool mpvCompatModeEnabled;
+  final bool mpvDoubleBufferingEnabled;
+  final bool mpvCustomOutputEnabled;
+  final String mpvVideoOutputDriver;
+  final String mpvHardwareDecoder;
+  final bool mpvLogEnabled;
   final bool mdkLowLatencyEnabled;
   final bool mdkAndroidTunnelEnabled;
   final bool forceHttpsEnabled;
@@ -47,6 +76,11 @@ class PlayerPreferences {
     double? volume,
     bool? mpvHardwareAccelerationEnabled,
     bool? mpvCompatModeEnabled,
+    bool? mpvDoubleBufferingEnabled,
+    bool? mpvCustomOutputEnabled,
+    String? mpvVideoOutputDriver,
+    String? mpvHardwareDecoder,
+    bool? mpvLogEnabled,
     bool? mdkLowLatencyEnabled,
     bool? mdkAndroidTunnelEnabled,
     bool? forceHttpsEnabled,
@@ -63,6 +97,13 @@ class PlayerPreferences {
       mpvHardwareAccelerationEnabled:
           mpvHardwareAccelerationEnabled ?? this.mpvHardwareAccelerationEnabled,
       mpvCompatModeEnabled: mpvCompatModeEnabled ?? this.mpvCompatModeEnabled,
+      mpvDoubleBufferingEnabled:
+          mpvDoubleBufferingEnabled ?? this.mpvDoubleBufferingEnabled,
+      mpvCustomOutputEnabled:
+          mpvCustomOutputEnabled ?? this.mpvCustomOutputEnabled,
+      mpvVideoOutputDriver: mpvVideoOutputDriver ?? this.mpvVideoOutputDriver,
+      mpvHardwareDecoder: mpvHardwareDecoder ?? this.mpvHardwareDecoder,
+      mpvLogEnabled: mpvLogEnabled ?? this.mpvLogEnabled,
       mdkLowLatencyEnabled: mdkLowLatencyEnabled ?? this.mdkLowLatencyEnabled,
       mdkAndroidTunnelEnabled:
           mdkAndroidTunnelEnabled ?? this.mdkAndroidTunnelEnabled,
@@ -99,6 +140,21 @@ class LoadPlayerPreferencesUseCase {
     final mpvCompatModeEnabled =
         await settingsRepository.readValue<bool>('player_mpv_compat_mode') ??
             false;
+    final mpvDoubleBufferingEnabled = await settingsRepository
+            .readValue<bool>('player_mpv_double_buffering') ??
+        false;
+    final mpvCustomOutputEnabled =
+        await settingsRepository.readValue<bool>('player_mpv_custom_output') ??
+            false;
+    final mpvVideoOutputDriver = await settingsRepository
+            .readValue<String>('player_mpv_video_output_driver') ??
+        kDefaultMpvVideoOutputDriver;
+    final mpvHardwareDecoder = await settingsRepository
+            .readValue<String>('player_mpv_hardware_decoder') ??
+        kDefaultMpvHardwareDecoder;
+    final mpvLogEnabled =
+        await settingsRepository.readValue<bool>('player_mpv_log_enable') ??
+            false;
     final mdkLowLatencyEnabled =
         await settingsRepository.readValue<bool>('player_mdk_low_latency') ??
             true;
@@ -125,6 +181,11 @@ class LoadPlayerPreferencesUseCase {
       volume: volume.clamp(0.0, 1.0),
       mpvHardwareAccelerationEnabled: mpvHardwareAccelerationEnabled,
       mpvCompatModeEnabled: mpvCompatModeEnabled,
+      mpvDoubleBufferingEnabled: mpvDoubleBufferingEnabled,
+      mpvCustomOutputEnabled: mpvCustomOutputEnabled,
+      mpvVideoOutputDriver: _decodeMpvVideoOutputDriver(mpvVideoOutputDriver),
+      mpvHardwareDecoder: _decodeMpvHardwareDecoder(mpvHardwareDecoder),
+      mpvLogEnabled: mpvLogEnabled,
       mdkLowLatencyEnabled: mdkLowLatencyEnabled,
       mdkAndroidTunnelEnabled: mdkAndroidTunnelEnabled,
       forceHttpsEnabled: forceHttpsEnabled,
@@ -147,6 +208,20 @@ class LoadPlayerPreferencesUseCase {
       (item) => item.name == raw,
       orElse: () => PlayerScaleMode.contain,
     );
+  }
+
+  static String _decodeMpvVideoOutputDriver(String? raw) {
+    if (raw != null && kMpvVideoOutputDrivers.containsKey(raw)) {
+      return raw;
+    }
+    return kDefaultMpvVideoOutputDriver;
+  }
+
+  static String _decodeMpvHardwareDecoder(String? raw) {
+    if (raw != null && kMpvHardwareDecoders.containsKey(raw)) {
+      return raw;
+    }
+    return kDefaultMpvHardwareDecoder;
   }
 }
 
@@ -179,6 +254,26 @@ class UpdatePlayerPreferencesUseCase {
     await settingsRepository.writeValue(
       'player_mpv_compat_mode',
       preferences.mpvCompatModeEnabled,
+    );
+    await settingsRepository.writeValue(
+      'player_mpv_double_buffering',
+      preferences.mpvDoubleBufferingEnabled,
+    );
+    await settingsRepository.writeValue(
+      'player_mpv_custom_output',
+      preferences.mpvCustomOutputEnabled,
+    );
+    await settingsRepository.writeValue(
+      'player_mpv_video_output_driver',
+      preferences.mpvVideoOutputDriver,
+    );
+    await settingsRepository.writeValue(
+      'player_mpv_hardware_decoder',
+      preferences.mpvHardwareDecoder,
+    );
+    await settingsRepository.writeValue(
+      'player_mpv_log_enable',
+      preferences.mpvLogEnabled,
     );
     await settingsRepository.writeValue(
       'player_mdk_low_latency',

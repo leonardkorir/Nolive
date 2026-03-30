@@ -106,4 +106,55 @@ void main() {
     );
     expect(await tagRepository.listAll(), ['收藏']);
   });
+
+  test('repository sync snapshot exports and imports categories', () async {
+    final settingsRepository = InMemorySettingsRepository();
+    final historyRepository = InMemoryHistoryRepository();
+    final followRepository = InMemoryFollowRepository();
+    final tagRepository = InMemoryTagRepository();
+    final service = RepositorySyncSnapshotService(
+      settingsRepository: settingsRepository,
+      historyRepository: historyRepository,
+      followRepository: followRepository,
+      tagRepository: tagRepository,
+    );
+
+    await settingsRepository.writeValue('theme_mode', 'dark');
+    await settingsRepository.writeValue('blocked_keywords', ['刷屏']);
+    await tagRepository.create('收藏');
+    await followRepository.upsert(
+      const FollowRecord(
+        providerId: 'douyu',
+        roomId: '77',
+        streamerName: '主播C',
+      ),
+    );
+
+    final library = await service.exportCategory(SyncDataCategory.library);
+    final blocked = await service.exportCategory(
+      SyncDataCategory.blockedKeywords,
+    );
+
+    expect(library.follows.single.roomId, '77');
+    expect(library.tags, ['收藏']);
+    expect(blocked.blockedKeywords, ['刷屏']);
+
+    await followRepository.clear();
+    await tagRepository.clear();
+    await settingsRepository.writeValue('blocked_keywords', const <String>[]);
+
+    await service.importCategory(SyncDataCategory.library, library);
+    await service.importCategory(
+      SyncDataCategory.blockedKeywords,
+      blocked,
+      clearExisting: false,
+    );
+
+    expect((await followRepository.listAll()).single.roomId, '77');
+    expect(await tagRepository.listAll(), ['收藏']);
+    expect(
+      await settingsRepository.readValue<List<String>>('blocked_keywords'),
+      ['刷屏'],
+    );
+  });
 }

@@ -340,8 +340,12 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
 
   void _showGestureTip(String text) {
     _gestureTipTimer?.cancel();
+    _fullscreenChromeTimer?.cancel();
     _updateViewState(() {
       _gestureTipText = text;
+      if (_isFullscreen) {
+        _showFullscreenChrome = true;
+      }
     });
     _gestureTipTimer = Timer(const Duration(milliseconds: 900), () {
       if (!mounted) {
@@ -350,6 +354,9 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
       _updateViewState(() {
         _gestureTipText = null;
       });
+      if (_isFullscreen && _showFullscreenChrome) {
+        _scheduleFullscreenChromeAutoHide();
+      }
     });
   }
 
@@ -362,6 +369,9 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
     _updateViewState(() {
       _gestureTipText = null;
     });
+    if (_isFullscreen && _showFullscreenChrome) {
+      _scheduleFullscreenChromeAutoHide();
+    }
   }
 
   Future<void> _applyOverlayStyle({required bool darkBackground}) async {
@@ -391,6 +401,9 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
   Future<void> _enterFullscreen() async {
     if (_isFullscreen) {
       return;
+    }
+    if (_desktopMiniWindowActive) {
+      await _exitDesktopMiniWindow();
     }
     _inlineChromeTimer?.cancel();
     _updateViewState(() {
@@ -436,7 +449,7 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
   }
 
   Future<void> _setScreenAwake(bool enabled) async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid && !_supportsDesktopMiniWindow) {
       return;
     }
     try {
@@ -490,11 +503,18 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
     _fullscreenChromeTimer?.cancel();
     if (!_isFullscreen ||
         _lockFullscreenControls ||
-        _showFullscreenFollowDrawer) {
+        _showFullscreenFollowDrawer ||
+        _enteringPictureInPicture ||
+        _gestureTipText != null) {
       return;
     }
     _fullscreenChromeTimer = Timer(const Duration(seconds: 2), () {
-      if (!mounted || !_isFullscreen || _lockFullscreenControls) {
+      if (!mounted ||
+          !_isFullscreen ||
+          _lockFullscreenControls ||
+          _showFullscreenFollowDrawer ||
+          _enteringPictureInPicture ||
+          _gestureTipText != null) {
         return;
       }
       _updateViewState(() {
@@ -541,6 +561,83 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
         _showInlinePlayerChrome = true;
       });
     }
+    _scheduleInlineChromeAutoHide();
+  }
+
+  Future<void> _toggleDesktopMiniWindow() async {
+    if (!_supportsDesktopMiniWindow) {
+      return;
+    }
+    try {
+      if (_desktopMiniWindowActive) {
+        await _exitDesktopMiniWindow();
+      } else {
+        await _enterDesktopMiniWindow();
+      }
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('桌面小窗切换失败：$error')),
+      );
+    }
+  }
+
+  Future<void> _enterDesktopMiniWindow() async {
+    if (!_supportsDesktopMiniWindow || _desktopMiniWindowActive) {
+      return;
+    }
+    if (_isFullscreen) {
+      await _exitFullscreen();
+    }
+    _desktopWindowBoundsBeforeMini ??= await windowManager.getBounds();
+    _desktopWindowWasAlwaysOnTop ??= await windowManager.isAlwaysOnTop();
+    _desktopWindowWasResizable ??= await windowManager.isResizable();
+    final currentBounds = _desktopWindowBoundsBeforeMini!;
+    final width = currentBounds.width.clamp(360.0, 420.0);
+    final height = width / (16 / 9);
+    final left =
+        currentBounds.left + math.max(0.0, currentBounds.width - width);
+    final top = currentBounds.top + 24;
+    await windowManager.setAlwaysOnTop(true);
+    await windowManager.setResizable(false);
+    await windowManager.setBounds(
+      Rect.fromLTWH(left, top, width, height),
+      animate: true,
+    );
+    if (!mounted) {
+      return;
+    }
+    _updateViewState(() {
+      _desktopMiniWindowActive = true;
+      _showInlinePlayerChrome = true;
+    });
+    _scheduleInlineChromeAutoHide();
+  }
+
+  Future<void> _exitDesktopMiniWindow() async {
+    if (!_supportsDesktopMiniWindow) {
+      return;
+    }
+    final bounds = _desktopWindowBoundsBeforeMini;
+    final alwaysOnTop = _desktopWindowWasAlwaysOnTop ?? false;
+    final resizable = _desktopWindowWasResizable ?? true;
+    await windowManager.setAlwaysOnTop(alwaysOnTop);
+    await windowManager.setResizable(resizable);
+    if (bounds != null) {
+      await windowManager.setBounds(bounds, animate: true);
+    }
+    _desktopWindowBoundsBeforeMini = null;
+    _desktopWindowWasAlwaysOnTop = null;
+    _desktopWindowWasResizable = null;
+    if (!mounted) {
+      return;
+    }
+    _updateViewState(() {
+      _desktopMiniWindowActive = false;
+      _showInlinePlayerChrome = true;
+    });
     _scheduleInlineChromeAutoHide();
   }
 
@@ -649,5 +746,8 @@ extension _RoomPreviewPagePlayerSystemExtension on _RoomPreviewPageState {
       return;
     }
     _gestureTracking = false;
+    if (_isFullscreen && _showFullscreenChrome) {
+      _scheduleFullscreenChromeAutoHide();
+    }
   }
 }
