@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/settings/presentation/player_settings_page.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('player settings page exposes android playback controls', (
@@ -12,7 +13,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: PlayerSettingsPage(
-          bootstrap: bootstrap,
+          dependencies: buildPlayerSettingsDependencies(bootstrap),
         ),
       ),
     );

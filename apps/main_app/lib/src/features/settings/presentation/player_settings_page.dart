@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
+import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
 class PlayerSettingsPage extends StatefulWidget {
-  const PlayerSettingsPage({required this.bootstrap, super.key});
+  const PlayerSettingsPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final PlayerSettingsDependencies dependencies;
 
   @override
   State<PlayerSettingsPage> createState() => _PlayerSettingsPageState();
@@ -20,48 +20,21 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
   @override
   void initState() {
     super.initState();
-    _future = widget.bootstrap.loadPlayerPreferences();
+    _future = widget.dependencies.loadPlayerPreferences();
   }
 
   Future<void> _update({
     required PlayerPreferences current,
     required PlayerPreferences next,
   }) async {
-    await widget.bootstrap.updatePlayerPreferences(next);
-    if (widget.bootstrap.player is SwitchablePlayer) {
-      final switchable = widget.bootstrap.player as SwitchablePlayer;
-      if (switchable.backend != next.backend) {
-        await switchable.switchBackend(next.backend);
-      } else if (_requiresBackendRefresh(current: current, next: next)) {
-        await switchable.refreshBackend();
-      }
-      await switchable.setVolume(next.volume);
-    } else {
-      await widget.bootstrap.player.setVolume(next.volume);
-    }
+    await widget.dependencies.updatePlayerPreferences(next);
+    await widget.dependencies.applyPlayerPreferencesToRuntime(
+      current: current,
+      next: next,
+    );
     setState(() {
-      _future = widget.bootstrap.loadPlayerPreferences();
+      _future = widget.dependencies.loadPlayerPreferences();
     });
-  }
-
-  bool _requiresBackendRefresh({
-    required PlayerPreferences current,
-    required PlayerPreferences next,
-  }) {
-    return switch (next.backend) {
-      PlayerBackend.mpv => current.mpvHardwareAccelerationEnabled !=
-              next.mpvHardwareAccelerationEnabled ||
-          current.mpvCompatModeEnabled != next.mpvCompatModeEnabled ||
-          current.mpvDoubleBufferingEnabled != next.mpvDoubleBufferingEnabled ||
-          current.mpvCustomOutputEnabled != next.mpvCustomOutputEnabled ||
-          current.mpvVideoOutputDriver != next.mpvVideoOutputDriver ||
-          current.mpvHardwareDecoder != next.mpvHardwareDecoder ||
-          current.mpvLogEnabled != next.mpvLogEnabled,
-      PlayerBackend.mdk =>
-        current.mdkLowLatencyEnabled != next.mdkLowLatencyEnabled ||
-            current.mdkAndroidTunnelEnabled != next.mdkAndroidTunnelEnabled,
-      PlayerBackend.memory => false,
-    };
   }
 
   @override
@@ -72,10 +45,9 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
         future: _future,
         builder: (context, snapshot) {
           final preferences = snapshot.data ?? _fallbackPreferences;
-          final rawBackends = widget.bootstrap.player is SwitchablePlayer
-              ? (widget.bootstrap.player as SwitchablePlayer).supportedBackends
-              : [widget.bootstrap.player.backend];
-          final supportedBackends = widget.bootstrap.isLiveMode
+          final rawBackends =
+              widget.dependencies.playerRuntime.supportedBackends;
+          final supportedBackends = widget.dependencies.isLiveMode
               ? rawBackends
                   .where((backend) => backend != PlayerBackend.memory)
                   .toList(growable: false)
@@ -235,7 +207,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '当前运行时：${widget.bootstrap.player.backend.name.toUpperCase()}',
+                      '当前运行时：${widget.dependencies.playerRuntime.backend.name.toUpperCase()}',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 12),
@@ -256,7 +228,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                           ),
                       ],
                     ),
-                    if (!widget.bootstrap.isLiveMode) ...[
+                    if (!widget.dependencies.isLiveMode) ...[
                       const SizedBox(height: 10),
                       Text(
                         '预览环境会额外展示 Memory 后端，方便测试。',
@@ -484,6 +456,22 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 );
               },
             ),
+            const Divider(height: 1),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              key: const Key('player-mdk-hardware-video-decoder-switch'),
+              value: preferences.mdkAndroidHardwareVideoDecoderEnabled,
+              title: const Text('优先使用 Android 硬解'),
+              subtitle: const Text('优先尝试 MediaCodec / AMediaCodec 解码视频'),
+              onChanged: (value) {
+                _update(
+                  current: preferences,
+                  next: preferences.copyWith(
+                    mdkAndroidHardwareVideoDecoderEnabled: value,
+                  ),
+                );
+              },
+            ),
           ],
         PlayerBackend.memory => [
             Text('Memory 预览后端', style: titleStyle),
@@ -530,6 +518,7 @@ const PlayerPreferences _fallbackPreferences = PlayerPreferences(
   mpvLogEnabled: false,
   mdkLowLatencyEnabled: true,
   mdkAndroidTunnelEnabled: false,
+  mdkAndroidHardwareVideoDecoderEnabled: true,
   forceHttpsEnabled: false,
   androidAutoFullscreenEnabled: true,
   androidBackgroundAutoPauseEnabled: true,

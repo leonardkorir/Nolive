@@ -101,10 +101,17 @@ class _BootstrapSettingReaders {
   });
 
   factory _BootstrapSettingReaders.fromSnapshot(
-    Map<String, Object?> Function() snapshot,
-  ) {
+    Map<String, Object?> Function() snapshot, {
+    required Map<String, String> Function() secureSnapshot,
+  }) {
     return _BootstrapSettingReaders(
-      stringSetting: (key) => snapshot()[key]?.toString() ?? '',
+      stringSetting: (key) {
+        final secureValue = secureSnapshot()[key];
+        if (secureValue != null) {
+          return secureValue;
+        }
+        return snapshot()[key]?.toString() ?? '';
+      },
       intSetting: (key) {
         final value = snapshot()[key];
         if (value is int) {
@@ -138,6 +145,7 @@ class _BootstrapAssemblyContext {
     required this.state,
     required this.repositories,
     required this.settings,
+    required this.secureCredentialStore,
     required this.accountClients,
   });
 
@@ -145,28 +153,37 @@ class _BootstrapAssemblyContext {
   final _BootstrapStateBundle state;
   final _BootstrapRepositories repositories;
   final _BootstrapSettingReaders settings;
+  final SecureCredentialStore secureCredentialStore;
   final _BootstrapAccountClients accountClients;
 }
 
 AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
   final loadProviderAccountSettings = LoadProviderAccountSettingsUseCase(
     context.repositories.settingsRepository,
+    context.secureCredentialStore,
   );
-  final twitchAdGuardProxy = _buildTwitchAdGuardProxy(mode: context.mode);
-  final twitchWebPlaybackBridge = _buildTwitchWebPlaybackBridge(
+  final runtimeBridges = _buildAppRuntimeBridges(
     mode: context.mode,
     loadProviderAccountSettings: loadProviderAccountSettings,
   );
   final providerRegistry = _buildProviderRegistry(
     context,
-    twitchWebPlaybackBridge: twitchWebPlaybackBridge,
+    runtimeBridges: runtimeBridges,
   );
   final player = _buildPlayer(context);
+  final playerRuntime = PlayerRuntimeController(player);
   final snapshotService = RepositorySyncSnapshotService(
     settingsRepository: context.repositories.settingsRepository,
     historyRepository: context.repositories.historyRepository,
     followRepository: context.repositories.followRepository,
     tagRepository: context.repositories.tagRepository,
+    shouldIncludeSettingInSnapshot: (key) {
+      return !SensitiveSettingKeys.isSnapshotExcludedKey(key);
+    },
+  );
+  final snapshotImportCoordinator = SecureSnapshotImportCoordinator(
+    snapshotService: snapshotService,
+    secureCredentialStore: context.secureCredentialStore,
   );
   Future<LocalSyncPeerInfo> readLocalPeerInfo() async {
     final storedName = await context.repositories.settingsRepository
@@ -197,9 +214,9 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
   );
   final localSyncServer = HttpLocalSyncServer(
     exportSnapshot: snapshotService.exportSnapshot,
-    importSnapshot: snapshotService.importSnapshot,
+    importSnapshot: snapshotImportCoordinator.importSnapshot,
     exportCategory: snapshotService.exportCategory,
-    importCategory: snapshotService.importCategory,
+    importCategory: snapshotImportCoordinator.importCategory,
     readInfo: readLocalPeerInfo,
   );
   final localSyncClient = HttpLocalSyncClient();
@@ -223,6 +240,7 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
   final loadSyncSnapshot = LoadSyncSnapshotUseCase(snapshotService);
   final updateProviderAccountSettings = UpdateProviderAccountSettingsUseCase(
     context.repositories.settingsRepository,
+    context.secureCredentialStore,
     providerRegistry: providerRegistry,
     providerCatalogRevision: context.state.providerCatalogRevision,
   );
@@ -238,9 +256,14 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
   final updateHistoryPreferences = UpdateHistoryPreferencesUseCase(
     context.repositories.settingsRepository,
   );
-  final chaturbateWebRoomDetailLoader = _buildChaturbateRoomDetailLoader(
-    mode: context.mode,
-    loadProviderAccountSettings: loadProviderAccountSettings,
+  final listProviderDescriptors = ListProviderDescriptorsUseCase(
+    providerRegistry,
+  );
+  final findProviderDescriptorById = FindProviderDescriptorByIdUseCase(
+    providerRegistry,
+  );
+  final listFollowRecords = ListFollowRecordsUseCase(
+    context.repositories.followRepository,
   );
 
   return AppBootstrap(
@@ -251,11 +274,14 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     followDataRevision: context.state.followDataRevision,
     followWatchlistSnapshot: context.state.followWatchlistSnapshot,
     providerRegistry: providerRegistry,
-    player: player,
+    playerRuntime: playerRuntime,
     settingsRepository: context.repositories.settingsRepository,
     historyRepository: context.repositories.historyRepository,
     followRepository: context.repositories.followRepository,
     tagRepository: context.repositories.tagRepository,
+    listProviderDescriptors: listProviderDescriptors,
+    findProviderDescriptorById: findProviderDescriptorById,
+    listFollowRecords: listFollowRecords,
     listAvailableProviders: listAvailableProviders,
     loadLayoutPreferences: loadLayoutPreferences,
     updateLayoutPreferences: updateLayoutPreferences,
@@ -282,7 +308,7 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     loadRoom: LoadRoomUseCase(
       providerRegistry,
       historyRepository: context.repositories.historyRepository,
-      loadRoomDetailOverride: chaturbateWebRoomDetailLoader?.call,
+      roomDetailOverride: runtimeBridges.roomDetailOverride,
       resolveRecordHistoryEnabled: () async {
         final preferences = await loadHistoryPreferences();
         return preferences.recordWatchHistory;
@@ -291,7 +317,7 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     openRoomDanmaku: OpenRoomDanmakuUseCase(providerRegistry),
     resolvePlaySource: ResolvePlaySourceUseCase(
       providerRegistry,
-      twitchAdGuardProxy: twitchAdGuardProxy,
+      wrapTwitchPlayUrls: runtimeBridges.twitchAdGuardProxy?.wrapPlayUrls,
     ),
     searchProviderRooms: SearchProviderRoomsUseCase(providerRegistry),
     listLibrarySnapshot: listLibrarySnapshot,
@@ -302,7 +328,7 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     loadFollowWatchlist: LoadFollowWatchlistUseCase(
       followRepository: context.repositories.followRepository,
       registry: providerRegistry,
-      loadRoomDetailOverride: chaturbateWebRoomDetailLoader?.call,
+      roomDetailOverride: runtimeBridges.roomDetailOverride,
     ),
     loadFollowPreferences: loadFollowPreferences,
     updateFollowPreferences: updateFollowPreferences,
@@ -344,13 +370,19 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
         RemoveHistoryRecordUseCase(context.repositories.historyRepository),
     clearHistory: ClearHistoryUseCase(context.repositories.historyRepository),
     loadSyncSnapshot: loadSyncSnapshot,
-    loadSyncPreferences:
-        LoadSyncPreferencesUseCase(context.repositories.settingsRepository),
-    updateSyncPreferences:
-        UpdateSyncPreferencesUseCase(context.repositories.settingsRepository),
+    loadSyncPreferences: LoadSyncPreferencesUseCase(
+      context.repositories.settingsRepository,
+      context.secureCredentialStore,
+    ),
+    updateSyncPreferences: UpdateSyncPreferencesUseCase(
+      context.repositories.settingsRepository,
+      context.secureCredentialStore,
+    ),
     verifyWebDavConnection: const VerifyWebDavConnectionUseCase(),
     uploadWebDavSnapshot: UploadWebDavSnapshotUseCase(snapshotService),
-    restoreWebDavSnapshot: RestoreWebDavSnapshotUseCase(snapshotService),
+    restoreWebDavSnapshot: RestoreWebDavSnapshotUseCase(
+      snapshotImportCoordinator,
+    ),
     pushLocalSyncSnapshot: PushLocalSyncSnapshotUseCase(
       snapshotService: snapshotService,
       client: localSyncClient,
@@ -378,24 +410,35 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     localDiscoveryService: localDiscoveryService,
     localSyncServer: localSyncServer,
     localSyncClient: localSyncClient,
-    exportLegacyConfigJson: ExportLegacyConfigJsonUseCase(
-      settingsRepository: context.repositories.settingsRepository,
-      historyRepository: context.repositories.historyRepository,
-      followRepository: context.repositories.followRepository,
-      tagRepository: context.repositories.tagRepository,
-    ),
+    exportLegacyConfigJson: ExportLegacyConfigJsonUseCase(snapshotService),
     exportSyncSnapshotJson: ExportSyncSnapshotJsonUseCase(snapshotService),
     importSyncSnapshotJson: ImportSyncSnapshotJsonUseCase(
       snapshotService: snapshotService,
       settingsRepository: context.repositories.settingsRepository,
       followRepository: context.repositories.followRepository,
       tagRepository: context.repositories.tagRepository,
+      snapshotImportCoordinator: snapshotImportCoordinator,
       themeModeNotifier: context.state.themeMode,
       layoutPreferencesNotifier: context.state.layoutPreferences,
       providerRegistry: providerRegistry,
       providerCatalogRevision: context.state.providerCatalogRevision,
       followWatchlistSnapshot: context.state.followWatchlistSnapshot,
       followDataRevision: context.state.followDataRevision,
+    ),
+    exportCredentialMigrationBundle: ExportCredentialMigrationBundleUseCase(
+      context.secureCredentialStore,
+    ),
+    importCredentialMigrationBundle: ImportCredentialMigrationBundleUseCase(
+      secureCredentialStore: context.secureCredentialStore,
+      settingsRepository: context.repositories.settingsRepository,
+      providerRegistry: providerRegistry,
+      providerCatalogRevision: context.state.providerCatalogRevision,
+    ),
+    clearSensitiveCredentials: ClearSensitiveCredentialsUseCase(
+      secureCredentialStore: context.secureCredentialStore,
+      settingsRepository: context.repositories.settingsRepository,
+      providerRegistry: providerRegistry,
+      providerCatalogRevision: context.state.providerCatalogRevision,
     ),
     resetAppData: ResetAppDataUseCase(
       settingsRepository: context.repositories.settingsRepository,
@@ -436,19 +479,22 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
         LoadPlayerPreferencesUseCase(context.repositories.settingsRepository),
     updatePlayerPreferences:
         UpdatePlayerPreferencesUseCase(context.repositories.settingsRepository),
+    applyPlayerPreferencesToRuntime:
+        ApplyPlayerPreferencesToRuntimeUseCase(playerRuntime),
     parseRoomInput: ParseRoomInputUseCase(providerRegistry),
     inspectParsedRoom: InspectParsedRoomUseCase(
       providerRegistry,
       loadProviderAccountSettings: loadProviderAccountSettings,
-      requireChaturbateCookiePreflight: context.mode == AppRuntimeMode.live,
-      loadRoomDetailOverride: chaturbateWebRoomDetailLoader?.call,
+      requireChaturbateCookiePreflight:
+          runtimeBridges.requireChaturbateCookiePreflight,
+      roomDetailOverride: runtimeBridges.roomDetailOverride,
     ),
   );
 }
 
 ProviderRegistry _buildProviderRegistry(
   _BootstrapAssemblyContext context, {
-  TwitchWebPlaybackBridge? twitchWebPlaybackBridge,
+  required AppRuntimeBridges runtimeBridges,
 }) {
   return switch (context.mode) {
     AppRuntimeMode.preview => ReferenceProviderCatalog.buildPreviewRegistry(),
@@ -462,9 +508,29 @@ ProviderRegistry _buildProviderRegistry(
                   userUniqueId: userUniqueId,
                 )
             : null,
-        twitchPlaybackBootstrapResolver: twitchWebPlaybackBridge?.call,
+        twitchPlaybackBootstrapResolver:
+            runtimeBridges.twitchWebPlaybackBridge?.call,
       ),
   };
+}
+
+AppRuntimeBridges _buildAppRuntimeBridges({
+  required AppRuntimeMode mode,
+  required LoadProviderAccountSettingsUseCase loadProviderAccountSettings,
+}) {
+  final chaturbateWebRoomDetailLoader = _buildChaturbateRoomDetailLoader(
+    mode: mode,
+    loadProviderAccountSettings: loadProviderAccountSettings,
+  );
+  return AppRuntimeBridges(
+    roomDetailOverride: chaturbateWebRoomDetailLoader?.call,
+    twitchWebPlaybackBridge: _buildTwitchWebPlaybackBridge(
+      mode: mode,
+      loadProviderAccountSettings: loadProviderAccountSettings,
+    ),
+    twitchAdGuardProxy: _buildTwitchAdGuardProxy(mode: mode),
+    requireChaturbateCookiePreflight: mode == AppRuntimeMode.live,
+  );
 }
 
 BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
@@ -478,32 +544,39 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
     initialBackend: initialBackend,
     builders: {
       PlayerBackend.memory: MemoryPlayer.new,
-      PlayerBackend.mpv: () => MpvPlayer(
-            enableHardwareAcceleration: _decodeBoolSetting(
-              context.settings.stringSetting(
-                'player_mpv_hardware_acceleration',
-              ),
-              fallback: true,
-            ),
-            compatMode: _decodeBoolSetting(
-              context.settings.stringSetting('player_mpv_compat_mode'),
-            ),
-            doubleBufferingEnabled: _decodeBoolSetting(
-              context.settings.stringSetting('player_mpv_double_buffering'),
-            ),
-            customOutputEnabled: _decodeBoolSetting(
-              context.settings.stringSetting('player_mpv_custom_output'),
-            ),
-            videoOutputDriver: context.settings.stringSetting(
-              'player_mpv_video_output_driver',
-            ),
-            hardwareDecoder: context.settings.stringSetting(
-              'player_mpv_hardware_decoder',
-            ),
-            logEnabled: _decodeBoolSetting(
+      PlayerBackend.mpv: () {
+        final mpvLogEnabled = !kReleaseMode &&
+            _decodeBoolSetting(
               context.settings.stringSetting('player_mpv_log_enable'),
+            );
+        return MpvPlayer(
+          enableHardwareAcceleration: _decodeBoolSetting(
+            context.settings.stringSetting(
+              'player_mpv_hardware_acceleration',
             ),
+            fallback: true,
           ),
+          compatMode: _decodeBoolSetting(
+            context.settings.stringSetting('player_mpv_compat_mode'),
+          ),
+          doubleBufferingEnabled: _decodeBoolSetting(
+            context.settings.stringSetting('player_mpv_double_buffering'),
+          ),
+          customOutputEnabled: _decodeBoolSetting(
+            context.settings.stringSetting('player_mpv_custom_output'),
+          ),
+          videoOutputDriver: context.settings.stringSetting(
+            'player_mpv_video_output_driver',
+          ),
+          hardwareDecoder: context.settings.stringSetting(
+            'player_mpv_hardware_decoder',
+          ),
+          logEnabled: mpvLogEnabled,
+          eventLogger: mpvLogEnabled
+              ? (message) => AppLog.instance.info('player/mpv', message)
+              : null,
+        );
+      },
       PlayerBackend.mdk: () => MdkPlayer(
             lowLatency: _decodeBoolSetting(
               context.settings.stringSetting('player_mdk_low_latency'),
@@ -511,6 +584,12 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
             ),
             androidTunnel: _decodeBoolSetting(
               context.settings.stringSetting('player_mdk_android_tunnel'),
+            ),
+            androidPreferHardwareVideoDecoder: _decodeBoolSetting(
+              context.settings.stringSetting(
+                'player_mdk_android_hardware_video_decoder',
+              ),
+              fallback: true,
             ),
           ),
     },
@@ -547,7 +626,6 @@ TwitchWebPlaybackBridge? _buildTwitchWebPlaybackBridge({
     timeout: const Duration(seconds: 6),
     bootstrapScriptTimeout: const Duration(milliseconds: 2500),
   );
-  unawaited(bridge.warmUp());
   return bridge;
 }
 

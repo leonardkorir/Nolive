@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_inappwebview_windows
   flutter_qjs
+  flutter_secure_storage_windows
   fvp
   media_kit_libs_windows_video
   media_kit_video

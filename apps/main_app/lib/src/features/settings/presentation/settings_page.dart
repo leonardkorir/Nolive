@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({required this.bootstrap, super.key});
-
-  final AppBootstrap bootstrap;
+  const SettingsPage({super.key});
 
   @override
   Widget build(BuildContext context) {

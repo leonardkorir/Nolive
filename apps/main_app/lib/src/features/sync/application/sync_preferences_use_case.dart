@@ -1,6 +1,9 @@
 import 'package:live_sync/live_sync.dart';
 import 'package:live_storage/live_storage.dart';
 
+import '../../../shared/application/secure_credential_store.dart';
+import '../../settings/application/sensitive_setting_keys.dart';
+
 class SyncPreferences {
   const SyncPreferences({
     required this.webDavBaseUrl,
@@ -51,11 +54,18 @@ class SyncPreferences {
 }
 
 class LoadSyncPreferencesUseCase {
-  const LoadSyncPreferencesUseCase(this.settingsRepository);
+  const LoadSyncPreferencesUseCase(
+    this.settingsRepository,
+    this.secureCredentialStore,
+  );
 
   final SettingsRepository settingsRepository;
+  final SecureCredentialStore secureCredentialStore;
 
   Future<SyncPreferences> call() async {
+    final securePassword = await secureCredentialStore.read(
+      SensitiveSettingKeys.syncWebDavPassword,
+    );
     return SyncPreferences(
       webDavBaseUrl:
           await settingsRepository.readValue<String>('sync_webdav_base_url') ??
@@ -66,8 +76,11 @@ class LoadSyncPreferencesUseCase {
       webDavUsername:
           await settingsRepository.readValue<String>('sync_webdav_username') ??
               '',
-      webDavPassword:
-          await settingsRepository.readValue<String>('sync_webdav_password') ??
+      webDavPassword: securePassword.isNotEmpty
+          ? securePassword
+          : await settingsRepository.readValue<String>(
+                SensitiveSettingKeys.syncWebDavPassword,
+              ) ??
               '',
       localDeviceName: await settingsRepository
               .readValue<String>('sync_local_device_name') ??
@@ -83,9 +96,13 @@ class LoadSyncPreferencesUseCase {
 }
 
 class UpdateSyncPreferencesUseCase {
-  const UpdateSyncPreferencesUseCase(this.settingsRepository);
+  const UpdateSyncPreferencesUseCase(
+    this.settingsRepository,
+    this.secureCredentialStore,
+  );
 
   final SettingsRepository settingsRepository;
+  final SecureCredentialStore secureCredentialStore;
 
   Future<void> call(SyncPreferences preferences) async {
     await settingsRepository.writeValue(
@@ -100,10 +117,11 @@ class UpdateSyncPreferencesUseCase {
       'sync_webdav_username',
       preferences.webDavUsername,
     );
-    await settingsRepository.writeValue(
-      'sync_webdav_password',
+    await secureCredentialStore.write(
+      SensitiveSettingKeys.syncWebDavPassword,
       preferences.webDavPassword,
     );
+    await settingsRepository.remove(SensitiveSettingKeys.syncWebDavPassword);
     await settingsRepository.writeValue(
       'sync_local_device_name',
       preferences.localDeviceName,

@@ -4,16 +4,16 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:live_sync/live_sync.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/sync/application/sync_feature_dependencies.dart';
 import 'package:nolive_app/src/features/sync/application/sync_preferences_use_case.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
 class SyncLocalPage extends StatefulWidget {
-  const SyncLocalPage({required this.bootstrap, super.key});
+  const SyncLocalPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final SyncFeatureDependencies dependencies;
 
   @override
   State<SyncLocalPage> createState() => _SyncLocalPageState();
@@ -30,9 +30,9 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
   void initState() {
     super.initState();
     _future = _load();
-    widget.bootstrap.localDiscoveryService.start();
+    widget.dependencies.localDiscoveryService.start();
     _peerSubscription =
-        widget.bootstrap.localDiscoveryService.watchPeers().listen((peers) {
+        widget.dependencies.localDiscoveryService.watchPeers().listen((peers) {
       if (!mounted) {
         return;
       }
@@ -45,16 +45,16 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
   @override
   void dispose() {
     _peerSubscription?.cancel();
-    unawaited(widget.bootstrap.localDiscoveryService.stop());
+    unawaited(widget.dependencies.localDiscoveryService.stop());
     super.dispose();
   }
 
   Future<_SyncLocalPageData> _load() async {
-    final snapshot = await widget.bootstrap.loadSyncSnapshot();
-    final preferences = await widget.bootstrap.loadSyncPreferences();
+    final snapshot = await widget.dependencies.loadSyncSnapshot();
+    final preferences = await widget.dependencies.loadSyncPreferences();
     final addresses = await _readLocalAddresses();
     _localAddresses = addresses;
-    if (widget.bootstrap.localSyncServer.isRunning) {
+    if (widget.dependencies.localSyncServer.isRunning) {
       _syncSelfPeer(preferences, addresses: addresses);
     }
     return _SyncLocalPageData(snapshot: snapshot, preferences: preferences);
@@ -98,12 +98,12 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     final host = (addresses ?? _localAddresses).isNotEmpty
         ? (addresses ?? _localAddresses).first
         : '127.0.0.1';
-    widget.bootstrap.localDiscoveryService.addOrReplacePeer(
+    widget.dependencies.localDiscoveryService.addOrReplacePeer(
       DiscoveredPeer(
         deviceId: 'self',
         displayName: preferences.localDeviceName,
         address: host,
-        port: widget.bootstrap.localSyncServer.endpoint.port,
+        port: widget.dependencies.localSyncServer.endpoint.port,
         platform: Platform.operatingSystem,
         lastSeenAt: DateTime.now(),
       ),
@@ -189,11 +189,11 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       localPeerAddress: localPeerAddress.text.trim(),
       localPeerPort: int.tryParse(localPeerPort.text.trim()) ?? 23234,
     );
-    await widget.bootstrap.updateSyncPreferences(nextPreferences);
+    await widget.dependencies.updateSyncPreferences(nextPreferences);
     if (nextPreferences.localPeerAddress.trim().isEmpty) {
-      widget.bootstrap.localDiscoveryService.removePeer('manual-peer');
+      widget.dependencies.localDiscoveryService.removePeer('manual-peer');
     } else {
-      widget.bootstrap.localDiscoveryService.addOrReplacePeer(
+      widget.dependencies.localDiscoveryService.addOrReplacePeer(
         DiscoveredPeer(
           deviceId: 'manual-peer',
           displayName: nextPreferences.localDeviceName,
@@ -204,7 +204,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
         ),
       );
     }
-    if (widget.bootstrap.localSyncServer.isRunning) {
+    if (widget.dependencies.localSyncServer.isRunning) {
       _syncSelfPeer(nextPreferences);
     }
     await _refresh();
@@ -234,11 +234,11 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
 
   Future<void> _toggleLocalServer(SyncPreferences preferences) async {
     await _runBusy(() async {
-      if (widget.bootstrap.localSyncServer.isRunning) {
-        await widget.bootstrap.localSyncServer.stop();
-        widget.bootstrap.localDiscoveryService.removePeer('self');
+      if (widget.dependencies.localSyncServer.isRunning) {
+        await widget.dependencies.localSyncServer.stop();
+        widget.dependencies.localDiscoveryService.removePeer('self');
       } else {
-        await widget.bootstrap.localSyncServer.start();
+        await widget.dependencies.localSyncServer.start();
         final addresses = await _readLocalAddresses();
         if (mounted) {
           setState(() {
@@ -253,7 +253,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            widget.bootstrap.localSyncServer.isRunning
+            widget.dependencies.localSyncServer.isRunning
                 ? '局域网同步服务已启动'
                 : '局域网同步服务已停止',
           ),
@@ -280,7 +280,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
 
   Future<void> _probeTarget(SyncPreferences preferences) async {
     await _runBusy(() async {
-      final info = await widget.bootstrap.localSyncClient.fetchInfo(
+      final info = await widget.dependencies.localSyncClient.fetchInfo(
         peer: _manualPeerFromPreferences(preferences),
       );
       if (!mounted) {
@@ -294,7 +294,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
 
   Future<void> _pushLocal(SyncPreferences preferences) async {
     await _runBusy(() async {
-      await widget.bootstrap.pushLocalSyncSnapshot(preferences);
+      await widget.dependencies.pushLocalSyncSnapshot(preferences);
       if (!mounted) {
         return;
       }
@@ -309,7 +309,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     SyncDataCategory category,
   ) async {
     await _runBusy(() async {
-      await widget.bootstrap.pushLocalSyncSnapshot(
+      await widget.dependencies.pushLocalSyncSnapshot(
         preferences,
         categories: <SyncDataCategory>{category},
       );
@@ -330,8 +330,8 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       localPeerAddress: peer.address,
       localPeerPort: peer.port,
     );
-    await widget.bootstrap.updateSyncPreferences(nextPreferences);
-    widget.bootstrap.localDiscoveryService.addOrReplacePeer(
+    await widget.dependencies.updateSyncPreferences(nextPreferences);
+    widget.dependencies.localDiscoveryService.addOrReplacePeer(
       DiscoveredPeer(
         deviceId: 'manual-peer',
         displayName: peer.displayName,
@@ -412,9 +412,9 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
             final data = snapshot.data!;
             final preferences = data.preferences;
             final localServerRunning =
-                widget.bootstrap.localSyncServer.isRunning;
+                widget.dependencies.localSyncServer.isRunning;
             final endpoints = _shareableEndpoints(
-              widget.bootstrap.localSyncServer.endpoint.port,
+              widget.dependencies.localSyncServer.endpoint.port,
             );
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),

@@ -191,7 +191,7 @@ void main() {
     final watchlist = await LoadFollowWatchlistUseCase(
       followRepository: followRepository,
       registry: registry,
-      loadRoomDetailOverride: ({
+      roomDetailOverride: ({
         required providerId,
         required roomId,
       }) async {

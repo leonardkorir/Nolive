@@ -14,6 +14,7 @@ Nolive 是一个基于 Flutter 的直播聚合客户端，当前以 Android mobi
 - 当前正式发布目标是 Android。
 - 当前对外发布口径为多平台直播聚合客户端。
 - 仓库仍保留不同平台的实现与扩展能力，但它们不构成逐项公开承诺。
+- 当前对外版本变化见 [`CHANGELOG.md`](CHANGELOG.md) 与 GitHub Releases。
 
 ## 功能概览
 
@@ -22,7 +23,15 @@ Nolive 是一个基于 Flutter 的直播聚合客户端，当前以 Android mobi
 - 视频弹幕 overlay、弹幕过滤和显示设置
 - 关注、历史、标签和本地持久化
 - WebDAV 备份、本地快照、局域网同步工具
+- 受控迁移包：单独迁移账号 Cookie 与 WebDAV 密码，不混入日常 snapshot
 - Android 启动画面、应用图标和发布脚本
+
+## 数据与同步边界
+
+- 平台 Cookie、WebDAV 密码属于敏感凭证，默认不进入常规 snapshot、WebDAV 备份或局域网同步 payload。
+- 日常 snapshot 用于同步普通设置、屏蔽词、历史、关注和标签，不等于“整机克隆”。
+- 跨设备迁移敏感凭证时，使用设置页中的“受控迁移包”流程，显式导出并通过口令加密导入。
+- `AppBootstrap` 继续作为 composition root；`settings` 和 `sync` 新功能优先通过 feature-scoped dependencies 暴露能力。
 
 ## 仓库结构
 
@@ -130,6 +139,13 @@ Nolive 的发布流程和部分功能调研，参考了以下项目与资料：
 ## 贡献
 
 欢迎提交 issue 和 pull request。开始之前请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+
+## 文档
+
+- [`CHANGELOG.md`](CHANGELOG.md)：对外版本变化记录
+- [`docs/android-release-guide.md`](docs/android-release-guide.md)：Android 构建、签名与发布流程
+- [`docs/release-checklist.md`](docs/release-checklist.md)：发布前核对清单
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)：开发与提交流程说明
 
 ## License
 

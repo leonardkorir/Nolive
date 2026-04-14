@@ -13,4 +13,10 @@ void main() {
     expect(normalizeDisplayText('小溫dududu'), '小温dududu');
     expect(normalizeDisplayText('熱門遊戲'), '热门游戏');
   });
+
+  test('normalizeDisplayText strips malformed utf16 surrogate code units', () {
+    final badText =
+        '游${String.fromCharCode(0xD800)}戏${String.fromCharCode(0xDC00)}厅';
+    expect(normalizeDisplayText(badText), '游戏厅');
+  });
 }

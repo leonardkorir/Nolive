@@ -1,25 +1,45 @@
-part of 'room_preview_page.dart';
+import 'package:flutter/material.dart';
+import 'package:nolive_app/src/features/room/presentation/room_panel_controller.dart';
+import 'package:nolive_app/src/features/room/presentation/room_preview_page_panels.dart';
+import 'package:nolive_app/src/features/room/presentation/room_preview_page_section_widgets.dart';
+import 'package:nolive_app/src/shared/presentation/theme/zh_text.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/streamer_avatar.dart';
 
-extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
-  Widget _buildLoadingRoomShell({
-    required BuildContext context,
-    required ProviderDescriptor? descriptor,
-  }) {
+@immutable
+class RoomLoadingShellViewData {
+  const RoomLoadingShellViewData({
+    required this.providerLabel,
+    required this.roomTitle,
+    required this.streamerName,
+    required this.avatarLabel,
+    this.posterUrl,
+  });
+
+  final String providerLabel;
+  final String roomTitle;
+  final String streamerName;
+  final String avatarLabel;
+  final String? posterUrl;
+}
+
+class RoomLoadingRoomShell extends StatelessWidget {
+  const RoomLoadingRoomShell({
+    required this.data,
+    super.key,
+  });
+
+  final RoomLoadingShellViewData data;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final room = _activeRoomDetail;
-    final posterUrl = room?.keyframeUrl ?? room?.coverUrl;
-    final providerLabel = descriptor?.displayName ?? widget.providerId.value;
-    final streamerName = normalizeDisplayText(room?.streamerName);
-    final avatarTextSource =
-        streamerName.isEmpty ? providerLabel : streamerName;
-    final avatarLabel = avatarTextSource.isEmpty
-        ? '?'
-        : avatarTextSource.substring(0, 1).toUpperCase();
 
     Widget buildTab(String label, Key key, bool selected) {
       return Expanded(
-        child: _RoomPanelTab(
+        child: RoomPanelTab(
           key: key,
           label: label,
           selected: selected,
@@ -40,17 +60,17 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
               children: [
                 DecoratedBox(
                   decoration: const BoxDecoration(color: Colors.black),
-                  child: posterUrl == null
+                  child: data.posterUrl == null
                       ? null
                       : PersistedNetworkImage(
-                          imageUrl: posterUrl,
+                          imageUrl: data.posterUrl!,
                           bucket: PersistedImageBucket.roomCover,
                           fit: BoxFit.cover,
                           fallback: const SizedBox.shrink(),
                         ),
                 ),
-                DecoratedBox(
-                  decoration: const BoxDecoration(
+                const DecoratedBox(
+                  decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
@@ -80,7 +100,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                         const CircularProgressIndicator.adaptive(),
                         const SizedBox(height: 14),
                         Text(
-                          '正在进入 $providerLabel 房间',
+                          '正在进入 ${data.providerLabel} 房间',
                           textAlign: TextAlign.center,
                           style: theme.textTheme.titleMedium?.copyWith(
                             color: Colors.white,
@@ -89,7 +109,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          room?.title ?? '房间号 ${widget.roomId}',
+                          data.roomTitle,
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: Colors.white.withValues(alpha: 0.9),
@@ -113,7 +133,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                     radius: 21,
                     backgroundColor: colorScheme.secondaryContainer,
                     child: Text(
-                      avatarLabel,
+                      data.avatarLabel,
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: colorScheme.onSecondaryContainer,
                         fontWeight: FontWeight.w700,
@@ -126,7 +146,9 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          streamerName.isEmpty ? '正在读取主播信息' : streamerName,
+                          data.streamerName.isEmpty
+                              ? '正在读取主播信息'
+                              : data.streamerName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.titleMedium?.copyWith(
@@ -135,7 +157,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          providerLabel,
+                          data.providerLabel,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
@@ -204,69 +226,76 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
       ),
     );
   }
+}
 
-  Widget _buildRoomBody({
-    required BuildContext context,
-    required _RoomPageState state,
-    required LiveRoomDetail room,
-    required bool fullscreenActive,
-    required ProviderDescriptor? descriptor,
-    required LivePlayQuality selectedQuality,
-    required LivePlayQuality effectiveQuality,
-    required PlaybackSource? playbackSource,
-    required List<LivePlayUrl> playUrls,
-    required bool hasPlayback,
-    required List<PlayerBackend> availableBackends,
-  }) {
-    final tabSwitcher = Material(
-      color: Theme.of(context).colorScheme.surface,
-      child: Row(
-        children: [
-          Expanded(
-            child: _RoomPanelTab(
-              key: const Key('room-panel-tab-chat'),
-              label: '聊天',
-              selected: _selectedPanel == _RoomPanel.chat,
-              onTap: () => _selectPanel(_RoomPanel.chat),
-            ),
-          ),
-          Expanded(
-            child: _RoomPanelTab(
-              key: const Key('room-panel-tab-super-chat'),
-              label: 'SC',
-              selected: _selectedPanel == _RoomPanel.superChat,
-              onTap: () => _selectPanel(_RoomPanel.superChat),
-            ),
-          ),
-          Expanded(
-            child: _RoomPanelTab(
-              key: const Key('room-panel-tab-follow'),
-              label: '关注',
-              selected: _selectedPanel == _RoomPanel.follow,
-              onTap: () => _selectPanel(_RoomPanel.follow),
-            ),
-          ),
-          Expanded(
-            child: _RoomPanelTab(
-              key: const Key('room-panel-tab-settings'),
-              label: '设置',
-              selected: _selectedPanel == _RoomPanel.settings,
-              onTap: () => _selectPanel(_RoomPanel.settings),
-            ),
-          ),
-        ],
-      ),
-    );
+@immutable
+class RoomSectionsViewData {
+  const RoomSectionsViewData({
+    required this.providerLabel,
+    required this.streamerName,
+    required this.streamerAvatarUrl,
+    required this.roomLive,
+    required this.viewerLabel,
+    required this.isFollowed,
+    this.statusPresentation,
+    this.qualityBadgeLabel,
+  });
 
-    final panelPageView = _buildRoomPanelPageView(
-      context: context,
-      state: state,
-      room: room,
-      selectedQuality: selectedQuality,
-      availableBackends: availableBackends,
-      playUrls: playUrls,
-      playbackSource: playbackSource,
-      hasPlayback: hasPlayback,
+  final String providerLabel;
+  final String streamerName;
+  final String? streamerAvatarUrl;
+  final bool roomLive;
+  final String viewerLabel;
+  final bool isFollowed;
+  final RoomChaturbateStatusPresentation? statusPresentation;
+  final String? qualityBadgeLabel;
+}
+
+class RoomPreviewSections extends StatelessWidget {
+  const RoomPreviewSections({
+    required this.data,
+    required this.pageController,
+    required this.selectedPanel,
+    required this.onSelectPanel,
+    required this.onPageChanged,
+    required this.chatPanel,
+    required this.superChatPanel,
+    required this.followPanel,
+    required this.controlsPanel,
+    required this.playerSurface,
+    required this.onToggleFollow,
+    required this.onRefresh,
+    required this.onShareRoom,
+    super.key,
+  });
+
+  final RoomSectionsViewData data;
+  final PageController pageController;
+  final RoomPanel selectedPanel;
+  final ValueChanged<RoomPanel> onSelectPanel;
+  final ValueChanged<int> onPageChanged;
+  final Widget chatPanel;
+  final Widget superChatPanel;
+  final Widget followPanel;
+  final Widget controlsPanel;
+  final Widget playerSurface;
+  final VoidCallback onToggleFollow;
+  final VoidCallback onRefresh;
+  final VoidCallback onShareRoom;
+
+  @override
+  Widget build(BuildContext context) {
+    final panelPager = RoomPanelPager(
+      selectedPanel: selectedPanel,
+      pageController: pageController,
+      onSelectPanel: onSelectPanel,
+      onPageChanged: onPageChanged,
+      children: [
+        chatPanel,
+        _RoomPanelScrollPage(child: superChatPanel),
+        _RoomPanelScrollPage(child: followPanel),
+        _RoomPanelScrollPage(child: controlsPanel),
+      ],
     );
 
     return ColoredBox(
@@ -278,45 +307,20 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
             return ListView(
               padding: EdgeInsets.zero,
               children: [
-                _buildPlayerHero(
-                  context: context,
-                  room: room,
-                  playbackSource: playbackSource,
-                  hasPlayback: hasPlayback,
-                  embedPlayer: !fullscreenActive,
-                  fullscreen: false,
-                  onShowQuality:
-                      hasPlayback ? () => _showQualitySheet(state) : null,
-                  onShowLine: hasPlayback
-                      ? () => _showLineSheet(playUrls, playbackSource!)
-                      : null,
-                  inlineQualityLabel: hasPlayback
-                      ? _compactQualityLabel(_effectiveQualityOf(state).label)
-                      : null,
-                  inlineLineLabel: hasPlayback
-                      ? _compactLineLabel(
-                          _lineLabelOf(playUrls, playbackSource!))
-                      : null,
-                ),
-                _buildRoomHeader(
-                  context: context,
-                  state: state,
-                  room: room,
-                  descriptor: descriptor,
-                  selectedQuality: selectedQuality,
-                  effectiveQuality: effectiveQuality,
-                ),
-                tabSwitcher,
+                playerSurface,
+                _RoomHeader(data: data),
                 SizedBox(
-                  height: 300,
+                  height: 348,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-                    child: panelPageView,
+                    child: panelPager,
                   ),
                 ),
-                _buildRoomBottomActions(
-                  state: state,
-                  room: room,
+                _RoomBottomActions(
+                  isFollowed: data.isFollowed,
+                  onToggleFollow: onToggleFollow,
+                  onRefresh: onRefresh,
+                  onShareRoom: onShareRoom,
                 ),
               ],
             );
@@ -324,43 +328,19 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
 
           return Column(
             children: [
-              _buildPlayerHero(
-                context: context,
-                room: room,
-                playbackSource: playbackSource,
-                hasPlayback: hasPlayback,
-                embedPlayer: !fullscreenActive,
-                fullscreen: false,
-                onShowQuality:
-                    hasPlayback ? () => _showQualitySheet(state) : null,
-                onShowLine: hasPlayback
-                    ? () => _showLineSheet(playUrls, playbackSource!)
-                    : null,
-                inlineQualityLabel: hasPlayback
-                    ? _compactQualityLabel(_effectiveQualityOf(state).label)
-                    : null,
-                inlineLineLabel: hasPlayback
-                    ? _compactLineLabel(_lineLabelOf(playUrls, playbackSource!))
-                    : null,
-              ),
-              _buildRoomHeader(
-                context: context,
-                state: state,
-                room: room,
-                descriptor: descriptor,
-                selectedQuality: selectedQuality,
-                effectiveQuality: effectiveQuality,
-              ),
-              tabSwitcher,
+              playerSurface,
+              _RoomHeader(data: data),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-                  child: panelPageView,
+                  child: panelPager,
                 ),
               ),
-              _buildRoomBottomActions(
-                state: state,
-                room: room,
+              _RoomBottomActions(
+                isFollowed: data.isFollowed,
+                onToggleFollow: onToggleFollow,
+                onRefresh: onRefresh,
+                onShareRoom: onShareRoom,
               ),
             ],
           );
@@ -368,74 +348,35 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
       ),
     );
   }
+}
 
-  Widget _buildRoomPanelPageView({
-    required BuildContext context,
-    required _RoomPageState state,
-    required LiveRoomDetail room,
-    required LivePlayQuality selectedQuality,
-    required List<PlayerBackend> availableBackends,
-    required List<LivePlayUrl> playUrls,
-    required PlaybackSource? playbackSource,
-    required bool hasPlayback,
-  }) {
-    return PageView(
-      key: const Key('room-panel-page-view'),
-      controller: _panelPageController,
-      onPageChanged: _handlePanelPageChanged,
-      children: [
-        _buildChatPanel(context, room),
-        _buildRoomPanelScrollPage(
-          child: _buildSuperChatPanel(context),
-        ),
-        _buildRoomPanelScrollPage(
-          child: _buildFollowPanel(context: context),
-        ),
-        _buildRoomPanelScrollPage(
-          child: _buildControlsPanel(
-            context: context,
-            state: state,
-            selectedQuality: selectedQuality,
-            availableBackends: availableBackends,
-            playUrls: playUrls,
-            playbackSource: playbackSource,
-            hasPlayback: hasPlayback,
-          ),
-        ),
-      ],
-    );
-  }
+class _RoomPanelScrollPage extends StatelessWidget {
+  const _RoomPanelScrollPage({
+    required this.child,
+  });
 
-  Widget _buildRoomPanelScrollPage({
-    required Widget child,
-  }) {
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 12),
       child: child,
     );
   }
+}
 
-  Widget _buildRoomHeader({
-    required BuildContext context,
-    required _RoomPageState state,
-    required LiveRoomDetail room,
-    required ProviderDescriptor? descriptor,
-    required LivePlayQuality selectedQuality,
-    required LivePlayQuality effectiveQuality,
-  }) {
+class _RoomHeader extends StatelessWidget {
+  const _RoomHeader({
+    required this.data,
+  });
+
+  final RoomSectionsViewData data;
+
+  @override
+  Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final providerLabel = descriptor?.displayName ?? widget.providerId.value;
-    final roomStreamerName = normalizeDisplayText(room.streamerName);
-    final statusPresentation = _chaturbateRoomStatusOf(room);
-    final viewerLabel = room.viewerCount == null
-        ? '-'
-        : room.viewerCount! >= 10000
-            ? '${(room.viewerCount! / 10000).toStringAsFixed(room.viewerCount! >= 100000 ? 0 : 1)}万'
-            : '${room.viewerCount!}';
-
-    final showQualityLabel = _hasQualityFallback(state);
-
     return Material(
       color: colorScheme.surface,
       child: Padding(
@@ -445,9 +386,9 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
           children: [
             StreamerAvatar(
               size: 42,
-              imageUrl: room.streamerAvatarUrl,
-              fallbackText: roomStreamerName,
-              isLive: room.isLive,
+              imageUrl: data.streamerAvatarUrl,
+              fallbackText: data.streamerName,
+              isLive: data.roomLive,
               outlineColor: colorScheme.outlineVariant,
               fallbackTextStyle: applyZhTextStyleOrNull(
                 Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -463,7 +404,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    roomStreamerName,
+                    data.streamerName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -474,7 +415,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    providerLabel,
+                    data.providerLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -483,7 +424,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                           height: 1.04,
                         ),
                   ),
-                  if (statusPresentation != null) ...[
+                  if (data.statusPresentation != null) ...[
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -495,7 +436,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        statusPresentation.label,
+                        data.statusPresentation!.label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -523,7 +464,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                     ),
                     const SizedBox(width: 3),
                     Text(
-                      viewerLabel,
+                      data.viewerLabel,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                             fontSize: 13.5,
@@ -531,10 +472,10 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                     ),
                   ],
                 ),
-                if (showQualityLabel) ...[
+                if (data.qualityBadgeLabel?.isNotEmpty ?? false) ...[
                   const SizedBox(height: 4),
                   Text(
-                    _qualityBadgeLabel(state),
+                    data.qualityBadgeLabel!,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colorScheme.primary,
                           fontWeight: FontWeight.w500,
@@ -550,11 +491,23 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
       ),
     );
   }
+}
 
-  Widget _buildRoomBottomActions({
-    required _RoomPageState state,
-    required LiveRoomDetail room,
-  }) {
+class _RoomBottomActions extends StatelessWidget {
+  const _RoomBottomActions({
+    required this.isFollowed,
+    required this.onToggleFollow,
+    required this.onRefresh,
+    required this.onShareRoom,
+  });
+
+  final bool isFollowed;
+  final VoidCallback onToggleFollow;
+  final VoidCallback onRefresh;
+  final VoidCallback onShareRoom;
+
+  @override
+  Widget build(BuildContext context) {
     final buttonStyle = TextButton.styleFrom(
       foregroundColor: Theme.of(context).colorScheme.onSurface,
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -578,13 +531,13 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
                 child: TextButton.icon(
                   key: const Key('room-follow-toggle-button'),
                   style: buttonStyle,
-                  onPressed: () => _toggleFollow(state.snapshot),
+                  onPressed: onToggleFollow,
                   icon: Icon(
-                    _isFollowed ? Icons.favorite : Icons.favorite_border,
+                    isFollowed ? Icons.favorite : Icons.favorite_border,
                     size: 18,
                   ),
                   label: Text(
-                    _isFollowed ? '取消关注' : '关注',
+                    isFollowed ? '取消关注' : '关注',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -593,7 +546,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
               Expanded(
                 child: TextButton.icon(
                   style: buttonStyle,
-                  onPressed: () => _refreshRoom(showFeedback: true),
+                  onPressed: onRefresh,
                   icon: const Icon(Icons.refresh, size: 18),
                   label: const Text(
                     '刷新',
@@ -605,7 +558,7 @@ extension _RoomPreviewPageSectionsExtension on _RoomPreviewPageState {
               Expanded(
                 child: TextButton.icon(
                   style: buttonStyle,
-                  onPressed: () => _shareRoomLink(room),
+                  onPressed: onShareRoom,
                   icon: const Icon(Icons.share_outlined, size: 18),
                   label: const Text(
                     '分享',

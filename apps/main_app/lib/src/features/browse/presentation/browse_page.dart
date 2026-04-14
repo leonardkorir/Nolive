@@ -1,13 +1,16 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/features/browse/application/browse_feature_dependencies.dart';
 import 'package:nolive_app/src/features/browse/application/load_provider_highlights_use_case.dart';
 import 'package:nolive_app/src/features/category/application/manage_favorite_category_tags_use_case.dart';
 import 'package:nolive_app/src/features/category/application/load_provider_categories_use_case.dart';
 import 'package:nolive_app/src/features/category/presentation/category_search_support.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
 import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
+import 'package:nolive_app/src/shared/presentation/gestures/responsive_tab_swipe_switcher.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
@@ -15,20 +18,20 @@ import 'package:nolive_app/src/shared/presentation/widgets/provider_badge.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/provider_tab_label.dart';
 
 class BrowsePage extends StatelessWidget {
-  const BrowsePage({required this.bootstrap, super.key});
+  const BrowsePage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final BrowseFeatureDependencies dependencies;
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge([
-        bootstrap.layoutPreferences,
-        bootstrap.providerCatalogRevision,
+        dependencies.layoutPreferences,
+        dependencies.providerCatalogRevision,
       ]),
       builder: (context, _) {
-        final preferences = bootstrap.layoutPreferences.value;
-        final providers = bootstrap
+        final preferences = dependencies.layoutPreferences.value;
+        final providers = dependencies
             .listAvailableProviders()
             .where(
               (item) =>
@@ -68,7 +71,7 @@ class BrowsePage extends StatelessWidget {
                       Navigator.of(tabContext).push(
                         MaterialPageRoute<void>(
                           builder: (context) => SearchPage(
-                            bootstrap: bootstrap,
+                            dependencies: dependencies.searchDependencies,
                             standalone: true,
                             initialProviderId: selectedProvider.id,
                           ),
@@ -80,21 +83,25 @@ class BrowsePage extends StatelessWidget {
                   const SizedBox(width: 4),
                 ],
               ),
-              body: TabBarView(
-                children: [
-                  for (final descriptor in providers)
-                    descriptor.supports(ProviderCapability.categories)
-                        ? _ProviderCategoriesTab(
-                            bootstrap: bootstrap,
-                            descriptor: descriptor,
-                          )
-                        : _ProviderDiscoveryTab(
-                            bootstrap: bootstrap,
-                            descriptor: descriptor,
-                            pageHorizontalPadding:
-                                adaptive.pageHorizontalPadding,
-                          ),
-                ],
+              body: ResponsiveTabSwipeSwitcher(
+                key: const Key('browse-provider-tab-swipe-switcher'),
+                child: TabBarView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    for (final descriptor in providers)
+                      descriptor.supports(ProviderCapability.categories)
+                          ? _ProviderCategoriesTab(
+                              dependencies: dependencies,
+                              descriptor: descriptor,
+                            )
+                          : _ProviderDiscoveryTab(
+                              dependencies: dependencies,
+                              descriptor: descriptor,
+                              pageHorizontalPadding:
+                                  adaptive.pageHorizontalPadding,
+                            ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -145,12 +152,12 @@ class _ProviderTabs extends StatelessWidget {
 
 class _ProviderDiscoveryTab extends StatefulWidget {
   const _ProviderDiscoveryTab({
-    required this.bootstrap,
+    required this.dependencies,
     required this.descriptor,
     required this.pageHorizontalPadding,
   });
 
-  final AppBootstrap bootstrap;
+  final BrowseFeatureDependencies dependencies;
   final ProviderDescriptor descriptor;
   final double pageHorizontalPadding;
 
@@ -172,7 +179,7 @@ class _ProviderDiscoveryTabState extends State<_ProviderDiscoveryTab>
   }
 
   Future<List<ProviderHighlightSection>> _load() {
-    return widget.bootstrap.loadProviderHighlights(
+    return widget.dependencies.loadProviderHighlights(
       providerId: widget.descriptor.id,
     );
   }
@@ -264,11 +271,11 @@ class _ProviderDiscoveryTabState extends State<_ProviderDiscoveryTab>
 
 class _ProviderCategoriesTab extends StatefulWidget {
   const _ProviderCategoriesTab({
-    required this.bootstrap,
+    required this.dependencies,
     required this.descriptor,
   });
 
-  final AppBootstrap bootstrap;
+  final BrowseFeatureDependencies dependencies;
   final ProviderDescriptor descriptor;
 
   @override
@@ -290,7 +297,7 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
   void initState() {
     super.initState();
     _searchController = TextEditingController();
-    _future = widget.bootstrap.loadProviderCategories(widget.descriptor.id);
+    _future = widget.dependencies.loadProviderCategories(widget.descriptor.id);
     _reloadFavoriteTags();
   }
 
@@ -302,7 +309,9 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
 
   Future<void> _refresh() async {
     setState(() {
-      _future = widget.bootstrap.loadProviderCategories(widget.descriptor.id);
+      _future = widget.dependencies.loadProviderCategories(
+        widget.descriptor.id,
+      );
       _expandedCategoryIds.clear();
     });
     await _reloadFavoriteTags();
@@ -310,7 +319,7 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
   }
 
   Future<void> _reloadFavoriteTags() async {
-    final tags = await widget.bootstrap.loadFavoriteCategoryTags();
+    final tags = await widget.dependencies.loadFavoriteCategoryTags();
     if (!mounted) {
       return;
     }
@@ -329,7 +338,7 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
       LiveSubCategory(
         id: category.id,
         parentId: category.id,
-        name: category.name,
+        name: normalizeDisplayText(category.name),
       ),
     ];
   }
@@ -463,13 +472,13 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
                                 descriptor: widget.descriptor,
                                 imageUrl: tag.imageUrl,
                               ),
-                              label: Text(tag.label),
+                              label: Text(normalizeDisplayText(tag.label)),
                               onPressed: () {
                                 _openCategory(
                                   LiveSubCategory(
                                     id: tag.categoryId,
                                     parentId: tag.categoryId,
-                                    name: tag.label,
+                                    name: normalizeDisplayText(tag.label),
                                     pic: tag.imageUrl,
                                   ),
                                 );
@@ -501,7 +510,7 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
                         6,
                       ),
                       child: Text(
-                        category.group.name,
+                        normalizeDisplayText(category.group.name),
                         style:
                             Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w600,
@@ -559,7 +568,7 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
                           ),
                           descriptor: widget.descriptor,
                           categoryId: subCategory.id,
-                          label: subCategory.name,
+                          label: normalizeDisplayText(subCategory.name),
                           imageUrl: subCategory.pic,
                           visualExtent: adaptive.categoryTileVisualExtent,
                           labelFontSize: adaptive.categoryTileTextSize,
@@ -709,8 +718,14 @@ class _CategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final normalizedLabel = normalizeDisplayText(label);
     final normalizedImageUrl = imageUrl?.trim() ?? '';
     final hasImage = normalizedImageUrl.isNotEmpty;
+    final compactLayout = visualExtent <= 44;
+    final contentPadding = compactLayout
+        ? const EdgeInsets.fromLTRB(3, 2, 3, 4)
+        : const EdgeInsets.fromLTRB(6, 8, 6, 8);
+    final labelGap = compactLayout ? 2.0 : 8.0;
     return Material(
       color: theme.cardColor,
       borderRadius: BorderRadius.circular(12),
@@ -718,11 +733,11 @@ class _CategoryTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+          padding: contentPadding,
           child: showAllTile
               ? Center(
                   child: Text(
-                    label,
+                    normalizedLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
@@ -737,38 +752,47 @@ class _CategoryTile extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
-                      child: Align(
-                        alignment: Alignment.topCenter,
-                        child: SizedBox(
-                          key: categoryId == null
-                              ? null
-                              : Key(
-                                  'browse-category-visual-'
-                                  '${descriptor.id.value}-$categoryId',
-                                ),
-                          width: double.infinity,
-                          height: visualExtent,
-                          child: hasImage
-                              ? ClipRect(
-                                  child: Transform.scale(
-                                    scale: _categoryImageScale(descriptor.id),
-                                    child: PersistedNetworkImage(
-                                      imageUrl: normalizedImageUrl,
-                                      bucket: PersistedImageBucket.categoryIcon,
-                                      fit: _categoryImageFit(descriptor.id),
-                                      filterQuality: FilterQuality.high,
-                                      fallback:
-                                          _CategoryTileFallback(label: label),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final visualSize = math.min(
+                            constraints.maxWidth,
+                            math.max(visualExtent, constraints.maxHeight),
+                          );
+                          return Align(
+                            alignment: Alignment.topCenter,
+                            child: SizedBox.square(
+                              key: categoryId == null
+                                  ? null
+                                  : Key(
+                                      'browse-category-visual-'
+                                      '${descriptor.id.value}-$categoryId',
                                     ),
-                                  ),
-                                )
-                              : _CategoryTileFallback(label: label),
-                        ),
+                              dimension: visualSize,
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: hasImage
+                                    ? PersistedNetworkImage(
+                                        imageUrl: normalizedImageUrl,
+                                        bucket:
+                                            PersistedImageBucket.categoryIcon,
+                                        fit: BoxFit.contain,
+                                        filterQuality: FilterQuality.high,
+                                        fallback: _CategoryTileFallback(
+                                          label: normalizedLabel,
+                                        ),
+                                      )
+                                    : _CategoryTileFallback(
+                                        label: normalizedLabel,
+                                      ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: labelGap),
                     Text(
-                      label,
+                      normalizedLabel,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
@@ -783,21 +807,6 @@ class _CategoryTile extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  BoxFit _categoryImageFit(ProviderId providerId) {
-    return switch (providerId) {
-      ProviderId.douyu || ProviderId.twitch => BoxFit.cover,
-      _ => BoxFit.contain,
-    };
-  }
-
-  double _categoryImageScale(ProviderId providerId) {
-    return switch (providerId) {
-      ProviderId.douyu => 1.32,
-      ProviderId.twitch => 1.16,
-      _ => 1.0,
-    };
   }
 }
 

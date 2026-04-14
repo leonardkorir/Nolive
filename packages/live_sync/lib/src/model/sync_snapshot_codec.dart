@@ -7,6 +7,8 @@ import 'sync_snapshot.dart';
 class SyncSnapshotJsonCodec {
   const SyncSnapshotJsonCodec._();
 
+  static const int currentFormatVersion = 2;
+
   static String encode(SyncSnapshot snapshot) {
     return jsonEncode(_toJson(snapshot));
   }
@@ -26,6 +28,7 @@ class SyncSnapshotJsonCodec {
 
   static Map<String, Object?> _toJson(SyncSnapshot snapshot) {
     return {
+      'format_version': currentFormatVersion,
       'settings': snapshot.settings,
       'blocked_keywords': snapshot.blockedKeywords,
       'tags': snapshot.tags,

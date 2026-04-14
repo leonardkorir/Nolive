@@ -5,18 +5,18 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/library/application/load_library_dashboard_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_follow_preferences_use_case.dart';
+import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/settings_action_buttons.dart';
 
 class FollowSettingsPage extends StatefulWidget {
-  const FollowSettingsPage({required this.bootstrap, super.key});
+  const FollowSettingsPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final FollowSettingsDependencies dependencies;
 
   @override
   State<FollowSettingsPage> createState() => _FollowSettingsPageState();
@@ -36,10 +36,8 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
   }
 
   Future<_FollowSettingsPageData> _load() async {
-    final dashboard = await widget.bootstrap.loadLibraryDashboard();
-    final preferences = await LoadFollowPreferencesUseCase(
-      widget.bootstrap.settingsRepository,
-    ).call();
+    final dashboard = await widget.dependencies.loadLibraryDashboard();
+    final preferences = await widget.dependencies.loadFollowPreferences();
     return _FollowSettingsPageData(
       dashboard: dashboard,
       preferences: preferences,
@@ -72,9 +70,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
     String message,
   ) async {
     await _runAction(
-      () => UpdateFollowPreferencesUseCase(
-        widget.bootstrap.settingsRepository,
-      ).call(preferences),
+      () => widget.dependencies.updateFollowPreferences(preferences),
       message,
     );
   }
@@ -131,7 +127,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
       _busy = true;
     });
     try {
-      final payload = await widget.bootstrap.exportFollowListJson();
+      final payload = await widget.dependencies.exportFollowListJson();
       final bytes = Uint8List.fromList(utf8.encode(payload));
       final path = await FilePicker.platform.saveFile(
         dialogTitle: '导出关注列表',
@@ -175,7 +171,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
         return;
       }
       final payload = await _readPickedFileText(result.files.single);
-      final summary = await widget.bootstrap.importFollowListJson(payload);
+      final summary = await widget.dependencies.importFollowListJson(payload);
       await _refresh();
       _showFollowImportSummary(summary, sourceLabel: result.files.single.name);
     } on FormatException catch (error) {
@@ -207,7 +203,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
       _busy = true;
     });
     try {
-      final payload = await widget.bootstrap.exportFollowListJson();
+      final payload = await widget.dependencies.exportFollowListJson();
       await Clipboard.setData(ClipboardData(text: payload));
       _showSnack('关注 JSON 已复制到剪贴板');
     } finally {
@@ -269,7 +265,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
     });
     try {
       final summary =
-          await widget.bootstrap.importFollowListJson(controller.text);
+          await widget.dependencies.importFollowListJson(controller.text);
       await _refresh();
       _showFollowImportSummary(summary, sourceLabel: '文本');
     } on FormatException catch (error) {
@@ -303,7 +299,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
 
   Future<void> _removeTag(String tag) async {
     await _runAction(
-      () => widget.bootstrap.removeTag(tag),
+      () => widget.dependencies.removeTag(tag),
       '已移除标签 $tag',
     );
   }
@@ -337,7 +333,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
       return;
     }
     await _runAction(
-      () => widget.bootstrap.createTag(controller.text.trim()),
+      () => widget.dependencies.createTag(controller.text.trim()),
       '已创建标签 ${controller.text.trim()}',
     );
   }
@@ -603,7 +599,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                             label: '清空关注',
                             icon: Icons.favorite_outline,
                             onPressed: () => _runAction(
-                              () => widget.bootstrap.clearFollows(),
+                              () => widget.dependencies.clearFollows(),
                               '已清空关注记录',
                             ),
                           ),
@@ -611,7 +607,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                             label: '清空历史',
                             icon: Icons.history_toggle_off,
                             onPressed: () => _runAction(
-                              () => widget.bootstrap.clearHistory(),
+                              () => widget.dependencies.clearHistory(),
                               '已清空历史记录',
                             ),
                           ),
@@ -619,7 +615,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                             label: '清空标签',
                             icon: Icons.label_off_outlined,
                             onPressed: () => _runAction(
-                              () => widget.bootstrap.clearTags(),
+                              () => widget.dependencies.clearTags(),
                               '已清空所有标签',
                             ),
                           ),

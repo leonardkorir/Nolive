@@ -6,6 +6,8 @@ import 'douyu_sign_service.dart';
 import 'douyu_transport.dart';
 
 class DouyuLiveDataSource implements DouyuDataSource {
+  static const int _recommendPageSize = 40;
+
   DouyuLiveDataSource({
     required DouyuTransport transport,
     required DouyuSignService signService,
@@ -100,15 +102,20 @@ class DouyuLiveDataSource implements DouyuDataSource {
       'https://www.douyu.com/japi/weblist/apinc/allpage/6/$page',
     );
     final data = _asMap(response['data']);
-    final items = _asList(data['rl'])
+    final rawItems = _asList(data['rl']);
+    final items = rawItems
         .map((item) => _asMap(item))
         .where((item) => item['type'] == 1)
         .map(_mapCategoryRoom)
         .where((item) => item.roomId.isNotEmpty)
         .toList(growable: false);
+    final totalPages = _asInt(data['pgcnt']) ?? 0;
+    final hasMore = totalPages > 0
+        ? page < totalPages
+        : rawItems.length >= _recommendPageSize;
     return PagedResponse(
       items: items,
-      hasMore: page < (_asInt(data['pgcnt']) ?? page),
+      hasMore: hasMore,
       page: page,
     );
   }

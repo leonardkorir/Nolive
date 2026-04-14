@@ -9,6 +9,7 @@ import 'package:nolive_app/src/app/bootstrap/default_state.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
 
 import 'manage_layout_preferences_use_case.dart';
+import 'secure_snapshot_import_coordinator.dart';
 
 class ExportSyncSnapshotJsonUseCase {
   const ExportSyncSnapshotJsonUseCase(this.snapshotService);
@@ -22,25 +23,11 @@ class ExportSyncSnapshotJsonUseCase {
 }
 
 class ExportLegacyConfigJsonUseCase {
-  const ExportLegacyConfigJsonUseCase({
-    required this.settingsRepository,
-    required this.historyRepository,
-    required this.followRepository,
-    required this.tagRepository,
-  });
+  const ExportLegacyConfigJsonUseCase(this.snapshotService);
 
-  final SettingsRepository settingsRepository;
-  final HistoryRepository historyRepository;
-  final FollowRepository followRepository;
-  final TagRepository tagRepository;
+  final RepositorySyncSnapshotService snapshotService;
 
   Future<String> call() async {
-    final snapshotService = RepositorySyncSnapshotService(
-      settingsRepository: settingsRepository,
-      historyRepository: historyRepository,
-      followRepository: followRepository,
-      tagRepository: tagRepository,
-    );
     final snapshot = await snapshotService.exportSnapshot();
     final snapshotJson = jsonDecode(SyncSnapshotJsonCodec.encode(snapshot));
 
@@ -67,6 +54,7 @@ class ImportSyncSnapshotJsonUseCase {
     required this.settingsRepository,
     required this.followRepository,
     required this.tagRepository,
+    required this.snapshotImportCoordinator,
     required this.themeModeNotifier,
     required this.layoutPreferencesNotifier,
     this.providerRegistry,
@@ -79,6 +67,7 @@ class ImportSyncSnapshotJsonUseCase {
   final SettingsRepository settingsRepository;
   final FollowRepository followRepository;
   final TagRepository tagRepository;
+  final SecureSnapshotImportCoordinator snapshotImportCoordinator;
   final ValueNotifier<ThemeMode> themeModeNotifier;
   final ValueNotifier<LayoutPreferences> layoutPreferencesNotifier;
   final ProviderRegistry? providerRegistry;
@@ -98,7 +87,7 @@ class ImportSyncSnapshotJsonUseCase {
         followDataChanged = true;
         break;
       case _ImportMode.fullSnapshot:
-        await snapshotService.importSnapshot(payload.snapshot);
+        await snapshotImportCoordinator.importSnapshot(payload.snapshot);
         followDataChanged = true;
         break;
     }
@@ -129,7 +118,12 @@ class ImportSyncSnapshotJsonUseCase {
       await settingsRepository.remove(key);
     }
 
-    for (final entry in snapshot.settings.entries) {
+    final sanitizedSettings =
+        await snapshotImportCoordinator.sanitizeAndPersistSettings(
+      snapshot.settings,
+      clearExistingSecureSettings: true,
+    );
+    for (final entry in sanitizedSettings.entries) {
       await settingsRepository.writeValue(entry.key, entry.value);
     }
     await settingsRepository.writeValue(

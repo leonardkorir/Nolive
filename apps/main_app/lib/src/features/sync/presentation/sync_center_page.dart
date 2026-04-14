@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:live_sync/live_sync.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/features/sync/application/sync_feature_dependencies.dart';
 import 'package:nolive_app/src/features/sync/application/sync_preferences_use_case.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
 class SyncCenterPage extends StatefulWidget {
-  const SyncCenterPage({required this.bootstrap, super.key});
+  const SyncCenterPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final SyncFeatureDependencies dependencies;
 
   @override
   State<SyncCenterPage> createState() => _SyncCenterPageState();
@@ -27,8 +27,8 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
   }
 
   Future<SyncSnapshotView> _load() async {
-    final snapshot = await widget.bootstrap.loadSyncSnapshot();
-    final preferences = await widget.bootstrap.loadSyncPreferences();
+    final snapshot = await widget.dependencies.loadSyncSnapshot();
+    final preferences = await widget.dependencies.loadSyncPreferences();
     return SyncSnapshotView(snapshot: snapshot, preferences: preferences);
   }
 
@@ -40,7 +40,8 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
   }
 
   Future<void> _copySummary() async {
-    final payload = await widget.bootstrap.exportSyncSnapshotJson();
+    final payload = SyncSnapshotJsonCodec.encode(
+        await widget.dependencies.loadSyncSnapshot());
     await Clipboard.setData(ClipboardData(text: payload));
     if (!mounted) {
       return;
@@ -79,7 +80,7 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
             final data = snapshot.data!;
             final preferences = data.preferences;
             final localServerRunning =
-                widget.bootstrap.localSyncServer.isRunning;
+                widget.dependencies.localSyncServer.isRunning;
             final webDavSummary = preferences.toWebDavConfig().isConfigured
                 ? '${preferences.webDavBaseUrl} · ${preferences.webDavRemotePath}'
                 : '未配置';

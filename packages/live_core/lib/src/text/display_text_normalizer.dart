@@ -354,7 +354,7 @@ class DisplayTextNormalizer {
     if (raw == null || raw.isEmpty) {
       return '';
     }
-    var text = raw;
+    var text = _stripMalformedUtf16(raw);
     for (var index = 0; index < 2; index += 1) {
       text = text
           .replaceAll('&amp;nbsp;', ' ')
@@ -379,6 +379,36 @@ class DisplayTextNormalizer {
       buffer.write(_traditionalToSimplified[character] ?? character);
     }
     return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static String _stripMalformedUtf16(String raw) {
+    final units = raw.codeUnits;
+    final buffer = StringBuffer();
+    var index = 0;
+    while (index < units.length) {
+      final unit = units[index];
+      if (unit >= 0xD800 && unit <= 0xDBFF) {
+        if (index + 1 < units.length) {
+          final next = units[index + 1];
+          if (next >= 0xDC00 && next <= 0xDFFF) {
+            buffer
+              ..writeCharCode(unit)
+              ..writeCharCode(next);
+            index += 2;
+            continue;
+          }
+        }
+        index += 1;
+        continue;
+      }
+      if (unit >= 0xDC00 && unit <= 0xDFFF) {
+        index += 1;
+        continue;
+      }
+      buffer.writeCharCode(unit);
+      index += 1;
+    }
+    return buffer.toString();
   }
 }
 

@@ -1,5 +1,6 @@
 import 'package:live_sync/live_sync.dart';
 
+import '../../settings/application/secure_snapshot_import_coordinator.dart';
 import 'sync_preferences_use_case.dart';
 
 class VerifyWebDavConnectionUseCase {
@@ -26,16 +27,16 @@ class UploadWebDavSnapshotUseCase {
 }
 
 class RestoreWebDavSnapshotUseCase {
-  const RestoreWebDavSnapshotUseCase(this.snapshotService);
+  const RestoreWebDavSnapshotUseCase(this.snapshotImportCoordinator);
 
-  final RepositorySyncSnapshotService snapshotService;
+  final SecureSnapshotImportCoordinator snapshotImportCoordinator;
 
   Future<SyncSnapshot?> call(SyncPreferences preferences) async {
     final service =
         HttpWebDavBackupService(config: preferences.toWebDavConfig());
     final snapshot = await service.restoreLatest();
     if (snapshot != null) {
-      await snapshotService.importSnapshot(snapshot);
+      await snapshotImportCoordinator.importSnapshot(snapshot);
     }
     return snapshot;
   }

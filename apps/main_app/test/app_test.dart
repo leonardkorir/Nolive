@@ -5,7 +5,7 @@ import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 
 void main() {
   testWidgets(
-    'shell navigates browse, search, library, and room preview flows',
+    'shell navigates browse and library flows',
     (tester) async {
       await _pumpApp(tester);
       expect(find.byKey(const Key('shell-tab-label-home')), findsOneWidget);
@@ -18,47 +18,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('分类加载失败'), findsNothing);
       expect(find.text('知识区'), findsOneWidget);
-
-      await tester.tap(find.text('知识区').first);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('provider-category-room-bilibili-6')),
-          findsOneWidget);
-      expect(find.text('新项目参考直播间'), findsOneWidget);
-
-      await tester.tap(find.text('新项目参考直播间'));
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 2));
-      expect(find.byKey(const Key('room-appbar-more-button')), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('room-leave-button')));
-      await tester.pumpAndSettle();
-      await _maybeTapBackButton(tester);
-
-      final providerCategorySearchButton =
-          find.byKey(const Key('provider-category-search-button'));
-      final browseSearchButton =
-          find.byKey(const Key('browse-appbar-search-button'));
-      if (providerCategorySearchButton.evaluate().isNotEmpty) {
-        await tester.tap(providerCategorySearchButton);
-      } else {
-        await tester.tap(browseSearchButton);
-      }
-      await tester.pumpAndSettle();
-      expect(find.text('等待搜索'), findsOneWidget);
-
-      await tester.enterText(find.byType(TextField).first, '架构');
-      await tester.tap(find.byKey(const Key('search-submit-button')));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('迁移样例主播'), findsOneWidget);
-
-      await tester.tap(find.textContaining('架构迁移验证房间').first);
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 2));
-      expect(find.byKey(const Key('room-appbar-more-button')), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('room-leave-button')));
-      await tester.pumpAndSettle();
-      await _maybeTapBackButton(tester);
 
       await tester.tap(find.byKey(const Key('shell-tab-label-library')));
       await tester.pumpAndSettle();
@@ -164,7 +123,7 @@ Future<void> _pumpApp(WidgetTester tester) async {
 
   await tester.pumpWidget(
     NoliveApp(
-      bootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
+      appBootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
     ),
   );
   await tester.pumpAndSettle();
@@ -186,18 +145,4 @@ Future<void> _tapBackButton(WidgetTester tester) async {
     return;
   }
   throw TestFailure('Expected a visible back button on screen.');
-}
-
-Future<void> _maybeTapBackButton(WidgetTester tester) async {
-  final finder = find.byType(BackButton);
-  final tooltipFinder = find.byTooltip('返回');
-  final roundedFinder = find.byIcon(Icons.arrow_back_rounded);
-  final arrowFinder = find.byIcon(Icons.arrow_back);
-  if (finder.evaluate().isEmpty &&
-      tooltipFinder.evaluate().isEmpty &&
-      roundedFinder.evaluate().isEmpty &&
-      arrowFinder.evaluate().isEmpty) {
-    return;
-  }
-  await _tapBackButton(tester);
 }

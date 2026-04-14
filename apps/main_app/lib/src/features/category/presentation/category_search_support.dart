@@ -17,7 +17,7 @@ List<FilteredCategoryGroup> filterCategoryGroups(
   String query, {
   required List<LiveSubCategory> Function(LiveCategory category) childrenOf,
 }) {
-  final normalized = query.trim().toLowerCase();
+  final normalized = normalizeDisplayText(query).toLowerCase();
   if (normalized.isEmpty) {
     return [
       for (final category in categories)
@@ -32,11 +32,17 @@ List<FilteredCategoryGroup> filterCategoryGroups(
   final groups = <FilteredCategoryGroup>[];
   for (final category in categories) {
     final children = childrenOf(category);
-    final matchedByGroup = category.name.toLowerCase().contains(normalized);
+    final matchedByGroup = normalizeDisplayText(category.name)
+        .toLowerCase()
+        .contains(normalized);
     final matchedChildren = matchedByGroup
         ? children
         : children
-            .where((item) => item.name.toLowerCase().contains(normalized))
+            .where(
+              (item) => normalizeDisplayText(item.name)
+                  .toLowerCase()
+                  .contains(normalized),
+            )
             .toList(growable: false);
     if (matchedChildren.isEmpty) {
       continue;

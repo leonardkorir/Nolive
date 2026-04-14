@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('search page uses initial provider id to select the matching tab',
@@ -16,7 +17,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: SearchPage(
-          bootstrap: bootstrap,
+          dependencies: buildSearchFeatureDependencies(bootstrap),
           initialProviderId: ProviderId.douyu,
         ),
       ),
@@ -37,7 +38,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: SearchPage(
-          bootstrap: bootstrap,
+          dependencies: buildSearchFeatureDependencies(bootstrap),
           initialProviderId: const ProviderId('missing-provider'),
         ),
       ),
@@ -58,7 +59,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: SearchPage(
-          bootstrap: bootstrap,
+          dependencies: buildSearchFeatureDependencies(bootstrap),
           initialProviderId: ProviderId.douyu,
         ),
       ),

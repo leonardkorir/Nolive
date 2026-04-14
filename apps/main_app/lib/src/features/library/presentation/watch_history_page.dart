@@ -3,16 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/features/library/application/watch_history_feature_dependencies.dart';
 import 'package:nolive_app/src/features/settings/application/manage_history_preferences_use_case.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 
 class WatchHistoryPage extends StatefulWidget {
-  const WatchHistoryPage({required this.bootstrap, super.key});
+  const WatchHistoryPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final WatchHistoryFeatureDependencies dependencies;
 
   @override
   State<WatchHistoryPage> createState() => _WatchHistoryPageState();
@@ -36,8 +36,8 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
       _errorMessage = null;
     });
     try {
-      final snapshot = await widget.bootstrap.listLibrarySnapshot();
-      final preferences = await widget.bootstrap.loadHistoryPreferences();
+      final snapshot = await widget.dependencies.listLibrarySnapshot();
+      final preferences = await widget.dependencies.loadHistoryPreferences();
       if (!mounted) {
         return;
       }
@@ -58,7 +58,7 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
   }
 
   Future<void> _removeRecord(HistoryRecord record) async {
-    await widget.bootstrap.removeHistoryRecord(
+    await widget.dependencies.removeHistoryRecord(
       providerId: record.providerId,
       roomId: record.roomId,
     );
@@ -98,7 +98,7 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
     if (!confirmed) {
       return;
     }
-    await widget.bootstrap.clearHistory();
+    await widget.dependencies.clearHistory();
     await _refresh();
     if (!mounted) {
       return;
@@ -113,7 +113,7 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
     setState(() {
       _preferences = next;
     });
-    await widget.bootstrap.updateHistoryPreferences(next);
+    await widget.dependencies.updateHistoryPreferences(next);
   }
 
   void _openRoom(HistoryRecord record) {
@@ -127,9 +127,8 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
   }
 
   String _providerLabel(HistoryRecord record) {
-    final descriptor = widget.bootstrap.providerRegistry.findDescriptorById(
-      record.providerId,
-    );
+    final descriptor =
+        widget.dependencies.findProviderDescriptorById(record.providerId);
     if (descriptor != null) {
       return descriptor.displayName;
     }

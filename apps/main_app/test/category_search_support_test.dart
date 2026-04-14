@@ -60,4 +60,29 @@ void main() {
     expect(result.single.items.map((item) => item.name), ['原神']);
     expect(result.single.matchedByGroup, isFalse);
   });
+
+  test('search matches malformed utf16 category names after normalization', () {
+    final malformedCategories = <LiveCategory>[
+      LiveCategory(
+        id: 'group-1',
+        name: '游${String.fromCharCode(0xD800)}戏',
+        children: [
+          LiveSubCategory(
+            id: 'hot',
+            parentId: 'group-1',
+            name: '热${String.fromCharCode(0xDC00)}门',
+          ),
+        ],
+      ),
+    ];
+
+    final result = filterCategoryGroups(
+      malformedCategories,
+      '热门',
+      childrenOf: childrenOf,
+    );
+
+    expect(result, hasLength(1));
+    expect(result.single.items.single.name, contains('门'));
+  });
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:live_player/live_player.dart';
 import 'package:live_providers/live_providers.dart';
@@ -9,6 +10,10 @@ import 'package:live_sync/live_sync.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:nolive_app/src/app/bootstrap/default_state.dart';
 import 'package:nolive_app/src/app/platform/douyin_danmaku_signature_service.dart';
+import 'package:nolive_app/src/app/runtime_bridges/app_runtime_bridges.dart';
+import 'package:nolive_app/src/app/runtime_bridges/chaturbate/chaturbate_web_room_detail_loader.dart';
+import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_ad_guard_proxy.dart';
+import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_web_playback_bridge.dart';
 import 'package:nolive_app/src/features/browse/application/load_provider_highlights_use_case.dart';
 import 'package:nolive_app/src/features/category/application/manage_favorite_category_tags_use_case.dart';
 import 'package:nolive_app/src/features/category/application/load_category_rooms_use_case.dart';
@@ -21,6 +26,7 @@ import 'package:nolive_app/src/features/library/application/clear_history_use_ca
 import 'package:nolive_app/src/features/library/application/clear_tags_use_case.dart';
 import 'package:nolive_app/src/features/library/application/create_tag_use_case.dart';
 import 'package:nolive_app/src/features/library/application/is_followed_room_use_case.dart';
+import 'package:nolive_app/src/features/library/application/list_follow_records_use_case.dart';
 import 'package:nolive_app/src/features/library/application/list_library_snapshot_use_case.dart';
 import 'package:nolive_app/src/features/library/application/list_tags_use_case.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
@@ -36,12 +42,9 @@ import 'package:nolive_app/src/features/parse/application/parse_room_input_use_c
 import 'package:nolive_app/src/features/profile/application/clear_follows_use_case.dart';
 import 'package:nolive_app/src/features/profile/application/manage_blocked_keywords_use_case.dart';
 import 'package:nolive_app/src/features/profile/application/manage_theme_mode_use_case.dart';
-import 'package:nolive_app/src/features/room/application/chaturbate_web_room_detail_loader.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/open_room_danmaku_use_case.dart';
 import 'package:nolive_app/src/features/room/application/resolve_play_source_use_case.dart';
-import 'package:nolive_app/src/features/room/application/twitch_ad_guard_proxy.dart';
-import 'package:nolive_app/src/features/room/application/twitch_web_playback_bridge.dart';
 import 'package:nolive_app/src/features/search/application/search_provider_rooms_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/load_sync_snapshot_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
@@ -52,9 +55,16 @@ import 'package:nolive_app/src/features/settings/application/manage_player_prefe
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_room_ui_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_snapshot_data_use_case.dart';
+import 'package:nolive_app/src/features/settings/application/secure_snapshot_import_coordinator.dart';
+import 'package:nolive_app/src/features/settings/application/sensitive_setting_keys.dart';
+import 'package:nolive_app/src/features/settings/application/credential_migration_bundle.dart';
 import 'package:nolive_app/src/features/sync/application/manage_local_sync_use_case.dart';
 import 'package:nolive_app/src/features/sync/application/manage_remote_sync_use_case.dart';
 import 'package:nolive_app/src/features/sync/application/sync_preferences_use_case.dart';
+import 'package:nolive_app/src/shared/application/app_log.dart';
+import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
+import 'package:nolive_app/src/shared/application/provider_catalog_use_cases.dart';
+import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 part 'bootstrap_internals.dart';
 
@@ -66,6 +76,7 @@ AppBootstrap createAppBootstrap({
   DouyinAccountClient? douyinAccountClient,
 }) {
   final repositories = _BootstrapRepositories.inMemory();
+  final secureCredentialStore = InMemorySecureCredentialStore();
   final state = _BootstrapStateBundle();
 
   seedDefaultAppState(
@@ -81,7 +92,9 @@ AppBootstrap createAppBootstrap({
       repositories: repositories,
       settings: _BootstrapSettingReaders.fromSnapshot(
         repositories.settingsSnapshot,
+        secureSnapshot: secureCredentialStore.snapshot,
       ),
+      secureCredentialStore: secureCredentialStore,
       accountClients: _BootstrapAccountClients(
         bilibili: bilibiliAccountClient ?? HttpBilibiliAccountClient(),
         douyin: douyinAccountClient ?? HttpDouyinAccountClient(),
@@ -95,13 +108,30 @@ Future<AppBootstrap> createPersistentAppBootstrap({
   Directory? storageDirectory,
   BilibiliAccountClient? bilibiliAccountClient,
   DouyinAccountClient? douyinAccountClient,
+  SecureCredentialStore? secureCredentialStore,
 }) async {
   final resolvedDirectory =
       storageDirectory ?? await getApplicationSupportDirectory();
+  AppLog.instance.info(
+    'bootstrap',
+    'createPersistentAppBootstrap mode=${mode.name} '
+        'storageDir=${resolvedDirectory.path}',
+  );
   final storageFile = await _resolveStorageFile(resolvedDirectory);
+  AppLog.instance.info(
+    'bootstrap',
+    'resolved storage file=${storageFile.path}',
+  );
   final store = await LocalStorageFileStore.open(file: storageFile);
   final repositories = _BootstrapRepositories.persistent(store);
+  final resolvedSecureCredentialStore =
+      secureCredentialStore ?? await FlutterSecureCredentialStore.open();
   final state = _BootstrapStateBundle();
+
+  await MigrateSensitiveSettingsToSecureStoreUseCase(
+    settingsRepository: repositories.settingsRepository,
+    secureCredentialStore: resolvedSecureCredentialStore,
+  )();
 
   await ensureDefaultAppState(
     settingsRepository: repositories.settingsRepository,
@@ -120,7 +150,9 @@ Future<AppBootstrap> createPersistentAppBootstrap({
       repositories: repositories,
       settings: _BootstrapSettingReaders.fromSnapshot(
         repositories.settingsSnapshot,
+        secureSnapshot: resolvedSecureCredentialStore.snapshot,
       ),
+      secureCredentialStore: resolvedSecureCredentialStore,
       accountClients: _BootstrapAccountClients(
         bilibili: bilibiliAccountClient ?? HttpBilibiliAccountClient(),
         douyin: douyinAccountClient ?? HttpDouyinAccountClient(),
@@ -138,11 +170,14 @@ class AppBootstrap {
     required this.followDataRevision,
     required this.followWatchlistSnapshot,
     required this.providerRegistry,
-    required this.player,
+    required this.playerRuntime,
     required this.settingsRepository,
     required this.historyRepository,
     required this.followRepository,
     required this.tagRepository,
+    required this.listProviderDescriptors,
+    required this.findProviderDescriptorById,
+    required this.listFollowRecords,
     required this.listAvailableProviders,
     required this.loadLayoutPreferences,
     required this.updateLayoutPreferences,
@@ -196,6 +231,9 @@ class AppBootstrap {
     required this.exportLegacyConfigJson,
     required this.exportSyncSnapshotJson,
     required this.importSyncSnapshotJson,
+    required this.exportCredentialMigrationBundle,
+    required this.importCredentialMigrationBundle,
+    required this.clearSensitiveCredentials,
     required this.resetAppData,
     required this.updateThemeMode,
     required this.loadBlockedKeywords,
@@ -208,6 +246,7 @@ class AppBootstrap {
     required this.updateRoomUiPreferences,
     required this.loadPlayerPreferences,
     required this.updatePlayerPreferences,
+    required this.applyPlayerPreferencesToRuntime,
     required this.parseRoomInput,
     required this.inspectParsedRoom,
   });
@@ -219,11 +258,14 @@ class AppBootstrap {
   final ValueNotifier<int> followDataRevision;
   final ValueNotifier<FollowWatchlist?> followWatchlistSnapshot;
   final ProviderRegistry providerRegistry;
-  final BasePlayer player;
+  final PlayerRuntimeController playerRuntime;
   final SettingsRepository settingsRepository;
   final HistoryRepository historyRepository;
   final FollowRepository followRepository;
   final TagRepository tagRepository;
+  final ListProviderDescriptorsUseCase listProviderDescriptors;
+  final FindProviderDescriptorByIdUseCase findProviderDescriptorById;
+  final ListFollowRecordsUseCase listFollowRecords;
   final ListAvailableProvidersUseCase listAvailableProviders;
   final LoadLayoutPreferencesUseCase loadLayoutPreferences;
   final UpdateLayoutPreferencesUseCase updateLayoutPreferences;
@@ -277,6 +319,9 @@ class AppBootstrap {
   final ExportLegacyConfigJsonUseCase exportLegacyConfigJson;
   final ExportSyncSnapshotJsonUseCase exportSyncSnapshotJson;
   final ImportSyncSnapshotJsonUseCase importSyncSnapshotJson;
+  final ExportCredentialMigrationBundleUseCase exportCredentialMigrationBundle;
+  final ImportCredentialMigrationBundleUseCase importCredentialMigrationBundle;
+  final ClearSensitiveCredentialsUseCase clearSensitiveCredentials;
   final ResetAppDataUseCase resetAppData;
   final UpdateThemeModeUseCase updateThemeMode;
   final LoadBlockedKeywordsUseCase loadBlockedKeywords;
@@ -289,6 +334,7 @@ class AppBootstrap {
   final UpdateRoomUiPreferencesUseCase updateRoomUiPreferences;
   final LoadPlayerPreferencesUseCase loadPlayerPreferences;
   final UpdatePlayerPreferencesUseCase updatePlayerPreferences;
+  final ApplyPlayerPreferencesToRuntimeUseCase applyPlayerPreferencesToRuntime;
   final ParseRoomInputUseCase parseRoomInput;
   final InspectParsedRoomUseCase inspectParsedRoom;
 

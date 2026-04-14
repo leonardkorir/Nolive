@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/settings/application/settings_feature_dependencies.dart';
 import 'package:nolive_app/src/features/settings/presentation/account_settings_page.dart';
 
 void main() {
@@ -8,10 +9,11 @@ void main() {
       'account settings page shows flat provider list and account actions', (
     tester,
   ) async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     await tester.pumpWidget(
       MaterialApp(
         home: AccountSettingsPage(
-          bootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
+          dependencies: SettingsFeatureDependencies.fromBootstrap(bootstrap),
         ),
       ),
     );
@@ -33,6 +35,6 @@ void main() {
     expect(find.text('编辑 Cookie'), findsNWidgets(5));
     expect(find.text('校验状态'), findsNWidgets(2));
     expect(find.text('刷新状态'), findsNWidgets(4));
-    expect(find.text('无需登录'), findsNWidgets(2));
+    expect(find.text('无需登录'), findsNWidgets(4));
   });
 }

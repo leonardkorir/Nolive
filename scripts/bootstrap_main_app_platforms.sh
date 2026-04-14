@@ -4,14 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="$ROOT_DIR/apps/main_app"
 
-if ! command -v flutter >/dev/null 2>&1; then
-  export PATH="$HOME/.local/share/flutter/bin:$PATH"
-fi
-
-if ! command -v flutter >/dev/null 2>&1; then
-  echo "flutter not found; please install Flutter or export PATH first" >&2
-  exit 1
-fi
+# shellcheck source=/dev/null
+source "$ROOT_DIR/scripts/lib/flutter_toolchain.sh"
+require_flutter_toolchain
 
 cd "$APP_DIR"
 flutter create . --platforms=android,ios,linux,macos,windows --project-name nolive_app --org app.nolive

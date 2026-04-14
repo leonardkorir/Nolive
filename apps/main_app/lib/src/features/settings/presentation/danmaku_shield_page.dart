@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
 class DanmakuShieldPage extends StatefulWidget {
-  const DanmakuShieldPage({required this.bootstrap, super.key});
+  const DanmakuShieldPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final DanmakuShieldDependencies dependencies;
 
   @override
   State<DanmakuShieldPage> createState() => _DanmakuShieldPageState();
@@ -20,7 +20,7 @@ class _DanmakuShieldPageState extends State<DanmakuShieldPage> {
   void initState() {
     super.initState();
     _controller = TextEditingController();
-    _future = widget.bootstrap.loadBlockedKeywords();
+    _future = widget.dependencies.loadBlockedKeywords();
   }
 
   @override
@@ -31,19 +31,19 @@ class _DanmakuShieldPageState extends State<DanmakuShieldPage> {
 
   Future<void> _refresh() async {
     setState(() {
-      _future = widget.bootstrap.loadBlockedKeywords();
+      _future = widget.dependencies.loadBlockedKeywords();
     });
     await _future;
   }
 
   Future<void> _addKeyword() async {
-    await widget.bootstrap.addBlockedKeyword(_controller.text);
+    await widget.dependencies.addBlockedKeyword(_controller.text);
     _controller.clear();
     await _refresh();
   }
 
   Future<void> _removeKeyword(String keyword) async {
-    await widget.bootstrap.removeBlockedKeyword(keyword);
+    await widget.dependencies.removeBlockedKeyword(keyword);
     await _refresh();
   }
 

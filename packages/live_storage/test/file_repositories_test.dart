@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:live_storage/live_storage.dart';
 import 'package:test/test.dart';
@@ -83,6 +84,12 @@ void main() {
     expect(follows.first.tags, ['常看']);
 
     expect(await reopenedTag.listAll(), ['常看']);
+    final persisted =
+        jsonDecode(await storageFile.readAsString()) as Map<String, dynamic>;
+    expect(
+      persisted['format_version'],
+      FileStorageSnapshot.currentFormatVersion,
+    );
   });
 
   test(
@@ -217,5 +224,20 @@ void main() {
       ['douyu:20', 'bilibili:10'],
     );
     expect(follows.last.lastTitle, '批量更新标题');
+  });
+
+  test('file-backed repositories read legacy payload without format version',
+      () async {
+    await storageFile.writeAsString(
+      '{"settings":{"theme_mode":"dark"},"history":[],"follows":[],"tags":["常看"]}',
+      flush: true,
+    );
+
+    final store = await LocalStorageFileStore.open(file: storageFile);
+    final settings = FileSettingsRepository(store);
+    final tags = FileTagRepository(store);
+
+    expect(await settings.readValue<String>('theme_mode'), 'dark');
+    expect(await tags.listAll(), ['常看']);
   });
 }

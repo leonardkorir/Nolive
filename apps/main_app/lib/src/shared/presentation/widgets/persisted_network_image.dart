@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -9,6 +11,56 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 enum PersistedImageBucket { avatar, categoryIcon, roomCover }
+
+typedef PersistedImageDecodeSize = ({int? cacheWidth, int? cacheHeight});
+
+const int _avatarMaxDecodeDimension = 256;
+const int _categoryIconMaxDecodeDimension = 192;
+const int _roomCoverMaxDecodeDimension = 1920;
+const int _maxInMemoryFileEntries = 256;
+
+@visibleForTesting
+PersistedImageDecodeSize resolvePersistedImageDecodeSize({
+  required PersistedImageBucket bucket,
+  required BoxConstraints constraints,
+  required double devicePixelRatio,
+}) {
+  int? cacheWidth;
+  int? cacheHeight;
+  if (constraints.hasBoundedWidth && constraints.maxWidth > 0) {
+    cacheWidth = math.max(
+      1,
+      (constraints.maxWidth * devicePixelRatio).round(),
+    );
+  }
+  if (constraints.hasBoundedHeight && constraints.maxHeight > 0) {
+    cacheHeight = math.max(
+      1,
+      (constraints.maxHeight * devicePixelRatio).round(),
+    );
+  }
+  if (cacheWidth == null && cacheHeight == null) {
+    return (cacheWidth: null, cacheHeight: null);
+  }
+  final maxDimension = switch (bucket) {
+    PersistedImageBucket.avatar => _avatarMaxDecodeDimension,
+    PersistedImageBucket.categoryIcon => _categoryIconMaxDecodeDimension,
+    PersistedImageBucket.roomCover => _roomCoverMaxDecodeDimension,
+  };
+  if (cacheWidth != null && cacheHeight != null) {
+    final largest = math.max(cacheWidth, cacheHeight);
+    if (largest > maxDimension) {
+      final scale = maxDimension / largest;
+      cacheWidth = math.max(1, (cacheWidth * scale).round());
+      cacheHeight = math.max(1, (cacheHeight * scale).round());
+    }
+  } else if (cacheWidth != null && cacheWidth > maxDimension) {
+    cacheWidth = maxDimension;
+  } else if (cacheHeight != null && cacheHeight > maxDimension) {
+    cacheHeight = maxDimension;
+  }
+  return (cacheWidth: cacheWidth, cacheHeight: cacheHeight);
+}
 
 class PersistedNetworkImage extends StatefulWidget {
   const PersistedNetworkImage({
@@ -84,13 +136,31 @@ class _PersistedNetworkImageState extends State<PersistedNetworkImage> {
     if (file == null) {
       return widget.fallback;
     }
-    return Image.file(
-      file,
-      fit: widget.fit,
-      alignment: widget.alignment,
-      filterQuality: widget.filterQuality,
-      gaplessPlayback: true,
-      errorBuilder: (_, __, ___) => widget.fallback,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final decodeSize = resolvePersistedImageDecodeSize(
+          bucket: widget.bucket,
+          constraints: constraints,
+          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+        );
+        ImageProvider imageProvider = FileImage(file);
+        if (decodeSize.cacheWidth != null || decodeSize.cacheHeight != null) {
+          imageProvider = ResizeImage(
+            imageProvider,
+            width: decodeSize.cacheWidth,
+            height: decodeSize.cacheHeight,
+            policy: ResizeImagePolicy.fit,
+          );
+        }
+        return Image(
+          image: imageProvider,
+          fit: widget.fit,
+          alignment: widget.alignment,
+          filterQuality: widget.filterQuality,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => widget.fallback,
+        );
+      },
     );
   }
 }
@@ -100,7 +170,8 @@ class _PersistedImageCache {
 
   final String bucketName;
   final Map<String, Future<File?>> _inFlight = <String, Future<File?>>{};
-  static final Map<String, File> _memoryFiles = <String, File>{};
+  static final LinkedHashMap<String, File> _memoryFiles =
+      LinkedHashMap<String, File>();
 
   static final _PersistedImageCache _avatar = _PersistedImageCache._('avatars');
   static final _PersistedImageCache _categoryIcon =
@@ -117,7 +188,12 @@ class _PersistedImageCache {
   }
 
   static File? peek(String url) {
-    return _memoryFiles[url];
+    final cached = _memoryFiles.remove(url);
+    if (cached == null) {
+      return null;
+    }
+    _memoryFiles[url] = cached;
+    return cached;
   }
 
   Future<File?> resolve(String url) {
@@ -125,7 +201,7 @@ class _PersistedImageCache {
     if (normalizedUrl.isEmpty) {
       return Future<File?>.value();
     }
-    final inMemory = _memoryFiles[normalizedUrl];
+    final inMemory = peek(normalizedUrl);
     if (inMemory != null && inMemory.existsSync()) {
       return Future<File?>.value(inMemory);
     }
@@ -136,7 +212,7 @@ class _PersistedImageCache {
           final file = await _fileFor(normalizedUrl);
           final exists = await file.exists();
           if (exists) {
-            _memoryFiles[normalizedUrl] = file;
+            _rememberInMemory(normalizedUrl, file);
             final stat = await file.stat();
             if (DateTime.now().difference(stat.modified) <=
                 const Duration(days: 7)) {
@@ -180,7 +256,7 @@ class _PersistedImageCache {
         await file.delete();
       }
       await tempFile.rename(file.path);
-      _memoryFiles[url] = file;
+      _rememberInMemory(url, file);
       await FileImage(file).evict();
       return file;
     } catch (_) {
@@ -228,5 +304,13 @@ class _PersistedImageCache {
     }
     final extension = lastSegment.substring(dotIndex).toLowerCase();
     return extension.length > 8 ? '.img' : extension;
+  }
+
+  static void _rememberInMemory(String url, File file) {
+    _memoryFiles.remove(url);
+    _memoryFiles[url] = file;
+    while (_memoryFiles.length > _maxInMemoryFileEntries) {
+      _memoryFiles.remove(_memoryFiles.keys.first);
+    }
   }
 }

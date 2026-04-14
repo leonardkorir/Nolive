@@ -4,6 +4,8 @@
 
 当前发布基线以 Android 为主。
 
+依赖 Flutter/Dart 的仓库脚本会自动探测常见 SDK 位置，包括 `FLUTTER_ROOT`、`$HOME/flutter`、`$HOME/.local/share/flutter`，以及 `apps/main_app` 生成的 `flutter_export_environment.sh`。
+
 ## 快速开始
 
 ```bash
@@ -26,6 +28,7 @@ scripts/render_release_notes.sh vX.Y.Z
 scripts/build_main_app.sh android-mobile-release
 scripts/clean_public_repo_workspace.sh
 scripts/install_main_app_android.sh
+scripts/manage_main_app_android_capture.sh start
 scripts/run_main_app_android_smoke.sh
 ```
 
@@ -60,6 +63,12 @@ scripts/run_main_app_android_smoke.sh
 
 - `scripts/install_main_app_android.sh`
   按设备 ABI 安装 split APK 到已连接 Android 设备。
+
+- `scripts/manage_main_app_android_capture.sh`
+  管理 Android 真机持续采集。
+  支持 `start`、`stop`、`status`、`pull`、`pull-app-logs` 五个子命令。
+  其中 `start/stop/status/pull` 面向设备侧 `logcat + dumpsys meminfo/top` 持续采集，会写入 `/sdcard/Download/nolive-logs/`；
+  `pull-app-logs` 单独拉取 app 自己持续落盘的 `/sdcard/Android/data/app.nolive.mobile/files/logs/`，不依赖 active capture session。
 
 - `scripts/run_main_app_android_smoke.sh`
   在已连接 Android 设备或模拟器上执行主链路 smoke。

@@ -12,6 +12,55 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> pumpUntilVisible(
+    WidgetTester tester,
+    Finder finder, {
+    Duration timeout = const Duration(seconds: 8),
+    Duration step = const Duration(milliseconds: 250),
+  }) async {
+    final maxTicks = timeout.inMilliseconds ~/ step.inMilliseconds;
+    for (var tick = 0; tick < maxTicks; tick++) {
+      if (finder.evaluate().isNotEmpty) {
+        return;
+      }
+      await tester.pump(step);
+    }
+    expect(finder.evaluate().isNotEmpty, isTrue);
+  }
+
+  Future<void> showInlinePlayerControls(WidgetTester tester) async {
+    await tester.tap(
+      find.byKey(const Key('room-inline-player-tap-target')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+
+  Future<void> ensureInlineRoomChrome(WidgetTester tester) async {
+    final leaveButton = find.byKey(const Key('room-leave-button'));
+    final exitFullscreenButton =
+        find.byKey(const Key('room-exit-fullscreen-button'));
+
+    await pumpUntilVisible(
+      tester,
+      find.byWidgetPredicate((widget) {
+        final key = widget.key;
+        return key == const Key('room-leave-button') ||
+            key == const Key('room-exit-fullscreen-button');
+      }),
+    );
+
+    if (leaveButton.evaluate().isNotEmpty) {
+      return;
+    }
+    if (exitFullscreenButton.evaluate().isNotEmpty) {
+      await tester.tap(exitFullscreenButton, warnIfMissed: false);
+      await tester.pumpAndSettle();
+    }
+    await pumpUntilVisible(tester, leaveButton);
+  }
+
   bool shellVisible(WidgetTester tester) {
     return find.byType(NavigationBar).evaluate().isNotEmpty ||
         find.byKey(const Key('shell-tab-home')).evaluate().isNotEmpty ||
@@ -61,7 +110,7 @@ void main() {
   Future<void> pumpApp(WidgetTester tester) async {
     await tester.pumpWidget(
       NoliveApp(
-        bootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
+        appBootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
       ),
     );
     await tester.pumpAndSettle();
@@ -85,7 +134,7 @@ void main() {
 
     await tester.tap(find.text('新项目参考直播间').first);
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await ensureInlineRoomChrome(tester);
 
     expect(find.byKey(const Key('room-leave-button')), findsOneWidget);
     expect(
@@ -98,6 +147,24 @@ void main() {
     expect(find.byKey(const Key('room-quick-refresh-button')), findsOneWidget);
     expect(find.text('切换清晰度'), findsOneWidget);
     await popRoute(tester);
+
+    await showInlinePlayerControls(tester);
+    expect(
+      find.byKey(const Key('room-inline-fullscreen-button')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const Key('room-inline-fullscreen-button')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+    expect(
+        find.byKey(const Key('room-exit-fullscreen-button')), findsOneWidget);
+    await tester.tap(
+      find.byKey(const Key('room-exit-fullscreen-button')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
 
     await leaveRoomToShell(tester);
 
@@ -117,7 +184,7 @@ void main() {
     expect(find.textContaining('迁移样例主播'), findsOneWidget);
     await tester.tap(find.textContaining('架构迁移验证房间').first);
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await ensureInlineRoomChrome(tester);
     expect(find.byKey(const Key('room-leave-button')), findsOneWidget);
 
     await leaveRoomToShell(tester);

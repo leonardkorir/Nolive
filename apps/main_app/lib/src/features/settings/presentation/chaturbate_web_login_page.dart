@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 
+@visibleForTesting
+bool shouldReportWebLoginLoadFailure(WebResourceRequest request) {
+  return request.isForMainFrame ?? true;
+}
+
 class ChaturbateWebLoginPage extends StatelessWidget {
   const ChaturbateWebLoginPage({super.key});
 
@@ -340,8 +345,15 @@ class _WebCookieLoginPageState extends State<_WebCookieLoginPage> {
                 if (!mounted) {
                   return;
                 }
+                if (!shouldReportWebLoginLoadFailure(request)) {
+                  return;
+                }
+                final description = error.description.trim();
+                if (description.isEmpty) {
+                  return;
+                }
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('页面加载失败：${error.description}')),
+                  SnackBar(content: Text('页面加载失败：$description')),
                 );
               },
             ),

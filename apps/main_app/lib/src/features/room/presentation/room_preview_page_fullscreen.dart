@@ -1,330 +1,215 @@
-part of 'room_preview_page.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:live_core/live_core.dart';
+import 'package:nolive_app/src/features/room/presentation/room_preview_page_danmaku.dart';
+import 'package:nolive_app/src/features/room/presentation/room_preview_page_player_surface.dart';
+import 'package:nolive_app/src/features/room/presentation/widgets/room_fullscreen_overlay.dart';
+import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
 
-extension _RoomPreviewPageFullscreenExtension on _RoomPreviewPageState {
-  Widget _buildFullscreenOverlay({
-    required BuildContext context,
-    required _RoomPageState state,
-    required LiveRoomDetail room,
-    required ProviderDescriptor? descriptor,
-    required PlaybackSource playbackSource,
-    required List<LivePlayUrl> playUrls,
+const Object _roomFullscreenOverlayViewDataNoChange = Object();
+
+@immutable
+class RoomFullscreenOverlayViewData {
+  const RoomFullscreenOverlayViewData({
+    required this.playerSurfaceData,
+    required this.danmakuPreferences,
+    required this.title,
+    required this.liveDuration,
+    required this.qualityLabel,
+    required this.lineLabel,
+    required this.showChrome,
+    required this.showLockButton,
+    required this.lockControls,
+    required this.gestureTipText,
+    required this.pipSupported,
+    required this.supportsDesktopMiniWindow,
+    required this.desktopMiniWindowActive,
+    required this.supportsPlayerCapture,
+    required this.showDanmakuOverlay,
+  });
+
+  final RoomPlayerSurfaceViewData playerSurfaceData;
+  final DanmakuPreferences danmakuPreferences;
+  final String title;
+  final String liveDuration;
+  final String qualityLabel;
+  final String lineLabel;
+  final bool showChrome;
+  final bool showLockButton;
+  final bool lockControls;
+  final String? gestureTipText;
+  final bool pipSupported;
+  final bool supportsDesktopMiniWindow;
+  final bool desktopMiniWindowActive;
+  final bool supportsPlayerCapture;
+  final bool showDanmakuOverlay;
+
+  RoomFullscreenOverlayViewData copyWith({
+    RoomPlayerSurfaceViewData? playerSurfaceData,
+    DanmakuPreferences? danmakuPreferences,
+    String? title,
+    String? liveDuration,
+    String? qualityLabel,
+    String? lineLabel,
+    bool? showChrome,
+    bool? showLockButton,
+    bool? lockControls,
+    Object? gestureTipText = _roomFullscreenOverlayViewDataNoChange,
+    bool? pipSupported,
+    bool? supportsDesktopMiniWindow,
+    bool? desktopMiniWindowActive,
+    bool? supportsPlayerCapture,
+    bool? showDanmakuOverlay,
   }) {
-    final liveDuration = _formatLiveDuration(room.startedAt);
-    return ColoredBox(
-      key: const Key('room-fullscreen-overlay'),
-      color: Colors.black,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                if (_showFullscreenFollowDrawer) {
-                  _hideFullscreenFollowDrawer();
-                  return;
-                }
-                if (_lockFullscreenControls) {
-                  return;
-                }
-                _updateViewState(() {
-                  _showFullscreenChrome = !_showFullscreenChrome;
-                });
-                if (_showFullscreenChrome) {
-                  _scheduleFullscreenChromeAutoHide();
-                } else {
-                  _fullscreenChromeTimer?.cancel();
-                }
-              },
-              onLongPressStart: _lockFullscreenControls
-                  ? null
-                  : (details) {
-                      final width = MediaQuery.sizeOf(context).width;
-                      if (details.globalPosition.dx < width * 0.68) {
-                        return;
-                      }
-                      _openFullscreenFollowDrawer();
-                    },
-              onDoubleTap: _lockFullscreenControls
-                  ? null
-                  : () {
-                      if (_isFullscreen) {
-                        unawaited(_exitFullscreen());
-                      } else {
-                        unawaited(_enterFullscreen());
-                      }
-                    },
-              onVerticalDragStart: (details) {
-                unawaited(_handleVerticalDragStart(details));
-              },
-              onVerticalDragUpdate: (details) {
-                unawaited(_handleVerticalDragUpdate(details));
-              },
-              onVerticalDragEnd: (details) {
-                unawaited(_handleVerticalDragEnd(details));
-              },
-              child: _buildPlayerHero(
-                context: context,
-                room: room,
-                playbackSource: playbackSource,
-                hasPlayback: true,
-                embedPlayer: true,
-                fullscreen: true,
-              ),
-            ),
-          ),
-          if (_gestureTipText != null)
-            Center(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.72),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                  child: Text(
-                    _gestureTipText!,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ),
-              ),
-            ),
-          _buildFullscreenFollowDrawer(context),
-          if (_showFullscreenChrome) ...[
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: Container(
-                padding: EdgeInsets.fromLTRB(
-                  10,
-                  MediaQuery.paddingOf(context).top + 6,
-                  10,
-                  8,
-                ),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.black87, Colors.transparent],
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      key: const Key('room-exit-fullscreen-button'),
-                      onPressed: _exitFullscreen,
-                      color: Colors.white,
-                      icon: const Icon(Icons.arrow_back),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '${normalizeDisplayText(room.title)} - ${normalizeDisplayText(room.streamerName)}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                      ),
-                    ),
-                    if (_pipSupported)
-                      IconButton(
-                        onPressed: () {
-                          _scheduleFullscreenChromeAutoHide();
-                          unawaited(_enterPictureInPicture());
-                        },
-                        color: Colors.white,
-                        icon: const Icon(Icons.picture_in_picture_alt_outlined),
-                      ),
-                    if (_supportsDesktopMiniWindow)
-                      IconButton(
-                        onPressed: () {
-                          _scheduleFullscreenChromeAutoHide();
-                          unawaited(_toggleDesktopMiniWindow());
-                        },
-                        color: Colors.white,
-                        icon: Icon(
-                          _desktopMiniWindowActive
-                              ? Icons.close_fullscreen_rounded
-                              : Icons.open_in_new_rounded,
-                        ),
-                      ),
-                    if (_supportsPlayerCapture)
-                      IconButton(
-                        onPressed: () {
-                          _scheduleFullscreenChromeAutoHide();
-                          unawaited(_captureScreenshot());
-                        },
-                        color: Colors.white,
-                        icon: const Icon(Icons.camera_alt_outlined),
-                      ),
-                    IconButton(
-                      onPressed: () {
-                        _scheduleFullscreenChromeAutoHide();
-                        unawaited(_showPlayerDebugSheet(state, playbackSource));
-                      },
-                      color: Colors.white,
-                      icon: const Icon(Icons.bug_report_outlined),
-                    ),
-                    IconButton(
-                      onPressed: () {
-                        _showQuickActionsSheet();
-                        _scheduleFullscreenChromeAutoHide();
-                      },
-                      color: Colors.white,
-                      icon: const Icon(Icons.more_horiz_rounded),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              left: 8,
-              top: MediaQuery.sizeOf(context).height * 0.42,
-              child: IconButton(
-                key: const Key('room-fullscreen-lock-button'),
-                onPressed: () {
-                  _updateViewState(() {
-                    _lockFullscreenControls = !_lockFullscreenControls;
-                  });
-                  _scheduleFullscreenChromeAutoHide();
-                },
-                color: Colors.white,
-                icon: Icon(
-                  _lockFullscreenControls
-                      ? Icons.lock_outline_rounded
-                      : Icons.lock_open_outlined,
-                ),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(
-                padding: EdgeInsets.fromLTRB(
-                  14,
-                  18,
-                  14,
-                  MediaQuery.paddingOf(context).bottom + 12,
-                ),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black87],
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () {
-                        _refreshRoom(showFeedback: true);
-                        _scheduleFullscreenChromeAutoHide();
-                      },
-                      color: Colors.white,
-                      icon: const Icon(Icons.refresh),
-                    ),
-                    IconButton(
-                      onPressed: () {
-                        _updateViewState(() {
-                          _showDanmakuOverlay = !_showDanmakuOverlay;
-                        });
-                        _scheduleFullscreenChromeAutoHide();
-                      },
-                      color: Colors.white,
-                      icon: Icon(
-                        _showDanmakuOverlay
-                            ? Icons.subtitles_outlined
-                            : Icons.subtitles_off_outlined,
-                      ),
-                    ),
-                    IconButton(
-                      key: const Key('room-fullscreen-danmaku-settings-button'),
-                      onPressed: () {
-                        _openDanmakuSettings();
-                        _scheduleFullscreenChromeAutoHide();
-                      },
-                      color: Colors.white,
-                      icon: const Icon(Icons.tune_rounded),
-                    ),
-                    Expanded(
-                      child: Center(
-                        child: Text(
-                          liveDuration.isEmpty ? '' : liveDuration,
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        _showQualitySheet(state);
-                        _scheduleFullscreenChromeAutoHide();
-                      },
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        _effectiveQualityOf(state).label,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        _showLineSheet(playUrls, playbackSource);
-                        _scheduleFullscreenChromeAutoHide();
-                      },
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        playUrls
-                                .firstWhere(
-                                  (item) =>
-                                      item.url == playbackSource.url.toString(),
-                                  orElse: () => playUrls.first,
-                                )
-                                .lineLabel ??
-                            '线路',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: _exitFullscreen,
-                      color: Colors.white,
-                      icon: const Icon(Icons.fullscreen_exit),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
+    return RoomFullscreenOverlayViewData(
+      playerSurfaceData: playerSurfaceData ?? this.playerSurfaceData,
+      danmakuPreferences: danmakuPreferences ?? this.danmakuPreferences,
+      title: title ?? this.title,
+      liveDuration: liveDuration ?? this.liveDuration,
+      qualityLabel: qualityLabel ?? this.qualityLabel,
+      lineLabel: lineLabel ?? this.lineLabel,
+      showChrome: showChrome ?? this.showChrome,
+      showLockButton: showLockButton ?? this.showLockButton,
+      lockControls: lockControls ?? this.lockControls,
+      gestureTipText: gestureTipText == _roomFullscreenOverlayViewDataNoChange
+          ? this.gestureTipText
+          : gestureTipText as String?,
+      pipSupported: pipSupported ?? this.pipSupported,
+      supportsDesktopMiniWindow:
+          supportsDesktopMiniWindow ?? this.supportsDesktopMiniWindow,
+      desktopMiniWindowActive:
+          desktopMiniWindowActive ?? this.desktopMiniWindowActive,
+      supportsPlayerCapture:
+          supportsPlayerCapture ?? this.supportsPlayerCapture,
+      showDanmakuOverlay: showDanmakuOverlay ?? this.showDanmakuOverlay,
+    );
+  }
+}
+
+class RoomFullscreenOverlaySection extends StatelessWidget {
+  const RoomFullscreenOverlaySection({
+    required this.data,
+    required this.messagesListenable,
+    required this.playerSuperChatMessagesListenable,
+    required this.followDrawer,
+    required this.buildEmbeddedPlayerView,
+    required this.onToggleChrome,
+    required this.onOpenFollowDrawer,
+    required this.onToggleFullscreen,
+    required this.onVerticalDragStart,
+    required this.onVerticalDragUpdate,
+    required this.onVerticalDragEnd,
+    required this.onExitFullscreen,
+    required this.onEnterPictureInPicture,
+    required this.onToggleDesktopMiniWindow,
+    required this.onCapture,
+    required this.onShowDebug,
+    required this.onShowMore,
+    required this.onToggleFullscreenLock,
+    required this.onRefresh,
+    required this.onToggleDanmakuOverlay,
+    required this.onOpenDanmakuSettings,
+    required this.onShowQuality,
+    required this.onShowLine,
+    super.key,
+  });
+
+  final RoomFullscreenOverlayViewData data;
+  final ValueListenable<List<LiveMessage>> messagesListenable;
+  final ValueListenable<List<LiveMessage>> playerSuperChatMessagesListenable;
+  final Widget followDrawer;
+  final RoomEmbeddedPlayerViewBuilder buildEmbeddedPlayerView;
+  final VoidCallback onToggleChrome;
+  final VoidCallback onOpenFollowDrawer;
+  final VoidCallback onToggleFullscreen;
+  final GestureDragStartCallback onVerticalDragStart;
+  final GestureDragUpdateCallback onVerticalDragUpdate;
+  final GestureDragEndCallback onVerticalDragEnd;
+  final VoidCallback onExitFullscreen;
+  final VoidCallback onEnterPictureInPicture;
+  final VoidCallback onToggleDesktopMiniWindow;
+  final VoidCallback onCapture;
+  final VoidCallback onShowDebug;
+  final VoidCallback onShowMore;
+  final VoidCallback onToggleFullscreenLock;
+  final VoidCallback onRefresh;
+  final VoidCallback onToggleDanmakuOverlay;
+  final VoidCallback onOpenDanmakuSettings;
+  final VoidCallback onShowQuality;
+  final VoidCallback onShowLine;
+
+  @override
+  Widget build(BuildContext context) {
+    final playerSurfaceData = data.playerSurfaceData.copyWith(
+      showDanmakuOverlay: data.showDanmakuOverlay,
+    );
+    return RoomFullscreenOverlay(
+      player: RoomPlayerSurfaceSection(
+        data: playerSurfaceData,
+        buildEmbeddedPlayerView: buildEmbeddedPlayerView,
+        danmakuOverlay: _buildDanmakuOverlay(),
+        playerSuperChatOverlay: RoomPlayerSuperChatOverlay(
+          messagesListenable: playerSuperChatMessagesListenable,
+          visible: playerSurfaceData.showPlayerSuperChat,
+        ),
       ),
+      followDrawer: followDrawer,
+      showChrome: data.showChrome,
+      showLockButton: data.showLockButton,
+      lockControls: data.lockControls,
+      gestureTipText: data.gestureTipText,
+      pipSupported: data.pipSupported,
+      supportsDesktopMiniWindow: data.supportsDesktopMiniWindow,
+      desktopMiniWindowActive: data.desktopMiniWindowActive,
+      supportsPlayerCapture: data.supportsPlayerCapture,
+      showDanmakuOverlay: data.showDanmakuOverlay,
+      title: data.title,
+      liveDuration: data.liveDuration,
+      qualityLabel: data.qualityLabel,
+      lineLabel: data.lineLabel,
+      onToggleChrome: onToggleChrome,
+      onOpenFollowDrawer: onOpenFollowDrawer,
+      onToggleFullscreen: onToggleFullscreen,
+      onVerticalDragStart: onVerticalDragStart,
+      onVerticalDragUpdate: onVerticalDragUpdate,
+      onVerticalDragEnd: onVerticalDragEnd,
+      onExitFullscreen: onExitFullscreen,
+      onEnterPictureInPicture: onEnterPictureInPicture,
+      onToggleDesktopMiniWindow: onToggleDesktopMiniWindow,
+      onCapture: onCapture,
+      onShowDebug: onShowDebug,
+      onShowMore: onShowMore,
+      onToggleFullscreenLock: onToggleFullscreenLock,
+      onRefresh: onRefresh,
+      onToggleDanmakuOverlay: onToggleDanmakuOverlay,
+      onOpenDanmakuSettings: onOpenDanmakuSettings,
+      onShowQuality: onShowQuality,
+      onShowLine: onShowLine,
+    );
+  }
+
+  Widget? _buildDanmakuOverlay() {
+    if (!data.showDanmakuOverlay) {
+      return null;
+    }
+    return ValueListenableBuilder<List<LiveMessage>>(
+      valueListenable: messagesListenable,
+      builder: (context, messages, _) {
+        final overlayPool = messages
+            .where((message) => message.type != LiveMessageType.online)
+            .toList(growable: false);
+        final overlayMessages = overlayPool.length <= 20
+            ? overlayPool
+            : overlayPool.sublist(overlayPool.length - 20);
+        if (overlayMessages.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return RoomDanmakuOverlay(
+          messages: overlayMessages,
+          fullscreen: true,
+          preferences: data.danmakuPreferences,
+        );
+      },
     );
   }
 }

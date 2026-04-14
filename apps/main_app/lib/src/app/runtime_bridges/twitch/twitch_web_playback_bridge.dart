@@ -7,6 +7,9 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
+import 'package:nolive_app/src/shared/application/app_log.dart';
+
+import 'twitch_web_playback_lifecycle.dart';
 
 class TwitchWebPlaybackBridge {
   TwitchWebPlaybackBridge({
@@ -15,11 +18,20 @@ class TwitchWebPlaybackBridge {
     Duration timeout = const Duration(seconds: 18),
     Duration pollInterval = const Duration(milliseconds: 500),
     Duration bootstrapScriptTimeout = const Duration(seconds: 4),
+    Duration idleDisposeDelay = const Duration(minutes: 2),
+    TwitchWebPlaybackLifecycle? lifecycle,
   })  : _loadProviderAccountSettings = loadProviderAccountSettings,
         _cookieManager = cookieManager ?? CookieManager.instance(),
         _timeout = timeout,
         _pollInterval = pollInterval,
-        _bootstrapScriptTimeout = bootstrapScriptTimeout;
+        _bootstrapScriptTimeout = bootstrapScriptTimeout,
+        _idleDisposeDelay = idleDisposeDelay {
+    _lifecycle = lifecycle ??
+        TwitchWebPlaybackLifecycle(
+          idleDisposeDelay: idleDisposeDelay,
+          onIdleDispose: _handleIdleDispose,
+        );
+  }
 
   static const String homeUrl = 'https://www.twitch.tv/';
   static const String mobileHomeUrl = 'https://m.twitch.tv/';
@@ -267,6 +279,8 @@ return await (async () => {
   final Duration _timeout;
   final Duration _pollInterval;
   final Duration _bootstrapScriptTimeout;
+  final Duration _idleDisposeDelay;
+  late final TwitchWebPlaybackLifecycle _lifecycle;
   HeadlessInAppWebView? _headlessWebView;
   Future<InAppWebViewController>? _controllerFuture;
 
@@ -274,13 +288,23 @@ return await (async () => {
     if (!_supportsPlatform) {
       return;
     }
+    final leaseEpoch = _lifecycle.beginUse();
     await _seedCookiesFromSettings();
     try {
+      AppLog.instance.info('twitch-bridge', 'warmUp start');
       await _ensureController();
     } catch (error, stackTrace) {
       debugPrint('TwitchWebPlaybackBridge warmUp failed: $error');
       debugPrintStack(stackTrace: stackTrace);
+      AppLog.instance.error(
+        'twitch-bridge',
+        'warmUp failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       await _disposeHeadlessWebView();
+    } finally {
+      _lifecycle.endUse(leaseEpoch, idleReason: 'warmup idle');
     }
   }
 
@@ -295,6 +319,7 @@ return await (async () => {
       return null;
     }
 
+    final leaseEpoch = _lifecycle.beginUse();
     await _seedCookiesFromSettings();
 
     final sourceUrl = detail.sourceUrl?.trim().isNotEmpty == true
@@ -302,6 +327,10 @@ return await (async () => {
         : _buildRoomUrl(roomId);
 
     try {
+      AppLog.instance.info(
+        'twitch-bridge',
+        'bootstrap request room=$roomId source=$sourceUrl',
+      );
       final controller = await _ensureController();
       final bootstrap = await _waitForPlaybackBootstrap(
         controller: controller,
@@ -329,8 +358,19 @@ return await (async () => {
     } catch (error, stackTrace) {
       debugPrint('TwitchWebPlaybackBridge fallback to direct GraphQL: $error');
       debugPrintStack(stackTrace: stackTrace);
+      AppLog.instance.error(
+        'twitch-bridge',
+        'fallback to direct GraphQL',
+        error: error,
+        stackTrace: stackTrace,
+      );
       await _disposeHeadlessWebView();
       return null;
+    } finally {
+      _lifecycle.endUse(
+        leaseEpoch,
+        idleReason: 'bootstrap request settled',
+      );
     }
   }
 
@@ -369,6 +409,7 @@ return await (async () => {
       onWebViewCreated: controllerCompleter.complete,
     );
     _headlessWebView = headlessWebView;
+    AppLog.instance.info('twitch-bridge', 'create headless webview');
     final future = () async {
       await headlessWebView.run();
       final controller = await controllerCompleter.future.timeout(_timeout);
@@ -398,12 +439,30 @@ return await (async () => {
   }
 
   Future<void> _disposeHeadlessWebView() async {
+    _lifecycle.invalidate();
     final headlessWebView = _headlessWebView;
     _headlessWebView = null;
     _controllerFuture = null;
     if (headlessWebView != null) {
+      AppLog.instance.info('twitch-bridge', 'dispose headless webview');
       await headlessWebView.dispose();
     }
+  }
+
+  Future<void> dispose() async {
+    _lifecycle.dispose();
+    await _disposeHeadlessWebView();
+  }
+
+  Future<void> _handleIdleDispose(String reason) async {
+    if (!_supportsPlatform) {
+      return;
+    }
+    AppLog.instance.info(
+      'twitch-bridge',
+      'idle dispose reason=$reason delay=${_idleDisposeDelay.inSeconds}s',
+    );
+    await _disposeHeadlessWebView();
   }
 
   Future<void> _seedCookiesFromSettings() async {

@@ -2,8 +2,6 @@ import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
 
-import 'provider_room_detail_override.dart';
-
 const LivePlayQuality _kUnavailablePlayQuality = LivePlayQuality(
   id: 'unavailable',
   label: '不可用',
@@ -14,13 +12,16 @@ class LoadRoomUseCase {
   const LoadRoomUseCase(
     this.registry, {
     required this.historyRepository,
-    this.loadRoomDetailOverride,
+    this.roomDetailOverride,
     this.resolveRecordHistoryEnabled,
   });
 
   final ProviderRegistry registry;
   final HistoryRepository historyRepository;
-  final ProviderRoomDetailOverride? loadRoomDetailOverride;
+  final Future<LiveRoomDetail?> Function({
+    required ProviderId providerId,
+    required String roomId,
+  })? roomDetailOverride;
   final Future<bool> Function()? resolveRecordHistoryEnabled;
 
   Future<LoadedRoomSnapshot> call({
@@ -111,7 +112,7 @@ class LoadRoomUseCase {
     required LiveProvider provider,
     required String roomId,
   }) async {
-    final overridden = await loadRoomDetailOverride?.call(
+    final overridden = await roomDetailOverride?.call(
       providerId: provider.descriptor.id,
       roomId: roomId,
     );

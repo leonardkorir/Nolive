@@ -3,6 +3,9 @@ import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
 
+import '../../../shared/application/secure_credential_store.dart';
+import 'sensitive_setting_keys.dart';
+
 class ProviderAccountSettings {
   const ProviderAccountSettings({
     required this.bilibiliCookie,
@@ -40,74 +43,114 @@ class ProviderAccountSettings {
 }
 
 class LoadProviderAccountSettingsUseCase {
-  const LoadProviderAccountSettingsUseCase(this.settingsRepository);
+  const LoadProviderAccountSettingsUseCase(
+    this.settingsRepository,
+    this.secureCredentialStore,
+  );
 
   final SettingsRepository settingsRepository;
+  final SecureCredentialStore secureCredentialStore;
 
   Future<ProviderAccountSettings> call() async {
+    final bilibiliCookie = await secureCredentialStore
+        .read(SensitiveSettingKeys.accountBilibiliCookie);
+    final chaturbateCookie = await secureCredentialStore.read(
+      SensitiveSettingKeys.accountChaturbateCookie,
+    );
+    final douyinCookie = await secureCredentialStore
+        .read(SensitiveSettingKeys.accountDouyinCookie);
+    final twitchCookie = await secureCredentialStore
+        .read(SensitiveSettingKeys.accountTwitchCookie);
+    final youtubeCookie = await secureCredentialStore
+        .read(SensitiveSettingKeys.accountYouTubeCookie);
     return ProviderAccountSettings(
-      bilibiliCookie: await settingsRepository
-              .readValue<String>('account_bilibili_cookie') ??
-          '',
+      bilibiliCookie: bilibiliCookie.isNotEmpty
+          ? bilibiliCookie
+          : await settingsRepository.readValue<String>(
+                SensitiveSettingKeys.accountBilibiliCookie,
+              ) ??
+              '',
       bilibiliUserId:
           await settingsRepository.readValue<int>('account_bilibili_user_id') ??
               0,
-      chaturbateCookie: await settingsRepository
-              .readValue<String>('account_chaturbate_cookie') ??
-          '',
-      douyinCookie:
-          await settingsRepository.readValue<String>('account_douyin_cookie') ??
+      chaturbateCookie: chaturbateCookie.isNotEmpty
+          ? chaturbateCookie
+          : await settingsRepository.readValue<String>(
+                SensitiveSettingKeys.accountChaturbateCookie,
+              ) ??
               '',
-      twitchCookie:
-          await settingsRepository.readValue<String>('account_twitch_cookie') ??
+      douyinCookie: douyinCookie.isNotEmpty
+          ? douyinCookie
+          : await settingsRepository.readValue<String>(
+                SensitiveSettingKeys.accountDouyinCookie,
+              ) ??
               '',
-      youtubeCookie: await settingsRepository
-              .readValue<String>('account_youtube_cookie') ??
-          '',
+      twitchCookie: twitchCookie.isNotEmpty
+          ? twitchCookie
+          : await settingsRepository.readValue<String>(
+                SensitiveSettingKeys.accountTwitchCookie,
+              ) ??
+              '',
+      youtubeCookie: youtubeCookie.isNotEmpty
+          ? youtubeCookie
+          : await settingsRepository.readValue<String>(
+                SensitiveSettingKeys.accountYouTubeCookie,
+              ) ??
+              '',
     );
   }
 }
 
 class UpdateProviderAccountSettingsUseCase {
   const UpdateProviderAccountSettingsUseCase(
-    this.settingsRepository, {
+    this.settingsRepository,
+    this.secureCredentialStore, {
     this.providerRegistry,
     this.providerCatalogRevision,
   });
 
   final SettingsRepository settingsRepository;
+  final SecureCredentialStore secureCredentialStore;
   final ProviderRegistry? providerRegistry;
   final ValueNotifier<int>? providerCatalogRevision;
 
   Future<void> call(ProviderAccountSettings settings) async {
-    await settingsRepository.writeValue(
-      'account_bilibili_cookie',
+    await secureCredentialStore.write(
+      SensitiveSettingKeys.accountBilibiliCookie,
       settings.bilibiliCookie,
     );
     await settingsRepository.writeValue(
       'account_bilibili_user_id',
       settings.bilibiliUserId,
     );
-    await settingsRepository.writeValue(
-      'account_chaturbate_cookie',
+    await secureCredentialStore.write(
+      SensitiveSettingKeys.accountChaturbateCookie,
       settings.chaturbateCookie,
     );
-    await settingsRepository.writeValue(
-      'account_douyin_cookie',
+    await secureCredentialStore.write(
+      SensitiveSettingKeys.accountDouyinCookie,
       settings.douyinCookie,
     );
-    await settingsRepository.writeValue(
-      'account_twitch_cookie',
+    await secureCredentialStore.write(
+      SensitiveSettingKeys.accountTwitchCookie,
       settings.twitchCookie,
     );
-    await settingsRepository.writeValue(
-      'account_youtube_cookie',
+    await secureCredentialStore.write(
+      SensitiveSettingKeys.accountYouTubeCookie,
       settings.youtubeCookie,
     );
+    await settingsRepository.remove(SensitiveSettingKeys.accountBilibiliCookie);
+    await settingsRepository.remove(
+      SensitiveSettingKeys.accountChaturbateCookie,
+    );
+    await settingsRepository.remove(SensitiveSettingKeys.accountDouyinCookie);
+    await settingsRepository.remove(SensitiveSettingKeys.accountTwitchCookie);
+    await settingsRepository.remove(SensitiveSettingKeys.accountYouTubeCookie);
     providerRegistry?.invalidate(ProviderId.bilibili);
     providerRegistry?.invalidate(ProviderId.chaturbate);
     providerRegistry?.invalidate(ProviderId.douyin);
     providerRegistry?.invalidate(ProviderId.twitch);
+    providerRegistry?.invalidate(ProviderId.youtube);
     if (providerCatalogRevision != null) {
       providerCatalogRevision!.value += 1;
     }
@@ -127,6 +170,7 @@ class ProviderAccountView {
     required this.identitySummary,
     required this.supportsQrLogin,
     this.displayName,
+    this.statusLabelOverride,
     this.userId,
     this.avatarUrl,
     this.errorMessage,
@@ -139,6 +183,7 @@ class ProviderAccountView {
   final String identitySummary;
   final bool supportsQrLogin;
   final String? displayName;
+  final String? statusLabelOverride;
   final int? userId;
   final String? avatarUrl;
   final String? errorMessage;
@@ -351,9 +396,10 @@ class LoadProviderAccountDashboardUseCase {
         providerId: ProviderId.youtube,
         providerName: 'YouTube',
         health: ProviderAccountHealth.notConfigured,
-        credentialSummary: '未配置 Cookie',
-        identitySummary: '可手动保存网页登录 Cookie；当前播放链路不会直接使用',
+        credentialSummary: '无需登录',
+        identitySummary: '如需手动保存网页登录 Cookie，可选配置；当前播放链路不会直接使用',
         supportsQrLogin: false,
+        statusLabelOverride: '无需登录',
       );
     }
 

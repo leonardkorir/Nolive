@@ -20,10 +20,12 @@ class MpvPlayer implements BasePlayer {
     this.videoOutputDriver = 'gpu-next',
     this.hardwareDecoder = 'auto-safe',
     this.logEnabled = false,
+    this.eventLogger,
   });
 
-  static const Duration _progressBroadcastStep = Duration(milliseconds: 400);
-  static const Duration _bufferBroadcastStep = Duration(milliseconds: 400);
+  static const Duration _progressBroadcastStep = Duration(seconds: 1);
+  static const Duration _bufferBroadcastStep = Duration(seconds: 1);
+  static const Duration _disposeStopSettleDelay = Duration(milliseconds: 120);
   static const String _fallbackVideoOutputDriver = 'gpu-next';
   static const String _fallbackHardwareDecoder = 'auto-safe';
 
@@ -36,6 +38,7 @@ class MpvPlayer implements BasePlayer {
   final String videoOutputDriver;
   final String hardwareDecoder;
   final bool logEnabled;
+  final void Function(String message)? eventLogger;
   final StreamController<PlayerState> _stateController =
       StreamController<PlayerState>.broadcast();
   final StreamController<PlayerDiagnostics> _diagnosticsController =
@@ -50,8 +53,11 @@ class MpvPlayer implements BasePlayer {
     backend: PlayerBackend.mpv,
   );
   bool _initialized = false;
+  bool _disposing = false;
+  bool _disposed = false;
   Duration _lastBroadcastPosition = Duration.zero;
   Duration _lastBroadcastBuffered = Duration.zero;
+  Future<void> _operationChain = Future<void>.value();
 
   @override
   PlayerBackend get backend => PlayerBackend.mpv;
@@ -76,7 +82,234 @@ class MpvPlayer implements BasePlayer {
 
   @override
   Future<void> initialize() async {
-    if (_initialized) {
+    await _runSerialized('initialize', () async {
+      await _initializeInternal();
+    });
+  }
+
+  @override
+  Future<void> setSource(PlaybackSource source) async {
+    await _runSerialized('setSource', () async {
+      await _initializeInternal();
+      final player = _player;
+      if (player == null) {
+        return;
+      }
+      _logEvent(
+        'setSource video=${_shortSourceDescriptor(source.url)} '
+        'audio=${source.externalAudio == null ? '-' : _shortSourceDescriptor(source.externalAudio!.url)} '
+        'audioHeaders=${source.externalAudio?.headers.keys.join(',') ?? '-'}',
+      );
+      _emitDiagnostics(_freshDiagnostics(clearRecentLogs: true));
+      _emit(
+        _currentState.copyWith(
+          status: PlaybackStatus.buffering,
+          source: source,
+          clearErrorMessage: true,
+        ),
+      );
+      _lastBroadcastPosition = Duration.zero;
+      _lastBroadcastBuffered = Duration.zero;
+      await _configureSourceOptions(player, source);
+      await player.open(
+        mk.Media(source.url.toString(), httpHeaders: source.headers),
+        play: false,
+      );
+      if (source.externalAudio != null) {
+        await player.setAudioTrack(
+          mk.AudioTrack.uri(
+            source.externalAudio!.url.toString(),
+            title: source.externalAudio!.label,
+          ),
+        );
+      } else {
+        await player.setAudioTrack(mk.AudioTrack.auto());
+      }
+      _emit(
+        _currentState.copyWith(
+          status: PlaybackStatus.ready,
+          source: source,
+          clearErrorMessage: true,
+        ),
+      );
+    });
+  }
+
+  Future<void> _configureSourceOptions(
+    mk.Player player,
+    PlaybackSource source,
+  ) async {
+    final dynamic platform = player.platform;
+    if (platform == null) {
+      return;
+    }
+    final forceSeekable = shouldForceSeekableForSource(source);
+    try {
+      await platform.setProperty(
+        'force-seekable',
+        forceSeekable ? 'yes' : 'no',
+      );
+    } catch (_) {
+      // Older media_kit backends may not expose direct mpv property writes.
+    }
+  }
+
+  @override
+  Future<void> play() async {
+    await _runSerialized('play', () async {
+      final player = _player;
+      if (player == null) {
+        return;
+      }
+      await player.play();
+    });
+  }
+
+  @override
+  Future<void> pause() async {
+    await _runSerialized('pause', () async {
+      final player = _player;
+      if (player == null) {
+        return;
+      }
+      await player.pause();
+    });
+  }
+
+  @override
+  Future<void> stop() async {
+    await _runSerialized('stop', () async {
+      final player = _player;
+      if (player == null) {
+        return;
+      }
+      await player.stop();
+      _lastBroadcastPosition = Duration.zero;
+      _lastBroadcastBuffered = Duration.zero;
+      _emitDiagnostics(_freshDiagnostics(clearRecentLogs: true));
+      _emit(
+        _currentState.copyWith(
+          status: PlaybackStatus.ready,
+          position: Duration.zero,
+          buffered: Duration.zero,
+          clearErrorMessage: true,
+          clearSource: true,
+        ),
+      );
+    });
+  }
+
+  @override
+  Future<void> setVolume(double value) async {
+    await _runSerialized('setVolume', () async {
+      final player = _player;
+      final normalized = value.clamp(0, 1).toDouble();
+      if (player == null) {
+        _emit(_currentState.copyWith(volume: normalized));
+        return;
+      }
+      await player.setVolume(normalized * 100);
+      _emit(_currentState.copyWith(volume: normalized));
+    });
+  }
+
+  @override
+  Future<Uint8List?> captureScreenshot() async {
+    return _runSerializedNullable<Uint8List>('captureScreenshot', () async {
+      final player = _player;
+      if (player == null) {
+        return null;
+      }
+      try {
+        return await player.screenshot(format: 'image/png');
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
+  @override
+  Widget buildView({
+    Key? key,
+    double? aspectRatio,
+    BoxFit fit = BoxFit.contain,
+    bool pauseUponEnteringBackgroundMode = true,
+    bool resumeUponEnteringForegroundMode = false,
+  }) {
+    final controller = _controller;
+    if (controller == null) {
+      return SizedBox.expand(key: key);
+    }
+    return Video(
+      key: key,
+      controller: controller,
+      aspectRatio: aspectRatio,
+      fit: fit,
+      pauseUponEnteringBackgroundMode: pauseUponEnteringBackgroundMode,
+      resumeUponEnteringForegroundMode: resumeUponEnteringForegroundMode,
+      controls: NoVideoControls,
+    );
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (_disposing || _disposed) {
+      return;
+    }
+    _disposing = true;
+    await _runSerialized(
+      'dispose',
+      () async {
+        final player = _player;
+        if (player != null) {
+          await _stopPlayerBeforeDispose(player);
+        }
+        for (final subscription in _subscriptions) {
+          await subscription.cancel();
+        }
+        _subscriptions.clear();
+        await player?.dispose();
+        _player = null;
+        _controller = null;
+        _initialized = false;
+        _disposed = true;
+        await _stateController.close();
+        await _diagnosticsController.close();
+      },
+      allowWhileClosing: true,
+    );
+  }
+
+  Future<void> _stopPlayerBeforeDispose(mk.Player player) async {
+    final state = _currentState;
+    final shouldStop = state.source != null ||
+        switch (state.status) {
+          PlaybackStatus.buffering ||
+          PlaybackStatus.playing ||
+          PlaybackStatus.paused ||
+          PlaybackStatus.completed ||
+          PlaybackStatus.error =>
+            true,
+          _ => false,
+        };
+    if (!shouldStop) {
+      return;
+    }
+    try {
+      _logEvent('dispose graceful stop start');
+      await player.stop();
+      _lastBroadcastPosition = Duration.zero;
+      _lastBroadcastBuffered = Duration.zero;
+      _logEvent('dispose graceful stop settle');
+      await Future<void>.delayed(_disposeStopSettleDelay);
+      _logEvent('dispose graceful stop done');
+    } catch (error) {
+      _logEvent('dispose graceful stop ignored error=$error');
+    }
+  }
+
+  Future<void> _initializeInternal() async {
+    if (_initialized || _isClosedForOperations) {
       return;
     }
     _emit(_currentState.copyWith(status: PlaybackStatus.initializing));
@@ -111,170 +344,12 @@ class MpvPlayer implements BasePlayer {
     );
     _bindPlayer(player);
     _initialized = true;
-    _emitDiagnostics(
-      _currentDiagnostics.copyWith(debugLogEnabled: logEnabled),
-    );
+    _emitDiagnostics(_freshDiagnostics());
     _emit(_currentState.copyWith(status: PlaybackStatus.ready));
-  }
-
-  @override
-  Future<void> setSource(PlaybackSource source) async {
-    await initialize();
-    final player = _player;
-    if (player == null) {
-      return;
-    }
-    _emit(
-      _currentState.copyWith(
-        status: PlaybackStatus.buffering,
-        source: source,
-        clearErrorMessage: true,
-      ),
+    _logEvent(
+      'initialized vo=$videoOutputDriver hwdec=$hardwareDecoder '
+      'doubleBuffering=$doubleBufferingEnabled logEnabled=$logEnabled',
     );
-    _lastBroadcastPosition = Duration.zero;
-    _lastBroadcastBuffered = Duration.zero;
-    await _configureSourceOptions(player, source);
-    await player.open(
-      mk.Media(source.url.toString(), httpHeaders: source.headers),
-      play: false,
-    );
-    assert(() {
-      debugPrint(
-        '[MpvPlayer] setSource '
-        'video=${_shortSourceDescriptor(source.url)} '
-        'audio=${source.externalAudio == null ? '-' : _shortSourceDescriptor(source.externalAudio!.url)} '
-        'audioHeaders=${source.externalAudio?.headers.keys.join(',') ?? '-'}',
-      );
-      return true;
-    }());
-    if (source.externalAudio != null) {
-      await player.setAudioTrack(
-        mk.AudioTrack.uri(
-          source.externalAudio!.url.toString(),
-          title: source.externalAudio!.label,
-        ),
-      );
-    } else {
-      await player.setAudioTrack(mk.AudioTrack.auto());
-    }
-    _emit(
-      _currentState.copyWith(
-        status: PlaybackStatus.ready,
-        source: source,
-        clearErrorMessage: true,
-      ),
-    );
-  }
-
-  Future<void> _configureSourceOptions(
-    mk.Player player,
-    PlaybackSource source,
-  ) async {
-    final dynamic platform = player.platform;
-    if (platform == null) {
-      return;
-    }
-    final forceSeekable = source.url.host == '127.0.0.1' &&
-        source.url.path.contains('/twitch-ad-guard/');
-    try {
-      await platform.setProperty(
-        'force-seekable',
-        forceSeekable ? 'yes' : 'no',
-      );
-    } catch (_) {
-      // Older media_kit backends may not expose direct mpv property writes.
-    }
-  }
-
-  @override
-  Future<void> play() async {
-    final player = _player;
-    if (player == null) {
-      return;
-    }
-    await player.play();
-  }
-
-  @override
-  Future<void> pause() async {
-    final player = _player;
-    if (player == null) {
-      return;
-    }
-    await player.pause();
-  }
-
-  @override
-  Future<void> stop() async {
-    final player = _player;
-    if (player == null) {
-      return;
-    }
-    await player.stop();
-    _lastBroadcastPosition = Duration.zero;
-    _lastBroadcastBuffered = Duration.zero;
-    _emit(_currentState.copyWith(status: PlaybackStatus.ready));
-  }
-
-  @override
-  Future<void> setVolume(double value) async {
-    final player = _player;
-    final normalized = value.clamp(0, 1).toDouble();
-    if (player == null) {
-      _emit(_currentState.copyWith(volume: normalized));
-      return;
-    }
-    await player.setVolume(normalized * 100);
-    _emit(_currentState.copyWith(volume: normalized));
-  }
-
-  @override
-  Future<Uint8List?> captureScreenshot() async {
-    final player = _player;
-    if (player == null) {
-      return null;
-    }
-    try {
-      return await player.screenshot(format: 'image/png');
-    } catch (_) {
-      return null;
-    }
-  }
-
-  @override
-  Widget buildView({
-    Key? key,
-    double? aspectRatio,
-    BoxFit fit = BoxFit.contain,
-    bool pauseUponEnteringBackgroundMode = true,
-    bool resumeUponEnteringForegroundMode = false,
-  }) {
-    final controller = _controller;
-    if (controller == null) {
-      return SizedBox.expand(key: key);
-    }
-    return Video(
-      key: key,
-      controller: controller,
-      aspectRatio: aspectRatio,
-      fit: fit,
-      pauseUponEnteringBackgroundMode: pauseUponEnteringBackgroundMode,
-      resumeUponEnteringForegroundMode: resumeUponEnteringForegroundMode,
-      controls: NoVideoControls,
-    );
-  }
-
-  @override
-  Future<void> dispose() async {
-    for (final subscription in _subscriptions) {
-      await subscription.cancel();
-    }
-    _subscriptions.clear();
-    await _player?.dispose();
-    _player = null;
-    _controller = null;
-    await _stateController.close();
-    await _diagnosticsController.close();
   }
 
   Future<void> _configurePlayerProperties(
@@ -298,13 +373,16 @@ class MpvPlayer implements BasePlayer {
     _subscriptions.addAll([
       player.stream.playing.listen((playing) {
         if (playing) {
+          _logEvent('stream playing=true');
           _emit(_currentState.copyWith(status: PlaybackStatus.playing));
         } else if (_currentState.status == PlaybackStatus.playing) {
+          _logEvent('stream playing=false');
           _emit(_currentState.copyWith(status: PlaybackStatus.paused));
         }
       }),
       player.stream.completed.listen((completed) {
         if (completed) {
+          _logEvent('stream completed=true');
           _emit(_currentState.copyWith(status: PlaybackStatus.completed));
         }
       }),
@@ -327,6 +405,7 @@ class MpvPlayer implements BasePlayer {
         _emit(_currentState.copyWith(volume: (volume / 100).clamp(0, 1)));
       }),
       player.stream.buffering.listen((buffering) {
+        _logEvent('stream buffering=$buffering');
         _emitDiagnostics(_currentDiagnostics.copyWith(buffering: buffering));
         if (buffering) {
           _emit(_currentState.copyWith(status: PlaybackStatus.buffering));
@@ -354,6 +433,14 @@ class MpvPlayer implements BasePlayer {
         if (message.isEmpty) {
           return;
         }
+        if (shouldIgnoreMpvErrorMessage(
+          source: _currentState.source,
+          message: message,
+        )) {
+          _logEvent('stream warning ignored=$message');
+          return;
+        }
+        _logEvent('stream error=$message');
         _emitDiagnostics(_currentDiagnostics.copyWith(error: message));
         _emit(
           _currentState.copyWith(
@@ -384,8 +471,10 @@ class MpvPlayer implements BasePlayer {
       }),
       if (logEnabled)
         player.stream.log.listen((entry) {
-          final nextLogs = List<String>.from(_recentLogs)
-            ..add('[${entry.level}] ${entry.prefix}: ${entry.text.trim()}');
+          final nextEntry =
+              '[${entry.level}] ${entry.prefix}: ${entry.text.trim()}';
+          _logEvent('mpv $nextEntry');
+          final nextLogs = List<String>.from(_recentLogs)..add(nextEntry);
           while (nextLogs.length > 24) {
             nextLogs.removeAt(0);
           }
@@ -422,6 +511,73 @@ class MpvPlayer implements BasePlayer {
     if (!_diagnosticsController.isClosed) {
       _diagnosticsController.add(_currentDiagnostics);
     }
+  }
+
+  PlayerDiagnostics _freshDiagnostics({bool clearRecentLogs = false}) {
+    if (clearRecentLogs) {
+      _recentLogs.clear();
+    }
+    return PlayerDiagnostics.empty(backend).copyWith(
+      debugLogEnabled: logEnabled,
+      recentLogs: logEnabled
+          ? List<String>.unmodifiable(_recentLogs.toList(growable: false))
+          : const <String>[],
+    );
+  }
+
+  bool get _isClosedForOperations => _disposing || _disposed;
+
+  Future<void> _runSerialized(
+    String label,
+    Future<void> Function() action, {
+    bool allowWhileClosing = false,
+  }) {
+    final completer = Completer<void>();
+    final run = _operationChain.then((_) async {
+      if (_isClosedForOperations && !allowWhileClosing) {
+        completer.complete();
+        return;
+      }
+      _logEvent('operation $label start');
+      try {
+        await action();
+        _logEvent('operation $label done');
+        completer.complete();
+      } catch (error, stackTrace) {
+        _logEvent('operation $label failed error=$error');
+        completer.completeError(error, stackTrace);
+      }
+    });
+    _operationChain = run.catchError((Object _, StackTrace __) {});
+    return completer.future;
+  }
+
+  Future<T?> _runSerializedNullable<T>(
+    String label,
+    Future<T?> Function() action,
+  ) {
+    final completer = Completer<T?>();
+    final run = _operationChain.then((_) async {
+      if (_isClosedForOperations) {
+        completer.complete(null);
+        return;
+      }
+      _logEvent('operation $label start');
+      try {
+        final result = await action();
+        _logEvent('operation $label done');
+        completer.complete(result);
+      } catch (error, stackTrace) {
+        _logEvent('operation $label failed error=$error');
+        completer.completeError(error, stackTrace);
+      }
+    });
+    _operationChain = run.catchError((Object _, StackTrace __) {});
+    return completer.future;
+  }
+
+  void _logEvent(String message) {
+    eventLogger?.call(message);
   }
 
   Map<String, String> _videoParamsToMap(mk.VideoParams params) {
@@ -481,6 +637,49 @@ class MpvRuntimeConfiguration {
 }
 
 @visibleForTesting
+bool shouldForceSeekableForSource(PlaybackSource source) {
+  if (source.url.host == '127.0.0.1' &&
+      source.url.path.contains('/twitch-ad-guard/')) {
+    return true;
+  }
+  if (_looksLikeLiveFlv(source.url) || _looksLikeHlsPlaylist(source.url)) {
+    return true;
+  }
+  final externalAudio = source.externalAudio;
+  if (externalAudio == null) {
+    return false;
+  }
+  final sourceLooksLikeSplitHls = _looksLikeHlsPlaylist(source.url) &&
+      _looksLikeHlsPlaylist(externalAudio.url);
+  if (!sourceLooksLikeSplitHls) {
+    return false;
+  }
+  return _looksLikeLowLatencyChunklist(source.url) ||
+      _looksLikeLowLatencyChunklist(externalAudio.url) ||
+      _isHlsMimeType(externalAudio.mimeType);
+}
+
+@visibleForTesting
+bool shouldIgnoreMpvErrorMessage({
+  required PlaybackSource? source,
+  required String message,
+}) {
+  if (source == null) {
+    return false;
+  }
+  final normalized = message.toLowerCase();
+  final isSeekabilityWarning =
+      normalized.contains('cannot seek in this stream') ||
+          normalized.contains('force-seekable=yes');
+  if (!isSeekabilityWarning) {
+    return false;
+  }
+  return shouldForceSeekableForSource(source) ||
+      _looksLikeLiveFlv(source.url) ||
+      _looksLikeLiveHlsSource(source);
+}
+
+@visibleForTesting
 MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
   required bool enableHardwareAcceleration,
   required bool compatMode,
@@ -524,4 +723,51 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
     logLevel: logEnabled ? mk.MPVLogLevel.debug : mk.MPVLogLevel.error,
     platformProperties: platformProperties,
   );
+}
+
+bool _looksLikeHlsPlaylist(Uri uri) {
+  final path = uri.path.toLowerCase();
+  if (path.endsWith('.m3u8') || path.contains('chunklist_')) {
+    return true;
+  }
+  return uri.queryParameters.values.any(
+    (value) => value.toLowerCase().contains('.m3u8'),
+  );
+}
+
+bool _looksLikeLiveHlsSource(PlaybackSource source) {
+  if (_looksLikeHlsPlaylist(source.url)) {
+    return true;
+  }
+  final externalAudio = source.externalAudio;
+  return externalAudio != null && _looksLikeHlsPlaylist(externalAudio.url);
+}
+
+bool _looksLikeLiveFlv(Uri uri) {
+  final path = uri.path.toLowerCase();
+  if (path.endsWith('.flv') || path.contains('/live-bvc/')) {
+    return true;
+  }
+  return uri.queryParameters.values.any(
+    (value) => value.toLowerCase().contains('.flv'),
+  );
+}
+
+bool _looksLikeLowLatencyChunklist(Uri uri) {
+  final path = uri.path.toLowerCase();
+  if (path.contains('chunklist_') || path.contains('llhls')) {
+    return true;
+  }
+  return uri.queryParameters.keys.any(
+        (key) => key.toLowerCase().contains('llhls'),
+      ) ||
+      uri.queryParameters.values.any(
+        (value) => value.toLowerCase().contains('llhls'),
+      );
+}
+
+bool _isHlsMimeType(String? mimeType) {
+  final normalized = mimeType?.trim().toLowerCase();
+  return normalized == 'application/x-mpegurl' ||
+      normalized == 'application/vnd.apple.mpegurl';
 }

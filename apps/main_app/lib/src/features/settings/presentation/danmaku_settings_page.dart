@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
+import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
 class DanmakuSettingsPage extends StatefulWidget {
-  const DanmakuSettingsPage({required this.bootstrap, super.key});
+  const DanmakuSettingsPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final DanmakuSettingsDependencies dependencies;
 
   @override
   State<DanmakuSettingsPage> createState() => _DanmakuSettingsPageState();
@@ -38,8 +38,8 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
   }
 
   Future<void> _load() async {
-    final preferences = await widget.bootstrap.loadDanmakuPreferences();
-    final blockedKeywords = await widget.bootstrap.loadBlockedKeywords();
+    final preferences = await widget.dependencies.loadDanmakuPreferences();
+    final blockedKeywords = await widget.dependencies.loadBlockedKeywords();
     if (!mounted) {
       return;
     }
@@ -54,7 +54,7 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
       _preferences = next;
     });
     final ticket = ++_saveTicket;
-    await widget.bootstrap.updateDanmakuPreferences(next);
+    await widget.dependencies.updateDanmakuPreferences(next);
     if (!mounted || ticket != _saveTicket) {
       return;
     }

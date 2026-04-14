@@ -55,6 +55,23 @@ void main() {
     expect(recommend.items.single.viewerCount, 125000);
   });
 
+  test('douyu recommend rooms keeps paging when pgcnt is missing', () async {
+    final provider = DouyuProvider(
+      dataSource: DouyuLiveDataSource(
+        transport: _FakeDouyuMissingPageCountTransport(),
+        signService: _FakeDouyuRecommendSignService(),
+      ),
+    );
+
+    final firstPage = await provider.fetchRecommendRooms(page: 1);
+    expect(firstPage.items, hasLength(40));
+    expect(firstPage.hasMore, isTrue);
+
+    final secondPage = await provider.fetchRecommendRooms(page: 2);
+    expect(secondPage.items, hasLength(1));
+    expect(secondPage.hasMore, isFalse);
+  });
+
   test('huya recommend rooms maps homepage list', () async {
     final provider = HuyaProvider(
       dataSource: HuyaLiveDataSource(
@@ -194,6 +211,69 @@ class _FakeDouyuRecommendTransport extends DouyuTransport {
               'c2name_display': '网游竞技',
               'av': 'demo-avatar',
               'ol': '12.5万',
+            },
+          ],
+        },
+      });
+    }
+    fail('Unexpected douyu recommend request: $uri');
+  }
+
+  @override
+  Future<String> postText(
+    String url, {
+    String body = '',
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) {
+    throw UnimplementedError();
+  }
+}
+
+class _FakeDouyuMissingPageCountTransport extends DouyuTransport {
+  @override
+  Future<String> getText(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    final uri = Uri.parse(url).replace(
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
+    );
+    if (uri.toString().endsWith('/1')) {
+      return jsonEncode({
+        'data': {
+          'pgcnt': 0,
+          'rl': List.generate(
+            40,
+            (index) => {
+              'type': 1,
+              'rid': 600000 + index,
+              'rn': '斗鱼推荐房间$index',
+              'nn': '斗鱼主播$index',
+              'rs16': 'https://douyu.test/cover-$index.jpg',
+              'c2name_display': '网游竞技',
+              'av': 'demo-avatar-$index',
+              'ol': '1.2万',
+            },
+          ),
+        },
+      });
+    }
+    if (uri.toString().endsWith('/2')) {
+      return jsonEncode({
+        'data': {
+          'pgcnt': 0,
+          'rl': [
+            {
+              'type': 1,
+              'rid': 700001,
+              'rn': '斗鱼末页房间',
+              'nn': '斗鱼末页主播',
+              'rs16': 'https://douyu.test/cover-last.jpg',
+              'c2name_display': '网游竞技',
+              'av': 'demo-avatar-last',
+              'ol': '9800',
             },
           ],
         },

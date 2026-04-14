@@ -100,11 +100,16 @@ class LocalStorageFileStore {
 
 class FileStorageSnapshot {
   const FileStorageSnapshot({
+    this.formatVersion = currentFormatVersion,
     this.settings = const <String, Object?>{},
     this.history = const <HistoryRecord>[],
     this.follows = const <FollowRecord>[],
     this.tags = const <String>[],
   });
+
+  static const int currentFormatVersion = 2;
+
+  final int formatVersion;
 
   final Map<String, Object?> settings;
   final List<HistoryRecord> history;
@@ -113,6 +118,7 @@ class FileStorageSnapshot {
 
   FileStorageSnapshot clone() {
     return FileStorageSnapshot(
+      formatVersion: formatVersion,
       settings: _cloneSettingsMap(settings),
       history: List<HistoryRecord>.from(history),
       follows: List<FollowRecord>.from(follows),
@@ -122,6 +128,7 @@ class FileStorageSnapshot {
 
   Map<String, Object?> toJson() {
     return {
+      'format_version': formatVersion,
       'settings': _cloneSettingsMap(settings),
       'history': [
         for (final item in history)
@@ -161,6 +168,7 @@ class FileStorageSnapshot {
     }
 
     return FileStorageSnapshot(
+      formatVersion: _decodeFormatVersion(json['format_version']),
       settings: settings,
       history: _decodeHistory(json['history']),
       follows: _decodeFollows(json['follows']),
@@ -220,6 +228,16 @@ class FileStorageSnapshot {
         .toList(growable: false);
     tags.sort();
     return tags;
+  }
+
+  static int _decodeFormatVersion(Object? raw) {
+    if (raw is int) {
+      return raw;
+    }
+    if (raw is num) {
+      return raw.toInt();
+    }
+    return int.tryParse(raw?.toString() ?? '') ?? 1;
   }
 }
 

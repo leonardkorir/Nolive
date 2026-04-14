@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
 class AppearanceSettingsPage extends StatelessWidget {
-  const AppearanceSettingsPage({required this.bootstrap, super.key});
+  const AppearanceSettingsPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final AppearanceSettingsDependencies dependencies;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +27,7 @@ class AppearanceSettingsPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 ValueListenableBuilder<ThemeMode>(
-                  valueListenable: bootstrap.themeMode,
+                  valueListenable: dependencies.themeMode,
                   builder: (context, mode, _) {
                     return SegmentedButton<ThemeMode>(
                       segments: const [
@@ -49,7 +49,7 @@ class AppearanceSettingsPage extends StatelessWidget {
                       ],
                       selected: {mode},
                       onSelectionChanged: (selection) {
-                        bootstrap.updateThemeMode(selection.first);
+                        dependencies.updateThemeMode(selection.first);
                       },
                     );
                   },

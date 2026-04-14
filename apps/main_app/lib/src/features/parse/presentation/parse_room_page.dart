@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:live_core/live_core.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/features/parse/application/parse_feature_dependencies.dart';
 import 'package:nolive_app/src/features/parse/application/inspect_parsed_room_use_case.dart';
 import 'package:nolive_app/src/features/parse/application/parse_room_input_use_case.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
@@ -10,9 +10,9 @@ import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
 class ParseRoomPage extends StatefulWidget {
-  const ParseRoomPage({required this.bootstrap, super.key});
+  const ParseRoomPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final ParseFeatureDependencies dependencies;
 
   @override
   State<ParseRoomPage> createState() => _ParseRoomPageState();
@@ -32,8 +32,7 @@ class _ParseRoomPageState extends State<ParseRoomPage> {
     super.initState();
     _controller =
         TextEditingController(text: 'https://live.bilibili.com/66666');
-    _providers = widget.bootstrap.providerRegistry.descriptors
-        .toList(growable: false)
+    _providers = widget.dependencies.listProviderDescriptors()
       ..sort((a, b) => a.displayName.compareTo(b.displayName));
     final fallback =
         _providers.where((item) => item.id == ProviderId.bilibili).firstOrNull;
@@ -49,7 +48,7 @@ class _ParseRoomPageState extends State<ParseRoomPage> {
   }
 
   Future<void> _parse() async {
-    final result = widget.bootstrap.parseRoomInput(
+    final result = widget.dependencies.parseRoomInput(
       rawInput: _controller.text,
       fallbackProvider: _selectedProvider,
     );
@@ -63,7 +62,7 @@ class _ParseRoomPageState extends State<ParseRoomPage> {
       return;
     }
     try {
-      final inspection = await widget.bootstrap.inspectParsedRoom(
+      final inspection = await widget.dependencies.inspectParsedRoom(
         result.parsedRoom!,
       );
       if (!mounted) {

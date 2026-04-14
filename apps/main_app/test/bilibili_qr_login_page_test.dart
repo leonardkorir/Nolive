@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/settings/application/settings_feature_dependencies.dart';
 import 'package:nolive_app/src/features/settings/presentation/bilibili_qr_login_page.dart';
 
 class _FakeBilibiliAccountClient implements BilibiliAccountClient {
@@ -47,14 +48,15 @@ void main() {
   testWidgets('bilibili qr login page shows qr session and pending status', (
     tester,
   ) async {
+    final bootstrap = createAppBootstrap(
+      mode: AppRuntimeMode.preview,
+      bilibiliAccountClient: _FakeBilibiliAccountClient(),
+      douyinAccountClient: _FakeDouyinAccountClient(),
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: BilibiliQrLoginPage(
-          bootstrap: createAppBootstrap(
-            mode: AppRuntimeMode.preview,
-            bilibiliAccountClient: _FakeBilibiliAccountClient(),
-            douyinAccountClient: _FakeDouyinAccountClient(),
-          ),
+          dependencies: SettingsFeatureDependencies.fromBootstrap(bootstrap),
         ),
       ),
     );

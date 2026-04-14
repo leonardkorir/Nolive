@@ -197,6 +197,63 @@ void main() {
         expect(urls.single.lineLabel, 'CHI');
       });
 
+      test('ll-hls parser keeps paired audio rendition for each video variant',
+          () {
+        const parser = ChaturbateHlsMasterPlaylistParser();
+        const playlistUrl =
+            'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.pinkypuppa.01KNFDA17Y6RTSYE3GWA8VYTPT/llhls.m3u8?token=fixture';
+        const source = '''
+#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio_aac_96",NAME="Audio_1_1_5",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,CHANNELS="2",URI="/v1/edge/streams/origin.pinkypuppa.01KNFDA17Y6RTSYE3GWA8VYTPT/chunklist_5_audio_3689313794811747259_llhls.m3u8?session=e92ff262-9461-43b8-9ee4-ef180e1ea521"
+
+#EXT-X-STREAM-INF:BANDWIDTH=1296000,RESOLUTION=852x480,FRAME-RATE=30.000,CODECS="avc1.4d401f,mp4a.40.2",AUDIO="audio_aac_96"
+/v1/edge/streams/origin.pinkypuppa.01KNFDA17Y6RTSYE3GWA8VYTPT/chunklist_2_video_3689313794811747259_llhls.m3u8?session=e92ff262-9461-43b8-9ee4-ef180e1ea521
+#EXT-X-STREAM-INF:BANDWIDTH=3296000,RESOLUTION=1280x720,FRAME-RATE=30.000,CODECS="avc1.4d401f,mp4a.40.2",AUDIO="audio_aac_96"
+/v1/edge/streams/origin.pinkypuppa.01KNFDA17Y6RTSYE3GWA8VYTPT/chunklist_4_video_3689313794811747259_llhls.m3u8?session=e92ff262-9461-43b8-9ee4-ef180e1ea521
+''';
+
+        final variants = parser.parse(
+          playlistUrl: playlistUrl,
+          source: source,
+        );
+        final qualities = ChaturbateMapper.mapPlayQualitiesFromVariants(
+          variants: variants,
+        );
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.chaturbate.value,
+          roomId: 'pinkypuppa',
+          title: 'pinkypuppa room',
+          streamerName: 'pinkypuppa',
+          sourceUrl: 'https://chaturbate.com/pinkypuppa/',
+          metadata: const {
+            'edgeRegion': 'LAX',
+            'hlsSource': playlistUrl,
+          },
+        );
+
+        expect(variants, hasLength(2));
+        expect(
+          variants.first.audioUrl,
+          contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
+        );
+        expect(qualities.first.metadata?['audioUrl'], isNotNull);
+
+        final autoUrls = ChaturbateMapper.mapPlayUrls(detail, qualities.first);
+        expect(autoUrls.single.metadata?['audioUrl'], isNotNull);
+
+        final fixedUrls = ChaturbateMapper.mapPlayUrls(detail, qualities[1]);
+        expect(
+          fixedUrls.single.metadata?['audioUrl'],
+          contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
+        );
+        expect(
+          fixedUrls.single.metadata?['audioMimeType'],
+          'application/x-mpegURL',
+        );
+      });
+
       test('danmaku mapper parses history and realtime payloads from fixtures',
           () {
         final history = ChaturbateFixtureLoader.loadRoomHistory();

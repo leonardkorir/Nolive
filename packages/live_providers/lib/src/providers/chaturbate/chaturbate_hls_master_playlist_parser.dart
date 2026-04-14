@@ -4,12 +4,16 @@ class ChaturbateHlsVariant {
     required this.bandwidth,
     this.width,
     this.height,
+    this.audioGroupId,
+    this.audioUrl,
   });
 
   final String url;
   final int bandwidth;
   final int? width;
   final int? height;
+  final String? audioGroupId;
+  final String? audioUrl;
 
   String get label {
     final resolvedHeight = height;
@@ -48,6 +52,10 @@ class ChaturbateHlsMasterPlaylistParser {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList(growable: false);
+    final audioGroups = _parseAudioGroups(
+      playlistUrl: playlistUrl,
+      lines: lines,
+    );
     final variants = <ChaturbateHlsVariant>[];
     for (var index = 0; index < lines.length; index += 1) {
       final line = lines[index];
@@ -68,12 +76,15 @@ class ChaturbateHlsMasterPlaylistParser {
           dimensions.length == 2 ? int.tryParse(dimensions.first) : null;
       final height =
           dimensions.length == 2 ? int.tryParse(dimensions.last) : null;
+      final audioGroupId = attributes['AUDIO']?.trim();
       variants.add(
         ChaturbateHlsVariant(
           url: Uri.parse(playlistUrl).resolve(nextLine).toString(),
           bandwidth: bandwidth,
           width: width,
           height: height,
+          audioGroupId: audioGroupId,
+          audioUrl: audioGroupId == null ? null : audioGroups[audioGroupId],
         ),
       );
     }
@@ -85,6 +96,32 @@ class ChaturbateHlsMasterPlaylistParser {
       return right.bandwidth.compareTo(left.bandwidth);
     });
     return variants;
+  }
+
+  Map<String, String> _parseAudioGroups({
+    required String playlistUrl,
+    required List<String> lines,
+  }) {
+    final groups = <String, String>{};
+    final baseUri = Uri.parse(playlistUrl);
+    for (final line in lines) {
+      if (!line.startsWith('#EXT-X-MEDIA:')) {
+        continue;
+      }
+      final attributes = _parseAttributes(
+        line.substring('#EXT-X-MEDIA:'.length),
+      );
+      if ((attributes['TYPE'] ?? '').trim().toUpperCase() != 'AUDIO') {
+        continue;
+      }
+      final groupId = attributes['GROUP-ID']?.trim() ?? '';
+      final uri = attributes['URI']?.trim() ?? '';
+      if (groupId.isEmpty || uri.isEmpty) {
+        continue;
+      }
+      groups[groupId] = baseUri.resolve(uri).toString();
+    }
+    return groups;
   }
 
   Map<String, String> _parseAttributes(String raw) {

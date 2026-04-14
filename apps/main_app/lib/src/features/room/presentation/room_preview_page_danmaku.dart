@@ -1,229 +1,15 @@
-part of 'room_preview_page.dart';
+import 'dart:collection';
+import 'dart:math' as math;
 
-extension _RoomPreviewPageDanmakuExtension on _RoomPreviewPageState {
-  static const Duration _danmakuFlushInterval = Duration(milliseconds: 120);
-  static const int _danmakuFlushBurstLimit = 18;
-  static const List<String> _danmakuReconnectSignals = [
-    '连接已断开',
-    '连接异常',
-    '连接失败',
-  ];
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:live_core/live_core.dart';
+import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
+import 'package:nolive_app/src/shared/presentation/theme/zh_text.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 
-  Future<void> _bindDanmakuSession(
-    DanmakuSession? session,
-    List<String> blockedKeywords,
-  ) async {
-    await _disposeDanmakuSession();
-    _blockedDanmakuKeywords = List<String>.unmodifiable(blockedKeywords);
-    _resetDanmakuReconnectState();
-    if (session == null) {
-      return;
-    }
-    final filter = DanmakuFilterService(
-      config: DanmakuFilterConfig(
-        blockedKeywords: blockedKeywords.toSet(),
-      ),
-    );
-    _danmakuSession = session;
-    _danmakuFlushTimer = Timer.periodic(_danmakuFlushInterval, (_) {
-      _flushPendingDanmaku(filter);
-    });
-    _danmakuSubscription = session.messages.listen((message) {
-      if (!mounted) {
-        return;
-      }
-      if (_shouldReconnectDanmaku(message)) {
-        _scheduleDanmakuReconnect();
-      }
-      _pendingDanmakuMessages.add(message);
-      if (_pendingDanmakuMessages.length >= _danmakuFlushBurstLimit) {
-        _flushPendingDanmaku(filter);
-      }
-    });
-    try {
-      // Some providers emit history or disconnect notices immediately during
-      // connect(); subscribe first so those messages are not lost.
-      await session.connect();
-      _flushPendingDanmaku(filter);
-    } catch (_) {
-      await _disposeDanmakuSession();
-      rethrow;
-    }
-  }
-
-  Future<void> _disposeDanmakuSession() async {
-    _danmakuFlushTimer?.cancel();
-    _danmakuFlushTimer = null;
-    _pendingDanmakuMessages.clear();
-    _playerSuperChatOverlayTimer?.cancel();
-    _playerSuperChatOverlayTimer = null;
-    final subscription = _danmakuSubscription;
-    _danmakuSubscription = null;
-    final session = _danmakuSession;
-    _danmakuSession = null;
-
-    await subscription?.cancel();
-    if (session != null) {
-      await session.disconnect();
-    }
-  }
-
-  void _disposeDanmakuSessionNow() {
-    _danmakuFlushTimer?.cancel();
-    _danmakuFlushTimer = null;
-    _pendingDanmakuMessages.clear();
-    _playerSuperChatOverlayTimer?.cancel();
-    _playerSuperChatOverlayTimer = null;
-    final subscription = _danmakuSubscription;
-    _danmakuSubscription = null;
-    final session = _danmakuSession;
-    _danmakuSession = null;
-
-    if (subscription != null) {
-      unawaited(subscription.cancel());
-    }
-    if (session != null) {
-      unawaited(session.disconnect());
-    }
-  }
-
-  Duration get _playerSuperChatDisplayDuration =>
-      Duration(seconds: _playerSuperChatDisplaySeconds.clamp(3, 30));
-
-  bool _shouldReconnectDanmaku(LiveMessage message) {
-    if (message.type != LiveMessageType.notice) {
-      return false;
-    }
-    return _danmakuReconnectSignals
-        .any((signal) => message.content.contains(signal));
-  }
-
-  void _resetDanmakuReconnectState() {
-    _danmakuReconnectTimer?.cancel();
-    _danmakuReconnectTimer = null;
-    _danmakuReconnectInFlight = false;
-    _danmakuReconnectAttempt = 0;
-  }
-
-  void _scheduleDanmakuReconnect() {
-    if (_activeRoomDetail == null ||
-        _isLeavingRoom ||
-        _playbackCleanedUp ||
-        _danmakuReconnectInFlight ||
-        _danmakuReconnectTimer != null) {
-      return;
-    }
-    _danmakuReconnectAttempt += 1;
-    final delay = Duration(
-      seconds: math.min(12, math.max(2, _danmakuReconnectAttempt * 2)),
-    );
-    _danmakuReconnectTimer = Timer(delay, () {
-      _danmakuReconnectTimer = null;
-      unawaited(_attemptDanmakuReconnect());
-    });
-  }
-
-  Future<void> _attemptDanmakuReconnect() async {
-    final detail = _activeRoomDetail;
-    if (detail == null ||
-        !mounted ||
-        _isLeavingRoom ||
-        _playbackCleanedUp ||
-        _danmakuReconnectInFlight) {
-      return;
-    }
-    _danmakuReconnectInFlight = true;
-    try {
-      final nextSession = await widget.bootstrap.openRoomDanmaku(
-        providerId: widget.providerId,
-        detail: detail,
-      );
-      if (!mounted || _isLeavingRoom || _playbackCleanedUp) {
-        await nextSession?.disconnect();
-        return;
-      }
-      await _bindDanmakuSession(nextSession, _blockedDanmakuKeywords);
-    } catch (_) {
-      _danmakuReconnectInFlight = false;
-      if (mounted) {
-        _scheduleDanmakuReconnect();
-      }
-      return;
-    }
-    _danmakuReconnectInFlight = false;
-  }
-
-  void _syncPlayerSuperChatOverlay([List<LiveMessage>? history]) {
-    final source = history ?? _superChatMessagesNotifier.value;
-    final visible = source.length <= 2
-        ? source
-        : source.sublist(source.length - 2, source.length);
-    if (!listEquals(_playerSuperChatMessagesNotifier.value, visible)) {
-      _playerSuperChatMessagesNotifier.value = visible;
-    }
-    _playerSuperChatOverlayTimer?.cancel();
-    _playerSuperChatOverlayTimer = null;
-    if (visible.isEmpty) {
-      return;
-    }
-    _playerSuperChatOverlayTimer = Timer(
-      _playerSuperChatDisplayDuration,
-      () {
-        if (!mounted) {
-          return;
-        }
-        _playerSuperChatMessagesNotifier.value = const [];
-      },
-    );
-  }
-
-  void _flushPendingDanmaku(DanmakuFilterService filter) {
-    if (!mounted || _pendingDanmakuMessages.isEmpty) {
-      return;
-    }
-
-    final batch = List<LiveMessage>.from(_pendingDanmakuMessages);
-    _pendingDanmakuMessages.clear();
-    final filtered = filter.apply(batch);
-    final allowListed = _danmakuBatchMask.allowListBatch(filtered);
-    if (allowListed.isEmpty) {
-      return;
-    }
-
-    final merged = mergeRoomDanmakuBatch(
-      messages: _messagesNotifier.value,
-      superChats: _superChatMessagesNotifier.value,
-      incoming: allowListed,
-    );
-    if (merged.hasSuperChatUpdate) {
-      _superChatMessagesNotifier.value = merged.superChats;
-      _syncPlayerSuperChatOverlay(merged.superChats);
-    }
-    if (merged.hasMessageUpdate) {
-      _messagesNotifier.value = merged.messages;
-      _scheduleChatScrollToBottom();
-    }
-  }
-
-  void _scheduleChatScrollToBottom({bool force = false}) {
-    if (!force && _selectedPanel != _RoomPanel.chat) {
-      return;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_chatScrollController.hasClients) {
-        return;
-      }
-      final position = _chatScrollController.position;
-      if (!force && position.maxScrollExtent - position.pixels > 120) {
-        return;
-      }
-      _chatScrollController.jumpTo(position.maxScrollExtent);
-    });
-  }
-}
-
-class _DanmakuOverlay extends StatefulWidget {
-  const _DanmakuOverlay({
+class RoomDanmakuOverlay extends StatefulWidget {
+  const RoomDanmakuOverlay({
     required this.messages,
     required this.fullscreen,
     required this.preferences,
@@ -235,11 +21,12 @@ class _DanmakuOverlay extends StatefulWidget {
   final DanmakuPreferences preferences;
 
   @override
-  State<_DanmakuOverlay> createState() => _DanmakuOverlayState();
+  State<RoomDanmakuOverlay> createState() => _RoomDanmakuOverlayState();
 }
 
-class _DanmakuOverlayState extends State<_DanmakuOverlay> {
+class _RoomDanmakuOverlayState extends State<RoomDanmakuOverlay> {
   static const int _maxSeenMessageIds = 512;
+
   final List<_DanmakuTrackEntry> _entries = [];
   final Set<String> _seenMessageIds = <String>{};
   final Queue<String> _seenMessageQueue = ListQueue<String>();
@@ -294,7 +81,7 @@ class _DanmakuOverlayState extends State<_DanmakuOverlay> {
   }
 
   @override
-  void didUpdateWidget(covariant _DanmakuOverlay oldWidget) {
+  void didUpdateWidget(covariant RoomDanmakuOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.fullscreen != widget.fullscreen ||
         oldWidget.preferences != widget.preferences ||
@@ -461,6 +248,7 @@ class _DanmakuOverlayState extends State<_DanmakuOverlay> {
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: Stack(
+        key: const Key('room-danmaku-overlay'),
         children: [
           for (final entry in _entries)
             _DanmakuTrackBubble(
@@ -475,6 +263,63 @@ class _DanmakuOverlayState extends State<_DanmakuOverlay> {
             ),
         ],
       ),
+    );
+  }
+}
+
+class RoomPlayerSuperChatOverlay extends StatelessWidget {
+  const RoomPlayerSuperChatOverlay({
+    required this.messagesListenable,
+    required this.visible,
+    super.key,
+  });
+
+  final ValueListenable<List<LiveMessage>> messagesListenable;
+  final bool visible;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!visible) {
+      return const SizedBox.shrink();
+    }
+    return ValueListenableBuilder<List<LiveMessage>>(
+      valueListenable: messagesListenable,
+      builder: (context, superChatMessages, _) {
+        if (superChatMessages.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return ConstrainedBox(
+          key: const Key('room-player-super-chat-overlay'),
+          constraints: const BoxConstraints(maxWidth: 300),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final message in superChatMessages.reversed)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.58),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    message.content,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -612,13 +457,14 @@ class _DanmakuTrackBubbleState extends State<_DanmakuTrackBubble>
   }
 }
 
-class _RoomErrorState extends StatelessWidget {
-  const _RoomErrorState({
+class RoomErrorState extends StatelessWidget {
+  const RoomErrorState({
     required this.title,
     required this.message,
     required this.detail,
     required this.onRetry,
     required this.onOpenSettings,
+    super.key,
   });
 
   final String title;

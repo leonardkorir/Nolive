@@ -3,16 +3,19 @@ import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:live_providers/live_providers.dart';
 
-import 'twitch_ad_guard_proxy.dart';
+typedef WrapTwitchPlayUrls = Future<List<LivePlayUrl>> Function({
+  required LivePlayQuality quality,
+  required List<LivePlayUrl> playUrls,
+});
 
 class ResolvePlaySourceUseCase {
   const ResolvePlaySourceUseCase(
     this.registry, {
-    this.twitchAdGuardProxy,
+    this.wrapTwitchPlayUrls,
   });
 
   final ProviderRegistry registry;
-  final TwitchAdGuardProxy? twitchAdGuardProxy;
+  final WrapTwitchPlayUrls? wrapTwitchPlayUrls;
 
   Future<ResolvedPlaySource> call({
     required ProviderId providerId,
@@ -39,7 +42,7 @@ class ResolvePlaySourceUseCase {
     }
     var effectiveUrls = urls;
     if (providerId == ProviderId.twitch) {
-      final proxied = await twitchAdGuardProxy?.wrapPlayUrls(
+      final proxied = await wrapTwitchPlayUrls?.call(
         quality: quality,
         playUrls: urls,
       );
@@ -78,7 +81,10 @@ class ResolvePlaySourceUseCase {
       quality: quality,
       effectiveQuality: effectiveQuality,
       playUrls: effectiveUrls,
-      playbackSource: playbackSourceFromLivePlayUrl(primary),
+      playbackSource: playbackSourceFromLivePlayUrl(
+        primary,
+        quality: effectiveQuality,
+      ),
     );
   }
 
@@ -248,12 +254,20 @@ class ResolvePlaySourceUseCase {
   }
 }
 
-PlaybackSource playbackSourceFromLivePlayUrl(LivePlayUrl playUrl) {
+PlaybackSource playbackSourceFromLivePlayUrl(
+  LivePlayUrl playUrl, {
+  LivePlayQuality? quality,
+}) {
   final audioUrl = playUrl.metadata?['audioUrl']?.toString().trim() ?? '';
+  final bufferProfile = resolvePlaybackBufferProfile(
+    playUrl: playUrl,
+    quality: quality,
+  );
   if (kDebugMode) {
     debugPrint(
       '[ResolvePlaySource] build playback source '
       'line=${playUrl.lineLabel ?? '-'} '
+      'bufferProfile=${bufferProfile.name} '
       'video=${_shortPlaybackDescriptor(playUrl.url)} '
       'audio=${audioUrl.isEmpty ? '-' : _shortPlaybackDescriptor(audioUrl)}',
     );
@@ -261,6 +275,7 @@ PlaybackSource playbackSourceFromLivePlayUrl(LivePlayUrl playUrl) {
   return PlaybackSource(
     url: Uri.parse(playUrl.url),
     headers: playUrl.headers,
+    bufferProfile: bufferProfile,
     externalAudio: audioUrl.isEmpty
         ? null
         : PlaybackExternalMedia(
@@ -270,6 +285,99 @@ PlaybackSource playbackSourceFromLivePlayUrl(LivePlayUrl playUrl) {
             mimeType: playUrl.metadata?['audioMimeType']?.toString(),
           ),
   );
+}
+
+const _heavyStreamQualityKeywords = <String>[
+  '蓝光30m',
+  '蓝光',
+  '原画',
+];
+
+@visibleForTesting
+PlaybackBufferProfile resolvePlaybackBufferProfile({
+  required LivePlayUrl playUrl,
+  LivePlayQuality? quality,
+}) {
+  final width = _readIntAcrossMetadata(
+    playUrl: playUrl,
+    quality: quality,
+    keys: const ['width'],
+  );
+  if (width != null && width >= 2560) {
+    return PlaybackBufferProfile.heavyStreamStable;
+  }
+
+  final height = _readIntAcrossMetadata(
+    playUrl: playUrl,
+    quality: quality,
+    keys: const ['height'],
+  );
+  if (height != null && height >= 1440) {
+    return PlaybackBufferProfile.heavyStreamStable;
+  }
+
+  final bandwidth = _readIntAcrossMetadata(
+    playUrl: playUrl,
+    quality: quality,
+    keys: const ['bandwidth'],
+  );
+  if (bandwidth != null && bandwidth >= 12000000) {
+    return PlaybackBufferProfile.heavyStreamStable;
+  }
+
+  final bitrate = _readIntAcrossMetadata(
+    playUrl: playUrl,
+    quality: quality,
+    keys: const ['bitrate', 'bitRate', 'averageBitrate'],
+  );
+  if (bitrate != null && bitrate >= 12000000) {
+    return PlaybackBufferProfile.heavyStreamStable;
+  }
+
+  final labels = <String>[
+    quality?.label ?? '',
+    playUrl.lineLabel ?? '',
+  ];
+  for (final label in labels) {
+    if (_matchesHeavyStreamLabel(label)) {
+      return PlaybackBufferProfile.heavyStreamStable;
+    }
+  }
+
+  return PlaybackBufferProfile.defaultLowLatency;
+}
+
+int? _readIntAcrossMetadata({
+  required LivePlayUrl playUrl,
+  required LivePlayQuality? quality,
+  required List<String> keys,
+}) {
+  final sources = <Map<String, Object?>>[
+    if (playUrl.metadata != null) playUrl.metadata!,
+    if (quality?.metadata != null) quality!.metadata!,
+  ];
+  for (final metadata in sources) {
+    for (final key in keys) {
+      final value = int.tryParse(metadata[key]?.toString() ?? '');
+      if (value != null) {
+        return value;
+      }
+    }
+  }
+  return null;
+}
+
+bool _matchesHeavyStreamLabel(String label) {
+  final normalized = label.trim().toLowerCase().replaceAll(' ', '');
+  if (normalized.isEmpty) {
+    return false;
+  }
+  for (final keyword in _heavyStreamQualityKeywords) {
+    if (normalized.contains(keyword)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 Map<String, String> _readHeadersMap(Object? raw) {

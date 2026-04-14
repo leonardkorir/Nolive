@@ -8,6 +8,7 @@ import 'package:live_core/live_core.dart';
 import 'package:web_socket_channel/io.dart';
 
 import '../providers/douyin/douyin_request_params.dart';
+import 'danmaku_web_socket.dart';
 import 'proto/douyin.pb.dart';
 
 typedef DouyinWebsocketSignatureBuilder = Future<String> Function(
@@ -47,7 +48,6 @@ class DouyinDanmakuSession implements DanmakuSession {
     if (_connected) {
       return;
     }
-    _connected = true;
     final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
     final baseUri = Uri.parse(_serverUrl).replace(queryParameters: {
       'app_name': 'douyin_web',
@@ -90,63 +90,60 @@ class DouyinDanmakuSession implements DanmakuSession {
       'origin': 'https://live.douyin.com',
       if (cookie.isNotEmpty) 'cookie': cookie,
     };
-    _channel = IOWebSocketChannel.connect(
-      uri,
+    final channel = await _connectSocketWithFallback(
+      primaryUri: uri,
+      backupUri: backupUri,
       headers: headers,
-      protocols: const [],
     );
-    _subscription = _channel!.stream.listen(
-      _handleRawMessage,
-      onError: (error) async {
-        if (uri != backupUri && _channel != null) {
-          await _channel?.sink.close();
-          _channel = IOWebSocketChannel.connect(
-            backupUri,
-            headers: headers,
-            protocols: const [],
-          );
-          _subscription = _channel!.stream.listen(
-            _handleRawMessage,
-            onError: (_) {},
-            onDone: () {},
-            cancelOnError: false,
-          );
-          _sendJoinHeartbeat();
-          return;
-        }
-        _emit(
-          LiveMessage(
-            type: LiveMessageType.notice,
-            content: '抖音弹幕连接异常：$error',
-            timestamp: DateTime.now(),
-          ),
-        );
-      },
-      onDone: () {
-        if (_connected) {
+    try {
+      _channel = channel;
+      _connected = true;
+      _subscription = _channel!.stream.listen(
+        _handleRawMessage,
+        onError: (error) {
           _emit(
             LiveMessage(
               type: LiveMessageType.notice,
-              content: '抖音弹幕连接已断开',
+              content: '抖音弹幕连接异常：$error',
               timestamp: DateTime.now(),
             ),
           );
-        }
-      },
-      cancelOnError: false,
-    );
-    _sendJoinHeartbeat();
-    _heartbeatTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) => _sendJoinHeartbeat(),
-    );
-    _emit(
-      LiveMessage(
-        type: LiveMessageType.notice,
-        content: '抖音实时弹幕已连接',
-        timestamp: DateTime.now(),
-      ),
-    );
+        },
+        onDone: () {
+          if (_connected) {
+            _emit(
+              LiveMessage(
+                type: LiveMessageType.notice,
+                content: '抖音弹幕连接已断开',
+                timestamp: DateTime.now(),
+              ),
+            );
+          }
+        },
+        cancelOnError: false,
+      );
+      _sendJoinHeartbeat();
+      _heartbeatTimer = Timer.periodic(
+        const Duration(seconds: 10),
+        (_) => _sendJoinHeartbeat(),
+      );
+      _emit(
+        LiveMessage(
+          type: LiveMessageType.notice,
+          content: '抖音实时弹幕已连接',
+          timestamp: DateTime.now(),
+        ),
+      );
+    } catch (_) {
+      _connected = false;
+      await _subscription?.cancel();
+      _subscription = null;
+      await channel.sink.close();
+      if (identical(_channel, channel)) {
+        _channel = null;
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -166,6 +163,29 @@ class DouyinDanmakuSession implements DanmakuSession {
   void _sendJoinHeartbeat() {
     final frame = PushFrame()..payloadType = 'hb';
     _channel?.sink.add(frame.writeToBuffer());
+  }
+
+  Future<IOWebSocketChannel> _connectSocketWithFallback({
+    required Uri primaryUri,
+    required Uri backupUri,
+    required Map<String, dynamic> headers,
+  }) async {
+    try {
+      return await connectDanmakuWebSocket(
+        primaryUri,
+        headers: headers,
+        protocols: const [],
+      );
+    } catch (_) {
+      if (primaryUri == backupUri) {
+        rethrow;
+      }
+      return connectDanmakuWebSocket(
+        backupUri,
+        headers: headers,
+        protocols: const [],
+      );
+    }
   }
 
   void _handleRawMessage(dynamic raw) {

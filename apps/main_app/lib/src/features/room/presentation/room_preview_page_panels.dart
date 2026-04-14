@@ -1,395 +1,79 @@
-part of 'room_preview_page.dart';
+import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/gestures/responsive_page_swipe_physics.dart';
 
-extension _RoomPreviewPagePanelsExtension on _RoomPreviewPageState {
-  Widget _buildControlsPanel({
-    required BuildContext context,
-    required _RoomPageState state,
-    required LivePlayQuality selectedQuality,
-    required List<PlayerBackend> availableBackends,
-    required List<LivePlayUrl> playUrls,
-    required PlaybackSource? playbackSource,
-    required bool hasPlayback,
-  }) {
+import 'room_panel_controller.dart';
+import 'room_preview_page_section_widgets.dart';
+
+class RoomPanelPager extends StatelessWidget {
+  const RoomPanelPager({
+    required this.selectedPanel,
+    required this.pageController,
+    required this.onSelectPanel,
+    required this.onPageChanged,
+    required this.children,
+    super.key,
+  }) : assert(children.length == RoomPanel.values.length);
+
+  final RoomPanel selectedPanel;
+  final PageController pageController;
+  final ValueChanged<RoomPanel> onSelectPanel;
+  final ValueChanged<int> onPageChanged;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaceColor = Theme.of(context).colorScheme.surface;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AppSurfaceCard(
-          child: _buildFlatTileScope(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('播放器',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600, fontSize: 15)),
-                if (!hasPlayback) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    state.snapshot.playbackUnavailableReason ??
-                        '当前房间暂时没有可用播放流。',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('播放器设置'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: _openPlayerSettings,
+        Material(
+          color: surfaceColor,
+          child: Row(
+            children: [
+              Expanded(
+                child: RoomPanelTab(
+                  key: const Key('room-panel-tab-chat'),
+                  label: '聊天',
+                  selected: selectedPanel == RoomPanel.chat,
+                  onTap: () => onSelectPanel(RoomPanel.chat),
                 ),
-                const Divider(height: 1),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('切换清晰度'),
-                  trailing: Text(
-                      hasPlayback ? _effectiveQualityOf(state).label : '不可用'),
-                  onTap: hasPlayback ? () => _showQualitySheet(state) : null,
+              ),
+              Expanded(
+                child: RoomPanelTab(
+                  key: const Key('room-panel-tab-super-chat'),
+                  label: 'SC',
+                  selected: selectedPanel == RoomPanel.superChat,
+                  onTap: () => onSelectPanel(RoomPanel.superChat),
                 ),
-                const Divider(height: 1),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('切换线路'),
-                  trailing: Text(
-                    hasPlayback && playbackSource != null
-                        ? _lineLabelOf(playUrls, playbackSource)
-                        : '不可用',
-                  ),
-                  onTap: hasPlayback && playbackSource != null
-                      ? () => _showLineSheet(playUrls, playbackSource)
-                      : null,
+              ),
+              Expanded(
+                child: RoomPanelTab(
+                  key: const Key('room-panel-tab-follow'),
+                  label: '关注',
+                  selected: selectedPanel == RoomPanel.follow,
+                  onTap: () => onSelectPanel(RoomPanel.follow),
                 ),
-                const Divider(height: 1),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('画面尺寸'),
-                  trailing: Text(_labelOfScaleMode(_scaleMode)),
-                  onTap: () {
-                    final modes = PlayerScaleMode.values;
-                    final index = modes.indexOf(_scaleMode);
-                    _updateScaleMode(modes[(index + 1) % modes.length]);
-                  },
+              ),
+              Expanded(
+                child: RoomPanelTab(
+                  key: const Key('room-panel-tab-settings'),
+                  label: '设置',
+                  selected: selectedPanel == RoomPanel.settings,
+                  onTap: () => onSelectPanel(RoomPanel.settings),
                 ),
-                if (_pipSupported) ...[
-                  const Divider(height: 1),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('小窗播放'),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: hasPlayback ? _enterPictureInPicture : null,
-                  ),
-                ],
-                if (_supportsDesktopMiniWindow) ...[
-                  const Divider(height: 1),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      _desktopMiniWindowActive ? '退出桌面小窗' : '桌面小窗',
-                    ),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: hasPlayback ? _toggleDesktopMiniWindow : null,
-                  ),
-                ],
-                if (_supportsPlayerCapture) ...[
-                  const Divider(height: 1),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('截图'),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: _captureScreenshot,
-                  ),
-                ],
-                const Divider(height: 1),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('调试面板'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => _showPlayerDebugSheet(state, playbackSource),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 14),
-        AppSurfaceCard(
-          child: _buildFlatTileScope(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('聊天区',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600, fontSize: 15)),
-                const SizedBox(height: 12),
-                _RoomStepperRow(
-                  title: '文字大小',
-                  value: _chatTextSize.round(),
-                  onChanged: (next) {
-                    unawaited(
-                      _updateRoomUiPreferences(
-                        _roomUiPreferences.copyWith(
-                          chatTextSize: next.clamp(12, 22).toDouble(),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                _RoomStepperRow(
-                  title: '上下间隔',
-                  value: _chatTextGap.round(),
-                  onChanged: (next) {
-                    unawaited(
-                      _updateRoomUiPreferences(
-                        _roomUiPreferences.copyWith(
-                          chatTextGap: next.clamp(0, 12).toDouble(),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  value: _chatBubbleStyle,
-                  title: const Text('气泡样式'),
-                  onChanged: (value) {
-                    unawaited(
-                      _updateRoomUiPreferences(
-                        _roomUiPreferences.copyWith(chatBubbleStyle: value),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  value: _showPlayerSuperChat,
-                  title: const Text('播放器中显示SC'),
-                  onChanged: (value) {
-                    unawaited(
-                      _updateRoomUiPreferences(
-                        _roomUiPreferences.copyWith(showPlayerSuperChat: value),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                _RoomStepperRow(
-                  title: 'SC 展示时长',
-                  value: _playerSuperChatDisplaySeconds,
-                  suffix: '秒',
-                  onChanged: (next) {
-                    unawaited(
-                      _updateRoomUiPreferences(
-                        _roomUiPreferences.copyWith(
-                          playerSuperChatDisplaySeconds: next.clamp(3, 30),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        AppSurfaceCard(
-          child: _buildFlatTileScope(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('更多设置',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600, fontSize: 15)),
-                const SizedBox(height: 8),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('关键词屏蔽'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () =>
-                      Navigator.of(context).pushNamed(AppRoutes.danmakuShield),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('弹幕设置'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: _openDanmakuSettings,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    _scheduledCloseAt == null
-                        ? '定时关闭'
-                        : '定时关闭 · ${_scheduledCloseAt!.hour.toString().padLeft(2, '0')}:${_scheduledCloseAt!.minute.toString().padLeft(2, '0')}',
-                  ),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: _showAutoCloseSheet,
-                ),
-              ],
-            ),
+        Expanded(
+          child: PageView(
+            key: const Key('room-panel-page-view'),
+            controller: pageController,
+            physics: const ResponsivePageSwipePhysics(),
+            onPageChanged: onPageChanged,
+            children: children,
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildSuperChatPanel(BuildContext context) {
-    return ValueListenableBuilder<List<LiveMessage>>(
-      valueListenable: _superChatMessagesNotifier,
-      builder: (context, superChatMessages, _) {
-        final messages = superChatMessages.take(24).toList(growable: false);
-        if (messages.isEmpty) {
-          return Align(
-            alignment: Alignment.topLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                _danmakuSession == null ? '当前没有 SC 会话。' : '暂时还没有 SC 消息。',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-            ),
-          );
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (var index = 0; index < messages.length; index += 1) ...[
-              _DanmakuFeedTile(
-                icon: Icons.stars_outlined,
-                title: messages[index].content,
-                subtitle: [
-                  if (messages[index].userName?.isNotEmpty ?? false)
-                    messages[index].userName!,
-                  if (messages[index].timestamp != null)
-                    _formatTimestamp(messages[index].timestamp!),
-                ].join(' · '),
-              ),
-              if (index != messages.length - 1) const SizedBox(height: 8),
-            ],
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildChatPanel(BuildContext context, LiveRoomDetail room) {
-    return ValueListenableBuilder<List<LiveMessage>>(
-      valueListenable: _messagesNotifier,
-      builder: (context, messages, _) {
-        final theme = Theme.of(context);
-        final statusPresentation = _chaturbateRoomStatusOf(room);
-        if (_danmakuSession == null || messages.isEmpty) {
-          if (statusPresentation != null) {
-            return AppSurfaceCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    statusPresentation.label,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  SizedBox(height: _chatTextGap + 6),
-                  Text(
-                    statusPresentation.description,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      height: 1.4,
-                    ),
-                  ),
-                  SizedBox(height: _chatTextGap + 6),
-                  FilledButton.tonalIcon(
-                    onPressed: () => _refreshRoom(showFeedback: true),
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('刷新房间状态'),
-                  ),
-                ],
-              ),
-            );
-          }
-          return Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: double.infinity,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _ancillaryLoading ? '房间页已进入，正在补齐聊天数据' : '当前还没有聊天消息',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontSize: _chatTextSize,
-                        height: 1.28,
-                      ),
-                    ),
-                    SizedBox(height: _chatTextGap + 6),
-                    Text(
-                      _ancillaryLoading ? '正在连接弹幕服务器' : '可以稍后手动刷新房间状态',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontSize: _chatTextSize,
-                        height: 1.28,
-                      ),
-                    ),
-                    SizedBox(height: _chatTextGap + 6),
-                    Text(
-                      _ancillaryLoading ? '视频和关注状态会继续在后台加载' : '弹幕建立后会在这里继续滚动',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontSize: _chatTextSize,
-                        height: 1.28,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-
-        final visibleMessages = messages
-            .skip(math.max(0, messages.length - 36))
-            .toList(growable: true)
-          ..sort((left, right) {
-            final leftTime =
-                left.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final rightTime =
-                right.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return leftTime.compareTo(rightTime);
-          });
-        return Align(
-          alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: double.infinity,
-            child: ListView.separated(
-              controller: _chatScrollController,
-              padding: EdgeInsets.zero,
-              physics: const BouncingScrollPhysics(),
-              itemCount: visibleMessages.length,
-              separatorBuilder: (_, __) => SizedBox(height: _chatTextGap),
-              itemBuilder: (context, index) {
-                return _RoomChatMessageTile(
-                  message: visibleMessages[index],
-                  fontSize: _chatTextSize,
-                  gap: 0,
-                  bubbleStyle: _chatBubbleStyle,
-                );
-              },
-            ),
-          ),
-        );
-      },
     );
   }
 }

@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/sync/application/sync_feature_dependencies.dart';
 import 'package:nolive_app/src/features/sync/presentation/sync_center_page.dart';
 
 void main() {
   testWidgets('sync center page shows landing entries', (
     tester,
   ) async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     await tester.pumpWidget(
       MaterialApp(
         home: SyncCenterPage(
-          bootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
+          dependencies: SyncFeatureDependencies.fromBootstrap(bootstrap),
         ),
       ),
     );

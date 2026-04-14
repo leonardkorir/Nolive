@@ -109,6 +109,10 @@ scripts/clean_public_repo_workspace.sh
 - `apps/main_app/build/app/outputs/flutter-apk/app-x86_64-release.apk`
 - `apps/main_app/build/app/outputs/bundle/release/app-release.aab`
 
+Size baseline reference:
+
+- `docs/android-size-baseline.md`
+
 ## Version and Release Notes
 
 - version source: `apps/main_app/pubspec.yaml`
@@ -166,3 +170,58 @@ GitHub Actions workflow: `.github/workflows/android-release.yml`
 - 播放、切线、切画质、切播放器后端正常
 - 弹幕显示、关注、历史、标签和本地快照正常
 - 中文界面文本在常用 Android 设备上显示正常，无明显缺字、错位或裁切
+
+## Log Capture
+
+真机验收或线上问题复现后，建议至少保留以下证据：
+
+- app 落盘日志目录：
+  - `/sdcard/Android/data/app.nolive.mobile/files/logs/`
+- 设备侧持续采集目录：
+  - `/sdcard/Download/nolive-logs/`
+- 说明：
+  - app 落盘日志会由应用自身持续写入，不要求采集期间一直连着 ADB。
+  - `manage_main_app_android_capture.sh start` 只是在设备侧额外启动 `logcat + perf` 辅助采集。
+- 推荐先启动持续采集，再复现场景：
+
+```bash
+ANDROID_DEVICE_ID=<device-id> scripts/manage_main_app_android_capture.sh start
+ANDROID_DEVICE_ID=<device-id> scripts/manage_main_app_android_capture.sh status
+```
+- 最近系统日志：
+
+```bash
+adb logcat -d | rg 'app.nolive.mobile|mpv|flutter'
+```
+
+- 进程退出信息：
+
+```bash
+adb shell dumpsys activity exit-info app.nolive.mobile
+```
+
+- 内存占用快照：
+
+```bash
+adb shell dumpsys meminfo app.nolive.mobile
+```
+
+复现结束后可直接拉取当前采集会话：
+
+```bash
+ANDROID_DEVICE_ID=<device-id> scripts/manage_main_app_android_capture.sh pull
+```
+
+如果这次没有启动 active capture session，只需要把 app 自己的落盘日志补拉回来：
+
+```bash
+ANDROID_DEVICE_ID=<device-id> scripts/manage_main_app_android_capture.sh pull-app-logs
+```
+
+如果不再需要持续采集，再执行：
+
+```bash
+ANDROID_DEVICE_ID=<device-id> scripts/manage_main_app_android_capture.sh stop
+```
+
+如果你先运行了 `scripts/run_main_app_android_smoke.sh`，再继续手工复现场景，建议在复现结束后立刻拉一次上述日志，避免后续 `logcat` 被覆盖。

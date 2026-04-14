@@ -1,23 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/settings/application/manage_layout_preferences_use_case.dart';
+import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/provider_badge.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/settings_action_buttons.dart';
 
 class LayoutSettingsPage extends StatelessWidget {
-  const LayoutSettingsPage({required this.bootstrap, super.key});
+  const LayoutSettingsPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final LayoutSettingsDependencies dependencies;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('主页设置')),
       body: ValueListenableBuilder<LayoutPreferences>(
-        valueListenable: bootstrap.layoutPreferences,
+        valueListenable: dependencies.layoutPreferences,
         builder: (context, preferences, _) {
           return SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
@@ -33,7 +33,7 @@ class LayoutSettingsPage extends StatelessWidget {
                   action: SettingsAction(
                     label: '恢复默认',
                     icon: Icons.restart_alt_outlined,
-                    onPressed: () => bootstrap.updateLayoutPreferences(
+                    onPressed: () => dependencies.updateLayoutPreferences(
                       LayoutPreferences.defaults(),
                     ),
                   ),
@@ -46,7 +46,7 @@ class LayoutSettingsPage extends StatelessWidget {
                       .toList(growable: false),
                   itemLabel: (item) => item.label,
                   itemLeading: _buildShellTabIcon,
-                  onReorder: (items) => bootstrap.updateLayoutPreferences(
+                  onReorder: (items) => dependencies.updateLayoutPreferences(
                     preferences.copyWith(shellTabOrder: items),
                   ),
                 ),
@@ -56,7 +56,7 @@ class LayoutSettingsPage extends StatelessWidget {
                   items: preferences.providerOrder,
                   itemLabel: (providerId) => _providerLabel(providerId),
                   itemLeading: _buildProviderIcon,
-                  onReorder: (items) => bootstrap.updateLayoutPreferences(
+                  onReorder: (items) => dependencies.updateLayoutPreferences(
                     preferences.copyWith(providerOrder: items),
                   ),
                   isEnabled: preferences.isProviderEnabled,
@@ -66,7 +66,7 @@ class LayoutSettingsPage extends StatelessWidget {
                       providerId,
                       enabled,
                     );
-                    bootstrap.updateLayoutPreferences(
+                    dependencies.updateLayoutPreferences(
                       preferences.copyWith(enabledProviderIds: nextEnabled),
                     );
                   },
@@ -80,8 +80,7 @@ class LayoutSettingsPage extends StatelessWidget {
   }
 
   String _providerLabel(String providerId) {
-    final descriptor =
-        bootstrap.providerRegistry.findDescriptorById(providerId);
+    final descriptor = dependencies.findProviderDescriptorById(providerId);
     return descriptor?.displayName ?? providerId;
   }
 

@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/features/category/application/category_feature_dependencies.dart';
 import 'package:nolive_app/src/features/category/application/manage_favorite_category_tags_use_case.dart';
 import 'package:nolive_app/src/features/category/application/load_provider_categories_use_case.dart';
 import 'package:nolive_app/src/features/category/presentation/category_search_support.dart';
@@ -16,13 +16,13 @@ import 'package:nolive_app/src/shared/presentation/widgets/provider_badge.dart';
 
 class ProviderCategoriesPage extends StatefulWidget {
   const ProviderCategoriesPage({
-    required this.bootstrap,
+    required this.dependencies,
     required this.providerId,
     this.initialCategoryId,
     super.key,
   });
 
-  final AppBootstrap bootstrap;
+  final CategoryFeatureDependencies dependencies;
   final ProviderId providerId;
   final String? initialCategoryId;
 
@@ -82,7 +82,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
       _categoriesError = null;
     });
     try {
-      final payload = await widget.bootstrap.loadProviderCategories(
+      final payload = await widget.dependencies.loadProviderCategories(
         widget.providerId,
       );
       final initialCategory = _resolveInitialCategory(payload.categories);
@@ -113,7 +113,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
   }
 
   Future<void> _reloadFavoriteTags() async {
-    final tags = await widget.bootstrap.loadFavoriteCategoryTags();
+    final tags = await widget.dependencies.loadFavoriteCategoryTags();
     if (!mounted) {
       return;
     }
@@ -140,7 +140,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
       }
     });
     try {
-      final response = await widget.bootstrap.loadCategoryRooms(
+      final response = await widget.dependencies.loadCategoryRooms(
         providerId: widget.providerId,
         category: category,
         page: page,
@@ -218,7 +218,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
 
     try {
       final requestedPage = _currentPage + 1;
-      final response = await widget.bootstrap.loadCategoryRooms(
+      final response = await widget.dependencies.loadCategoryRooms(
         providerId: widget.providerId,
         category: category,
         page: requestedPage,
@@ -313,13 +313,14 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
   }
 
   List<LiveSubCategory> _childrenOf(LiveCategory category) {
+    final normalizedCategoryName = normalizeDisplayText(category.name);
     final children = category.children.isNotEmpty
         ? category.children
         : [
             LiveSubCategory(
               id: category.id,
               parentId: category.id,
-              name: category.name,
+              name: normalizedCategoryName,
             ),
           ];
     if (widget.providerId != ProviderId.bilibili) {
@@ -359,7 +360,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
             children: [
               for (final category in categories)
                 ListTile(
-                  title: Text(category.name),
+                  title: Text(normalizeDisplayText(category.name)),
                   trailing: _selectedGroup?.id == category.id
                       ? const Icon(Icons.check_rounded)
                       : null,
@@ -396,8 +397,8 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
     return FavoriteCategoryTag(
       providerId: widget.providerId,
       categoryId: category.id,
-      groupName: group.name,
-      label: category.name,
+      groupName: normalizeDisplayText(group.name),
+      label: normalizeDisplayText(category.name),
       imageUrl: category.pic,
     );
   }
@@ -420,7 +421,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
     if (tag == null) {
       return;
     }
-    final next = await widget.bootstrap.toggleFavoriteCategoryTag(tag);
+    final next = await widget.dependencies.toggleFavoriteCategoryTag(tag);
     if (!mounted) {
       return;
     }
@@ -452,7 +453,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => SearchPage(
-          bootstrap: widget.bootstrap,
+          dependencies: widget.dependencies.searchDependencies,
           standalone: true,
           initialProviderId: widget.providerId,
         ),
@@ -487,7 +488,11 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_selectedCategory?.name ?? '分区浏览'),
+        title: Text(
+          normalizeDisplayText(_selectedCategory?.name).isEmpty
+              ? '分区浏览'
+              : normalizeDisplayText(_selectedCategory?.name),
+        ),
         actions: [
           IconButton(
             key: const Key('provider-category-search-button'),
@@ -613,15 +618,19 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                                         providerId: widget.providerId,
                                         imageUrl: tag.imageUrl,
                                       ),
-                                      label: Text(tag.label),
+                                      label: Text(
+                                        normalizeDisplayText(tag.label),
+                                      ),
                                       onPressed: () {
+                                        final normalizedTagLabel =
+                                            normalizeDisplayText(tag.label);
                                         final nextGroup =
                                             _resolveGroupForCategory(
                                           payload.categories,
                                           LiveSubCategory(
                                             id: tag.categoryId,
                                             parentId: tag.categoryId,
-                                            name: tag.label,
+                                            name: normalizedTagLabel,
                                             pic: tag.imageUrl,
                                           ),
                                         );
@@ -629,7 +638,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                                           LiveSubCategory(
                                             id: tag.categoryId,
                                             parentId: tag.categoryId,
-                                            name: tag.label,
+                                            name: normalizedTagLabel,
                                             pic: tag.imageUrl,
                                           ),
                                           group: nextGroup,
@@ -667,7 +676,9 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                                               bottom: 6,
                                             ),
                                             child: Text(
-                                              group.group.name,
+                                              normalizeDisplayText(
+                                                group.group.name,
+                                              ),
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .titleSmall
@@ -692,7 +703,11 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                                                     'provider-category-search-chip-'
                                                     '${widget.providerId.value}-${subCategory.id}',
                                                   ),
-                                                  label: Text(subCategory.name),
+                                                  label: Text(
+                                                    normalizeDisplayText(
+                                                      subCategory.name,
+                                                    ),
+                                                  ),
                                                   selected:
                                                       _selectedCategory?.id ==
                                                           subCategory.id,
@@ -733,7 +748,9 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
                                           'provider-category-chip-${widget.providerId.value}-${subCategory.id}',
                                         ),
                                         label: Text(
-                                          subCategory.name,
+                                          normalizeDisplayText(
+                                            subCategory.name,
+                                          ),
                                           style: Theme.of(context)
                                               .textTheme
                                               .labelLarge
@@ -914,7 +931,7 @@ class _FavoriteCategoryAvatar extends StatelessWidget {
           child: PersistedNetworkImage(
             imageUrl: imageUrl ?? '',
             bucket: PersistedImageBucket.categoryIcon,
-            fit: BoxFit.cover,
+            fit: BoxFit.contain,
             filterQuality: FilterQuality.high,
             fallback: Icon(
               ProviderBadge.iconOf(providerId),

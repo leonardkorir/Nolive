@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/home/presentation/home_page.dart';
+import 'package:nolive_app/src/app/shell/app_shell_dependencies.dart';
 import 'package:nolive_app/src/features/browse/presentation/browse_page.dart';
 import 'package:nolive_app/src/features/library/presentation/library_page.dart';
 import 'package:nolive_app/src/features/profile/presentation/profile_page.dart';
 import 'package:nolive_app/src/features/settings/application/manage_layout_preferences_use_case.dart';
 
 class AppShellPage extends StatefulWidget {
-  const AppShellPage({required this.bootstrap, super.key});
+  const AppShellPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final AppShellDependencies dependencies;
 
   @override
   State<AppShellPage> createState() => _AppShellPageState();
@@ -23,28 +23,28 @@ class _AppShellPageState extends State<AppShellPage> {
       label: '首页',
       icon: Icons.home_outlined,
       selectedIcon: Icons.home_rounded,
-      builder: () => HomePage(bootstrap: widget.bootstrap),
+      builder: () => HomePage(dependencies: widget.dependencies.home),
     ),
     ShellTabId.browse: _AppDestination(
       id: ShellTabId.browse,
       label: '发现',
       icon: Icons.grid_view_rounded,
       selectedIcon: Icons.grid_view,
-      builder: () => BrowsePage(bootstrap: widget.bootstrap),
+      builder: () => BrowsePage(dependencies: widget.dependencies.browse),
     ),
     ShellTabId.library: _AppDestination(
       id: ShellTabId.library,
       label: '关注',
       icon: Icons.favorite_border_rounded,
       selectedIcon: Icons.favorite_rounded,
-      builder: () => LibraryPage(bootstrap: widget.bootstrap),
+      builder: () => LibraryPage(dependencies: widget.dependencies.library),
     ),
     ShellTabId.profile: _AppDestination(
       id: ShellTabId.profile,
       label: '我的',
       icon: Icons.sentiment_satisfied_outlined,
       selectedIcon: Icons.sentiment_satisfied_alt,
-      builder: () => ProfilePage(bootstrap: widget.bootstrap),
+      builder: () => const ProfilePage(),
     ),
   };
 
@@ -71,7 +71,7 @@ class _AppShellPageState extends State<AppShellPage> {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<LayoutPreferences>(
-      valueListenable: widget.bootstrap.layoutPreferences,
+      valueListenable: widget.dependencies.home.layoutPreferences,
       builder: (context, preferences, _) {
         final destinations = preferences.shellTabOrder
             .where((tabId) => tabId != ShellTabId.search)

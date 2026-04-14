@@ -41,7 +41,7 @@ void main() {
     final useCase = LoadRoomUseCase(
       registry,
       historyRepository: historyRepository,
-      loadRoomDetailOverride: ({
+      roomDetailOverride: ({
         required providerId,
         required roomId,
       }) async {

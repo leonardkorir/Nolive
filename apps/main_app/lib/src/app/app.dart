@@ -8,15 +8,15 @@ import 'package:nolive_app/src/shared/presentation/theme/nolive_theme.dart';
 import 'package:nolive_app/src/shared/presentation/theme/zh_text.dart';
 
 class NoliveApp extends StatelessWidget {
-  const NoliveApp({required this.bootstrap, super.key});
+  const NoliveApp({required this.appBootstrap, super.key});
 
-  final AppBootstrap bootstrap;
+  final AppBootstrap appBootstrap;
 
   @override
   Widget build(BuildContext context) {
-    final router = AppRouter(bootstrap);
+    final router = AppRouter(appBootstrap);
     return ValueListenableBuilder<ThemeMode>(
-      valueListenable: bootstrap.themeMode,
+      valueListenable: appBootstrap.themeMode,
       builder: (context, themeMode, _) {
         return MaterialApp(
           title: 'Nolive',

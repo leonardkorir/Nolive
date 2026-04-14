@@ -4,6 +4,7 @@ import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/settings/presentation/appearance_settings_page.dart';
 import 'package:nolive_app/src/features/settings/presentation/danmaku_settings_page.dart';
 import 'package:nolive_app/src/features/settings/presentation/disclaimer_page.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('appearance settings page hides runtime overview block', (
@@ -12,7 +13,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: AppearanceSettingsPage(
-          bootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
+          dependencies: buildAppearanceSettingsDependencies(
+            createAppBootstrap(mode: AppRuntimeMode.preview),
+          ),
         ),
       ),
     );
@@ -36,7 +39,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: DanmakuSettingsPage(
-          bootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
+          dependencies: buildDanmakuSettingsDependencies(
+            createAppBootstrap(mode: AppRuntimeMode.preview),
+          ),
         ),
       ),
     );

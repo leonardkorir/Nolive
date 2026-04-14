@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:live_storage/live_storage.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:test/test.dart';
@@ -36,8 +38,13 @@ void main() {
     );
 
     final encoded = SyncSnapshotJsonCodec.encode(snapshot);
+    final encodedJson = jsonDecode(encoded) as Map<String, dynamic>;
     final decoded = SyncSnapshotJsonCodec.decode(encoded);
 
+    expect(
+      encodedJson['format_version'],
+      SyncSnapshotJsonCodec.currentFormatVersion,
+    );
     expect(decoded.settings['theme_mode'], 'dark');
     expect(decoded.settings['player_auto_play'], isTrue);
     expect(decoded.blockedKeywords, ['剧透']);
@@ -65,5 +72,16 @@ void main() {
       () => SyncSnapshotJsonCodec.decode('{"type":"simple_live","config":{}}'),
       throwsA(isA<FormatException>()),
     );
+  });
+
+  test('sync snapshot json codec accepts legacy payload without format version',
+      () {
+    final decoded = SyncSnapshotJsonCodec.decode(
+      '{"settings":{"theme_mode":"dark"},"blocked_keywords":["剧透"],"tags":["常看"],"history":[],"follows":[]}',
+    );
+
+    expect(decoded.settings['theme_mode'], 'dark');
+    expect(decoded.blockedKeywords, ['剧透']);
+    expect(decoded.tags, ['常看']);
   });
 }

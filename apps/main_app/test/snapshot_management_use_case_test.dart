@@ -3,11 +3,14 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_storage/live_storage.dart';
+import 'package:live_sync/live_sync.dart';
 import 'package:nolive_app/src/features/settings/application/manage_follow_preferences_use_case.dart';
+import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/bootstrap/default_state.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_layout_preferences_use_case.dart';
+import 'package:nolive_app/src/features/sync/application/sync_preferences_use_case.dart';
 
 void main() {
   test('snapshot management exports imports and resets app state', () async {
@@ -155,13 +158,11 @@ void main() {
     await bootstrap.importSyncSnapshotJson(exported);
 
     final snapshot = await bootstrap.loadSyncSnapshot();
-    expect(snapshot.settings['account_bilibili_cookie'],
-        'SESSDATA=demo;bili_jct=test;');
-    expect(snapshot.settings['account_chaturbate_cookie'],
-        'cf_clearance=demo-clearance; __cf_bm=demo-bm');
-    expect(snapshot.settings['account_douyin_cookie'], 'douyin-session-demo');
-    expect(snapshot.settings['account_youtube_cookie'],
-        'VISITOR_INFO1_LIVE=demo-youtube');
+    expect(snapshot.settings.containsKey('account_bilibili_cookie'), isFalse);
+    expect(snapshot.settings.containsKey('account_chaturbate_cookie'), isFalse);
+    expect(snapshot.settings.containsKey('account_douyin_cookie'), isFalse);
+    expect(snapshot.settings.containsKey('account_youtube_cookie'), isFalse);
+    expect(snapshot.settings.containsKey('sync_webdav_password'), isFalse);
     expect(snapshot.settings['theme_mode'], 'dark');
     expect(snapshot.blockedKeywords, unorderedEquals(['人气', '关注']));
 
@@ -214,6 +215,222 @@ void main() {
   });
 
   test(
+      'snapshot export omits sensitive credentials while runtime settings stay available',
+      () async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+
+    await bootstrap.updateProviderAccountSettings(
+      const ProviderAccountSettings(
+        bilibiliCookie: 'SESSDATA=demo;bili_jct=test;',
+        bilibiliUserId: 10086,
+        chaturbateCookie: 'cf_clearance=demo-clearance; __cf_bm=demo-bm',
+        douyinCookie: 'douyin-session-demo',
+        twitchCookie: 'auth-token=demo',
+        youtubeCookie: 'VISITOR_INFO1_LIVE=demo-youtube',
+      ),
+    );
+    await bootstrap.updateSyncPreferences(
+      const SyncPreferences(
+        webDavBaseUrl: 'https://dav.jianguoyun.com/dav/',
+        webDavRemotePath: 'nolive/snapshot.json',
+        webDavUsername: 'demo-user@example.com',
+        webDavPassword: 'demo-webdav-password',
+        localDeviceName: 'nolive-device',
+        localPeerAddress: '',
+        localPeerPort: 23234,
+      ),
+    );
+
+    final snapshot = await bootstrap.loadSyncSnapshot();
+    expect(snapshot.settings.containsKey('account_bilibili_cookie'), isFalse);
+    expect(snapshot.settings.containsKey('account_chaturbate_cookie'), isFalse);
+    expect(snapshot.settings.containsKey('account_douyin_cookie'), isFalse);
+    expect(snapshot.settings.containsKey('account_twitch_cookie'), isFalse);
+    expect(snapshot.settings.containsKey('account_youtube_cookie'), isFalse);
+    expect(snapshot.settings.containsKey('sync_webdav_password'), isFalse);
+    expect(snapshot.settings['account_bilibili_user_id'], 10086);
+    expect(snapshot.settings['sync_webdav_base_url'],
+        'https://dav.jianguoyun.com/dav/');
+
+    final encoded = await bootstrap.exportSyncSnapshotJson();
+    final decoded = jsonDecode(encoded) as Map<String, dynamic>;
+    final settings =
+        Map<String, Object?>.from(decoded['settings'] as Map<String, dynamic>);
+    expect(
+        decoded['format_version'], SyncSnapshotJsonCodec.currentFormatVersion);
+    expect(settings.containsKey('account_bilibili_cookie'), isFalse);
+    expect(settings.containsKey('account_chaturbate_cookie'), isFalse);
+    expect(settings.containsKey('account_douyin_cookie'), isFalse);
+    expect(settings.containsKey('account_twitch_cookie'), isFalse);
+    expect(settings.containsKey('account_youtube_cookie'), isFalse);
+    expect(settings.containsKey('sync_webdav_password'), isFalse);
+
+    final accounts = await bootstrap.loadProviderAccountSettings();
+    expect(accounts.bilibiliCookie, 'SESSDATA=demo;bili_jct=test;');
+    expect(accounts.chaturbateCookie,
+        'cf_clearance=demo-clearance; __cf_bm=demo-bm');
+    expect(accounts.douyinCookie, 'douyin-session-demo');
+    expect(accounts.twitchCookie, 'auth-token=demo');
+    expect(accounts.youtubeCookie, 'VISITOR_INFO1_LIVE=demo-youtube');
+
+    final syncPreferences = await bootstrap.loadSyncPreferences();
+    expect(syncPreferences.webDavPassword, 'demo-webdav-password');
+  });
+
+  test('reset app data preserves secure credentials until explicitly cleared',
+      () async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+
+    await bootstrap.updateProviderAccountSettings(
+      const ProviderAccountSettings(
+        bilibiliCookie: 'SESSDATA=demo;bili_jct=test;',
+        bilibiliUserId: 10086,
+        chaturbateCookie: '',
+        douyinCookie: '',
+        twitchCookie: '',
+        youtubeCookie: '',
+      ),
+    );
+    await bootstrap.updateSyncPreferences(
+      const SyncPreferences(
+        webDavBaseUrl: 'https://dav.jianguoyun.com/dav/',
+        webDavRemotePath: 'nolive/snapshot.json',
+        webDavUsername: 'demo-user@example.com',
+        webDavPassword: 'demo-webdav-password',
+        localDeviceName: 'nolive-device',
+        localPeerAddress: '',
+        localPeerPort: 23234,
+      ),
+    );
+
+    await bootstrap.resetAppData();
+
+    final accountsAfterReset = await bootstrap.loadProviderAccountSettings();
+    final syncAfterReset = await bootstrap.loadSyncPreferences();
+    expect(accountsAfterReset.bilibiliCookie, 'SESSDATA=demo;bili_jct=test;');
+    expect(syncAfterReset.webDavPassword, 'demo-webdav-password');
+    expect(syncAfterReset.webDavBaseUrl, '');
+
+    await bootstrap.clearSensitiveCredentials();
+
+    final accountsAfterClear = await bootstrap.loadProviderAccountSettings();
+    final syncAfterClear = await bootstrap.loadSyncPreferences();
+    expect(accountsAfterClear.bilibiliCookie, isEmpty);
+    expect(syncAfterClear.webDavPassword, isEmpty);
+  });
+
+  test('controlled migration bundle round-trips sensitive credentials',
+      () async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+
+    await bootstrap.updateProviderAccountSettings(
+      const ProviderAccountSettings(
+        bilibiliCookie: 'SESSDATA=demo;bili_jct=test;',
+        bilibiliUserId: 10086,
+        chaturbateCookie: 'cf_clearance=demo-clearance',
+        douyinCookie: 'douyin-session-demo',
+        twitchCookie: 'auth-token=demo',
+        youtubeCookie: 'VISITOR_INFO1_LIVE=demo-youtube',
+      ),
+    );
+    await bootstrap.updateSyncPreferences(
+      const SyncPreferences(
+        webDavBaseUrl: 'https://dav.jianguoyun.com/dav/',
+        webDavRemotePath: 'nolive/snapshot.json',
+        webDavUsername: 'demo-user@example.com',
+        webDavPassword: 'demo-webdav-password',
+        localDeviceName: 'nolive-device',
+        localPeerAddress: '',
+        localPeerPort: 23234,
+      ),
+    );
+
+    final bundleJson = await bootstrap.exportCredentialMigrationBundle(
+      password: 'migration-pass',
+    );
+    final decoded = jsonDecode(bundleJson) as Map<String, dynamic>;
+    expect(decoded['type'], 'nolive_secure_migration');
+    expect(decoded['format_version'], 1);
+    expect(decoded['kdf'], 'pbkdf2-sha256');
+    expect(decoded['cipher'], 'aes-256-gcm');
+    expect(decoded['ciphertext'], isA<String>());
+
+    await bootstrap.clearSensitiveCredentials();
+
+    await bootstrap.importCredentialMigrationBundle(
+      bundleJson,
+      password: 'migration-pass',
+    );
+
+    final accounts = await bootstrap.loadProviderAccountSettings();
+    final syncPreferences = await bootstrap.loadSyncPreferences();
+    expect(accounts.bilibiliCookie, 'SESSDATA=demo;bili_jct=test;');
+    expect(accounts.chaturbateCookie, 'cf_clearance=demo-clearance');
+    expect(accounts.douyinCookie, 'douyin-session-demo');
+    expect(accounts.twitchCookie, 'auth-token=demo');
+    expect(accounts.youtubeCookie, 'VISITOR_INFO1_LIVE=demo-youtube');
+    expect(syncPreferences.webDavPassword, 'demo-webdav-password');
+  });
+
+  test('controlled migration bundle rejects wrong password', () async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+
+    await bootstrap.updateProviderAccountSettings(
+      const ProviderAccountSettings(
+        bilibiliCookie: 'SESSDATA=demo;bili_jct=test;',
+        bilibiliUserId: 10086,
+        chaturbateCookie: '',
+        douyinCookie: '',
+        twitchCookie: '',
+        youtubeCookie: '',
+      ),
+    );
+
+    final bundleJson = await bootstrap.exportCredentialMigrationBundle(
+      password: 'migration-pass',
+    );
+
+    await expectLater(
+      () => bootstrap.importCredentialMigrationBundle(
+        bundleJson,
+        password: 'wrong-pass',
+      ),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('controlled migration bundle rejects unsupported metadata', () async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+
+    await bootstrap.updateProviderAccountSettings(
+      const ProviderAccountSettings(
+        bilibiliCookie: 'SESSDATA=demo;bili_jct=test;',
+        bilibiliUserId: 10086,
+        chaturbateCookie: '',
+        douyinCookie: '',
+        twitchCookie: '',
+        youtubeCookie: '',
+      ),
+    );
+
+    final bundleJson = await bootstrap.exportCredentialMigrationBundle(
+      password: 'migration-pass',
+    );
+    final tampered = jsonEncode({
+      ...(jsonDecode(bundleJson) as Map<String, dynamic>),
+      'format_version': 99,
+    });
+
+    await expectLater(
+      () => bootstrap.importCredentialMigrationBundle(
+        tampered,
+        password: 'migration-pass',
+      ),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test(
       'legacy-compatible config import keeps follow snapshot and follow revision unchanged',
       () async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -251,6 +468,56 @@ void main() {
       '1',
     );
     expect(bootstrap.followDataRevision.value, initialRevision);
+  });
+
+  test(
+      'legacy config import clears stale secure credentials not present in payload',
+      () async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+
+    await bootstrap.updateProviderAccountSettings(
+      const ProviderAccountSettings(
+        bilibiliCookie: 'SESSDATA=stale;bili_jct=test;',
+        bilibiliUserId: 10086,
+        chaturbateCookie: '',
+        douyinCookie: '',
+        twitchCookie: '',
+        youtubeCookie: '',
+      ),
+    );
+    await bootstrap.updateSyncPreferences(
+      const SyncPreferences(
+        webDavBaseUrl: 'https://dav.jianguoyun.com/dav/',
+        webDavRemotePath: 'nolive/snapshot.json',
+        webDavUsername: 'demo-user@example.com',
+        webDavPassword: 'stale-webdav-password',
+        localDeviceName: 'nolive-device',
+        localPeerAddress: '',
+        localPeerPort: 23234,
+      ),
+    );
+
+    final payload = jsonEncode({
+      'type': 'simple_live',
+      'platform': 'android',
+      'version': 1,
+      'time': 1234567890,
+      'config': {
+        'theme_mode': 'dark',
+      },
+      'shield': {
+        '广告': '广告',
+      },
+    });
+
+    await bootstrap.importSyncSnapshotJson(payload);
+
+    final accountSettings = await bootstrap.loadProviderAccountSettings();
+    final syncPreferences = await bootstrap.loadSyncPreferences();
+    expect(accountSettings.bilibiliCookie, isEmpty);
+    expect(syncPreferences.webDavPassword, isEmpty);
+    expect(syncPreferences.webDavBaseUrl, isEmpty);
+    expect((await bootstrap.loadSyncSnapshot()).settings['theme_mode'], 'dark');
   });
 
   test('clear follows resets follow snapshot to empty and bumps revision',

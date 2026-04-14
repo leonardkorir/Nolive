@@ -4,6 +4,7 @@ import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/browse/presentation/browse_page.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
 import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('browse page shows twitch and youtube native category tabs',
@@ -12,7 +13,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: BrowsePage(bootstrap: bootstrap),
+        home: BrowsePage(
+          dependencies: buildBrowseFeatureDependencies(bootstrap),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -52,7 +55,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: BrowsePage(bootstrap: bootstrap),
+        home: BrowsePage(
+          dependencies: buildBrowseFeatureDependencies(bootstrap),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -89,7 +94,9 @@ void main() {
       tester,
       size,
       MaterialApp(
-        home: BrowsePage(bootstrap: bootstrap),
+        home: BrowsePage(
+          dependencies: buildBrowseFeatureDependencies(bootstrap),
+        ),
       ),
     );
 

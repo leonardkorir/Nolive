@@ -1,5 +1,10 @@
 import 'player_backend.dart';
 
+enum PlaybackBufferProfile {
+  defaultLowLatency,
+  heavyStreamStable,
+}
+
 enum PlaybackStatus {
   idle,
   initializing,
@@ -63,11 +68,13 @@ class PlaybackSource {
     required this.url,
     this.headers = const {},
     this.externalAudio,
+    this.bufferProfile = PlaybackBufferProfile.defaultLowLatency,
   });
 
   final Uri url;
   final Map<String, String> headers;
   final PlaybackExternalMedia? externalAudio;
+  final PlaybackBufferProfile bufferProfile;
 }
 
 class PlaybackExternalMedia {

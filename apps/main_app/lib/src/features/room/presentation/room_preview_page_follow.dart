@@ -1,376 +1,168 @@
-part of 'room_preview_page.dart';
+import 'dart:math' as math;
 
-extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
-  Future<void> _toggleFollow(LoadedRoomSnapshot snapshot) async {
-    if (_isFollowed) {
-      final confirmed = await _confirmUnfollow(snapshot);
-      if (confirmed != true || !mounted) {
-        return;
-      }
-    }
-    final followed = await widget.bootstrap.toggleFollowRoom(
-      providerId: snapshot.providerId.value,
-      roomId: snapshot.detail.roomId,
-      streamerName: snapshot.detail.streamerName,
-      streamerAvatarUrl: snapshot.detail.streamerAvatarUrl,
-      title: snapshot.detail.title,
-      areaName: snapshot.detail.areaName,
-      coverUrl: snapshot.detail.coverUrl,
-      keyframeUrl: snapshot.detail.keyframeUrl,
-    );
-    if (!mounted) {
-      return;
-    }
-    FollowWatchlist? nextWatchlist;
-    final watchlist = _runtimeFollowWatchlistSnapshot;
-    if (followed) {
-      if (watchlist != null) {
-        final record = await _findFollowRecord(
-          providerId: snapshot.providerId.value,
-          roomId: snapshot.detail.roomId,
-        );
-        if (record != null) {
-          final currentEntry = FollowWatchEntry(
-            record: record,
-            detail: snapshot.detail,
-          );
-          nextWatchlist = FollowWatchlist(
-            entries: [
-              currentEntry,
-              ...watchlist.entries.where(
-                (entry) =>
-                    entry.record.providerId != snapshot.providerId.value ||
-                    entry.record.roomId != snapshot.detail.roomId,
-              ),
-            ],
-          );
-        }
-      }
-    } else if (watchlist != null) {
-      nextWatchlist = FollowWatchlist(
-        entries: watchlist.entries
-            .where(
-              (entry) =>
-                  entry.record.providerId != snapshot.providerId.value ||
-                  entry.record.roomId != snapshot.detail.roomId,
-            )
-            .toList(growable: false),
+import 'package:flutter/material.dart';
+import 'package:live_core/live_core.dart';
+import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/features/room/application/room_follow_watchlist_controller.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/follow_watch_row.dart';
+
+class RoomFollowEntryViewData {
+  const RoomFollowEntryViewData({
+    required this.entry,
+    required this.providerDescriptor,
+    required this.isPlaying,
+  });
+
+  final FollowWatchEntry entry;
+  final ProviderDescriptor providerDescriptor;
+  final bool isPlaying;
+}
+
+class RoomFollowPanel extends StatelessWidget {
+  const RoomFollowPanel({
+    required this.followState,
+    required this.entries,
+    required this.onRefresh,
+    required this.onOpenSettings,
+    required this.onOpenEntry,
+    super.key,
+  });
+
+  final RoomFollowWatchlistState followState;
+  final List<RoomFollowEntryViewData> entries;
+  final VoidCallback onRefresh;
+  final VoidCallback onOpenSettings;
+  final ValueChanged<FollowWatchEntry> onOpenEntry;
+
+  @override
+  Widget build(BuildContext context) {
+    final isLoading = followState.isLoading;
+    final watchlist = followState.watchlist;
+
+    if (watchlist == null && isLoading) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(
+            context: context,
+            watchlist: const FollowWatchlist(entries: []),
+            isLoading: true,
+          ),
+          const SizedBox(height: 8),
+          _buildLoadingState(context),
+        ],
       );
     }
-    _updateViewState(() {
-      _isFollowed = followed;
-      _followWatchlistRequestId += 1;
-      _followWatchlistFuture = null;
-      if (nextWatchlist != null) {
-        _followWatchlistCache = nextWatchlist;
-        _followWatchlistHydrated = true;
-      } else {
-        _followWatchlistHydrated = false;
-      }
-    });
-    if (nextWatchlist != null) {
-      widget.bootstrap.followWatchlistSnapshot.value = nextWatchlist;
-    }
-    if (_selectedPanel == _RoomPanel.follow && nextWatchlist == null) {
-      unawaited(_ensureFollowWatchlistLoaded(force: true));
-    }
-  }
 
-  Future<bool?> _confirmUnfollow(LoadedRoomSnapshot snapshot) {
-    final displayName = _displayFollowTarget(snapshot);
-    return showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('取消关注'),
-        content: Text('确认取消关注“$displayName”吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('保留关注'),
+    if (followState.error != null && watchlist == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(
+            context: context,
+            watchlist: const FollowWatchlist(entries: []),
+            isLoading: false,
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('确认取消'),
+          AppSurfaceCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '关注列表加载失败',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text('${followState.error}'),
+                const SizedBox(height: 12),
+                FilledButton.tonal(
+                  onPressed: onRefresh,
+                  child: const Text('重试'),
+                ),
+              ],
+            ),
           ),
         ],
-      ),
-    );
-  }
-
-  String _displayFollowTarget(LoadedRoomSnapshot snapshot) {
-    final streamerName = snapshot.detail.streamerName.trim();
-    if (streamerName.isNotEmpty) {
-      return streamerName;
-    }
-    final title = snapshot.detail.title.trim();
-    if (title.isNotEmpty) {
-      return title;
-    }
-    return snapshot.detail.roomId;
-  }
-
-  Future<FollowRecord?> _findFollowRecord({
-    required String providerId,
-    required String roomId,
-  }) async {
-    final records = await widget.bootstrap.followRepository.listAll();
-    for (final record in records) {
-      if (record.providerId == providerId && record.roomId == roomId) {
-        return record;
-      }
-    }
-    return null;
-  }
-
-  void _openFollowRoom(FollowWatchEntry entry) {
-    if (entry.record.providerId == widget.providerId.value &&
-        entry.roomId == widget.roomId) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('当前已经在这个直播间里了')),
       );
-      return;
     }
-    final preserveFullscreen = _isFullscreen || _fullscreenBootstrapPending;
-    _preserveRoomTransitionOnDispose = preserveFullscreen;
-    _hideFullscreenFollowDrawer();
-    Navigator.of(context).pushReplacementNamed(
-      AppRoutes.room,
-      arguments: RoomRouteArguments(
-        providerId: ProviderId(entry.record.providerId),
-        roomId: entry.roomId,
-        startInFullscreen: preserveFullscreen,
-      ),
-    );
-  }
 
-  List<FollowWatchEntry> _resolveLiveFollowEntries(FollowWatchlist watchlist) {
-    return watchlist.entries
-        .where((entry) => entry.isLive)
-        .toList(growable: false)
-      ..sort((left, right) {
-        final leftCurrent = left.record.providerId == widget.providerId.value &&
-            left.roomId == widget.roomId;
-        final rightCurrent =
-            right.record.providerId == widget.providerId.value &&
-                right.roomId == widget.roomId;
-        if (leftCurrent != rightCurrent) {
-          return leftCurrent ? -1 : 1;
-        }
-        final liveCompare =
-            (right.isLive ? 1 : 0).compareTo(left.isLive ? 1 : 0);
-        if (liveCompare != 0) {
-          return liveCompare;
-        }
-        return left.displayStreamerName.compareTo(right.displayStreamerName);
-      });
-  }
-
-  ProviderDescriptor _providerDescriptorForFollowEntry(FollowWatchEntry entry) {
-    return widget.bootstrap.providerRegistry.findDescriptorById(
-          entry.record.providerId,
-        ) ??
-        ProviderDescriptor(
-          id: ProviderId(entry.record.providerId),
-          displayName: entry.record.providerId,
-          capabilities: const {},
-          supportedPlatforms: const {ProviderPlatform.android},
-          maturity: ProviderMaturity.inMigration,
-        );
-  }
-
-  void _openFullscreenFollowDrawer() {
-    if (_showFullscreenFollowDrawer) {
-      return;
-    }
-    _fullscreenChromeTimer?.cancel();
-    _updateViewState(() {
-      _showFullscreenChrome = false;
-      _showFullscreenFollowDrawer = true;
-    });
-    unawaited(_ensureFollowWatchlistLoaded());
-  }
-
-  void _hideFullscreenFollowDrawer() {
-    if (!_showFullscreenFollowDrawer) {
-      return;
-    }
-    _updateViewState(() {
-      _showFullscreenFollowDrawer = false;
-    });
-  }
-
-  (String, String) _describeRoomLoadError(Object? error) {
-    if (error case final ProviderParseException providerError
-        when providerError.providerId == ProviderId.chaturbate) {
-      final message = providerError.message;
-      if (message.contains('Cloudflare challenge') ||
-          message.contains('status 403') ||
-          message.contains('status 401')) {
-        return (
-          'Chaturbate 请求被拦截',
-          '当前房间页请求被 Chaturbate 或 Cloudflare 拦截。请回到账号管理，优先使用 Chaturbate 的“网页登录”重新完成验证并保存 Cookie；如果仍手动粘贴，也请复制能正常打开该房间的浏览器完整 Cookie。'
-        );
-      }
-      if (message.contains('initialRoomDossier') ||
-          message.contains('push_services') ||
-          message.contains('csrftoken')) {
-        return (
-          'Chaturbate 房间页解析失败',
-          '当前房间页没有返回预期的初始化数据，通常是页面结构变化或返回了异常页。建议先重试；如果持续出现，需要按最新页面结构调整解析器。'
-        );
-      }
-    }
-    return ('暂时打不开这个直播间', '请稍后重试，或者切换线路与播放器设置后再回来。');
-  }
-
-  Widget _buildFollowPanel({
-    required BuildContext context,
-  }) {
-    return FutureBuilder<FollowWatchlist>(
-      future: _followWatchlistFuture,
-      initialData: _followWatchlistCache,
-      builder: (context, snapshot) {
-        final isLoading = snapshot.connectionState == ConnectionState.waiting;
-        final watchlist = snapshot.data;
-
-        if (watchlist == null && isLoading) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildFollowPanelHeader(
-                context: context,
-                watchlist: const FollowWatchlist(entries: []),
-                isLoading: true,
-              ),
-              const SizedBox(height: 8),
-              _buildFollowLoadingState(context),
-            ],
-          );
-        }
-
-        if (snapshot.hasError && watchlist == null) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildFollowPanelHeader(
-                context: context,
-                watchlist: const FollowWatchlist(entries: []),
-                isLoading: false,
-              ),
-              AppSurfaceCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    final resolvedWatchlist = watchlist ?? const FollowWatchlist(entries: []);
+    if (entries.isEmpty) {
+      final emptyMessage = watchlist == null
+          ? '这里会显示最近一次刷新后仍在直播的关注房间。先点右上角刷新，就能对齐关注页当前的开播结果。'
+          : '当前没有正在直播的关注房间。点右上角刷新后，会重新同步关注页的开播结果。';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(
+            context: context,
+            watchlist: resolvedWatchlist,
+            isLoading: isLoading,
+          ),
+          AppSurfaceCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(emptyMessage),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Text(
-                      '关注列表加载失败',
-                      style: Theme.of(context).textTheme.titleMedium,
+                    FilledButton.tonalIcon(
+                      onPressed: isLoading ? null : onRefresh,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('刷新关注列表'),
                     ),
-                    const SizedBox(height: 8),
-                    Text('${snapshot.error}'),
-                    const SizedBox(height: 12),
-                    FilledButton.tonal(
-                      onPressed: () =>
-                          _ensureFollowWatchlistLoaded(force: true),
-                      child: const Text('重试'),
+                    TextButton.icon(
+                      onPressed: onOpenSettings,
+                      icon: const Icon(Icons.favorite_border_rounded),
+                      label: const Text('打开关注设置'),
                     ),
                   ],
                 ),
-              ),
-            ],
-          );
-        }
-
-        final resolvedWatchlist =
-            watchlist ?? const FollowWatchlist(entries: []);
-        final entries = _resolveLiveFollowEntries(resolvedWatchlist);
-
-        if (entries.isEmpty) {
-          final emptyMessage = watchlist == null
-              ? '这里会显示最近一次刷新后仍在直播的关注房间。先点右上角刷新，就能对齐关注页当前的开播结果。'
-              : '当前没有正在直播的关注房间。点右上角刷新后，会重新同步关注页的开播结果。';
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildFollowPanelHeader(
-                context: context,
-                watchlist: resolvedWatchlist,
-                isLoading: isLoading,
-              ),
-              AppSurfaceCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(emptyMessage),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        FilledButton.tonalIcon(
-                          onPressed: isLoading
-                              ? null
-                              : () => _ensureFollowWatchlistLoaded(force: true),
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('刷新关注列表'),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => Navigator.of(
-                            context,
-                            rootNavigator: true,
-                          ).pushNamed(AppRoutes.followSettings),
-                          icon: const Icon(Icons.favorite_border_rounded),
-                          label: const Text('打开关注设置'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildFollowPanelHeader(
-              context: context,
-              watchlist: resolvedWatchlist,
-              isLoading: isLoading,
+              ],
             ),
-            const SizedBox(height: 8),
-            for (var index = 0; index < entries.length; index += 1)
-              Padding(
-                padding: EdgeInsets.only(
-                  bottom: index == entries.length - 1 ? 0 : 3,
-                ),
-                child: FollowWatchRow(
-                  key: Key(
-                    'room-follow-entry-${entries[index].record.providerId}-${entries[index].roomId}',
-                  ),
-                  entry: entries[index],
-                  providerDescriptor:
-                      _providerDescriptorForFollowEntry(entries[index]),
-                  isPlaying: entries[index].record.providerId ==
-                          widget.providerId.value &&
-                      entries[index].roomId == widget.roomId,
-                  onTap: () => _openFollowRoom(entries[index]),
-                ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildHeader(
+          context: context,
+          watchlist: resolvedWatchlist,
+          isLoading: isLoading,
+        ),
+        const SizedBox(height: 8),
+        for (var index = 0; index < entries.length; index += 1)
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: index == entries.length - 1 ? 0 : 3,
+            ),
+            child: FollowWatchRow(
+              key: Key(
+                'room-follow-entry-${entries[index].entry.record.providerId}-${entries[index].entry.roomId}',
               ),
-          ],
-        );
-      },
+              entry: entries[index].entry,
+              providerDescriptor: entries[index].providerDescriptor,
+              isPlaying: entries[index].isPlaying,
+              onTap: () => onOpenEntry(entries[index].entry),
+            ),
+          ),
+      ],
     );
   }
 
-  Widget _buildFollowPanelHeader({
+  Widget _buildHeader({
     required BuildContext context,
     required FollowWatchlist watchlist,
     required bool isLoading,
   }) {
     final theme = Theme.of(context);
-    final hasSnapshot =
-        watchlist.entries.isNotEmpty || _followWatchlistHydrated;
+    final hasSnapshot = watchlist.entries.isNotEmpty || followState.hydrated;
     final summary = !hasSnapshot
         ? '显示最近一次刷新后仍在直播的关注房间。'
         : watchlist.liveCount == 0
@@ -410,9 +202,7 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
             IconButton(
               key: const Key('room-follow-refresh-button'),
               tooltip: '刷新关注列表',
-              onPressed: isLoading
-                  ? null
-                  : () => _ensureFollowWatchlistLoaded(force: true),
+              onPressed: isLoading ? null : onRefresh,
               icon: isLoading
                   ? const SizedBox(
                       width: 18,
@@ -424,10 +214,7 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
             IconButton(
               key: const Key('room-follow-settings-button'),
               tooltip: '打开关注设置',
-              onPressed: () => Navigator.of(
-                context,
-                rootNavigator: true,
-              ).pushNamed(AppRoutes.followSettings),
+              onPressed: onOpenSettings,
               icon: const Icon(Icons.tune_rounded),
             ),
           ],
@@ -436,67 +223,74 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
     );
   }
 
-  Widget _buildFollowLoadingState(BuildContext context) {
-    final theme = Theme.of(context);
-    final baseColor = theme.colorScheme.surfaceContainerHighest
-        .withValues(alpha: theme.brightness == Brightness.dark ? 0.45 : 0.7);
-    return Column(
-      children: List.generate(
-        3,
-        (index) => Padding(
-          padding: EdgeInsets.only(bottom: index == 2 ? 0 : 3),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: theme.cardColor,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-              child: Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: baseColor,
-                      shape: BoxShape.circle,
+  Widget _buildLoadingState(BuildContext context) {
+    final baseColor =
+        Theme.of(context).colorScheme.surfaceContainerHighest.withValues(
+              alpha: 0.76,
+            );
+    return AppSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: List<Widget>.generate(
+          3,
+          (index) => Padding(
+            padding: EdgeInsets.only(bottom: index == 2 ? 0 : 10),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: baseColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          height: 12,
-                          width: 136,
-                          decoration: BoxDecoration(
-                            color: baseColor,
-                            borderRadius: BorderRadius.circular(999),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            height: 12,
+                            width: 136,
+                            decoration: BoxDecoration(
+                              color: baseColor,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          height: 10,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: baseColor,
-                            borderRadius: BorderRadius.circular(999),
+                          const SizedBox(height: 8),
+                          Container(
+                            height: 10,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: baseColor,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          height: 10,
-                          width: 156,
-                          decoration: BoxDecoration(
-                            color: baseColor,
-                            borderRadius: BorderRadius.circular(999),
+                          const SizedBox(height: 6),
+                          Container(
+                            height: 10,
+                            width: 156,
+                            decoration: BoxDecoration(
+                              color: baseColor,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -504,8 +298,26 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
       ),
     );
   }
+}
 
-  Widget _buildFullscreenFollowDrawer(BuildContext context) {
+class RoomFullscreenFollowDrawer extends StatelessWidget {
+  const RoomFullscreenFollowDrawer({
+    required this.showDrawer,
+    required this.followState,
+    required this.entries,
+    required this.onClose,
+    required this.onOpenEntry,
+    super.key,
+  });
+
+  final bool showDrawer;
+  final RoomFollowWatchlistState followState;
+  final List<RoomFollowEntryViewData> entries;
+  final VoidCallback onClose;
+  final ValueChanged<FollowWatchEntry> onOpenEntry;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final drawerWidth =
         math.min(MediaQuery.sizeOf(context).width * 0.54, 388.0).toDouble();
@@ -514,9 +326,9 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
       curve: Curves.easeOutCubic,
       top: MediaQuery.paddingOf(context).top + 12,
       bottom: MediaQuery.paddingOf(context).bottom + 12,
-      right: _showFullscreenFollowDrawer ? 12 : -(drawerWidth + 24),
+      right: showDrawer ? 12 : -(drawerWidth + 24),
       child: IgnorePointer(
-        ignoring: !_showFullscreenFollowDrawer,
+        ignoring: !showDrawer,
         child: SizedBox(
           width: drawerWidth,
           child: DecoratedBox(
@@ -533,94 +345,76 @@ extension _RoomPreviewPageFollowExtension on _RoomPreviewPageState {
                 ),
               ],
             ),
-            child: FutureBuilder<FollowWatchlist>(
-              future: _followWatchlistFuture,
-              initialData: _followWatchlistCache,
-              builder: (context, snapshot) {
-                final watchlist = snapshot.data;
-                final entries = _resolveLiveFollowEntries(
-                  watchlist ?? const FollowWatchlist(entries: []),
-                );
-                final isLoading =
-                    snapshot.connectionState == ConnectionState.waiting;
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '关注中正在直播',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                color: const Color(0xFFF8FAFC),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                      Expanded(
+                        child: Text(
+                          '关注中正在直播',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: const Color(0xFFF8FAFC),
+                            fontWeight: FontWeight.w700,
                           ),
-                          IconButton(
-                            key: const Key(
-                              'room-fullscreen-follow-close-button',
-                            ),
-                            onPressed: _hideFullscreenFollowDrawer,
-                            color: Colors.white,
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        isLoading
-                            ? '正在同步关注页开播结果…'
-                            : entries.isEmpty
-                                ? '当前没有正在直播的关注房间'
-                                : '${entries.length} 个房间可直接切换',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: const Color(0xCCD5DAE1),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: entries.isEmpty
-                            ? Center(
-                                child: Text(
-                                  '长按右侧时会显示这里。\n等关注页同步到开播结果后，就能直接切房。',
-                                  textAlign: TextAlign.center,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: const Color(0xCCD5DAE1),
-                                    height: 1.45,
-                                  ),
-                                ),
-                              )
-                            : ListView.separated(
-                                itemCount: entries.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 6),
-                                itemBuilder: (context, index) {
-                                  final entry = entries[index];
-                                  return FollowWatchRow(
-                                    key: Key(
-                                      'room-fullscreen-follow-entry-${entry.record.providerId}-${entry.roomId}',
-                                    ),
-                                    entry: entry,
-                                    providerDescriptor:
-                                        _providerDescriptorForFollowEntry(
-                                            entry),
-                                    isPlaying: entry.record.providerId ==
-                                            widget.providerId.value &&
-                                        entry.roomId == widget.roomId,
-                                    highContrastOverlay: true,
-                                    showSurface: false,
-                                    showChevron: true,
-                                    onTap: () => _openFollowRoom(entry),
-                                  );
-                                },
-                              ),
+                      IconButton(
+                        key: const Key('room-fullscreen-follow-close-button'),
+                        onPressed: onClose,
+                        color: Colors.white,
+                        icon: const Icon(Icons.close_rounded),
                       ),
                     ],
                   ),
-                );
-              },
+                  Text(
+                    followState.isLoading
+                        ? '正在同步关注页开播结果…'
+                        : entries.isEmpty
+                            ? '当前没有正在直播的关注房间'
+                            : '${entries.length} 个房间可直接切换',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: const Color(0xCCD5DAE1),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: entries.isEmpty
+                        ? Center(
+                            child: Text(
+                              '长按右侧时会显示这里。\n等关注页同步到开播结果后，就能直接切房。',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: const Color(0xCCD5DAE1),
+                                height: 1.45,
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: entries.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 6),
+                            itemBuilder: (context, index) {
+                              final item = entries[index];
+                              return FollowWatchRow(
+                                key: Key(
+                                  'room-fullscreen-follow-entry-${item.entry.record.providerId}-${item.entry.roomId}',
+                                ),
+                                entry: item.entry,
+                                providerDescriptor: item.providerDescriptor,
+                                isPlaying: item.isPlaying,
+                                highContrastOverlay: true,
+                                showSurface: false,
+                                showChevron: true,
+                                onTap: () => onOpenEntry(item.entry),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

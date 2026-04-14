@@ -5,6 +5,7 @@ import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/library/presentation/watch_history_page.dart';
 import 'package:nolive_app/src/features/settings/application/manage_history_preferences_use_case.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('watch history page shows records and clear action', (
@@ -28,7 +29,11 @@ void main() {
     ]);
 
     await tester.pumpWidget(
-      MaterialApp(home: WatchHistoryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: WatchHistoryPage(
+          dependencies: buildWatchHistoryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -50,7 +55,11 @@ void main() {
     final bootstrap = await _createBootstrapWithHistory(const []);
 
     await tester.pumpWidget(
-      MaterialApp(home: WatchHistoryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: WatchHistoryPage(
+          dependencies: buildWatchHistoryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -83,7 +92,11 @@ void main() {
     ]);
 
     await tester.pumpWidget(
-      MaterialApp(home: WatchHistoryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: WatchHistoryPage(
+          dependencies: buildWatchHistoryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -117,7 +130,11 @@ void main() {
     ]);
 
     await tester.pumpWidget(
-      MaterialApp(home: WatchHistoryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: WatchHistoryPage(
+          dependencies: buildWatchHistoryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -148,7 +165,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: WatchHistoryPage(bootstrap: bootstrap),
+        home: WatchHistoryPage(
+          dependencies: buildWatchHistoryFeatureDependencies(bootstrap),
+        ),
         onGenerateRoute: (settings) {
           if (settings.name == AppRoutes.room) {
             pushedSettings = settings;

@@ -157,4 +157,36 @@ void main() {
       ['刷屏'],
     );
   });
+
+  test('repository sync snapshot can exclude sensitive settings from export',
+      () async {
+    final settingsRepository = InMemorySettingsRepository();
+    final historyRepository = InMemoryHistoryRepository();
+    final followRepository = InMemoryFollowRepository();
+    final tagRepository = InMemoryTagRepository();
+    final service = RepositorySyncSnapshotService(
+      settingsRepository: settingsRepository,
+      historyRepository: historyRepository,
+      followRepository: followRepository,
+      tagRepository: tagRepository,
+      shouldIncludeSettingInSnapshot: (key) =>
+          key != 'account_bilibili_cookie' && key != 'sync_webdav_password',
+    );
+
+    await settingsRepository.writeValue('theme_mode', 'dark');
+    await settingsRepository.writeValue(
+      'account_bilibili_cookie',
+      'SESSDATA=demo',
+    );
+    await settingsRepository.writeValue(
+      'sync_webdav_password',
+      'demo-password',
+    );
+
+    final snapshot = await service.exportSnapshot();
+
+    expect(snapshot.settings['theme_mode'], 'dark');
+    expect(snapshot.settings.containsKey('account_bilibili_cookie'), isFalse);
+    expect(snapshot.settings.containsKey('sync_webdav_password'), isFalse);
+  });
 }

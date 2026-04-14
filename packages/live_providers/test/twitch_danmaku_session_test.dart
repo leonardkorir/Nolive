@@ -5,6 +5,42 @@ import 'package:live_providers/src/danmaku/twitch_danmaku_session.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('twitch danmaku session waits for socket readiness before IRC handshake',
+      () async {
+    final inbound = StreamController<dynamic>();
+    final ready = Completer<void>();
+    final socket = _FakeTwitchSocketClient(
+      inbound.stream,
+      ready: ready.future,
+    );
+    final session = TwitchDanmakuSession(
+      roomId: 'xqc',
+      nick: 'justinfan4242',
+      socketClientFactory: (_) => socket,
+    );
+
+    final connectFuture = session.connect();
+    await Future<void>.delayed(Duration.zero);
+    expect(socket.sent, isEmpty);
+
+    ready.complete();
+    await connectFuture;
+
+    expect(
+      socket.sent,
+      containsAll([
+        'CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership',
+        'PASS SCHMOOPIIE',
+        'NICK justinfan4242',
+        'USER justinfan4242 8 * :justinfan4242',
+        'JOIN #xqc',
+      ]),
+    );
+
+    await session.disconnect();
+    await inbound.close();
+  });
+
   test('twitch danmaku session performs IRC handshake and maps chat messages',
       () async {
     final inbound = StreamController<dynamic>();
@@ -51,10 +87,17 @@ void main() {
 }
 
 class _FakeTwitchSocketClient implements TwitchSocketClient {
-  _FakeTwitchSocketClient(this._stream);
+  _FakeTwitchSocketClient(
+    this._stream, {
+    Future<void>? ready,
+  }) : _ready = ready ?? Future<void>.value();
 
   final Stream<dynamic> _stream;
+  final Future<void> _ready;
   final List<dynamic> sent = [];
+
+  @override
+  Future<void> get ready => _ready;
 
   @override
   void add(dynamic data) {

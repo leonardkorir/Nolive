@@ -6,6 +6,7 @@ import 'package:nolive_app/src/app/home/presentation/home_page.dart';
 import 'package:nolive_app/src/features/browse/presentation/browse_page.dart';
 import 'package:nolive_app/src/features/category/presentation/provider_categories_page.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('home and browse pages render at tablet breakpoints',
@@ -16,7 +17,11 @@ void main() {
       await _pumpAtSize(
         tester,
         size,
-        MaterialApp(home: HomePage(bootstrap: bootstrap)),
+        MaterialApp(
+          home: HomePage(
+            dependencies: buildHomeFeatureDependencies(bootstrap),
+          ),
+        ),
       );
       expect(
           find.byKey(const Key('home-appbar-search-button')), findsOneWidget);
@@ -25,7 +30,11 @@ void main() {
       await _pumpAtSize(
         tester,
         size,
-        MaterialApp(home: BrowsePage(bootstrap: bootstrap)),
+        MaterialApp(
+          home: BrowsePage(
+            dependencies: buildBrowseFeatureDependencies(bootstrap),
+          ),
+        ),
       );
       expect(
         find.byKey(const Key('browse-appbar-search-button')),
@@ -45,7 +54,7 @@ void main() {
         size,
         MaterialApp(
           home: SearchPage(
-            bootstrap: bootstrap,
+            dependencies: buildSearchFeatureDependencies(bootstrap),
             initialProviderId: ProviderId.douyu,
           ),
         ),
@@ -58,7 +67,7 @@ void main() {
         size,
         MaterialApp(
           home: ProviderCategoriesPage(
-            bootstrap: bootstrap,
+            dependencies: buildCategoryFeatureDependencies(bootstrap),
             providerId: ProviderId.douyu,
           ),
         ),

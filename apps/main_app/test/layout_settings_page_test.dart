@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/settings/presentation/layout_settings_page.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('layout settings page shows shell and provider ordering tools', (
@@ -12,7 +13,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: LayoutSettingsPage(
-          bootstrap: bootstrap,
+          dependencies: buildLayoutSettingsDependencies(bootstrap),
         ),
       ),
     );

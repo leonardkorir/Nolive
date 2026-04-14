@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/features/library/application/library_feature_dependencies.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_follow_preferences_use_case.dart';
 import 'package:nolive_app/src/shared/presentation/theme/zh_text.dart';
@@ -13,9 +13,9 @@ import 'package:nolive_app/src/shared/presentation/widgets/follow_watch_row.dart
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
 
 class LibraryPage extends StatefulWidget {
-  const LibraryPage({required this.bootstrap, super.key});
+  const LibraryPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final LibraryFeatureDependencies dependencies;
 
   @override
   State<LibraryPage> createState() => _LibraryPageState();
@@ -46,25 +46,26 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void initState() {
     super.initState();
-    widget.bootstrap.followDataRevision.addListener(_handleFollowDataRevision);
+    widget.dependencies.followDataRevision
+        .addListener(_handleFollowDataRevision);
     unawaited(_bootstrapPage());
   }
 
   @override
   void didUpdateWidget(covariant LibraryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.bootstrap.followDataRevision !=
-        widget.bootstrap.followDataRevision) {
-      oldWidget.bootstrap.followDataRevision
+    if (oldWidget.dependencies.followDataRevision !=
+        widget.dependencies.followDataRevision) {
+      oldWidget.dependencies.followDataRevision
           .removeListener(_handleFollowDataRevision);
-      widget.bootstrap.followDataRevision
+      widget.dependencies.followDataRevision
           .addListener(_handleFollowDataRevision);
     }
   }
 
   @override
   void dispose() {
-    widget.bootstrap.followDataRevision
+    widget.dependencies.followDataRevision
         .removeListener(_handleFollowDataRevision);
     _autoRefreshTimer?.cancel();
     super.dispose();
@@ -75,7 +76,7 @@ class _LibraryPageState extends State<LibraryPage> {
     if (!mounted || localData == null) {
       return;
     }
-    final snapshot = widget.bootstrap.followWatchlistSnapshot.value;
+    final snapshot = widget.dependencies.followWatchlistSnapshot.value;
     if (snapshot == null && localData.watchlist.entries.isNotEmpty) {
       unawaited(_refresh(showErrorSnackBar: false));
     }
@@ -91,7 +92,7 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     if (localData.watchlist.entries.isEmpty) {
-      widget.bootstrap.followWatchlistSnapshot.value =
+      widget.dependencies.followWatchlistSnapshot.value =
           const FollowWatchlist(entries: <FollowWatchEntry>[]);
       return;
     }
@@ -131,12 +132,12 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<_LibraryPageData> _loadLocalData() async {
-    final follows = await widget.bootstrap.followRepository.listAll();
-    final tags = await widget.bootstrap.listTags();
-    final preferences = await widget.bootstrap.loadFollowPreferences();
+    final follows = await widget.dependencies.listFollowRecords();
+    final tags = await widget.dependencies.listTags();
+    final preferences = await widget.dependencies.loadFollowPreferences();
     final snapshotEntries = {
       for (final entry
-          in widget.bootstrap.followWatchlistSnapshot.value?.entries ??
+          in widget.dependencies.followWatchlistSnapshot.value?.entries ??
               const <FollowWatchEntry>[])
         '${entry.record.providerId}:${entry.record.roomId}': entry,
     };
@@ -169,14 +170,14 @@ class _LibraryPageState extends State<LibraryPage> {
       return _loadLocalData();
     }
     if (localData.watchlist.entries.isEmpty) {
-      widget.bootstrap.followWatchlistSnapshot.value =
+      widget.dependencies.followWatchlistSnapshot.value =
           const FollowWatchlist(entries: []);
       return localData;
     }
     final progressiveEntries = List<FollowWatchEntry>.from(
       localData.watchlist.entries,
     );
-    final watchlist = await widget.bootstrap.loadFollowWatchlist(
+    final watchlist = await widget.dependencies.loadFollowWatchlist(
       onEntryResolved: (index, entry) {
         if (!mounted ||
             generation != _refreshGeneration ||
@@ -191,13 +192,13 @@ class _LibraryPageState extends State<LibraryPage> {
             growable: false,
           ),
         );
-        widget.bootstrap.followWatchlistSnapshot.value = partialWatchlist;
+        widget.dependencies.followWatchlistSnapshot.value = partialWatchlist;
         setState(() {
           _replaceWatchlist(partialWatchlist);
         });
       },
     );
-    widget.bootstrap.followWatchlistSnapshot.value = watchlist;
+    widget.dependencies.followWatchlistSnapshot.value = watchlist;
     return localData.copyWith(watchlist: watchlist);
   }
 
@@ -245,9 +246,7 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _updateFollowPreferences(FollowPreferences preferences) async {
-    await UpdateFollowPreferencesUseCase(
-      widget.bootstrap.settingsRepository,
-    ).call(preferences);
+    await widget.dependencies.updateFollowPreferences(preferences);
     if (!mounted) {
       return;
     }
@@ -319,13 +318,13 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _removeFollow(FollowRecord record) async {
-    await widget.bootstrap.removeFollowRoom(
+    await widget.dependencies.removeFollowRoom(
       providerId: record.providerId,
       roomId: record.roomId,
     );
-    final snapshot = widget.bootstrap.followWatchlistSnapshot.value;
+    final snapshot = widget.dependencies.followWatchlistSnapshot.value;
     if (snapshot != null) {
-      widget.bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
+      widget.dependencies.followWatchlistSnapshot.value = FollowWatchlist(
         entries: snapshot.entries
             .where(
               (entry) =>
@@ -399,7 +398,7 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
     if (created == true && controller.text.trim().isNotEmpty) {
-      await widget.bootstrap.createTag(controller.text.trim());
+      await widget.dependencies.createTag(controller.text.trim());
       await _reloadLocalState();
     }
   }
@@ -477,7 +476,7 @@ class _LibraryPageState extends State<LibraryPage> {
       },
     );
     if (updated == true) {
-      await widget.bootstrap.updateFollowTags(
+      await widget.dependencies.updateFollowTags(
         providerId: record.providerId,
         roomId: record.roomId,
         tags: selected.toList(growable: false),
@@ -611,7 +610,7 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   ProviderDescriptor _descriptorForProvider(String providerId) {
-    return widget.bootstrap.providerRegistry.findDescriptorById(providerId) ??
+    return widget.dependencies.findProviderDescriptorById(providerId) ??
         ProviderDescriptor(
           id: ProviderId(providerId),
           displayName: providerId,

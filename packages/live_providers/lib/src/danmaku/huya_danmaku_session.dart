@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:live_core/live_core.dart';
 import 'package:web_socket_channel/io.dart';
 
+import 'danmaku_web_socket.dart';
 import 'tars/codec/tars_input_stream.dart';
 import 'tars/codec/tars_output_stream.dart';
 import 'tars/huya_danmaku.dart';
@@ -40,44 +41,56 @@ class HuyaDanmakuSession implements DanmakuSession {
     if (_connected) {
       return;
     }
-    _connected = true;
-    _channel = IOWebSocketChannel.connect(Uri.parse(_serverUrl));
-    _subscription = _channel!.stream.listen(
-      _handleRawMessage,
-      onError: (error) {
-        _emit(
-          LiveMessage(
-            type: LiveMessageType.notice,
-            content: '虎牙弹幕连接异常：$error',
-            timestamp: DateTime.now(),
-          ),
-        );
-      },
-      onDone: () {
-        if (_connected) {
+    final channel = await connectDanmakuWebSocket(Uri.parse(_serverUrl));
+    try {
+      _channel = channel;
+      _connected = true;
+      _subscription = _channel!.stream.listen(
+        _handleRawMessage,
+        onError: (error) {
           _emit(
             LiveMessage(
               type: LiveMessageType.notice,
-              content: '虎牙弹幕连接已断开',
+              content: '虎牙弹幕连接异常：$error',
               timestamp: DateTime.now(),
             ),
           );
-        }
-      },
-      cancelOnError: false,
-    );
-    _channel?.sink.add(_buildJoinData());
-    _heartbeatTimer = Timer.periodic(
-      const Duration(seconds: 60),
-      (_) => _channel?.sink.add(_heartbeatData),
-    );
-    _emit(
-      LiveMessage(
-        type: LiveMessageType.notice,
-        content: '虎牙实时弹幕已连接',
-        timestamp: DateTime.now(),
-      ),
-    );
+        },
+        onDone: () {
+          if (_connected) {
+            _emit(
+              LiveMessage(
+                type: LiveMessageType.notice,
+                content: '虎牙弹幕连接已断开',
+                timestamp: DateTime.now(),
+              ),
+            );
+          }
+        },
+        cancelOnError: false,
+      );
+      _channel?.sink.add(_buildJoinData());
+      _heartbeatTimer = Timer.periodic(
+        const Duration(seconds: 60),
+        (_) => _channel?.sink.add(_heartbeatData),
+      );
+      _emit(
+        LiveMessage(
+          type: LiveMessageType.notice,
+          content: '虎牙实时弹幕已连接',
+          timestamp: DateTime.now(),
+        ),
+      );
+    } catch (_) {
+      _connected = false;
+      await _subscription?.cancel();
+      _subscription = null;
+      await channel.sink.close();
+      if (identical(_channel, channel)) {
+        _channel = null;
+      }
+      rethrow;
+    }
   }
 
   @override

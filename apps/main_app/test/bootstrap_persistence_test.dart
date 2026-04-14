@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 void main() {
   test('persistent bootstrap keeps settings and follow data across reopen',
@@ -13,9 +14,11 @@ void main() {
     );
 
     try {
+      final secureCredentialStore = InMemorySecureCredentialStore();
       final first = await createPersistentAppBootstrap(
         mode: AppRuntimeMode.live,
         storageDirectory: tempDir,
+        secureCredentialStore: secureCredentialStore,
       );
       await first.updateThemeMode(ThemeMode.dark);
       await first.toggleFollowRoom(
@@ -32,6 +35,7 @@ void main() {
       final reopened = await createPersistentAppBootstrap(
         mode: AppRuntimeMode.live,
         storageDirectory: tempDir,
+        secureCredentialStore: secureCredentialStore,
       );
       final snapshot = await reopened.listLibrarySnapshot();
       final tags = await reopened.listTags();
@@ -68,6 +72,7 @@ void main() {
     );
 
     try {
+      final secureCredentialStore = InMemorySecureCredentialStore();
       final legacyFile = File(
         '${tempDir.path}${Platform.pathSeparator}simplelive_storage.json',
       );
@@ -96,6 +101,7 @@ void main() {
       final migrated = await createPersistentAppBootstrap(
         mode: AppRuntimeMode.live,
         storageDirectory: tempDir,
+        secureCredentialStore: secureCredentialStore,
       );
       final snapshot = await migrated.listLibrarySnapshot();
 

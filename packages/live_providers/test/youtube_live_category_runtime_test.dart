@@ -36,6 +36,30 @@ void main() {
       contains('@WenzelTCG/live'),
     );
   });
+
+  test('youtube recommend rooms pages through query batches', () async {
+    final dataSource = _FakeYouTubeCategoryDataSource();
+
+    final firstPage = await dataSource.fetchRecommendRooms(page: 1);
+    expect(firstPage.items, isNotEmpty);
+    expect(firstPage.hasMore, isTrue);
+    expect(
+        firstPage.items.map((item) => item.roomId), contains('@NewsNow/live'));
+    expect(
+        firstPage.items.map((item) => item.roomId), contains('@MusicNow/live'));
+
+    final secondPage = await dataSource.fetchRecommendRooms(page: 2);
+    expect(secondPage.items, isNotEmpty);
+    expect(secondPage.hasMore, isTrue);
+    expect(
+      secondPage.items.map((item) => item.roomId),
+      contains('@BreakingDesk/live'),
+    );
+    expect(
+      secondPage.items.map((item) => item.roomId),
+      contains('@ESL/live'),
+    );
+  });
 }
 
 class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
@@ -59,6 +83,51 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       );
     }
     final rooms = <String, List<LiveRoom>>{
+      'live news': const [
+        LiveRoom(
+          providerId: 'youtube',
+          roomId: '@NewsNow/live',
+          title: 'Live News Desk',
+          streamerName: 'News Now',
+          viewerCount: 9300,
+        ),
+      ],
+      'breaking news live': const [
+        LiveRoom(
+          providerId: 'youtube',
+          roomId: '@BreakingDesk/live',
+          title: 'Breaking News',
+          streamerName: 'Breaking Desk',
+          viewerCount: 8700,
+        ),
+      ],
+      'world news live': const [
+        LiveRoom(
+          providerId: 'youtube',
+          roomId: '@WorldWire/live',
+          title: 'World Wire Live',
+          streamerName: 'World Wire',
+          viewerCount: 8100,
+        ),
+      ],
+      'politics live': const [
+        LiveRoom(
+          providerId: 'youtube',
+          roomId: '@PoliticsNow/live',
+          title: 'Politics Live',
+          streamerName: 'Politics Now',
+          viewerCount: 7600,
+        ),
+      ],
+      'financial news live': const [
+        LiveRoom(
+          providerId: 'youtube',
+          roomId: '@MarketWatch/live',
+          title: 'Market Watch',
+          streamerName: 'Market Watch',
+          viewerCount: 7200,
+        ),
+      ],
       'gaming live': const [
         LiveRoom(
           providerId: 'youtube',
@@ -66,6 +135,33 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
           title: 'WENZ VAULT!',
           streamerName: 'Wenzel TCG',
           viewerCount: 4821,
+        ),
+      ],
+      'music live': const [
+        LiveRoom(
+          providerId: 'youtube',
+          roomId: '@MusicNow/live',
+          title: 'Music Now',
+          streamerName: 'Music Now',
+          viewerCount: 5400,
+        ),
+      ],
+      'sports live': const [
+        LiveRoom(
+          providerId: 'youtube',
+          roomId: '@SportsNow/live',
+          title: 'Sports Live',
+          streamerName: 'Sports Now',
+          viewerCount: 6100,
+        ),
+      ],
+      'podcast live': const [
+        LiveRoom(
+          providerId: 'youtube',
+          roomId: '@TalkLive/live',
+          title: 'Talk Live',
+          streamerName: 'Talk Live',
+          viewerCount: 4300,
         ),
       ],
       'esports live': const [

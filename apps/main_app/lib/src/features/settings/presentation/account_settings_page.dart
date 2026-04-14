@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
+import 'package:nolive_app/src/features/settings/application/settings_feature_dependencies.dart';
 import 'package:nolive_app/src/features/settings/presentation/chaturbate_web_login_page.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
@@ -11,9 +11,9 @@ import 'package:nolive_app/src/shared/presentation/widgets/provider_badge.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
 class AccountSettingsPage extends StatefulWidget {
-  const AccountSettingsPage({required this.bootstrap, super.key});
+  const AccountSettingsPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final SettingsFeatureDependencies dependencies;
 
   @override
   State<AccountSettingsPage> createState() => _AccountSettingsPageState();
@@ -25,12 +25,12 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   @override
   void initState() {
     super.initState();
-    _future = widget.bootstrap.loadProviderAccountDashboard();
+    _future = widget.dependencies.loadProviderAccountDashboard();
   }
 
   Future<void> _reload() async {
     setState(() {
-      _future = widget.bootstrap.loadProviderAccountDashboard();
+      _future = widget.dependencies.loadProviderAccountDashboard();
     });
     await _future;
   }
@@ -72,7 +72,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     if (confirmed != true) {
       return;
     }
-    await widget.bootstrap.clearProviderAccount(kind);
+    await widget.dependencies.clearProviderAccount(kind);
     if (!mounted) {
       return;
     }
@@ -90,7 +90,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     if (result == null) {
       return;
     }
-    await widget.bootstrap.updateProviderAccountSettings(
+    await widget.dependencies.updateProviderAccountSettings(
       dashboard.settings.copyWith(
         bilibiliCookie: result.cookie,
         bilibiliUserId: result.userId,
@@ -111,7 +111,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     if (result == null) {
       return;
     }
-    await widget.bootstrap.updateProviderAccountSettings(
+    await widget.dependencies.updateProviderAccountSettings(
       dashboard.settings.copyWith(douyinCookie: result.cookie),
     );
     if (!mounted) {
@@ -129,7 +129,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     if (result == null) {
       return;
     }
-    await widget.bootstrap.updateProviderAccountSettings(
+    await widget.dependencies.updateProviderAccountSettings(
       dashboard.settings.copyWith(chaturbateCookie: result.cookie),
     );
     if (!mounted) {
@@ -149,7 +149,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     if (result == null || result.trim().isEmpty) {
       return;
     }
-    await widget.bootstrap.updateProviderAccountSettings(
+    await widget.dependencies.updateProviderAccountSettings(
       dashboard.settings.copyWith(chaturbateCookie: result.trim()),
     );
     if (!mounted) {
@@ -167,7 +167,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     if (result == null || result.trim().isEmpty) {
       return;
     }
-    await widget.bootstrap.updateProviderAccountSettings(
+    await widget.dependencies.updateProviderAccountSettings(
       dashboard.settings.copyWith(douyinCookie: result.trim()),
     );
     if (!mounted) {
@@ -185,7 +185,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     if (result == null) {
       return;
     }
-    await widget.bootstrap.updateProviderAccountSettings(
+    await widget.dependencies.updateProviderAccountSettings(
       dashboard.settings.copyWith(twitchCookie: result.cookie),
     );
     if (!mounted) {
@@ -203,7 +203,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     if (result == null) {
       return;
     }
-    await widget.bootstrap.updateProviderAccountSettings(
+    await widget.dependencies.updateProviderAccountSettings(
       dashboard.settings.copyWith(youtubeCookie: result.cookie),
     );
     if (!mounted) {
@@ -221,7 +221,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     if (result == null || result.trim().isEmpty) {
       return;
     }
-    await widget.bootstrap.updateProviderAccountSettings(
+    await widget.dependencies.updateProviderAccountSettings(
       dashboard.settings.copyWith(twitchCookie: result.trim()),
     );
     if (!mounted) {
@@ -396,10 +396,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     _ProviderAccountListItem(
                       providerId: dashboard.bilibili.providerId,
                       title: dashboard.bilibili.providerName,
-                      status: _statusMeta(
-                        dashboard.bilibili.health,
-                        scheme,
-                      ),
+                      status: _statusMetaForAccount(dashboard.bilibili, scheme),
                       credentialSummary: dashboard.bilibili.credentialSummary,
                       identitySummary: dashboard.bilibili.identitySummary,
                       errorMessage: dashboard.bilibili.errorMessage,
@@ -443,10 +440,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     _ProviderAccountListItem(
                       providerId: dashboard.chaturbate.providerId,
                       title: dashboard.chaturbate.providerName,
-                      status: _statusMeta(
-                        dashboard.chaturbate.health,
-                        scheme,
-                      ),
+                      status:
+                          _statusMetaForAccount(dashboard.chaturbate, scheme),
                       credentialSummary: dashboard.chaturbate.credentialSummary,
                       identitySummary: dashboard.chaturbate.identitySummary,
                       errorMessage: dashboard.chaturbate.errorMessage,
@@ -481,10 +476,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     _ProviderAccountListItem(
                       providerId: dashboard.douyin.providerId,
                       title: dashboard.douyin.providerName,
-                      status: _statusMeta(
-                        dashboard.douyin.health,
-                        scheme,
-                      ),
+                      status: _statusMetaForAccount(dashboard.douyin, scheme),
                       credentialSummary: dashboard.douyin.credentialSummary,
                       identitySummary: dashboard.douyin.identitySummary,
                       errorMessage: dashboard.douyin.errorMessage,
@@ -518,10 +510,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     _ProviderAccountListItem(
                       providerId: dashboard.twitch.providerId,
                       title: dashboard.twitch.providerName,
-                      status: _statusMeta(
-                        dashboard.twitch.health,
-                        scheme,
-                      ),
+                      status: _statusMetaForAccount(dashboard.twitch, scheme),
                       credentialSummary: dashboard.twitch.credentialSummary,
                       identitySummary: dashboard.twitch.identitySummary,
                       errorMessage: dashboard.twitch.errorMessage,
@@ -555,10 +544,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     _ProviderAccountListItem(
                       providerId: dashboard.youtube.providerId,
                       title: dashboard.youtube.providerName,
-                      status: _statusMeta(
-                        dashboard.youtube.health,
-                        scheme,
-                      ),
+                      status: _statusMetaForAccount(dashboard.youtube, scheme),
                       credentialSummary: dashboard.youtube.credentialSummary,
                       identitySummary: dashboard.youtube.identitySummary,
                       errorMessage: dashboard.youtube.errorMessage,
@@ -802,6 +788,22 @@ _StatusMeta _statusMeta(ProviderAccountHealth health, ColorScheme scheme) {
         foregroundColor: scheme.onErrorContainer,
       ),
   };
+}
+
+_StatusMeta _statusMetaForAccount(
+  ProviderAccountView account,
+  ColorScheme scheme,
+) {
+  final base = _statusMeta(account.health, scheme);
+  final labelOverride = account.statusLabelOverride;
+  if (labelOverride == null || labelOverride.isEmpty) {
+    return base;
+  }
+  return _StatusMeta(
+    label: labelOverride,
+    backgroundColor: base.backgroundColor,
+    foregroundColor: base.foregroundColor,
+  );
 }
 
 class _CookieDialogResult {

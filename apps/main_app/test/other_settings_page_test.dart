@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/bootstrap/default_state.dart';
+import 'package:nolive_app/src/features/settings/application/settings_feature_dependencies.dart';
 import 'package:nolive_app/src/features/settings/presentation/other_settings_page.dart';
 
 class _FakeBilibiliAccountClient implements BilibiliAccountClient {
@@ -50,6 +51,11 @@ void main() {
   testWidgets('other settings page imports and resets snapshot data', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final bootstrap = createAppBootstrap(
       mode: AppRuntimeMode.preview,
       bilibiliAccountClient: _FakeBilibiliAccountClient(),
@@ -69,7 +75,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: OtherSettingsPage(bootstrap: bootstrap),
+        home: OtherSettingsPage(
+          dependencies: SettingsFeatureDependencies.fromBootstrap(bootstrap),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -91,6 +99,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('已导入：设置'), findsOneWidget);
 
+    await tester.scrollUntilVisible(
+      find.text('恢复默认'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('恢复默认'));
     await tester.pumpAndSettle();
     expect(find.text('重置本地数据'), findsOneWidget);
@@ -106,6 +119,11 @@ void main() {
   testWidgets('other settings page imports legacy-compatible config json', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final bootstrap = createAppBootstrap(
       mode: AppRuntimeMode.preview,
       bilibiliAccountClient: _FakeBilibiliAccountClient(),
@@ -139,7 +157,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: OtherSettingsPage(bootstrap: bootstrap),
+        home: OtherSettingsPage(
+          dependencies: SettingsFeatureDependencies.fromBootstrap(bootstrap),
+        ),
       ),
     );
     await tester.pumpAndSettle();

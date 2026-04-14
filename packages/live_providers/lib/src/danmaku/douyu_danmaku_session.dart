@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:live_core/live_core.dart';
 import 'package:web_socket_channel/io.dart';
 
+import 'danmaku_web_socket.dart';
+
 class DouyuDanmakuSession implements DanmakuSession {
   DouyuDanmakuSession({required this.roomId});
 
@@ -26,47 +28,59 @@ class DouyuDanmakuSession implements DanmakuSession {
     if (_connected) {
       return;
     }
-    _connected = true;
-    _channel = IOWebSocketChannel.connect(
+    final channel = await connectDanmakuWebSocket(
       Uri.parse('wss://danmuproxy.douyu.com:8506'),
     );
-    _subscription = _channel!.stream.listen(
-      _handleRawMessage,
-      onError: (error) {
-        _emit(
-          LiveMessage(
-            type: LiveMessageType.notice,
-            content: '斗鱼弹幕连接异常：$error',
-            timestamp: DateTime.now(),
-          ),
-        );
-      },
-      onDone: () {
-        if (_connected) {
+    try {
+      _channel = channel;
+      _connected = true;
+      _subscription = _channel!.stream.listen(
+        _handleRawMessage,
+        onError: (error) {
           _emit(
             LiveMessage(
               type: LiveMessageType.notice,
-              content: '斗鱼弹幕连接已断开',
+              content: '斗鱼弹幕连接异常：$error',
               timestamp: DateTime.now(),
             ),
           );
-        }
-      },
-      cancelOnError: false,
-    );
-    _send('type@=loginreq/roomid@=$roomId/');
-    _send('type@=joingroup/rid@=$roomId/gid@=-9999/');
-    _heartbeatTimer = Timer.periodic(
-      const Duration(seconds: 45),
-      (_) => _send('type@=mrkl/'),
-    );
-    _emit(
-      LiveMessage(
-        type: LiveMessageType.notice,
-        content: '斗鱼实时弹幕已连接',
-        timestamp: DateTime.now(),
-      ),
-    );
+        },
+        onDone: () {
+          if (_connected) {
+            _emit(
+              LiveMessage(
+                type: LiveMessageType.notice,
+                content: '斗鱼弹幕连接已断开',
+                timestamp: DateTime.now(),
+              ),
+            );
+          }
+        },
+        cancelOnError: false,
+      );
+      _send('type@=loginreq/roomid@=$roomId/');
+      _send('type@=joingroup/rid@=$roomId/gid@=-9999/');
+      _heartbeatTimer = Timer.periodic(
+        const Duration(seconds: 45),
+        (_) => _send('type@=mrkl/'),
+      );
+      _emit(
+        LiveMessage(
+          type: LiveMessageType.notice,
+          content: '斗鱼实时弹幕已连接',
+          timestamp: DateTime.now(),
+        ),
+      );
+    } catch (_) {
+      _connected = false;
+      await _subscription?.cancel();
+      _subscription = null;
+      await channel.sink.close();
+      if (identical(_channel, channel)) {
+        _channel = null;
+      }
+      rethrow;
+    }
   }
 
   @override

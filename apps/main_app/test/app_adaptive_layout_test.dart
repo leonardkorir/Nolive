@@ -48,7 +48,7 @@ void main() {
       providerTabLogoSize: 22,
       providerTabLabelPadding: EdgeInsets.symmetric(horizontal: 18),
       sectionGap: 16,
-      categoryTileVisualExtent: 44,
+      categoryTileVisualExtent: 56,
       categoryTileTextSize: 10.8,
       categoryTileChildAspectRatio: 0.86,
       categoryTileTargetWidth: 72,

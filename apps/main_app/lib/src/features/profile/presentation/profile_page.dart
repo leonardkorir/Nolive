@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 
 class ProfilePage extends StatelessWidget {
-  const ProfilePage({required this.bootstrap, super.key});
-
-  final AppBootstrap bootstrap;
+  const ProfilePage({super.key});
 
   @override
   Widget build(BuildContext context) {

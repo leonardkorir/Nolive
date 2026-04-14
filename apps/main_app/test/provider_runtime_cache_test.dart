@@ -7,6 +7,8 @@ import 'package:live_sync/live_sync.dart';
 import 'package:nolive_app/src/features/settings/application/manage_layout_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_snapshot_data_use_case.dart';
+import 'package:nolive_app/src/features/settings/application/secure_snapshot_import_coordinator.dart';
+import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 void main() {
   test('updating provider accounts invalidates cached live providers',
@@ -23,8 +25,10 @@ void main() {
         ),
       );
     final settingsRepository = InMemorySettingsRepository();
+    final secureCredentialStore = InMemorySecureCredentialStore();
     final useCase = UpdateProviderAccountSettingsUseCase(
       settingsRepository,
+      secureCredentialStore,
       providerRegistry: registry,
     );
 
@@ -61,11 +65,16 @@ void main() {
     final historyRepository = InMemoryHistoryRepository();
     final followRepository = InMemoryFollowRepository();
     final tagRepository = InMemoryTagRepository();
+    final secureCredentialStore = InMemorySecureCredentialStore();
     final snapshotService = RepositorySyncSnapshotService(
       settingsRepository: settingsRepository,
       historyRepository: historyRepository,
       followRepository: followRepository,
       tagRepository: tagRepository,
+    );
+    final snapshotImportCoordinator = SecureSnapshotImportCoordinator(
+      snapshotService: snapshotService,
+      secureCredentialStore: secureCredentialStore,
     );
     final themeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
     final layoutPreferences = ValueNotifier(LayoutPreferences.defaults());
@@ -74,6 +83,7 @@ void main() {
       settingsRepository: settingsRepository,
       followRepository: followRepository,
       tagRepository: tagRepository,
+      snapshotImportCoordinator: snapshotImportCoordinator,
       themeModeNotifier: themeMode,
       layoutPreferencesNotifier: layoutPreferences,
       providerRegistry: registry,
@@ -87,5 +97,9 @@ void main() {
 
     expect(created, 2);
     expect(identical(first, second), isFalse);
+    expect(
+      await secureCredentialStore.read('account_douyin_cookie'),
+      'new-cookie',
+    );
   });
 }

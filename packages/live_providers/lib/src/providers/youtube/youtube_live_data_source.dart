@@ -121,6 +121,8 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
   ];
   static const String _liveSearchFilter = 'EgJAAQ==';
   static const int _categoryPageSize = 30;
+  static const int _recommendQueryBatchSize = 5;
+  static final List<String> _recommendQueryPool = _buildRecommendQueryPool();
 
   @override
   Future<List<LiveCategory>> fetchCategories() async {
@@ -216,15 +218,25 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
 
   @override
   Future<PagedResponse<LiveRoom>> fetchRecommendRooms({int page = 1}) async {
-    if (page != 1) {
+    if (page <= 0) {
       return PagedResponse(items: const [], hasMore: false, page: page);
     }
+    final startIndex = (page - 1) * _recommendQueryBatchSize;
+    if (startIndex >= _recommendQueryPool.length) {
+      return PagedResponse(items: const [], hasMore: false, page: page);
+    }
+    final queryBatch = _recommendQueryPool
+        .skip(startIndex)
+        .take(_recommendQueryBatchSize)
+        .toList(growable: false);
     final queryResults = await Future.wait(
-      _recommendQueries.map(_loadCategoryQueryRooms),
+      queryBatch.map(_loadCategoryQueryRooms),
     );
     final seen = <String>{};
     final items = <LiveRoom>[];
+    ProviderParseException? firstError;
     for (final result in queryResults) {
+      firstError ??= result.error;
       for (final room in result.rooms) {
         if (!seen.add(room.roomId)) {
           continue;
@@ -232,7 +244,19 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
         items.add(room);
       }
     }
-    return PagedResponse(items: items, hasMore: false, page: page);
+    if (items.isEmpty && firstError != null) {
+      throw ProviderParseException(
+        providerId: ProviderId.youtube,
+        message: 'YouTube 首页推荐加载失败：${firstError.message}',
+      );
+    }
+    _sortRoomsByPopularity(items);
+    return PagedResponse(
+      items: items,
+      hasMore:
+          startIndex + _recommendQueryBatchSize < _recommendQueryPool.length,
+      page: page,
+    );
   }
 
   @override
@@ -282,6 +306,32 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
         ),
       );
     }
+  }
+
+  void _sortRoomsByPopularity(List<LiveRoom> rooms) {
+    rooms.sort((left, right) {
+      final viewerCompare =
+          (right.viewerCount ?? -1).compareTo(left.viewerCount ?? -1);
+      if (viewerCompare != 0) {
+        return viewerCompare;
+      }
+      return left.roomId.compareTo(right.roomId);
+    });
+  }
+
+  static List<String> _buildRecommendQueryPool() {
+    final pool = <String>[];
+    final seen = <String>{};
+    final queryCandidates = <String>[
+      ..._recommendQueries,
+      for (final definition in _categoryDefinitions) ...definition.queries,
+    ];
+    for (final query in queryCandidates) {
+      if (seen.add(query)) {
+        pool.add(query);
+      }
+    }
+    return List<String>.unmodifiable(pool);
   }
 
   @override

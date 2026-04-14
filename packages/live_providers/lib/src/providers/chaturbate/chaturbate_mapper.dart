@@ -144,25 +144,41 @@ class ChaturbateMapper {
   static List<LivePlayQuality> mapPlayQualitiesFromVariants({
     required List<ChaturbateHlsVariant> variants,
   }) {
+    final defaultAudioUrl = variants
+        .map((item) => item.audioUrl?.trim() ?? '')
+        .firstWhere((item) => item.isNotEmpty, orElse: () => '');
     final qualities = <LivePlayQuality>[
-      const LivePlayQuality(
+      LivePlayQuality(
         id: 'auto',
         label: 'Auto',
         isDefault: true,
+        metadata: defaultAudioUrl.isEmpty
+            ? null
+            : <String, Object?>{
+                'audioUrl': defaultAudioUrl,
+                'audioMimeType': 'application/x-mpegURL',
+              },
       ),
     ];
     for (final variant in variants) {
+      final metadata = <String, Object?>{
+        'playlistUrl': variant.url,
+        'bandwidth': variant.bandwidth,
+        'width': variant.width,
+        'height': variant.height,
+      };
+      final audioUrl = variant.audioUrl?.trim() ?? '';
+      if (audioUrl.isNotEmpty) {
+        metadata['audioGroupId'] = variant.audioGroupId;
+        metadata['audioUrl'] = audioUrl;
+        metadata['audioMimeType'] = 'application/x-mpegURL';
+      }
       qualities.add(
         LivePlayQuality(
           id: variant.bandwidth.toString(),
           label: variant.label,
           sortOrder: variant.sortOrder,
-          metadata: {
-            'playlistUrl': variant.url,
-            'bandwidth': variant.bandwidth,
-            'width': variant.width,
-            'height': variant.height,
-          },
+          metadata: metadata,
         ),
       );
     }

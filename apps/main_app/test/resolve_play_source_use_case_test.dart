@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
+import 'package:live_player/live_player.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:nolive_app/src/features/room/application/resolve_play_source_use_case.dart';
-import 'package:nolive_app/src/features/room/application/twitch_ad_guard_proxy.dart';
 
 void main() {
   test('resolve play source prefers https when enabled', () async {
@@ -143,6 +143,173 @@ void main() {
     expect(
       resolved.playbackSource.externalAudio?.headers['referer'],
       'https://m.youtube.com/watch?v=test',
+    );
+  });
+
+  test('resolve play source marks 1440p stream as heavy stable', () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: const ProviderDescriptor(
+            id: ProviderId('heavy-resolution'),
+            displayName: 'Heavy Resolution',
+            capabilities: {ProviderCapability.playUrls},
+            supportedPlatforms: {ProviderPlatform.android},
+            maturity: ProviderMaturity.ready,
+          ),
+          builder: _FakeHeavyResolutionProvider.new,
+        ),
+      );
+    const detail = LiveRoomDetail(
+      providerId: 'heavy-resolution',
+      roomId: '1',
+      title: 'Test Room',
+      streamerName: 'Tester',
+      isLive: true,
+      sourceUrl: 'https://example.com/room/1',
+    );
+    const quality = LivePlayQuality(
+      id: 'hd',
+      label: '高清',
+      sortOrder: 100,
+    );
+    final useCase = ResolvePlaySourceUseCase(registry);
+
+    final resolved = await useCase(
+      providerId: const ProviderId('heavy-resolution'),
+      detail: detail,
+      quality: quality,
+    );
+
+    expect(
+      resolved.playbackSource.bufferProfile,
+      PlaybackBufferProfile.heavyStreamStable,
+    );
+  });
+
+  test('resolve play source marks high bandwidth stream as heavy stable',
+      () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: const ProviderDescriptor(
+            id: ProviderId('heavy-bandwidth'),
+            displayName: 'Heavy Bandwidth',
+            capabilities: {ProviderCapability.playUrls},
+            supportedPlatforms: {ProviderPlatform.android},
+            maturity: ProviderMaturity.ready,
+          ),
+          builder: _FakeHeavyBandwidthProvider.new,
+        ),
+      );
+    const detail = LiveRoomDetail(
+      providerId: 'heavy-bandwidth',
+      roomId: '1',
+      title: 'Test Room',
+      streamerName: 'Tester',
+      isLive: true,
+      sourceUrl: 'https://example.com/room/1',
+    );
+    const quality = LivePlayQuality(
+      id: 'origin',
+      label: '流畅',
+      sortOrder: 100,
+    );
+    final useCase = ResolvePlaySourceUseCase(registry);
+
+    final resolved = await useCase(
+      providerId: const ProviderId('heavy-bandwidth'),
+      detail: detail,
+      quality: quality,
+    );
+
+    expect(
+      resolved.playbackSource.bufferProfile,
+      PlaybackBufferProfile.heavyStreamStable,
+    );
+  });
+
+  test('resolve play source marks blue-ray quality label as heavy stable',
+      () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: const ProviderDescriptor(
+            id: ProviderId('heavy-label'),
+            displayName: 'Heavy Label',
+            capabilities: {ProviderCapability.playUrls},
+            supportedPlatforms: {ProviderPlatform.android},
+            maturity: ProviderMaturity.ready,
+          ),
+          builder: _FakeHeavyLabelProvider.new,
+        ),
+      );
+    const detail = LiveRoomDetail(
+      providerId: 'heavy-label',
+      roomId: '1',
+      title: 'Test Room',
+      streamerName: 'Tester',
+      isLive: true,
+      sourceUrl: 'https://example.com/room/1',
+    );
+    const quality = LivePlayQuality(
+      id: 'origin',
+      label: '蓝光30M',
+      sortOrder: 100,
+    );
+    final useCase = ResolvePlaySourceUseCase(registry);
+
+    final resolved = await useCase(
+      providerId: const ProviderId('heavy-label'),
+      detail: detail,
+      quality: quality,
+    );
+
+    expect(
+      resolved.playbackSource.bufferProfile,
+      PlaybackBufferProfile.heavyStreamStable,
+    );
+  });
+
+  test('resolve play source keeps default low latency profile for plain stream',
+      () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: const ProviderDescriptor(
+            id: ProviderId('plain-profile'),
+            displayName: 'Plain Profile',
+            capabilities: {ProviderCapability.playUrls},
+            supportedPlatforms: {ProviderPlatform.android},
+            maturity: ProviderMaturity.ready,
+          ),
+          builder: _FakePlainPlayUrlProvider.new,
+        ),
+      );
+    const detail = LiveRoomDetail(
+      providerId: 'plain-profile',
+      roomId: '1',
+      title: 'Test Room',
+      streamerName: 'Tester',
+      isLive: true,
+      sourceUrl: 'https://example.com/room/1',
+    );
+    const quality = LivePlayQuality(
+      id: '1080',
+      label: '1080p',
+      sortOrder: 100,
+    );
+    final useCase = ResolvePlaySourceUseCase(registry);
+
+    final resolved = await useCase(
+      providerId: const ProviderId('plain-profile'),
+      detail: detail,
+      quality: quality,
+    );
+
+    expect(
+      resolved.playbackSource.bufferProfile,
+      PlaybackBufferProfile.defaultLowLatency,
     );
   });
 
@@ -294,11 +461,27 @@ void main() {
         ],
       },
     );
-    final proxy = TwitchAdGuardProxy(enabledOverride: true);
-    addTearDown(proxy.dispose);
+    var wrapCalls = 0;
     final useCase = ResolvePlaySourceUseCase(
       registry,
-      twitchAdGuardProxy: proxy,
+      wrapTwitchPlayUrls: ({
+        required quality,
+        required playUrls,
+      }) async {
+        wrapCalls += 1;
+        return [
+          LivePlayUrl(
+            url: 'http://127.0.0.1:9999/twitch-ad-guard/session/stream.m3u8',
+            headers: const {},
+            lineLabel: playUrls.first.lineLabel,
+            metadata: {
+              ...?playUrls.first.metadata,
+              'proxied': true,
+              'upstreamUrl': playUrls.first.url,
+            },
+          ),
+        ];
+      },
     );
 
     final resolved = await useCase(
@@ -313,6 +496,7 @@ void main() {
     );
     expect(resolved.playbackSource.url.path, contains('twitch-ad-guard'));
     expect(resolved.playUrls.first.metadata?['proxied'], isTrue);
+    expect(wrapCalls, 1);
   });
 
   test('resolve play source prefers twitch popout line before site', () async {
@@ -480,6 +664,108 @@ class _FakeDouyuFallbackProvider extends LiveProvider
       LivePlayUrl(
         url: 'https://example.com/fallback-only.flv',
         metadata: {'rate': 2},
+      ),
+    ];
+  }
+}
+
+class _FakeHeavyResolutionProvider extends LiveProvider
+    implements SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => const ProviderDescriptor(
+        id: ProviderId('heavy-resolution'),
+        displayName: 'Heavy Resolution',
+        capabilities: {ProviderCapability.playUrls},
+        supportedPlatforms: {ProviderPlatform.android},
+        maturity: ProviderMaturity.ready,
+      );
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return const [
+      LivePlayUrl(
+        url: 'https://example.com/1440p.m3u8',
+        metadata: {
+          'width': 2560,
+          'height': 1440,
+        },
+      ),
+    ];
+  }
+}
+
+class _FakeHeavyBandwidthProvider extends LiveProvider
+    implements SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => const ProviderDescriptor(
+        id: ProviderId('heavy-bandwidth'),
+        displayName: 'Heavy Bandwidth',
+        capabilities: {ProviderCapability.playUrls},
+        supportedPlatforms: {ProviderPlatform.android},
+        maturity: ProviderMaturity.ready,
+      );
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return const [
+      LivePlayUrl(
+        url: 'https://example.com/heavy.m3u8',
+        metadata: {
+          'bandwidth': 15000000,
+        },
+      ),
+    ];
+  }
+}
+
+class _FakeHeavyLabelProvider extends LiveProvider implements SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => const ProviderDescriptor(
+        id: ProviderId('heavy-label'),
+        displayName: 'Heavy Label',
+        capabilities: {ProviderCapability.playUrls},
+        supportedPlatforms: {ProviderPlatform.android},
+        maturity: ProviderMaturity.ready,
+      );
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return const [
+      LivePlayUrl(
+        url: 'https://example.com/plain.m3u8',
+      ),
+    ];
+  }
+}
+
+class _FakePlainPlayUrlProvider extends LiveProvider
+    implements SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => const ProviderDescriptor(
+        id: ProviderId('plain-profile'),
+        displayName: 'Plain Profile',
+        capabilities: {ProviderCapability.playUrls},
+        supportedPlatforms: {ProviderPlatform.android},
+        maturity: ProviderMaturity.ready,
+      );
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return const [
+      LivePlayUrl(
+        url: 'https://example.com/plain.m3u8',
       ),
     ];
   }

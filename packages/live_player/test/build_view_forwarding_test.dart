@@ -59,6 +59,108 @@ void main() {
 
     await player.dispose();
   });
+
+  test('switchable player stops active delegate before backend replace',
+      () async {
+    final mpvPlayer = _CapturingPlayer(PlayerBackend.mpv);
+    final mdkPlayer = _CapturingPlayer(PlayerBackend.mdk);
+    final player = SwitchablePlayer(
+      initialBackend: PlayerBackend.mpv,
+      builders: {
+        PlayerBackend.memory: () => _CapturingPlayer(PlayerBackend.memory),
+        PlayerBackend.mpv: () => mpvPlayer,
+        PlayerBackend.mdk: () => mdkPlayer,
+      },
+    );
+    final source =
+        PlaybackSource(url: Uri.parse('https://example.com/live.flv'));
+
+    await player.initialize();
+    await player.setSource(source);
+    await player.play();
+    await player.switchBackend(PlayerBackend.mdk);
+
+    expect(
+      mpvPlayer.events,
+      containsAllInOrder(
+          ['initialize', 'setSource', 'play', 'stop', 'dispose']),
+    );
+    expect(
+      mdkPlayer.events,
+      containsAllInOrder([
+        'initialize',
+        'setVolume:1.00',
+        'setSource',
+        'play',
+      ]),
+    );
+
+    await player.dispose();
+  });
+
+  test('switchable player stops active delegate before dispose', () async {
+    final mpvPlayer = _CapturingPlayer(PlayerBackend.mpv);
+    final player = SwitchablePlayer(
+      initialBackend: PlayerBackend.mpv,
+      builders: {
+        PlayerBackend.memory: () => _CapturingPlayer(PlayerBackend.memory),
+        PlayerBackend.mpv: () => mpvPlayer,
+        PlayerBackend.mdk: () => _CapturingPlayer(PlayerBackend.mdk),
+      },
+    );
+    final source =
+        PlaybackSource(url: Uri.parse('https://example.com/live.flv'));
+
+    await player.initialize();
+    await player.setSource(source);
+    await player.play();
+    await player.dispose();
+
+    expect(
+      mpvPlayer.events,
+      containsAllInOrder(
+          ['initialize', 'setSource', 'play', 'stop', 'dispose']),
+    );
+  });
+
+  test('switchable player can replace backend without replaying old source',
+      () async {
+    final mpvPlayer = _CapturingPlayer(PlayerBackend.mpv);
+    final mdkPlayer = _CapturingPlayer(PlayerBackend.mdk);
+    final player = SwitchablePlayer(
+      initialBackend: PlayerBackend.mpv,
+      builders: {
+        PlayerBackend.memory: () => _CapturingPlayer(PlayerBackend.memory),
+        PlayerBackend.mpv: () => mpvPlayer,
+        PlayerBackend.mdk: () => mdkPlayer,
+      },
+    );
+    final source =
+        PlaybackSource(url: Uri.parse('https://example.com/live.flv'));
+
+    await player.initialize();
+    await player.setSource(source);
+    await player.play();
+    await player.switchBackendWithoutPlaybackState(PlayerBackend.mdk);
+
+    expect(
+      mpvPlayer.events,
+      containsAllInOrder(
+          ['initialize', 'setSource', 'play', 'stop', 'dispose']),
+    );
+    expect(
+      mdkPlayer.events,
+      containsAllInOrder([
+        'initialize',
+        'setVolume:1.00',
+      ]),
+    );
+    expect(mdkPlayer.events, isNot(contains('setSource')));
+    expect(mdkPlayer.events, isNot(contains('play')));
+    expect(player.currentState.source, isNull);
+
+    await player.dispose();
+  });
 }
 
 class _CapturingPlayer implements BasePlayer {
@@ -78,6 +180,7 @@ class _CapturingPlayer implements BasePlayer {
 
   PlayerState _currentState;
   final PlayerDiagnostics _currentDiagnostics;
+  final List<String> events = <String>[];
   Key? lastKey;
   double? lastAspectRatio;
   BoxFit? lastFit;
@@ -103,30 +206,37 @@ class _CapturingPlayer implements BasePlayer {
   bool get supportsScreenshot => false;
 
   @override
-  Future<void> initialize() async {}
+  Future<void> initialize() async {
+    events.add('initialize');
+  }
 
   @override
   Future<void> setSource(PlaybackSource source) async {
+    events.add('setSource');
     _currentState = _currentState.copyWith(source: source);
   }
 
   @override
   Future<void> play() async {
+    events.add('play');
     _currentState = _currentState.copyWith(status: PlaybackStatus.playing);
   }
 
   @override
   Future<void> pause() async {
+    events.add('pause');
     _currentState = _currentState.copyWith(status: PlaybackStatus.paused);
   }
 
   @override
   Future<void> stop() async {
+    events.add('stop');
     _currentState = _currentState.copyWith(status: PlaybackStatus.ready);
   }
 
   @override
   Future<void> setVolume(double value) async {
+    events.add('setVolume:${value.toStringAsFixed(2)}');
     _currentState = _currentState.copyWith(volume: value);
   }
 
@@ -151,6 +261,7 @@ class _CapturingPlayer implements BasePlayer {
 
   @override
   Future<void> dispose() async {
+    events.add('dispose');
     await _stateController.close();
     await _diagnosticsController.close();
   }

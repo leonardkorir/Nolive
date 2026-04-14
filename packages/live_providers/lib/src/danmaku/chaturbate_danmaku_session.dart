@@ -7,9 +7,12 @@ import 'package:web_socket_channel/io.dart';
 
 import '../providers/chaturbate/chaturbate_api_client.dart';
 import '../providers/chaturbate/chaturbate_mapper.dart';
+import 'danmaku_web_socket.dart';
 
 abstract interface class ChaturbateSocketClient {
   Stream<dynamic> get stream;
+
+  Future<void> get ready;
 
   void add(dynamic data);
 
@@ -93,7 +96,6 @@ class ChaturbateDanmakuSession implements DanmakuSession {
     if (_connected) {
       return;
     }
-    _connected = true;
     _attached = false;
 
     try {
@@ -115,64 +117,60 @@ class ChaturbateDanmakuSession implements DanmakuSession {
         _emitMapped(entry);
       }
 
-      final host = _resolveRealtimeHost(authResponse);
+      final hosts = _resolveRealtimeHosts(authResponse);
       final token = authResponse['token']?.toString() ?? '';
-      if (host.isEmpty || token.isEmpty) {
-        _emit(
-          LiveMessage(
-            type: LiveMessageType.notice,
-            content: 'Chaturbate 实时弹幕未返回可用连接参数',
-            timestamp: DateTime.now(),
-          ),
-        );
-        return;
+      if (hosts.isEmpty || token.isEmpty) {
+        throw StateError('Chaturbate 实时弹幕未返回可用连接参数');
       }
 
-      final uri = Uri(
-        scheme: 'wss',
-        host: host,
-        queryParameters: {
-          'access_token': token,
-          'format': 'json',
-          'heartbeats': 'true',
-          'v': '3',
-          'agent': 'ably-js/2.12.0 browser',
-          'remainPresentFor': '0',
-        },
+      final socket = await _connectRealtimeSocket(
+        hosts: hosts,
+        token: token,
       );
-      _socket = _socketClientFactory(uri);
-      _subscription = _socket!.stream.listen(
-        _handleRawMessage,
-        onError: (error) {
-          _emit(
-            LiveMessage(
-              type: LiveMessageType.notice,
-              content: 'Chaturbate 弹幕连接异常：$error',
-              timestamp: DateTime.now(),
-            ),
-          );
-        },
-        onDone: () {
-          if (_connected) {
+      try {
+        _socket = socket;
+        _connected = true;
+        _subscription = _socket!.stream.listen(
+          _handleRawMessage,
+          onError: (error) {
             _emit(
               LiveMessage(
                 type: LiveMessageType.notice,
-                content: 'Chaturbate 弹幕连接已断开',
+                content: 'Chaturbate 弹幕连接异常：$error',
                 timestamp: DateTime.now(),
               ),
             );
-          }
-        },
-        cancelOnError: false,
-      );
-    } catch (error) {
-      _emit(
-        LiveMessage(
-          type: LiveMessageType.notice,
-          content: 'Chaturbate 弹幕连接失败：$error',
-          timestamp: DateTime.now(),
-        ),
-      );
+          },
+          onDone: () {
+            if (_connected) {
+              _emit(
+                LiveMessage(
+                  type: LiveMessageType.notice,
+                  content: 'Chaturbate 弹幕连接已断开',
+                  timestamp: DateTime.now(),
+                ),
+              );
+            }
+          },
+          cancelOnError: false,
+        );
+      } catch (_) {
+        _connected = false;
+        await _subscription?.cancel();
+        _subscription = null;
+        await socket.close();
+        if (identical(_socket, socket)) {
+          _socket = null;
+        }
+        rethrow;
+      }
+    } catch (_) {
+      _connected = false;
+      await _subscription?.cancel();
+      _subscription = null;
+      await _socket?.close();
+      _socket = null;
+      rethrow;
     }
   }
 
@@ -187,6 +185,37 @@ class ChaturbateDanmakuSession implements DanmakuSession {
     if (!_controller.isClosed) {
       await _controller.close();
     }
+  }
+
+  Future<ChaturbateSocketClient> _connectRealtimeSocket({
+    required List<String> hosts,
+    required String token,
+  }) async {
+    Object? lastError;
+    for (final host in hosts) {
+      final socket = _socketClientFactory(
+        Uri(
+          scheme: 'wss',
+          host: host,
+          queryParameters: {
+            'access_token': token,
+            'format': 'json',
+            'heartbeats': 'true',
+            'v': '3',
+            'agent': 'ably-js/2.12.0 browser',
+            'remainPresentFor': '0',
+          },
+        ),
+      );
+      try {
+        await waitForDanmakuSocketReady(socket.ready);
+        return socket;
+      } catch (error) {
+        lastError = error;
+        await socket.close();
+      }
+    }
+    throw lastError ?? StateError('Chaturbate 实时弹幕未返回可用连接参数');
   }
 
   void _handleRawMessage(dynamic raw) {
@@ -296,13 +325,20 @@ class ChaturbateDanmakuSession implements DanmakuSession {
         .toList(growable: false);
   }
 
-  String _resolveRealtimeHost(Map<String, dynamic> authResponse) {
+  List<String> _resolveRealtimeHosts(Map<String, dynamic> authResponse) {
     final settings = _asMap(authResponse['settings']);
-    final host = settings['host']?.toString().trim() ?? '';
-    if (host.isNotEmpty) {
-      return host;
+    final orderedHosts = <String>[
+      settings['host']?.toString().trim() ?? '',
+      settings['rest_host']?.toString().trim() ?? '',
+    ];
+    final resolved = <String>[];
+    for (final host in orderedHosts) {
+      if (host.isEmpty || resolved.contains(host)) {
+        continue;
+      }
+      resolved.add(host);
     }
-    return settings['rest_host']?.toString().trim() ?? '';
+    return resolved;
   }
 
   int _toInt(Object? value) {
@@ -353,12 +389,18 @@ class ChaturbateDanmakuSession implements DanmakuSession {
 
 class _IoChaturbateSocketClient implements ChaturbateSocketClient {
   _IoChaturbateSocketClient(Uri uri)
-      : _channel = IOWebSocketChannel.connect(uri);
+      : _channel = IOWebSocketChannel.connect(
+          uri,
+          connectTimeout: defaultDanmakuWebSocketConnectTimeout,
+        );
 
   final IOWebSocketChannel _channel;
 
   @override
   Stream<dynamic> get stream => _channel.stream;
+
+  @override
+  Future<void> get ready => _channel.ready;
 
   @override
   void add(dynamic data) {

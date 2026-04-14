@@ -53,8 +53,68 @@ void main() {
         await subscription.cancel();
         await session.disconnect();
       });
+
     },
   );
+
+  test(
+      'chaturbate danmaku session retries backup websocket host on ready error',
+      () async {
+    final attemptedHosts = <String>[];
+    final session = ChaturbateDanmakuSession(
+      roomId: 'realcest',
+      broadcasterUid: 'EZ8KVAC',
+      csrfToken: 'fixture-csrf',
+      backend: 'a',
+      apiClient: _FixtureDanmakuApiClient(
+        authResponse: {
+          'token': 'fixture-token',
+          'channels': {
+            'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': 'room:message',
+          },
+          'settings': {
+            'host': 'realtime-primary.example',
+            'rest_host': 'realtime-backup.example',
+          },
+        },
+        history: const [],
+      ),
+      socketClientFactory: (uri) {
+        attemptedHosts.add(uri.host);
+        return _FixtureSocketClient(
+          incomingFrames: uri.host == 'realtime-backup.example'
+              ? const ['{"action":4}']
+              : const [],
+          ready: uri.host == 'realtime-backup.example'
+              ? Future<void>.value()
+              : Future<void>.error('primary down'),
+        );
+      },
+      presenceId: '+fixture',
+    );
+
+    final collected = <LiveMessage>[];
+    final subscription = session.messages.listen(collected.add);
+
+    await session.connect();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(
+      attemptedHosts,
+      ['realtime-primary.example', 'realtime-backup.example'],
+    );
+    expect(
+      collected.any(
+        (item) =>
+            item.type == LiveMessageType.notice &&
+            item.content.contains('实时弹幕已连接'),
+      ),
+      isTrue,
+    );
+
+    await subscription.cancel();
+    await session.disconnect();
+  });
 }
 
 class _FixtureDanmakuApiClient implements ChaturbateApiClient {
@@ -129,23 +189,38 @@ class _FixtureDanmakuApiClient implements ChaturbateApiClient {
 }
 
 class _FixtureSocketClient implements ChaturbateSocketClient {
-  _FixtureSocketClient({required this.incomingFrames}) {
-    scheduleMicrotask(() async {
+  _FixtureSocketClient({
+    required this.incomingFrames,
+    Future<void>? ready,
+  }) : _ready = ready ?? Future<void>.value() {
+    unawaited(_dispatchIncomingFrames());
+  }
+
+  final List<String> incomingFrames;
+  final Future<void> _ready;
+  final StreamController<dynamic> _controller =
+      StreamController<dynamic>.broadcast();
+
+  Future<void> _dispatchIncomingFrames() async {
+    try {
+      await _ready;
+      await Future<void>.delayed(Duration.zero);
       for (final frame in incomingFrames) {
         if (_controller.isClosed) {
           return;
         }
         _controller.add(frame);
       }
-    });
+    } catch (_) {
+      // Connection readiness failed before the fixture stream became active.
+    }
   }
-
-  final List<String> incomingFrames;
-  final StreamController<dynamic> _controller =
-      StreamController<dynamic>.broadcast();
 
   @override
   Stream<dynamic> get stream => _controller.stream;
+
+  @override
+  Future<void> get ready => _ready;
 
   @override
   void add(dynamic data) {}

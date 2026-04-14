@@ -7,6 +7,9 @@ class PlayerDiagnostics {
     this.height,
     this.buffering = false,
     this.buffered = Duration.zero,
+    this.lowLatencyMode = false,
+    this.rebufferCount = 0,
+    this.lastRebufferDuration,
     this.videoParams = const <String, String>{},
     this.audioParams = const <String, String>{},
     this.error,
@@ -19,6 +22,9 @@ class PlayerDiagnostics {
   final int? height;
   final bool buffering;
   final Duration buffered;
+  final bool lowLatencyMode;
+  final int rebufferCount;
+  final Duration? lastRebufferDuration;
   final Map<String, String> videoParams;
   final Map<String, String> audioParams;
   final String? error;
@@ -37,6 +43,10 @@ class PlayerDiagnostics {
     bool clearHeight = false,
     bool? buffering,
     Duration? buffered,
+    bool? lowLatencyMode,
+    int? rebufferCount,
+    Duration? lastRebufferDuration,
+    bool clearLastRebufferDuration = false,
     Map<String, String>? videoParams,
     Map<String, String>? audioParams,
     String? error,
@@ -50,6 +60,11 @@ class PlayerDiagnostics {
       height: clearHeight ? null : height ?? this.height,
       buffering: buffering ?? this.buffering,
       buffered: buffered ?? this.buffered,
+      lowLatencyMode: lowLatencyMode ?? this.lowLatencyMode,
+      rebufferCount: rebufferCount ?? this.rebufferCount,
+      lastRebufferDuration: clearLastRebufferDuration
+          ? null
+          : lastRebufferDuration ?? this.lastRebufferDuration,
       videoParams: videoParams ?? this.videoParams,
       audioParams: audioParams ?? this.audioParams,
       error: clearError ? null : error ?? this.error,

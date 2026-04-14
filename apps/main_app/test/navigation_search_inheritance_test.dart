@@ -6,6 +6,7 @@ import 'package:nolive_app/src/app/home/presentation/home_page.dart';
 import 'package:nolive_app/src/features/browse/presentation/browse_page.dart';
 import 'package:nolive_app/src/features/category/presentation/provider_categories_page.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('home page search button inherits the current provider',
@@ -14,7 +15,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: HomePage(bootstrap: bootstrap),
+        home: HomePage(dependencies: buildHomeFeatureDependencies(bootstrap)),
       ),
     );
     await tester.pumpAndSettle();
@@ -39,7 +40,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: BrowsePage(bootstrap: bootstrap),
+        home: BrowsePage(
+          dependencies: buildBrowseFeatureDependencies(bootstrap),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -65,7 +68,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: ProviderCategoriesPage(
-          bootstrap: bootstrap,
+          dependencies: buildCategoryFeatureDependencies(bootstrap),
           providerId: ProviderId.douyu,
         ),
       ),

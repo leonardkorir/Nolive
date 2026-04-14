@@ -2,22 +2,23 @@ import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
 
-import '../../room/application/provider_room_detail_override.dart';
-
 class LoadFollowWatchlistUseCase {
   const LoadFollowWatchlistUseCase({
     required this.followRepository,
     required this.registry,
     this.detailTimeout = const Duration(seconds: 8),
     this.maxConcurrent = 6,
-    this.loadRoomDetailOverride,
+    this.roomDetailOverride,
   });
 
   final FollowRepository followRepository;
   final ProviderRegistry registry;
   final Duration detailTimeout;
   final int maxConcurrent;
-  final ProviderRoomDetailOverride? loadRoomDetailOverride;
+  final Future<LiveRoomDetail?> Function({
+    required ProviderId providerId,
+    required String roomId,
+  })? roomDetailOverride;
 
   Future<FollowWatchlist> call({
     void Function(int index, FollowWatchEntry entry)? onEntryResolved,
@@ -67,7 +68,7 @@ class LoadFollowWatchlistUseCase {
     try {
       final provider = registry.create(ProviderId(record.providerId));
       final detailFuture = () async {
-        final overridden = await loadRoomDetailOverride?.call(
+        final overridden = await roomDetailOverride?.call(
           providerId: provider.descriptor.id,
           roomId: record.roomId,
         );

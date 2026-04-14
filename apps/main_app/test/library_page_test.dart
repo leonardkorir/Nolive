@@ -10,6 +10,7 @@ import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
 import 'package:nolive_app/src/features/library/presentation/library_page.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('library page applies imported follow display mode', (
@@ -36,7 +37,11 @@ void main() {
     await bootstrap.importSyncSnapshotJson(payload);
 
     await tester.pumpWidget(
-      MaterialApp(home: LibraryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: LibraryPage(
+          dependencies: buildLibraryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -86,7 +91,11 @@ void main() {
     await bootstrap.importSyncSnapshotJson(payload);
 
     await tester.pumpWidget(
-      MaterialApp(home: LibraryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: LibraryPage(
+          dependencies: buildLibraryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 80));
@@ -142,7 +151,11 @@ void main() {
     await bootstrap.importSyncSnapshotJson(payload);
 
     await tester.pumpWidget(
-      MaterialApp(home: LibraryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: LibraryPage(
+          dependencies: buildLibraryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -160,7 +173,11 @@ void main() {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
     await tester.pumpWidget(
-      MaterialApp(home: LibraryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: LibraryPage(
+          dependencies: buildLibraryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -219,7 +236,11 @@ void main() {
     await bootstrap.importSyncSnapshotJson(payload);
 
     await tester.pumpWidget(
-      MaterialApp(home: LibraryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: LibraryPage(
+          dependencies: buildLibraryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -276,7 +297,11 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: LibraryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: LibraryPage(
+          dependencies: buildLibraryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
@@ -347,7 +372,9 @@ void main() {
           AppRoutes.followSettings: (context) =>
               const Scaffold(body: Center(child: Text('关注设置页'))),
         },
-        home: LibraryPage(bootstrap: bootstrap),
+        home: LibraryPage(
+          dependencies: buildLibraryFeatureDependencies(bootstrap),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -387,7 +414,11 @@ void main() {
     }
 
     await tester.pumpWidget(
-      MaterialApp(home: LibraryPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: LibraryPage(
+          dependencies: buildLibraryFeatureDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 

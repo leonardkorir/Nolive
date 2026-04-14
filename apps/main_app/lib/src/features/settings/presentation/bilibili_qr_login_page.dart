@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/settings/application/settings_feature_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 
 class BilibiliQrLoginPage extends StatefulWidget {
-  const BilibiliQrLoginPage({required this.bootstrap, super.key});
+  const BilibiliQrLoginPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final SettingsFeatureDependencies dependencies;
 
   @override
   State<BilibiliQrLoginPage> createState() => _BilibiliQrLoginPageState();
@@ -38,7 +38,7 @@ class _BilibiliQrLoginPageState extends State<BilibiliQrLoginPage> {
       _statusMessage = '正在获取二维码…';
     });
     try {
-      final session = await widget.bootstrap.createBilibiliQrLoginSession();
+      final session = await widget.dependencies.createBilibiliQrLoginSession();
       if (!mounted) {
         return;
       }
@@ -71,7 +71,7 @@ class _BilibiliQrLoginPageState extends State<BilibiliQrLoginPage> {
       _busy = true;
     });
     try {
-      final progress = await widget.bootstrap.pollBilibiliQrLoginSession(
+      final progress = await widget.dependencies.pollBilibiliQrLoginSession(
         session.qrcodeKey,
       );
       if (!mounted) {

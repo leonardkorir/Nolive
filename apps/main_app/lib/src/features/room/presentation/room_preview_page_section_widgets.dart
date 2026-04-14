@@ -1,29 +1,102 @@
-part of 'room_preview_page.dart';
+import 'package:flutter/material.dart';
+import 'package:live_core/live_core.dart';
+import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
+import 'package:nolive_app/src/shared/presentation/theme/zh_text.dart';
 
-class _MetadataRow extends StatelessWidget {
-  const _MetadataRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: 4),
-          SelectableText(value),
-        ],
-      ),
-    );
+String formatRoomLiveDuration(DateTime? startedAt) {
+  if (startedAt == null) {
+    return '';
   }
+  final elapsed = DateTime.now().difference(startedAt.toLocal());
+  if (elapsed.isNegative) {
+    return '';
+  }
+  final hours = elapsed.inHours;
+  final minutes = elapsed.inMinutes.remainder(60);
+  final seconds = elapsed.inSeconds.remainder(60);
+  return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
 }
 
-class _RoomPanelTab extends StatelessWidget {
-  const _RoomPanelTab({
+String formatRoomMessageTimestamp(DateTime value) {
+  final hour = value.hour.toString().padLeft(2, '0');
+  final minute = value.minute.toString().padLeft(2, '0');
+  final second = value.second.toString().padLeft(2, '0');
+  return '$hour:$minute:$second';
+}
+
+String labelOfRoomScaleMode(PlayerScaleMode scaleMode) {
+  return switch (scaleMode) {
+    PlayerScaleMode.contain => '适应画面',
+    PlayerScaleMode.cover => '铺满画面',
+    PlayerScaleMode.fill => '拉伸填满',
+    PlayerScaleMode.fitWidth => '按宽适配',
+    PlayerScaleMode.fitHeight => '按高适配',
+  };
+}
+
+BoxFit fitForRoomScaleMode(PlayerScaleMode scaleMode) {
+  return switch (scaleMode) {
+    PlayerScaleMode.contain => BoxFit.contain,
+    PlayerScaleMode.cover => BoxFit.cover,
+    PlayerScaleMode.fill => BoxFit.fill,
+    PlayerScaleMode.fitWidth => BoxFit.fitWidth,
+    PlayerScaleMode.fitHeight => BoxFit.fitHeight,
+  };
+}
+
+class RoomChaturbateStatusPresentation {
+  const RoomChaturbateStatusPresentation({
+    required this.label,
+    required this.description,
+  });
+
+  final String label;
+  final String description;
+}
+
+RoomChaturbateStatusPresentation? resolveRoomChaturbateStatusPresentation(
+  LiveRoomDetail room,
+) {
+  if (room.providerId != ProviderId.chaturbate.value) {
+    return null;
+  }
+  final rawStatus = room.metadata?['roomStatus']?.toString().trim() ?? '';
+  if (rawStatus.isEmpty || rawStatus.toLowerCase() == 'public') {
+    return null;
+  }
+  final normalized = rawStatus.toLowerCase();
+  if (normalized.contains('private show')) {
+    return const RoomChaturbateStatusPresentation(
+      label: '私密表演中',
+      description: '主播当前正在 Private Show 中，暂时没有公开播放流。等表演结束后刷新即可恢复正常播放。',
+    );
+  }
+  if (normalized.contains('group show')) {
+    return const RoomChaturbateStatusPresentation(
+      label: '群组表演中',
+      description: '主播当前正在 Group Show 中，暂时没有公开播放流。结束后刷新即可恢复正常播放。',
+    );
+  }
+  if (normalized == 'away') {
+    return const RoomChaturbateStatusPresentation(
+      label: '暂时离开',
+      description: '主播暂时离开，当前没有公开播放流。返回公开状态后刷新即可恢复。',
+    );
+  }
+  if (normalized == 'offline') {
+    return const RoomChaturbateStatusPresentation(
+      label: '未开播',
+      description: '当前房间未处于公开直播状态，后续如果恢复开播，刷新即可恢复正常播放。',
+    );
+  }
+  return RoomChaturbateStatusPresentation(
+    label: rawStatus,
+    description: '当前房间状态为 "$rawStatus"，暂时没有公开播放流。请稍后刷新重试。',
+  );
+}
+
+class RoomPanelTab extends StatelessWidget {
+  const RoomPanelTab({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -63,80 +136,13 @@ class _RoomPanelTab extends StatelessWidget {
   }
 }
 
-class _RoomStepperRow extends StatelessWidget {
-  const _RoomStepperRow({
-    required this.title,
-    required this.value,
-    required this.onChanged,
-    this.suffix = '',
-  });
-
-  final String title;
-  final int value;
-  final ValueChanged<int> onChanged;
-  final String suffix;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 13.5,
-                  ),
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints.tightFor(width: 28, height: 28),
-                  onPressed: () => onChanged(value - 1),
-                  iconSize: 18,
-                  icon: const Icon(Icons.remove),
-                ),
-                SizedBox(
-                  width: suffix.isEmpty ? 32 : 52,
-                  child: Center(
-                    child: Text('$value$suffix'),
-                  ),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints.tightFor(width: 28, height: 28),
-                  onPressed: () => onChanged(value + 1),
-                  iconSize: 18,
-                  icon: const Icon(Icons.add),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RoomChatMessageTile extends StatelessWidget {
-  const _RoomChatMessageTile({
+class RoomChatMessageTile extends StatelessWidget {
+  const RoomChatMessageTile({
     required this.message,
     required this.fontSize,
     required this.gap,
     required this.bubbleStyle,
+    super.key,
   });
 
   final LiveMessage message;
@@ -218,11 +224,12 @@ class _RoomChatMessageTile extends StatelessWidget {
   }
 }
 
-class _DanmakuFeedTile extends StatelessWidget {
-  const _DanmakuFeedTile({
+class DanmakuFeedTile extends StatelessWidget {
+  const DanmakuFeedTile({
     required this.icon,
     required this.title,
     required this.subtitle,
+    super.key,
   });
 
   final IconData icon;

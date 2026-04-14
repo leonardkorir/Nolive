@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_room_ui_preferences_use_case.dart';
+import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
 class RoomSettingsPage extends StatefulWidget {
-  const RoomSettingsPage({required this.bootstrap, super.key});
+  const RoomSettingsPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final RoomSettingsDependencies dependencies;
 
   @override
   State<RoomSettingsPage> createState() => _RoomSettingsPageState();
@@ -26,8 +26,8 @@ class _RoomSettingsPageState extends State<RoomSettingsPage> {
   }
 
   Future<void> _load() async {
-    final playerPreferences = await widget.bootstrap.loadPlayerPreferences();
-    final roomUiPreferences = await widget.bootstrap.loadRoomUiPreferences();
+    final playerPreferences = await widget.dependencies.loadPlayerPreferences();
+    final roomUiPreferences = await widget.dependencies.loadRoomUiPreferences();
     if (!mounted) {
       return;
     }
@@ -41,14 +41,14 @@ class _RoomSettingsPageState extends State<RoomSettingsPage> {
     setState(() {
       _playerPreferences = next;
     });
-    await widget.bootstrap.updatePlayerPreferences(next);
+    await widget.dependencies.updatePlayerPreferences(next);
   }
 
   Future<void> _updateRoomUi(RoomUiPreferences next) async {
     setState(() {
       _roomUiPreferences = next;
     });
-    await widget.bootstrap.updateRoomUiPreferences(next);
+    await widget.dependencies.updateRoomUiPreferences(next);
   }
 
   @override

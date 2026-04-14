@@ -2,18 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/app/home/application/home_feature_dependencies.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
 import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
+import 'package:nolive_app/src/shared/presentation/gestures/responsive_tab_swipe_switcher.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/provider_tab_label.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({required this.bootstrap, super.key});
+  const HomePage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final HomeFeatureDependencies dependencies;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -24,12 +25,12 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge([
-        widget.bootstrap.layoutPreferences,
-        widget.bootstrap.providerCatalogRevision,
+        widget.dependencies.layoutPreferences,
+        widget.dependencies.providerCatalogRevision,
       ]),
       builder: (context, _) {
-        final preferences = widget.bootstrap.layoutPreferences.value;
-        final providers = widget.bootstrap
+        final preferences = widget.dependencies.layoutPreferences.value;
+        final providers = widget.dependencies
             .listAvailableProviders()
             .where((item) => item.supports(ProviderCapability.recommendRooms))
             .toList(growable: false)
@@ -68,7 +69,8 @@ class _HomePageState extends State<HomePage> {
                       Navigator.of(tabContext).push(
                         MaterialPageRoute<void>(
                           builder: (context) => SearchPage(
-                            bootstrap: widget.bootstrap,
+                            dependencies:
+                                widget.dependencies.searchDependencies,
                             standalone: true,
                             initialProviderId: selectedProvider.id,
                           ),
@@ -80,33 +82,37 @@ class _HomePageState extends State<HomePage> {
                   const SizedBox(width: 4),
                 ],
               ),
-              body: TabBarView(
-                children: [
-                  for (final descriptor in providers)
-                    _HomeProviderFeedTab(
-                      key: PageStorageKey('home-${descriptor.id.value}'),
-                      bootstrap: widget.bootstrap,
-                      descriptor: descriptor,
-                      pageHorizontalPadding: adaptive.pageHorizontalPadding,
-                      onOpenRoom: (room) {
-                        Navigator.of(tabContext).pushNamed(
-                          AppRoutes.room,
-                          arguments: RoomRouteArguments(
-                            providerId: descriptor.id,
-                            roomId: room.roomId,
-                          ),
-                        );
-                      },
-                      onOpenCategories: () {
-                        Navigator.of(tabContext).pushNamed(
-                          AppRoutes.providerCategories,
-                          arguments: ProviderCategoriesRouteArguments(
-                            providerId: descriptor.id,
-                          ),
-                        );
-                      },
-                    ),
-                ],
+              body: ResponsiveTabSwipeSwitcher(
+                key: const Key('home-provider-tab-swipe-switcher'),
+                child: TabBarView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    for (final descriptor in providers)
+                      _HomeProviderFeedTab(
+                        key: PageStorageKey('home-${descriptor.id.value}'),
+                        dependencies: widget.dependencies,
+                        descriptor: descriptor,
+                        pageHorizontalPadding: adaptive.pageHorizontalPadding,
+                        onOpenRoom: (room) {
+                          Navigator.of(tabContext).pushNamed(
+                            AppRoutes.room,
+                            arguments: RoomRouteArguments(
+                              providerId: descriptor.id,
+                              roomId: room.roomId,
+                            ),
+                          );
+                        },
+                        onOpenCategories: () {
+                          Navigator.of(tabContext).pushNamed(
+                            AppRoutes.providerCategories,
+                            arguments: ProviderCategoriesRouteArguments(
+                              providerId: descriptor.id,
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -157,7 +163,7 @@ class _ProviderTabs extends StatelessWidget {
 
 class _HomeProviderFeedTab extends StatefulWidget {
   const _HomeProviderFeedTab({
-    required this.bootstrap,
+    required this.dependencies,
     required this.descriptor,
     required this.pageHorizontalPadding,
     required this.onOpenRoom,
@@ -165,7 +171,7 @@ class _HomeProviderFeedTab extends StatefulWidget {
     super.key,
   });
 
-  final AppBootstrap bootstrap;
+  final HomeFeatureDependencies dependencies;
   final ProviderDescriptor descriptor;
   final double pageHorizontalPadding;
   final ValueChanged<LiveRoom> onOpenRoom;
@@ -177,9 +183,12 @@ class _HomeProviderFeedTab extends StatefulWidget {
 
 class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
     with AutomaticKeepAliveClientMixin<_HomeProviderFeedTab> {
+  static const int _maxInitialViewportPrefetchPasses = 4;
+
   final List<LiveRoom> _rooms = [];
   final ScrollController _scrollController = ScrollController();
 
+  int _initialViewportPrefetchPasses = 0;
   bool _loadingInitial = true;
   bool _loadingMore = false;
   bool _hasMore = false;
@@ -220,6 +229,7 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
       _error = null;
       _currentPage = 0;
       _hasMore = false;
+      _initialViewportPrefetchPasses = 0;
     });
 
     try {
@@ -286,23 +296,30 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
 
   void _scheduleAutoLoadMoreIfNeeded() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _loadingInitial || _loadingMore || !_hasMore) {
+      if (!mounted ||
+          _loadingInitial ||
+          _loadingMore ||
+          !_hasMore ||
+          _initialViewportPrefetchPasses >= _maxInitialViewportPrefetchPasses) {
         return;
       }
       if (!_scrollController.hasClients) {
+        _initialViewportPrefetchPasses += 1;
         unawaited(_loadMore());
         return;
       }
       final position = _scrollController.position;
-      if (position.maxScrollExtent <= 0 ||
-          position.pixels >= position.maxScrollExtent - 360) {
+      final needsViewportPrefetch =
+          position.maxScrollExtent <= 0 || position.extentAfter <= 180;
+      if (needsViewportPrefetch) {
+        _initialViewportPrefetchPasses += 1;
         unawaited(_loadMore());
       }
     });
   }
 
   Future<PagedResponse<LiveRoom>> _loadRecommendPage({required int page}) {
-    return widget.bootstrap.loadProviderRecommendRooms(
+    return widget.dependencies.loadProviderRecommendRooms(
       providerId: widget.descriptor.id,
       page: page,
     );
@@ -404,82 +421,69 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
 
     return RefreshIndicator(
       onRefresh: _loadFirstPage,
-      child: NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          if (notification.metrics.pixels >=
-              notification.metrics.maxScrollExtent - 360) {
-            _loadMore();
-          }
-          return false;
-        },
-        child: CustomScrollView(
-          controller: _scrollController,
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverPadding(
+      child: CustomScrollView(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              widget.pageHorizontalPadding / 2,
+              6,
+              widget.pageHorizontalPadding / 2,
+              18,
+            ),
+            sliver: SliverGrid(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final room = _rooms[index];
+                  return LiveRoomGridCard(
+                    room: room,
+                    descriptor: widget.descriptor,
+                    onTap: () => widget.onOpenRoom(room),
+                  );
+                },
+                childCount: _rooms.length,
+              ),
+              gridDelegate: buildLiveRoomGridDelegate(context),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
               padding: EdgeInsets.fromLTRB(
-                widget.pageHorizontalPadding / 2,
-                6,
-                widget.pageHorizontalPadding / 2,
-                18,
+                widget.pageHorizontalPadding,
+                0,
+                widget.pageHorizontalPadding,
+                96,
               ),
-              sliver: SliverGrid(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final room = _rooms[index];
-                    return LiveRoomGridCard(
-                      room: room,
-                      descriptor: widget.descriptor,
-                      onTap: () => widget.onOpenRoom(room),
-                    );
-                  },
-                  childCount: _rooms.length,
-                ),
-                gridDelegate: buildLiveRoomGridDelegate(context),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  widget.pageHorizontalPadding,
-                  0,
-                  widget.pageHorizontalPadding,
-                  96,
-                ),
-                child: Center(
-                  child: _loadingMore
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                          child: CircularProgressIndicator.adaptive(),
-                        )
-                      : _hasMore
-                          ? Text(
-                              '继续滑动自动加载更多',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                            )
-                          : Text(
-                              '已经到底了',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                            ),
-                ),
+              child: Center(
+                child: _loadingMore
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: CircularProgressIndicator.adaptive(),
+                      )
+                    : _hasMore
+                        ? Text(
+                            '继续滑动自动加载更多',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                          )
+                        : Text(
+                            '已经到底了',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                          ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

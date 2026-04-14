@@ -4,8 +4,12 @@ import 'dart:math';
 import 'package:live_core/live_core.dart';
 import 'package:web_socket_channel/io.dart';
 
+import 'danmaku_web_socket.dart';
+
 abstract interface class TwitchSocketClient {
   Stream<dynamic> get stream;
+
+  Future<void> get ready;
 
   void add(dynamic data);
 
@@ -43,39 +47,52 @@ class TwitchDanmakuSession implements DanmakuSession {
     if (_connected) {
       return;
     }
-    _connected = true;
     final uri = Uri.parse('wss://irc-ws.chat.twitch.tv/');
-    _socket = _socketClientFactory(uri);
-    _subscription = _socket!.stream.listen(
-      _handleRawMessage,
-      onError: (error) {
-        _emit(
-          LiveMessage(
-            type: LiveMessageType.notice,
-            content: 'Twitch 弹幕连接异常：$error',
-            timestamp: DateTime.now(),
-          ),
-        );
-      },
-      onDone: () {
-        if (_connected) {
+    final socket = _socketClientFactory(uri);
+    try {
+      await waitForDanmakuSocketReady(socket.ready);
+      _socket = socket;
+      _connected = true;
+      _subscription = _socket!.stream.listen(
+        _handleRawMessage,
+        onError: (error) {
           _emit(
             LiveMessage(
               type: LiveMessageType.notice,
-              content: 'Twitch 弹幕连接已断开',
+              content: 'Twitch 弹幕连接异常：$error',
               timestamp: DateTime.now(),
             ),
           );
-        }
-      },
-      cancelOnError: false,
-    );
+        },
+        onDone: () {
+          if (_connected) {
+            _emit(
+              LiveMessage(
+                type: LiveMessageType.notice,
+                content: 'Twitch 弹幕连接已断开',
+                timestamp: DateTime.now(),
+              ),
+            );
+          }
+        },
+        cancelOnError: false,
+      );
 
-    _send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');
-    _send('PASS SCHMOOPIIE');
-    _send('NICK $_nick');
-    _send('USER $_nick 8 * :$_nick');
-    _send('JOIN #${roomId.trim().toLowerCase()}');
+      _send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');
+      _send('PASS SCHMOOPIIE');
+      _send('NICK $_nick');
+      _send('USER $_nick 8 * :$_nick');
+      _send('JOIN #${roomId.trim().toLowerCase()}');
+    } catch (_) {
+      _connected = false;
+      await _subscription?.cancel();
+      _subscription = null;
+      await socket.close();
+      if (identical(_socket, socket)) {
+        _socket = null;
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -312,7 +329,10 @@ class TwitchDanmakuSession implements DanmakuSession {
   }
 
   static TwitchSocketClient _defaultSocketClientFactory(Uri uri) {
-    final channel = IOWebSocketChannel.connect(uri);
+    final channel = IOWebSocketChannel.connect(
+      uri,
+      connectTimeout: defaultDanmakuWebSocketConnectTimeout,
+    );
     return _ChannelBackedTwitchSocketClient(channel);
   }
 }
@@ -324,6 +344,9 @@ class _ChannelBackedTwitchSocketClient implements TwitchSocketClient {
 
   @override
   Stream<dynamic> get stream => _channel.stream;
+
+  @override
+  Future<void> get ready => _channel.ready;
 
   @override
   void add(dynamic data) {

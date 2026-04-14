@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/features/search/application/search_feature_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
@@ -9,13 +9,13 @@ import 'package:nolive_app/src/shared/presentation/widgets/provider_tab_label.da
 
 class SearchPage extends StatefulWidget {
   const SearchPage({
-    required this.bootstrap,
+    required this.dependencies,
     this.standalone = false,
     this.initialProviderId,
     super.key,
   });
 
-  final AppBootstrap bootstrap;
+  final SearchFeatureDependencies dependencies;
   final bool standalone;
   final ProviderId? initialProviderId;
 
@@ -72,12 +72,12 @@ class _SearchPageState extends State<SearchPage> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge([
-        widget.bootstrap.layoutPreferences,
-        widget.bootstrap.providerCatalogRevision,
+        widget.dependencies.layoutPreferences,
+        widget.dependencies.providerCatalogRevision,
       ]),
       builder: (context, _) {
-        final preferences = widget.bootstrap.layoutPreferences.value;
-        final providers = widget.bootstrap
+        final preferences = widget.dependencies.layoutPreferences.value;
+        final providers = widget.dependencies
             .listAvailableProviders()
             .where((item) => item.supports(ProviderCapability.searchRooms))
             .toList(growable: false)
@@ -150,7 +150,7 @@ class _SearchPageState extends State<SearchPage> {
                 for (final descriptor in providers)
                   _SearchResultsTab(
                     key: PageStorageKey('search-${descriptor.id.value}'),
-                    bootstrap: widget.bootstrap,
+                    dependencies: widget.dependencies,
                     descriptor: descriptor,
                     query: _submittedQuery,
                     searchVersion: _searchVersion,
@@ -175,7 +175,7 @@ class _SearchPageState extends State<SearchPage> {
 
 class _SearchResultsTab extends StatefulWidget {
   const _SearchResultsTab({
-    required this.bootstrap,
+    required this.dependencies,
     required this.descriptor,
     required this.query,
     required this.searchVersion,
@@ -183,7 +183,7 @@ class _SearchResultsTab extends StatefulWidget {
     super.key,
   });
 
-  final AppBootstrap bootstrap;
+  final SearchFeatureDependencies dependencies;
   final ProviderDescriptor descriptor;
   final String query;
   final int searchVersion;
@@ -260,7 +260,7 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
     });
 
     try {
-      final response = await widget.bootstrap.searchProviderRooms(
+      final response = await widget.dependencies.searchProviderRooms(
         providerId: widget.descriptor.id,
         query: widget.query,
         page: 1,
@@ -297,7 +297,7 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
     });
     try {
       final requestedPage = _currentPage + 1;
-      final response = await widget.bootstrap.searchProviderRooms(
+      final response = await widget.dependencies.searchProviderRooms(
         providerId: widget.descriptor.id,
         query: widget.query,
         page: requestedPage,

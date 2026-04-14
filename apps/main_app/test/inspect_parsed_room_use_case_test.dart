@@ -5,6 +5,7 @@ import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/features/parse/application/inspect_parsed_room_use_case.dart';
 import 'package:nolive_app/src/features/parse/application/parse_room_input_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
+import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 void main() {
   test('inspect parsed room fails fast for chaturbate without browser cookie',
@@ -21,10 +22,12 @@ void main() {
         ),
       );
     final settingsRepository = InMemorySettingsRepository();
+    final secureCredentialStore = InMemorySecureCredentialStore();
     final useCase = InspectParsedRoomUseCase(
       registry,
       loadProviderAccountSettings: LoadProviderAccountSettingsUseCase(
         settingsRepository,
+        secureCredentialStore,
       ),
       requireChaturbateCookiePreflight: true,
     );
@@ -59,14 +62,16 @@ void main() {
         ),
       );
     final settingsRepository = InMemorySettingsRepository();
-    await settingsRepository.writeValue(
-      'account_chaturbate_cookie',
-      'csrftoken=demo; __cf_bm=demo-bm',
+    final secureCredentialStore = InMemorySecureCredentialStore(
+      initialValues: const {
+        'account_chaturbate_cookie': 'csrftoken=demo; __cf_bm=demo-bm',
+      },
     );
     final useCase = InspectParsedRoomUseCase(
       registry,
       loadProviderAccountSettings: LoadProviderAccountSettingsUseCase(
         settingsRepository,
+        secureCredentialStore,
       ),
       requireChaturbateCookiePreflight: true,
     );
@@ -98,17 +103,19 @@ void main() {
         ),
       );
     final settingsRepository = InMemorySettingsRepository();
-    await settingsRepository.writeValue(
-      'account_chaturbate_cookie',
-      'cf_clearance=demo; csrftoken=demo',
+    final secureCredentialStore = InMemorySecureCredentialStore(
+      initialValues: const {
+        'account_chaturbate_cookie': 'cf_clearance=demo; csrftoken=demo',
+      },
     );
     final useCase = InspectParsedRoomUseCase(
       registry,
       loadProviderAccountSettings: LoadProviderAccountSettingsUseCase(
         settingsRepository,
+        secureCredentialStore,
       ),
       requireChaturbateCookiePreflight: true,
-      loadRoomDetailOverride: ({
+      roomDetailOverride: ({
         required providerId,
         required roomId,
       }) async {

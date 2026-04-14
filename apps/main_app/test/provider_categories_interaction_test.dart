@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/category/presentation/provider_categories_page.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('category page can favorite and unfavorite the selected category',
@@ -18,7 +19,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: ProviderCategoriesPage(
-          bootstrap: bootstrap,
+          dependencies: buildCategoryFeatureDependencies(bootstrap),
           providerId: _kFavoriteCategoryProviderId,
         ),
       ),

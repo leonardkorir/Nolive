@@ -53,7 +53,7 @@ class LiveRoomGridCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = ProviderBadge.accentColorOf(descriptor.id);
-    final coverUrl = room.coverUrl ?? room.keyframeUrl;
+    final coverUrl = room.keyframeUrl ?? room.coverUrl;
 
     return AppSurfaceCard(
       padding: EdgeInsets.zero,

@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:live_sync/live_sync.dart';
-import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/sync/application/sync_feature_dependencies.dart';
 import 'package:nolive_app/src/features/sync/application/sync_preferences_use_case.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
 class SyncWebDavPage extends StatefulWidget {
-  const SyncWebDavPage({required this.bootstrap, super.key});
+  const SyncWebDavPage({required this.dependencies, super.key});
 
-  final AppBootstrap bootstrap;
+  final SyncFeatureDependencies dependencies;
 
   @override
   State<SyncWebDavPage> createState() => _SyncWebDavPageState();
@@ -26,8 +26,8 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
   }
 
   Future<_SyncWebDavPageData> _load() async {
-    final snapshot = await widget.bootstrap.loadSyncSnapshot();
-    final preferences = await widget.bootstrap.loadSyncPreferences();
+    final snapshot = await widget.dependencies.loadSyncSnapshot();
+    final preferences = await widget.dependencies.loadSyncPreferences();
     return _SyncWebDavPageData(snapshot: snapshot, preferences: preferences);
   }
 
@@ -113,7 +113,7 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
       return;
     }
 
-    await widget.bootstrap.updateSyncPreferences(
+    await widget.dependencies.updateSyncPreferences(
       preferences.copyWith(
         webDavBaseUrl: webDavBaseUrl.text.trim(),
         webDavRemotePath: webDavRemotePath.text.trim(),
@@ -148,7 +148,7 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
 
   Future<void> _testRemote(SyncPreferences preferences) async {
     await _runBusy(() async {
-      await widget.bootstrap.verifyWebDavConnection(preferences);
+      await widget.dependencies.verifyWebDavConnection(preferences);
       if (!mounted) {
         return;
       }
@@ -160,7 +160,7 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
 
   Future<void> _uploadRemote(SyncPreferences preferences) async {
     await _runBusy(() async {
-      await widget.bootstrap.uploadWebDavSnapshot(preferences);
+      await widget.dependencies.uploadWebDavSnapshot(preferences);
       if (!mounted) {
         return;
       }
@@ -173,7 +173,7 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
   Future<void> _restoreRemote(SyncPreferences preferences) async {
     await _runBusy(() async {
       final snapshot =
-          await widget.bootstrap.restoreWebDavSnapshot(preferences);
+          await widget.dependencies.restoreWebDavSnapshot(preferences);
       if (!mounted) {
         return;
       }

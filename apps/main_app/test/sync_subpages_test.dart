@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/sync/application/sync_feature_dependencies.dart';
 import 'package:nolive_app/src/features/sync/presentation/sync_local_page.dart';
 import 'package:nolive_app/src/features/sync/presentation/sync_webdav_page.dart';
 
@@ -8,10 +9,11 @@ void main() {
   testWidgets('sync webdav page shows configure, test and upload actions', (
     tester,
   ) async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     await tester.pumpWidget(
       MaterialApp(
         home: SyncWebDavPage(
-          bootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
+          dependencies: SyncFeatureDependencies.fromBootstrap(bootstrap),
         ),
       ),
     );
@@ -25,10 +27,11 @@ void main() {
   });
 
   testWidgets('sync local page shows local actions', (tester) async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     await tester.pumpWidget(
       MaterialApp(
         home: SyncLocalPage(
-          bootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
+          dependencies: SyncFeatureDependencies.fromBootstrap(bootstrap),
         ),
       ),
     );

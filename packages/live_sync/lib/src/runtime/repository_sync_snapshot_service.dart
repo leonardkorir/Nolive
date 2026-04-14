@@ -9,16 +9,22 @@ class RepositorySyncSnapshotService {
     required this.historyRepository,
     required this.followRepository,
     required this.tagRepository,
+    this.shouldIncludeSettingInSnapshot,
   });
 
   final SettingsRepository settingsRepository;
   final HistoryRepository historyRepository;
   final FollowRepository followRepository;
   final TagRepository tagRepository;
+  final bool Function(String key)? shouldIncludeSettingInSnapshot;
 
   Future<SyncSnapshot> exportSnapshot() async {
-    final settings =
-        Map<String, Object?>.from(await settingsRepository.listAll());
+    final settings = Map<String, Object?>.from(
+      await settingsRepository.listAll(),
+    )..removeWhere((key, _) {
+        return key != 'blocked_keywords' &&
+            shouldIncludeSettingInSnapshot?.call(key) == false;
+      });
     final blockedKeywords = (settings.remove('blocked_keywords') as List?)
             ?.map((item) => item.toString())
             .toList(growable: false) ??

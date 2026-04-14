@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/category/presentation/provider_categories_page.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('chaturbate category page retries first room load automatically',
@@ -25,7 +26,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: ProviderCategoriesPage(
-          bootstrap: bootstrap,
+          dependencies: buildCategoryFeatureDependencies(bootstrap),
           providerId: ProviderId.chaturbate,
         ),
       ),
@@ -64,7 +65,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: ProviderCategoriesPage(
-          bootstrap: bootstrap,
+          dependencies: buildCategoryFeatureDependencies(bootstrap),
           providerId: ProviderId.douyin,
         ),
       ),
@@ -103,7 +104,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: ProviderCategoriesPage(
-          bootstrap: bootstrap,
+          dependencies: buildCategoryFeatureDependencies(bootstrap),
           providerId: ProviderId.douyin,
         ),
       ),
@@ -121,6 +122,38 @@ void main() {
         findsOneWidget);
     expect(find.text('已经到底了'), findsOneWidget);
     expect(find.text('加载更多'), findsNothing);
+  });
+
+  testWidgets('category page sanitizes malformed utf16 category labels',
+      (tester) async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    bootstrap.providerRegistry.register(
+      ProviderRegistration(
+        descriptor: const ProviderDescriptor(
+          id: ProviderId.douyu,
+          displayName: '斗鱼',
+          capabilities: {
+            ProviderCapability.categories,
+          },
+          supportedPlatforms: {ProviderPlatform.android},
+        ),
+        builder: () => _MalformedCategoryProvider(),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProviderCategoriesPage(
+          dependencies: buildCategoryFeatureDependencies(bootstrap),
+          providerId: ProviderId.douyu,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('热门'), findsWidgets);
+    expect(tester.takeException(), isNull);
   });
 }
 
@@ -359,5 +392,57 @@ class _SparseDouyinCategoryProvider extends LiveProvider
           page: page,
         ),
     };
+  }
+}
+
+class _MalformedCategoryProvider extends LiveProvider
+    implements SupportsCategories, SupportsCategoryRooms {
+  static const ProviderDescriptor _descriptor = ProviderDescriptor(
+    id: ProviderId.douyu,
+    displayName: '斗鱼',
+    capabilities: {
+      ProviderCapability.categories,
+    },
+    supportedPlatforms: {ProviderPlatform.android},
+  );
+
+  @override
+  ProviderDescriptor get descriptor => _descriptor;
+
+  @override
+  Future<List<LiveCategory>> fetchCategories() async {
+    return [
+      LiveCategory(
+        id: 'group-1',
+        name: '游${String.fromCharCode(0xD800)}戏',
+        children: [
+          LiveSubCategory(
+            id: 'hot',
+            parentId: 'group-1',
+            name: '热${String.fromCharCode(0xDC00)}门',
+          ),
+        ],
+      ),
+    ];
+  }
+
+  @override
+  Future<PagedResponse<LiveRoom>> fetchCategoryRooms(
+    LiveSubCategory category, {
+    int page = 1,
+  }) async {
+    return const PagedResponse(
+      items: [
+        LiveRoom(
+          providerId: 'douyu',
+          roomId: 'room-1',
+          title: '第一页',
+          streamerName: '主播一',
+          isLive: true,
+        ),
+      ],
+      hasMore: false,
+      page: 1,
+    );
   }
 }

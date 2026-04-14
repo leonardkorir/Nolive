@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
+import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 void main() {
   test('preview and persistent bootstrap share the same danmaku speed default',
@@ -19,6 +20,7 @@ void main() {
 
     final persistent = await createPersistentAppBootstrap(
       storageDirectory: directory,
+      secureCredentialStore: InMemorySecureCredentialStore(),
     );
 
     expect(DanmakuPreferences.defaults.speed, 12);

@@ -3,25 +3,27 @@ import 'package:live_providers/live_providers.dart';
 
 import 'parse_room_input_use_case.dart';
 import '../../settings/application/manage_provider_accounts_use_case.dart';
-import '../../room/application/provider_room_detail_override.dart';
 
 class InspectParsedRoomUseCase {
   const InspectParsedRoomUseCase(
     this.registry, {
     this.loadProviderAccountSettings,
     this.requireChaturbateCookiePreflight = false,
-    this.loadRoomDetailOverride,
+    this.roomDetailOverride,
   });
 
   final ProviderRegistry registry;
   final LoadProviderAccountSettingsUseCase? loadProviderAccountSettings;
   final bool requireChaturbateCookiePreflight;
-  final ProviderRoomDetailOverride? loadRoomDetailOverride;
+  final Future<LiveRoomDetail?> Function({
+    required ProviderId providerId,
+    required String roomId,
+  })? roomDetailOverride;
 
   Future<ParsedRoomInspection> call(ParsedRoomInput parsedRoom) async {
     await _preflightChaturbate(parsedRoom);
     final provider = registry.create(parsedRoom.providerId);
-    final overridden = await loadRoomDetailOverride?.call(
+    final overridden = await roomDetailOverride?.call(
       providerId: parsedRoom.providerId,
       roomId: parsedRoom.roomId,
     );

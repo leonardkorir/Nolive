@@ -42,7 +42,7 @@ class _BootstrapHostAppState extends State<BootstrapHostApp> {
       future: _bootstrapFuture,
       builder: (context, snapshot) {
         if (snapshot.hasData) {
-          return NoliveApp(bootstrap: snapshot.data!);
+          return NoliveApp(appBootstrap: snapshot.data!);
         }
         return MaterialApp(
           title: 'Nolive',

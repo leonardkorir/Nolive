@@ -4,6 +4,7 @@ import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/shell/app_shell_page.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('app shell opens the first configured bottom tab by default',
@@ -12,7 +13,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: AppShellPage(bootstrap: bootstrap),
+        home: AppShellPage(
+          dependencies: buildAppShellDependencies(bootstrap),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -54,7 +57,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: AppShellPage(bootstrap: bootstrap),
+        home: AppShellPage(
+          dependencies: buildAppShellDependencies(bootstrap),
+        ),
       ),
     );
     await tester.pumpAndSettle();

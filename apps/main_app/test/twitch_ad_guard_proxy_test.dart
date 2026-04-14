@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
-import 'package:nolive_app/src/features/room/application/twitch_ad_guard_proxy.dart';
+import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_ad_guard_proxy.dart';
 
 void main() {
   late HttpServer upstream;

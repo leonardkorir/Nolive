@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/settings/presentation/follow_settings_page.dart';
+import 'test_feature_dependencies.dart';
 
 void main() {
   testWidgets('follow settings page shows tags and import tools only', (
@@ -21,7 +22,11 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: FollowSettingsPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: FollowSettingsPage(
+          dependencies: buildFollowSettingsDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -83,7 +88,11 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: FollowSettingsPage(bootstrap: bootstrap)),
+      MaterialApp(
+        home: FollowSettingsPage(
+          dependencies: buildFollowSettingsDependencies(bootstrap),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 

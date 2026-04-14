@@ -1,5 +1,6 @@
 import 'package:live_player/live_player.dart';
 import 'package:live_storage/live_storage.dart';
+import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 enum PlayerScaleMode {
   contain,
@@ -43,6 +44,7 @@ class PlayerPreferences {
     required this.mpvLogEnabled,
     required this.mdkLowLatencyEnabled,
     required this.mdkAndroidTunnelEnabled,
+    required this.mdkAndroidHardwareVideoDecoderEnabled,
     required this.forceHttpsEnabled,
     required this.androidAutoFullscreenEnabled,
     required this.androidBackgroundAutoPauseEnabled,
@@ -63,6 +65,7 @@ class PlayerPreferences {
   final bool mpvLogEnabled;
   final bool mdkLowLatencyEnabled;
   final bool mdkAndroidTunnelEnabled;
+  final bool mdkAndroidHardwareVideoDecoderEnabled;
   final bool forceHttpsEnabled;
   final bool androidAutoFullscreenEnabled;
   final bool androidBackgroundAutoPauseEnabled;
@@ -83,6 +86,7 @@ class PlayerPreferences {
     bool? mpvLogEnabled,
     bool? mdkLowLatencyEnabled,
     bool? mdkAndroidTunnelEnabled,
+    bool? mdkAndroidHardwareVideoDecoderEnabled,
     bool? forceHttpsEnabled,
     bool? androidAutoFullscreenEnabled,
     bool? androidBackgroundAutoPauseEnabled,
@@ -107,6 +111,9 @@ class PlayerPreferences {
       mdkLowLatencyEnabled: mdkLowLatencyEnabled ?? this.mdkLowLatencyEnabled,
       mdkAndroidTunnelEnabled:
           mdkAndroidTunnelEnabled ?? this.mdkAndroidTunnelEnabled,
+      mdkAndroidHardwareVideoDecoderEnabled:
+          mdkAndroidHardwareVideoDecoderEnabled ??
+              this.mdkAndroidHardwareVideoDecoderEnabled,
       forceHttpsEnabled: forceHttpsEnabled ?? this.forceHttpsEnabled,
       androidAutoFullscreenEnabled:
           androidAutoFullscreenEnabled ?? this.androidAutoFullscreenEnabled,
@@ -161,6 +168,9 @@ class LoadPlayerPreferencesUseCase {
     final mdkAndroidTunnelEnabled =
         await settingsRepository.readValue<bool>('player_mdk_android_tunnel') ??
             false;
+    final mdkAndroidHardwareVideoDecoderEnabled = await settingsRepository
+            .readValue<bool>('player_mdk_android_hardware_video_decoder') ??
+        true;
     final forceHttpsEnabled =
         await settingsRepository.readValue<bool>('player_force_https') ?? false;
     final androidAutoFullscreenEnabled = await settingsRepository
@@ -188,6 +198,8 @@ class LoadPlayerPreferencesUseCase {
       mpvLogEnabled: mpvLogEnabled,
       mdkLowLatencyEnabled: mdkLowLatencyEnabled,
       mdkAndroidTunnelEnabled: mdkAndroidTunnelEnabled,
+      mdkAndroidHardwareVideoDecoderEnabled:
+          mdkAndroidHardwareVideoDecoderEnabled,
       forceHttpsEnabled: forceHttpsEnabled,
       androidAutoFullscreenEnabled: androidAutoFullscreenEnabled,
       androidBackgroundAutoPauseEnabled: androidBackgroundAutoPauseEnabled,
@@ -284,6 +296,10 @@ class UpdatePlayerPreferencesUseCase {
       preferences.mdkAndroidTunnelEnabled,
     );
     await settingsRepository.writeValue(
+      'player_mdk_android_hardware_video_decoder',
+      preferences.mdkAndroidHardwareVideoDecoderEnabled,
+    );
+    await settingsRepository.writeValue(
       'player_force_https',
       preferences.forceHttpsEnabled,
     );
@@ -304,4 +320,45 @@ class UpdatePlayerPreferencesUseCase {
       preferences.scaleMode.name,
     );
   }
+}
+
+class ApplyPlayerPreferencesToRuntimeUseCase {
+  const ApplyPlayerPreferencesToRuntimeUseCase(this.playerRuntime);
+
+  final PlayerRuntimeController playerRuntime;
+
+  Future<void> call({
+    required PlayerPreferences current,
+    required PlayerPreferences next,
+  }) async {
+    if (current.backend != next.backend) {
+      await playerRuntime.switchBackend(next.backend);
+    } else if (_requiresPlayerRuntimeRefresh(current: current, next: next)) {
+      await playerRuntime.refreshBackend();
+    }
+    await playerRuntime.setVolume(next.volume);
+  }
+}
+
+bool _requiresPlayerRuntimeRefresh({
+  required PlayerPreferences current,
+  required PlayerPreferences next,
+}) {
+  return switch (next.backend) {
+    PlayerBackend.mpv =>
+      current.mpvHardwareAccelerationEnabled !=
+              next.mpvHardwareAccelerationEnabled ||
+          current.mpvCompatModeEnabled != next.mpvCompatModeEnabled ||
+          current.mpvDoubleBufferingEnabled != next.mpvDoubleBufferingEnabled ||
+          current.mpvCustomOutputEnabled != next.mpvCustomOutputEnabled ||
+          current.mpvVideoOutputDriver != next.mpvVideoOutputDriver ||
+          current.mpvHardwareDecoder != next.mpvHardwareDecoder ||
+          current.mpvLogEnabled != next.mpvLogEnabled,
+    PlayerBackend.mdk =>
+      current.mdkLowLatencyEnabled != next.mdkLowLatencyEnabled ||
+          current.mdkAndroidTunnelEnabled != next.mdkAndroidTunnelEnabled ||
+          current.mdkAndroidHardwareVideoDecoderEnabled !=
+              next.mdkAndroidHardwareVideoDecoderEnabled,
+    PlayerBackend.memory => false,
+  };
 }

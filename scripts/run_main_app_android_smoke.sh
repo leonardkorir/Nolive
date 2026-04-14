@@ -6,14 +6,9 @@ APP_DIR="$ROOT_DIR/apps/main_app"
 DEVICE_ID="${ANDROID_DEVICE_ID:-}"
 RESTORE_RELEASE="${ANDROID_SMOKE_RESTORE_RELEASE:-1}"
 
-if ! command -v flutter >/dev/null 2>&1; then
-  export PATH="$HOME/.local/share/flutter/bin:$PATH"
-fi
-
-if ! command -v flutter >/dev/null 2>&1; then
-  echo "flutter not found; please install Flutter or export PATH first" >&2
-  exit 1
-fi
+# shellcheck source=/dev/null
+source "$ROOT_DIR/scripts/lib/flutter_toolchain.sh"
+require_flutter_toolchain
 
 if ! command -v adb >/dev/null 2>&1; then
   echo "adb not found; please install Android platform-tools first" >&2
@@ -26,6 +21,12 @@ fi
 
 if [[ -z "$DEVICE_ID" ]]; then
   echo "no Android device detected; connect a phone or start an emulator" >&2
+  exit 1
+fi
+
+if ! rg -q 'io\.flutter\.embedding\.android\.EnableImpeller' \
+  "$APP_DIR/android/app/src/main/AndroidManifest.xml"; then
+  echo "Android manifest is missing io.flutter.embedding.android.EnableImpeller metadata" >&2
   exit 1
 fi
 
