@@ -63,6 +63,7 @@ class LoadSyncPreferencesUseCase {
   final SecureCredentialStore secureCredentialStore;
 
   Future<SyncPreferences> call() async {
+    await secureCredentialStore.ensureReady();
     final securePassword = await secureCredentialStore.read(
       SensitiveSettingKeys.syncWebDavPassword,
     );
@@ -105,6 +106,7 @@ class UpdateSyncPreferencesUseCase {
   final SecureCredentialStore secureCredentialStore;
 
   Future<void> call(SyncPreferences preferences) async {
+    await secureCredentialStore.ensureReady();
     await settingsRepository.writeValue(
       'sync_webdav_base_url',
       preferences.webDavBaseUrl,
@@ -121,7 +123,9 @@ class UpdateSyncPreferencesUseCase {
       SensitiveSettingKeys.syncWebDavPassword,
       preferences.webDavPassword,
     );
-    await settingsRepository.remove(SensitiveSettingKeys.syncWebDavPassword);
+    if (secureCredentialStore.storesSecureValuesSeparately) {
+      await settingsRepository.remove(SensitiveSettingKeys.syncWebDavPassword);
+    }
     await settingsRepository.writeValue(
       'sync_local_device_name',
       preferences.localDeviceName,

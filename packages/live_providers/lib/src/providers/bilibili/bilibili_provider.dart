@@ -2,6 +2,7 @@ import 'package:live_core/live_core.dart';
 
 import '../../danmaku/bilibili_danmaku_session.dart';
 import '../../danmaku/provider_ticker_danmaku_session.dart';
+import '../../danmaku/provider_unavailable_danmaku_session.dart';
 import 'bilibili_auth_context.dart';
 import 'bilibili_data_source.dart';
 import 'bilibili_live_data_source.dart';
@@ -121,21 +122,36 @@ class BilibiliProvider extends LiveProvider
   Future<DanmakuSession> createDanmakuSession(LiveRoomDetail detail) async {
     requireCapability(ProviderCapability.danmaku);
     final token = detail.danmakuToken;
-    if (token is Map && token['mode']?.toString() == 'preview') {
+    final mode = token is Map ? token['mode']?.toString() ?? '' : '';
+    if (mode == 'preview') {
       return ProviderTickerDanmakuSession(
         providerId: descriptor.id.value,
         detail: detail,
       );
     }
+    if (mode == 'unavailable') {
+      final reason =
+          token is Map ? token['reason']?.toString().trim() ?? '' : '';
+      return ProviderUnavailableDanmakuSession(
+        reason: reason.isNotEmpty ? reason : '哔哩哔哩当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',
+      );
+    }
+    final roomId =
+        token is Map ? int.tryParse(token['roomId']?.toString() ?? '') ?? 0 : 0;
+    final authToken =
+        token is Map ? token['token']?.toString().trim() ?? '' : '';
     if (token is Map<String, Object?>) {
-      return BilibiliDanmakuSession(tokenData: token);
+      if (roomId > 0 && authToken.isNotEmpty) {
+        return BilibiliDanmakuSession(tokenData: token);
+      }
     }
     if (token is Map) {
-      return BilibiliDanmakuSession(tokenData: token.cast<String, Object?>());
+      if (roomId > 0 && authToken.isNotEmpty) {
+        return BilibiliDanmakuSession(tokenData: token.cast<String, Object?>());
+      }
     }
-    return ProviderTickerDanmakuSession(
-      providerId: descriptor.id.value,
-      detail: detail,
+    return ProviderUnavailableDanmakuSession(
+      reason: '哔哩哔哩当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',
     );
   }
 }

@@ -51,9 +51,12 @@ class HttpDouyuSignService implements DouyuSignService {
     required DouyuTransport transport,
     DouyuSignExecutor? signExecutor,
     Random? random,
+    void Function()? scheduleSignerWarmUp,
   })  : _transport = transport,
         _signExecutor = signExecutor ?? _defaultSignExecutor,
-        _random = random ?? Random.secure();
+        _random = random ?? Random.secure() {
+    (scheduleSignerWarmUp ?? DouyuQuickJsSigner.scheduleWarmUp).call();
+  }
 
   static const String defaultUserAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '

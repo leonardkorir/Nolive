@@ -523,7 +523,6 @@ class MdkPlayer implements BasePlayer {
     _textureId.value = null;
     _player?.dispose();
     _player = null;
-    _textureId.dispose();
     await _stateController.close();
     await _diagnosticsController.close();
     _logEvent('dispose done');

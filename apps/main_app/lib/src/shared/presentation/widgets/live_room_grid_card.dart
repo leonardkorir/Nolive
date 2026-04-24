@@ -54,6 +54,13 @@ class LiveRoomGridCard extends StatelessWidget {
     final theme = Theme.of(context);
     final accent = ProviderBadge.accentColorOf(descriptor.id);
     final coverUrl = room.keyframeUrl ?? room.coverUrl;
+    final areaLabel = normalizeDisplayText(
+      room.areaName?.isNotEmpty == true
+          ? room.areaName
+          : descriptor.displayName,
+    );
+    final normalizedTitle = normalizeDisplayText(room.title);
+    final normalizedStreamerName = normalizeDisplayText(room.streamerName);
 
     return AppSurfaceCard(
       padding: EdgeInsets.zero,
@@ -105,9 +112,7 @@ class LiveRoomGridCard extends StatelessWidget {
                           children: [
                             Expanded(
                               child: Text(
-                                room.areaName?.isNotEmpty == true
-                                    ? room.areaName!
-                                    : descriptor.displayName,
+                                areaLabel,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: theme.textTheme.labelMedium?.copyWith(
@@ -159,7 +164,7 @@ class LiveRoomGridCard extends StatelessWidget {
                     StreamerAvatar(
                       size: 23,
                       imageUrl: room.streamerAvatarUrl,
-                      fallbackText: normalizeDisplayText(room.streamerName),
+                      fallbackText: normalizedStreamerName,
                       isLive: room.isLive,
                       liveRingWidth: 1.2,
                       fallbackTextStyle: theme.textTheme.labelLarge?.copyWith(
@@ -173,7 +178,7 @@ class LiveRoomGridCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            normalizeDisplayText(room.title),
+                            normalizedTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
@@ -185,7 +190,7 @@ class LiveRoomGridCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 0.5),
                           Text(
-                            normalizeDisplayText(room.streamerName),
+                            normalizedStreamerName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(

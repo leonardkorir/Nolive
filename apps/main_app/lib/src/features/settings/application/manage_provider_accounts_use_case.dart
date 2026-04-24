@@ -52,6 +52,7 @@ class LoadProviderAccountSettingsUseCase {
   final SecureCredentialStore secureCredentialStore;
 
   Future<ProviderAccountSettings> call() async {
+    await secureCredentialStore.ensureReady();
     final bilibiliCookie = await secureCredentialStore
         .read(SensitiveSettingKeys.accountBilibiliCookie);
     final chaturbateCookie = await secureCredentialStore.read(
@@ -115,6 +116,7 @@ class UpdateProviderAccountSettingsUseCase {
   final ValueNotifier<int>? providerCatalogRevision;
 
   Future<void> call(ProviderAccountSettings settings) async {
+    await secureCredentialStore.ensureReady();
     await secureCredentialStore.write(
       SensitiveSettingKeys.accountBilibiliCookie,
       settings.bilibiliCookie,
@@ -139,13 +141,23 @@ class UpdateProviderAccountSettingsUseCase {
       SensitiveSettingKeys.accountYouTubeCookie,
       settings.youtubeCookie,
     );
-    await settingsRepository.remove(SensitiveSettingKeys.accountBilibiliCookie);
-    await settingsRepository.remove(
-      SensitiveSettingKeys.accountChaturbateCookie,
-    );
-    await settingsRepository.remove(SensitiveSettingKeys.accountDouyinCookie);
-    await settingsRepository.remove(SensitiveSettingKeys.accountTwitchCookie);
-    await settingsRepository.remove(SensitiveSettingKeys.accountYouTubeCookie);
+    if (secureCredentialStore.storesSecureValuesSeparately) {
+      await settingsRepository.remove(
+        SensitiveSettingKeys.accountBilibiliCookie,
+      );
+      await settingsRepository.remove(
+        SensitiveSettingKeys.accountChaturbateCookie,
+      );
+      await settingsRepository.remove(
+        SensitiveSettingKeys.accountDouyinCookie,
+      );
+      await settingsRepository.remove(
+        SensitiveSettingKeys.accountTwitchCookie,
+      );
+      await settingsRepository.remove(
+        SensitiveSettingKeys.accountYouTubeCookie,
+      );
+    }
     providerRegistry?.invalidate(ProviderId.bilibili);
     providerRegistry?.invalidate(ProviderId.chaturbate);
     providerRegistry?.invalidate(ProviderId.douyin);
@@ -340,7 +352,7 @@ class LoadProviderAccountDashboardUseCase {
         providerName: 'Chaturbate',
         health: ProviderAccountHealth.notConfigured,
         credentialSummary: '未配置 Cookie',
-        identitySummary: '建议网页登录后保存 Cookie',
+        identitySummary: '默认可匿名解析；如遇 Cloudflare 或房间页加载失败，再补浏览器 Cookie',
         supportsQrLogin: false,
       );
     }
@@ -353,7 +365,9 @@ class LoadProviderAccountDashboardUseCase {
       credentialSummary: hasClearance
           ? '已配置 ${settings.chaturbateCookie.length} 字符 Cookie'
           : '已配置 ${settings.chaturbateCookie.length} 字符 Cookie（未检测到 cf_clearance）',
-      identitySummary: hasClearance ? '已保存浏览器会话' : '建议补全 cf_clearance',
+      identitySummary: hasClearance
+          ? '已保存浏览器会话，可用于 Cloudflare / 弹幕预热'
+          : '已保存 Cookie；如遇 Cloudflare 建议补全 cf_clearance',
       supportsQrLogin: false,
     );
   }

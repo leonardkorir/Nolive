@@ -127,6 +127,49 @@ void main() {
     expect(find.text('第一页'), findsOneWidget);
     expect(find.text('第二页'), findsOneWidget);
   });
+
+  testWidgets(
+      'home page automatically reloads provider feed after provider catalog revision changes',
+      (tester) async {
+    _ReloadingHomeProvider.instanceCount = 0;
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    bootstrap.providerRegistry.register(
+      ProviderRegistration(
+        descriptor: const ProviderDescriptor(
+          id: ProviderId.twitch,
+          displayName: 'Twitch',
+          capabilities: {
+            ProviderCapability.recommendRooms,
+          },
+          supportedPlatforms: {ProviderPlatform.android},
+        ),
+        builder: () => _ReloadingHomeProvider(),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomePage(dependencies: buildHomeFeatureDependencies(bootstrap)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final providerTab = find.byKey(const Key('home-provider-tab-twitch'));
+    await tester.ensureVisible(providerTab);
+    await tester.tap(providerTab);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Twitch 首页加载失败'), findsOneWidget);
+
+    bootstrap.providerRegistry.clearCache();
+    bootstrap.providerCatalogRevision.value += 1;
+
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('恢复后的第一页'), findsOneWidget);
+    expect(find.text('Twitch 首页加载失败'), findsNothing);
+  });
 }
 
 class _PagedTwitchHomeProvider extends LiveProvider
@@ -220,6 +263,50 @@ class _AutoPrefetchLimitedHomeProvider extends LiveProvider
       ],
       hasMore: page < 3,
       page: page,
+    );
+  }
+}
+
+class _ReloadingHomeProvider extends LiveProvider
+    implements SupportsRecommendRooms {
+  static int instanceCount = 0;
+
+  _ReloadingHomeProvider() : _instanceId = ++instanceCount;
+
+  static const ProviderDescriptor _descriptor = ProviderDescriptor(
+    id: ProviderId.twitch,
+    displayName: 'Twitch',
+    capabilities: {
+      ProviderCapability.recommendRooms,
+    },
+    supportedPlatforms: {ProviderPlatform.android},
+  );
+
+  final int _instanceId;
+
+  @override
+  ProviderDescriptor get descriptor => _descriptor;
+
+  @override
+  Future<PagedResponse<LiveRoom>> fetchRecommendRooms({int page = 1}) async {
+    if (_instanceId == 1) {
+      throw Exception('stale provider credentials');
+    }
+    return const PagedResponse(
+      items: [
+        LiveRoom(
+          providerId: 'twitch',
+          roomId: 'room-reloaded',
+          title: '恢复后的第一页',
+          streamerName: '主播恢复',
+          coverUrl: 'https://example.com/reloaded-cover.png',
+          streamerAvatarUrl: 'https://example.com/reloaded-avatar.png',
+          viewerCount: 88,
+          isLive: true,
+        ),
+      ],
+      hasMore: false,
+      page: 1,
     );
   }
 }

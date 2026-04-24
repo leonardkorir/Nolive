@@ -37,15 +37,31 @@ class RoomPlaybackLeaveCleanupCoordinator {
     context.trace('cleanup playback start');
     final viewState = context.readViewUiState();
     final stateBeforeCleanup = context.runtime.readCurrentState();
+    final backend =
+        stateBeforeCleanup.backend ?? context.runtime.resolveBackend();
+    final shouldRefresh =
+        context.shouldRefreshBackendAfterCleanup(stateBeforeCleanup);
+    context.trace(
+      'cleanup playback state '
+      'backend=${backend.name} '
+      'status=${stateBeforeCleanup.status.name} '
+      'hasSource=${stateBeforeCleanup.source != null} '
+      'refresh=$shouldRefresh',
+    );
     if (!context.androidPlaybackBridge.isSupported) {
       await _stopPlayerForCleanup(context.runtime);
       await _refreshBackendAfterCleanupIfNeeded(
         stateBeforeCleanup: stateBeforeCleanup,
+        backend: backend,
+        shouldRefresh: shouldRefresh,
       );
+      context.trace('cleanup playback complete backend=${backend.name}');
       return;
     }
     if (viewState.enteringPictureInPicture) {
-      context.trace('cleanup playback skip stop due entering PiP');
+      context.trace(
+        'cleanup playback skip stop due entering PiP backend=${backend.name}',
+      );
       return;
     }
     final inPip =
@@ -55,8 +71,14 @@ class RoomPlaybackLeaveCleanupCoordinator {
       await _stopPlayerForCleanup(context.runtime);
       await _refreshBackendAfterCleanupIfNeeded(
         stateBeforeCleanup: stateBeforeCleanup,
+        backend: backend,
+        shouldRefresh: shouldRefresh,
       );
+      context.trace('cleanup playback complete backend=${backend.name}');
+      return;
     }
+    context.trace(
+        'cleanup playback skip stop due active PiP backend=${backend.name}');
   }
 
   Future<void> _stopPlayerForCleanup(
@@ -70,15 +92,22 @@ class RoomPlaybackLeaveCleanupCoordinator {
 
   Future<void> _refreshBackendAfterCleanupIfNeeded({
     required PlayerState stateBeforeCleanup,
+    required PlayerBackend backend,
+    required bool shouldRefresh,
   }) async {
-    if (!context.shouldRefreshBackendAfterCleanup(stateBeforeCleanup)) {
+    if (!shouldRefresh) {
+      context.trace(
+        'cleanup playback refresh skipped '
+        'backend=${backend.name} '
+        'status=${stateBeforeCleanup.status.name} '
+        'hasSource=${stateBeforeCleanup.source != null}',
+      );
       return;
     }
-    final backend =
-        stateBeforeCleanup.backend ?? context.runtime.resolveBackend();
     context.trace('cleanup playback refresh backend=${backend.name}');
     try {
       await context.runtime.refreshBackendWithoutPlaybackState();
+      context.trace('cleanup playback refresh done backend=${backend.name}');
     } catch (error) {
       context.trace(
         'cleanup playback refresh failed backend=${backend.name} error=$error',

@@ -108,11 +108,7 @@ class ChaturbateDanmakuSession implements DanmakuSession {
       );
       _channels = _extractChannelNames(authResponse);
 
-      final history = await apiClient.fetchRoomHistory(
-        roomId: roomId,
-        csrfToken: csrfToken,
-        topics: _buildTopics(_historyTopicNames),
-      );
+      final history = await _fetchRoomHistory();
       for (final entry in history) {
         _emitMapped(entry);
       }
@@ -171,6 +167,28 @@ class ChaturbateDanmakuSession implements DanmakuSession {
       await _socket?.close();
       _socket = null;
       rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchRoomHistory() async {
+    try {
+      return await apiClient.fetchRoomHistory(
+        roomId: roomId,
+        csrfToken: csrfToken,
+        topics: _buildTopics(_historyTopicNames),
+      );
+    } catch (error) {
+      if (!_shouldIgnoreRoomHistoryFailure(error)) {
+        rethrow;
+      }
+      _emit(
+        LiveMessage(
+          type: LiveMessageType.notice,
+          content: 'Chaturbate 历史弹幕不可用，已切换为仅实时弹幕。',
+          timestamp: DateTime.now(),
+        ),
+      );
+      return const <Map<String, dynamic>>[];
     }
   }
 
@@ -373,6 +391,15 @@ class ChaturbateDanmakuSession implements DanmakuSession {
       return;
     }
     _controller.add(message);
+  }
+
+  bool _shouldIgnoreRoomHistoryFailure(Object error) {
+    if (error is! ProviderParseException) {
+      return false;
+    }
+    final message = error.message.toLowerCase();
+    return message.contains('/push_service/room_history/') &&
+        message.contains('status 403');
   }
 
   static ChaturbateSocketClient _defaultSocketClientFactory(Uri uri) {

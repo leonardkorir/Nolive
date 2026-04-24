@@ -45,4 +45,44 @@ void main() {
     );
     expect(coverImage.imageUrl, room.keyframeUrl);
   });
+
+  testWidgets('live room grid card normalizes malformed UTF-16 text fields', (
+    tester,
+  ) async {
+    const room = LiveRoom(
+      providerId: 'bilibili',
+      roomId: 'room-2',
+      title: '标题\uD800',
+      streamerName: '主播\uD800',
+      areaName: '分区\uD800',
+      isLive: true,
+    );
+
+    const descriptor = ProviderDescriptor(
+      id: ProviderId.bilibili,
+      displayName: '哔哩哔哩',
+      capabilities: {},
+      supportedPlatforms: {ProviderPlatform.android},
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 220,
+            height: 180,
+            child: LiveRoomGridCard(
+              room: room,
+              descriptor: descriptor,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('标题'), findsOneWidget);
+    expect(find.text('主播'), findsOneWidget);
+    expect(find.text('分区'), findsOneWidget);
+  });
 }

@@ -94,4 +94,24 @@ void main() {
 
     expect(find.text('M'), findsOneWidget);
   });
+
+  testWidgets(
+      'fallback avatar strips malformed UTF-16 before initial extraction',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: StreamerAvatar(
+              size: 40,
+              fallbackText: 'A\uD800',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('A'), findsOneWidget);
+  });
 }

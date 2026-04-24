@@ -44,7 +44,7 @@ class _AppShellPageState extends State<AppShellPage> {
       label: '我的',
       icon: Icons.sentiment_satisfied_outlined,
       selectedIcon: Icons.sentiment_satisfied_alt,
-      builder: () => const ProfilePage(),
+      builder: () => ProfilePage(),
     ),
   };
 

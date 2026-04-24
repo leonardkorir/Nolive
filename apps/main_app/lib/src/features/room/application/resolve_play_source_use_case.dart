@@ -8,13 +8,20 @@ typedef WrapTwitchPlayUrls = Future<List<LivePlayUrl>> Function({
   required List<LivePlayUrl> playUrls,
 });
 
+typedef WrapChaturbatePlayUrls = Future<List<LivePlayUrl>> Function({
+  required LivePlayQuality quality,
+  required List<LivePlayUrl> playUrls,
+});
+
 class ResolvePlaySourceUseCase {
   const ResolvePlaySourceUseCase(
     this.registry, {
+    this.wrapChaturbatePlayUrls,
     this.wrapTwitchPlayUrls,
   });
 
   final ProviderRegistry registry;
+  final WrapChaturbatePlayUrls? wrapChaturbatePlayUrls;
   final WrapTwitchPlayUrls? wrapTwitchPlayUrls;
 
   Future<ResolvedPlaySource> call({
@@ -41,6 +48,23 @@ class ResolvePlaySourceUseCase {
       );
     }
     var effectiveUrls = urls;
+    if (providerId == ProviderId.chaturbate) {
+      final proxied = await wrapChaturbatePlayUrls?.call(
+        quality: quality,
+        playUrls: urls,
+      );
+      if (proxied != null && proxied.isNotEmpty) {
+        effectiveUrls = proxied;
+      }
+      effectiveUrls = _ensureChaturbateStableFallbackUrls(effectiveUrls);
+      _debugTrace(
+        'chaturbate resolve quality=${quality.id}/${quality.label} '
+        'source=${preloadedPlayUrls == null ? 'network' : 'preloaded'} '
+        'urls=${urls.length} proxied=${effectiveUrls.length} '
+        'stableFallbacks=${effectiveUrls.where(_isChaturbateStableFallback).length} '
+        'lines=${_describeLines(effectiveUrls)}',
+      );
+    }
     if (providerId == ProviderId.twitch) {
       final proxied = await wrapTwitchPlayUrls?.call(
         quality: quality,
@@ -114,6 +138,33 @@ class ResolvePlaySourceUseCase {
     required LivePlayQuality requestedQuality,
     required List<LivePlayUrl> urls,
   }) {
+    if (providerId == ProviderId.bilibili) {
+      final requestedQn = int.tryParse(requestedQuality.id);
+      final ordered = List<LivePlayUrl>.from(urls)
+        ..sort((left, right) {
+          return _compareBilibiliPlayUrls(
+            left,
+            right,
+            requestedQn: requestedQn,
+          );
+        });
+      if (requestedQn == null) {
+        return ordered;
+      }
+      final exactMatch = ordered.where((item) {
+        return _extractBilibiliEffectiveQn(item) == requestedQn;
+      }).toList(growable: false);
+      return exactMatch.isEmpty ? ordered : exactMatch;
+    }
+    if (providerId == ProviderId.chaturbate) {
+      final ordered = List<LivePlayUrl>.from(urls);
+      ordered.sort((left, right) {
+        return _chaturbatePlaybackPriority(left).compareTo(
+          _chaturbatePlaybackPriority(right),
+        );
+      });
+      return ordered;
+    }
     if (providerId == ProviderId.twitch) {
       final ordered = List<LivePlayUrl>.from(urls);
       ordered.sort((left, right) {
@@ -140,6 +191,47 @@ class ResolvePlaySourceUseCase {
     return exactMatch.isEmpty ? urls : exactMatch;
   }
 
+  int _compareBilibiliPlayUrls(
+    LivePlayUrl left,
+    LivePlayUrl right, {
+    required int? requestedQn,
+  }) {
+    final leftQn = _extractBilibiliEffectiveQn(left) ?? -1;
+    final rightQn = _extractBilibiliEffectiveQn(right) ?? -1;
+    if (requestedQn != null) {
+      final leftExact = leftQn == requestedQn;
+      final rightExact = rightQn == requestedQn;
+      if (leftExact != rightExact) {
+        return leftExact ? -1 : 1;
+      }
+    }
+    final qualityCompare = rightQn.compareTo(leftQn);
+    if (qualityCompare != 0) {
+      return qualityCompare;
+    }
+    final leftPenalty = left.url.contains('mcdn') ? 1 : 0;
+    final rightPenalty = right.url.contains('mcdn') ? 1 : 0;
+    if (leftPenalty != rightPenalty) {
+      return leftPenalty.compareTo(rightPenalty);
+    }
+    return 0;
+  }
+
+  int? _extractBilibiliEffectiveQn(LivePlayUrl item) {
+    return _extractIntMetadataValue(item, const ['expectedQn', 'qn']) ??
+        _extractIntQueryValue(item, const ['expected_qn', 'qn']);
+  }
+
+  int _chaturbatePlaybackPriority(LivePlayUrl playUrl) {
+    if (_isChaturbateLlHlsProxy(playUrl)) {
+      return 0;
+    }
+    if (_isChaturbateStableFallback(playUrl)) {
+      return 1;
+    }
+    return 2;
+  }
+
   int _twitchPlayerTypePriority(String? playerType) {
     switch (playerType?.trim().toLowerCase()) {
       case 'popout':
@@ -160,7 +252,7 @@ class ResolvePlaySourceUseCase {
     required LivePlayUrl selectedUrl,
   }) {
     final effectiveId = switch (providerId) {
-      ProviderId.bilibili => _extractIntQueryValue(selectedUrl, const ['qn']),
+      ProviderId.bilibili => _extractBilibiliEffectiveQn(selectedUrl),
       ProviderId.douyu =>
         _extractIntMetadataValue(selectedUrl, const ['rate']) ??
             _extractIntQueryValue(selectedUrl, const ['rate']),
@@ -259,6 +351,11 @@ PlaybackSource playbackSourceFromLivePlayUrl(
   LivePlayQuality? quality,
 }) {
   final audioUrl = playUrl.metadata?['audioUrl']?.toString().trim() ?? '';
+  final masterPlaylistUrl =
+      playUrl.metadata?['masterPlaylistUrl']?.toString().trim() ?? '';
+  final masterPlaylistContent =
+      playUrl.metadata?['masterPlaylistContent']?.toString() ?? '';
+  final hlsBitrate = playUrl.metadata?['hlsBitrate']?.toString().trim() ?? '';
   final bufferProfile = resolvePlaybackBufferProfile(
     playUrl: playUrl,
     quality: quality,
@@ -268,6 +365,8 @@ PlaybackSource playbackSourceFromLivePlayUrl(
       '[ResolvePlaySource] build playback source '
       'line=${playUrl.lineLabel ?? '-'} '
       'bufferProfile=${bufferProfile.name} '
+      'hlsBitrate=${hlsBitrate.isEmpty ? '-' : hlsBitrate} '
+      'master=${masterPlaylistUrl.isEmpty ? '-' : _shortPlaybackDescriptor(masterPlaylistUrl)} '
       'video=${_shortPlaybackDescriptor(playUrl.url)} '
       'audio=${audioUrl.isEmpty ? '-' : _shortPlaybackDescriptor(audioUrl)}',
     );
@@ -275,7 +374,12 @@ PlaybackSource playbackSourceFromLivePlayUrl(
   return PlaybackSource(
     url: Uri.parse(playUrl.url),
     headers: playUrl.headers,
+    masterPlaylistUrl:
+        masterPlaylistUrl.isEmpty ? null : Uri.parse(masterPlaylistUrl),
+    masterPlaylistContent:
+        masterPlaylistContent.trim().isEmpty ? null : masterPlaylistContent,
     bufferProfile: bufferProfile,
+    hlsBitrate: hlsBitrate.isEmpty ? null : hlsBitrate,
     externalAudio: audioUrl.isEmpty
         ? null
         : PlaybackExternalMedia(
@@ -298,6 +402,15 @@ PlaybackBufferProfile resolvePlaybackBufferProfile({
   required LivePlayUrl playUrl,
   LivePlayQuality? quality,
 }) {
+  if (_isChaturbateLlHlsProxy(playUrl) ||
+      _isChaturbateStableFallback(playUrl)) {
+    return PlaybackBufferProfile.chaturbateLlHlsProxyStable;
+  }
+
+  if (_looksLikeMmcdnLowLatencySource(playUrl)) {
+    return PlaybackBufferProfile.edgeLowLatencyHls;
+  }
+
   final width = _readIntAcrossMetadata(
     playUrl: playUrl,
     quality: quality,
@@ -347,6 +460,39 @@ PlaybackBufferProfile resolvePlaybackBufferProfile({
   return PlaybackBufferProfile.defaultLowLatency;
 }
 
+List<LivePlayUrl> _ensureChaturbateStableFallbackUrls(List<LivePlayUrl> urls) {
+  return urls.map((playUrl) {
+    if (_isChaturbateLlHlsProxy(playUrl) ||
+        _isChaturbateStableFallback(playUrl) ||
+        !_looksLikeMmcdnLowLatencySource(playUrl)) {
+      return playUrl;
+    }
+    return LivePlayUrl(
+      url: playUrl.url,
+      headers: playUrl.headers,
+      lineLabel: playUrl.lineLabel,
+      metadata: {
+        ...?playUrl.metadata,
+        'chaturbateStableFallback': true,
+        'chaturbateProxyFallbackReason': 'proxy-unavailable',
+      },
+    );
+  }).toList(growable: false);
+}
+
+bool _isChaturbateStableFallback(LivePlayUrl playUrl) {
+  return playUrl.metadata?['chaturbateStableFallback'] == true;
+}
+
+bool _isChaturbateLlHlsProxy(LivePlayUrl playUrl) {
+  final proxyKind = playUrl.metadata?['proxyKind']?.toString().trim();
+  if (proxyKind == 'chaturbate-llhls') {
+    return true;
+  }
+  final uri = Uri.tryParse(playUrl.url);
+  return uri != null && uri.path.contains('/chaturbate-llhls/');
+}
+
 int? _readIntAcrossMetadata({
   required LivePlayUrl playUrl,
   required LivePlayQuality? quality,
@@ -374,6 +520,35 @@ bool _matchesHeavyStreamLabel(String label) {
   }
   for (final keyword in _heavyStreamQualityKeywords) {
     if (normalized.contains(keyword)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _looksLikeMmcdnLowLatencySource(LivePlayUrl playUrl) {
+  final candidates = <String>[
+    playUrl.url,
+    playUrl.metadata?['audioUrl']?.toString() ?? '',
+    playUrl.metadata?['masterPlaylistUrl']?.toString() ?? '',
+  ];
+  for (final candidate in candidates) {
+    final uri = Uri.tryParse(candidate);
+    if (uri == null) {
+      continue;
+    }
+    final host = uri.host.toLowerCase();
+    final path = uri.path.toLowerCase();
+    if (!host.endsWith('live.mmcdn.com')) {
+      continue;
+    }
+    if (path.contains('/v1/edge/streams/') &&
+        (path.contains('llhls') || path.endsWith('/llhls.m3u8'))) {
+      return true;
+    }
+    if (path.contains('/live-hls/amlst:') &&
+        path.endsWith('.m3u8') &&
+        (path.contains('/chunklist_') || path.endsWith('/playlist.m3u8'))) {
       return true;
     }
   }

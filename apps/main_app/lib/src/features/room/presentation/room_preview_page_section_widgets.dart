@@ -154,13 +154,14 @@ class RoomChatMessageTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final userName = message.userName?.trim() ?? '';
+    final userName = normalizeDisplayText(message.userName).trim();
+    final content = normalizeDisplayText(message.content);
 
     if (userName == 'LiveSysMessage') {
       return Padding(
         padding: EdgeInsets.only(bottom: gap),
         child: SelectableText(
-          message.content,
+          content,
           style: applyZhTextStyleOrNull(
             theme.textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
@@ -191,12 +192,12 @@ class RoomChatMessageTile extends StatelessWidget {
                 fontSize: fontSize,
               ),
             ),
-          TextSpan(text: message.content),
+          TextSpan(text: content),
         ],
       ),
     );
 
-    final content = Padding(
+    final bubbleContent = Padding(
       padding: EdgeInsets.symmetric(
         horizontal: bubbleStyle ? 12 : 0,
         vertical: bubbleStyle ? 8 : 0,
@@ -217,9 +218,9 @@ class RoomChatMessageTile extends StatelessWidget {
                   bottomRight: Radius.circular(12),
                 ),
               ),
-              child: content,
+              child: bubbleContent,
             )
-          : content,
+          : bubbleContent,
     );
   }
 }
@@ -239,6 +240,8 @@ class DanmakuFeedTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final normalizedTitle = normalizeDisplayText(title);
+    final normalizedSubtitle = normalizeDisplayText(subtitle);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -255,14 +258,14 @@ class DanmakuFeedTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  normalizedTitle,
                   style: applyZhTextStyleOrNull(
                     Theme.of(context).textTheme.bodyLarge,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  subtitle,
+                  normalizedSubtitle,
                   style: applyZhTextStyleOrNull(
                     Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,

@@ -189,6 +189,14 @@ class RoomSessionController {
       requestedQuality: startupRequestedQuality,
     );
     final playbackQuality = startupPlan.startupQuality;
+    if (snapshot.selectedQuality.id != requestedQuality.id ||
+        snapshot.selectedQuality.label != requestedQuality.label) {
+      _trace(
+        'requested quality differs from loaded snapshot '
+        'loaded=${snapshot.selectedQuality.id}/${snapshot.selectedQuality.label} '
+        'requested=${requestedQuality.id}/${requestedQuality.label}',
+      );
+    }
     if (playbackQuality.id != requestedQuality.id ||
         playbackQuality.label != requestedQuality.label) {
       _trace(

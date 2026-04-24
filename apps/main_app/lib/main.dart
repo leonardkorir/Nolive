@@ -43,7 +43,13 @@ Future<void> main() async {
   await runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     configureImageCacheBudget(PaintingBinding.instance.imageCache);
-    await AppLog.instance.ensureInitialized();
+    unawaited(
+      AppLog.instance.ensureInitialized().catchError(
+        (Object error, StackTrace stackTrace) {
+          debugPrint('AppLog initialization failed: $error');
+        },
+      ),
+    );
     FlutterError.onError = (details) {
       AppLog.instance.error(
         'flutter',

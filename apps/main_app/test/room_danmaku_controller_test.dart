@@ -44,6 +44,31 @@ void main() {
     );
   });
 
+  test('room danmaku controller uses extended default timeout for chaturbate',
+      () {
+    expect(
+      resolveDanmakuConnectTimeout(
+        providerId: ProviderId.chaturbate,
+        configuredTimeout: const Duration(seconds: 6),
+      ),
+      const Duration(seconds: 20),
+    );
+    expect(
+      resolveDanmakuConnectTimeout(
+        providerId: ProviderId.douyu,
+        configuredTimeout: const Duration(seconds: 6),
+      ),
+      const Duration(seconds: 20),
+    );
+    expect(
+      resolveDanmakuConnectTimeout(
+        providerId: ProviderId.chaturbate,
+        configuredTimeout: const Duration(milliseconds: 20),
+      ),
+      const Duration(milliseconds: 20),
+    );
+  });
+
   test('room danmaku controller exposes messages and clears feed', () async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     bootstrap.providerRegistry.register(
@@ -270,6 +295,62 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   });
 
+  test('room danmaku controller times out stalled connect attempts', () async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final stalledConnect = Completer<void>();
+
+    bootstrap.providerRegistry.register(
+      ProviderRegistration(
+        descriptor: _kRoomDanmakuTestDescriptor,
+        builder: () => _RoomDanmakuTestProvider(
+          createSession: () => _ScriptedDanmakuSession(
+            onConnect: (_) => stalledConnect.future,
+          ),
+        ),
+      ),
+    );
+    bootstrap.providerRegistry.clearCache();
+
+    final dependencies = RoomPreviewDependencies.fromBootstrap(bootstrap);
+    final controller = RoomDanmakuController(
+      dependencies: RoomDanmakuDependencies.fromPreviewDependencies(
+        dependencies,
+      ),
+      providerId: _kRoomDanmakuTestProviderId,
+      connectTimeout: const Duration(milliseconds: 20),
+    );
+
+    final snapshot = await bootstrap.loadRoom(
+      providerId: _kRoomDanmakuTestProviderId,
+      roomId: 'timeout-room',
+    );
+    controller.configure(
+      blockedKeywords: const <String>[],
+      preferNativeBatchMask: false,
+      playerSuperChatDisplaySeconds: 3,
+    );
+    final session = await dependencies.openRoomDanmaku(
+      providerId: _kRoomDanmakuTestProviderId,
+      detail: snapshot.detail,
+    );
+
+    await controller.bindSession(
+      activeRoomDetail: snapshot.detail,
+      session: session,
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      controller.messages.value.any(
+        (item) => item.content.contains('弹幕连接失败：TimeoutException'),
+      ),
+      isTrue,
+    );
+    expect(controller.current.session, isNull);
+    controller.dispose();
+    await Future<void>.delayed(Duration.zero);
+  });
+
   test('room danmaku controller drops stale reconnect result after rebind',
       () async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -380,6 +461,7 @@ void main() {
       () async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     var sessionCreateCount = 0;
+    final traces = <String>[];
 
     bootstrap.providerRegistry.register(
       ProviderRegistration(
@@ -411,6 +493,7 @@ void main() {
         dependencies,
       ),
       providerId: _kRoomDanmakuTestProviderId,
+      trace: traces.add,
     );
 
     final snapshot = await bootstrap.loadRoom(
@@ -452,6 +535,32 @@ void main() {
 
     expect(sessionCreateCount, 2);
     expect(controller.current.session, isNotNull);
+    expect(
+      traces.any(
+        (entry) => entry.contains('danmaku bind start room=lifecycle-room'),
+      ),
+      isTrue,
+    );
+    expect(
+      traces.any(
+        (entry) => entry.contains('danmaku connect ready room=lifecycle-room'),
+      ),
+      isTrue,
+    );
+    expect(
+      traces.any(
+        (entry) => entry.contains(
+            'danmaku lifecycle suspend state=hidden room=lifecycle-room'),
+      ),
+      isTrue,
+    );
+    expect(
+      traces.any(
+        (entry) =>
+            entry.contains('danmaku lifecycle resume open room=lifecycle-room'),
+      ),
+      isTrue,
+    );
     await controller.current.session?.disconnect();
     controller.dispose();
     await Future<void>.delayed(Duration.zero);
@@ -563,6 +672,86 @@ void main() {
     controller.dispose();
     await Future<void>.delayed(Duration.zero);
   });
+
+  test(
+      'room danmaku controller ignores stale reconnect signals after lifecycle suspend',
+      () async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final lingeringControllerCompleter =
+        Completer<StreamController<LiveMessage>>();
+    var sessionCreateCount = 0;
+    _LingeringDanmakuSession? firstSession;
+
+    bootstrap.providerRegistry.register(
+      ProviderRegistration(
+        descriptor: _kRoomDanmakuTestDescriptor,
+        builder: () => _RoomDanmakuTestProvider(
+          createSession: () {
+            sessionCreateCount += 1;
+            if (sessionCreateCount == 1) {
+              firstSession = _LingeringDanmakuSession(
+                onConnect: (controller) async {
+                  lingeringControllerCompleter.complete(controller);
+                },
+              );
+              return firstSession!;
+            }
+            return _ScriptedDanmakuSession(onConnect: (_) async {});
+          },
+        ),
+      ),
+    );
+    bootstrap.providerRegistry.clearCache();
+
+    final dependencies = RoomPreviewDependencies.fromBootstrap(bootstrap);
+    final controller = RoomDanmakuController(
+      dependencies: RoomDanmakuDependencies.fromPreviewDependencies(
+        dependencies,
+      ),
+      providerId: _kRoomDanmakuTestProviderId,
+    );
+
+    final snapshot = await bootstrap.loadRoom(
+      providerId: _kRoomDanmakuTestProviderId,
+      roomId: 'suspended-room',
+    );
+    controller.configure(
+      blockedKeywords: const <String>[],
+      preferNativeBatchMask: false,
+      playerSuperChatDisplaySeconds: 3,
+    );
+    final session = await dependencies.openRoomDanmaku(
+      providerId: _kRoomDanmakuTestProviderId,
+      detail: snapshot.detail,
+    );
+    await controller.bindSession(
+      activeRoomDetail: snapshot.detail,
+      session: session,
+    );
+
+    await controller.handleLifecycleState(
+      state: AppLifecycleState.hidden,
+      backgroundAutoPauseEnabled: true,
+      inPictureInPictureMode: false,
+      enteringPictureInPicture: false,
+    );
+    final lingeringController = await lingeringControllerCompleter.future;
+    lingeringController.add(
+      LiveMessage(
+        type: LiveMessageType.notice,
+        content: 'test disconnect notice: 连接已断开',
+        timestamp: DateTime.now(),
+      ),
+    );
+    await Future<void>.delayed(const Duration(seconds: 3));
+
+    expect(controller.current.session, isNull);
+    expect(sessionCreateCount, 1);
+
+    await firstSession?.closeController();
+    controller.dispose();
+    await Future<void>.delayed(Duration.zero);
+  });
 }
 
 const _kRoomDanmakuTestProviderId = ProviderId('room_danmaku_test');
@@ -656,6 +845,35 @@ class _ScriptedDanmakuSession implements DanmakuSession {
   @override
   Future<void> disconnect() async {
     didDisconnect = true;
+    if (!_controller.isClosed) {
+      await _controller.close();
+    }
+  }
+}
+
+class _LingeringDanmakuSession implements DanmakuSession {
+  _LingeringDanmakuSession({
+    required this.onConnect,
+  });
+
+  final Future<void> Function(StreamController<LiveMessage> controller)
+      onConnect;
+  final StreamController<LiveMessage> _controller =
+      StreamController<LiveMessage>.broadcast();
+  bool didDisconnect = false;
+
+  @override
+  Stream<LiveMessage> get messages => _controller.stream;
+
+  @override
+  Future<void> connect() => onConnect(_controller);
+
+  @override
+  Future<void> disconnect() async {
+    didDisconnect = true;
+  }
+
+  Future<void> closeController() async {
     if (!_controller.isClosed) {
       await _controller.close();
     }

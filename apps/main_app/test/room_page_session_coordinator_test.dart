@@ -220,6 +220,38 @@ void main() {
   });
 
   test(
+      'page session coordinator clears ancillary loading before danmaku bind finishes',
+      () async {
+    final harness = _RoomPageSessionHarness();
+    addTearDown(harness.dispose);
+    final coordinator = harness.createCoordinator();
+    addTearDown(coordinator.dispose);
+    final bindCompleter = Completer<void>();
+    harness.sessionController.nextLoadResult = harness.primaryResult;
+    harness.ancillaryController.nextLoadResult = RoomAncillaryLoadResult(
+      danmakuSession: harness.primaryDanmakuSession,
+      isFollowed: true,
+    );
+    harness.danmakuController.onBind = ({
+      required activeRoomDetail,
+      required session,
+    }) {
+      return bindCompleter.future;
+    };
+
+    final loadFuture = coordinator.startInitialLoad();
+    await _flushAsyncWork();
+
+    expect(coordinator.state.ancillaryLoading, isFalse);
+    expect(coordinator.state.isFollowed, isTrue);
+    expect(harness.danmakuController.boundSession,
+        same(harness.primaryDanmakuSession));
+
+    bindCompleter.complete();
+    await loadFuture;
+  });
+
+  test(
       'page session coordinator leave-room cleanup waits for playback rebind before fullscreen cleanup',
       () async {
     final harness = _RoomPageSessionHarness();
@@ -240,6 +272,46 @@ void main() {
 
     expect(harness.danmakuController.closeSessionCalls, 1);
     expect(harness.fullscreenController.cleanupCalls, 1);
+  });
+
+  test('page session coordinator initial load waits for queued runtime cleanup',
+      () async {
+    final harness = _RoomPageSessionHarness();
+    addTearDown(harness.dispose);
+    final coordinator = harness.createCoordinator();
+    addTearDown(coordinator.dispose);
+    harness.sessionController.nextLoadResult = harness.primaryResult;
+    final cleanupCompleter = Completer<void>();
+
+    final queuedCleanup = harness.sessionController.dependencies.playerRuntime
+        .serializeRoomTeardown(() async {
+      await cleanupCompleter.future;
+    });
+
+    final loadFuture = coordinator.startInitialLoad();
+    await _flushAsyncWork();
+
+    expect(harness.sessionController.loadCalls, 0);
+    expect(
+      harness.traces,
+      containsAllInOrder(<String>[
+        'load waiting for pending cleanup',
+      ]),
+    );
+
+    cleanupCompleter.complete();
+    await queuedCleanup;
+    await loadFuture;
+    await _flushAsyncWork();
+
+    expect(harness.sessionController.loadCalls, 1);
+    expect(
+      harness.traces,
+      containsAllInOrder(<String>[
+        'load waiting for pending cleanup',
+        'load pending cleanup released',
+      ]),
+    );
   });
 
   test('page session coordinator resets leaving state when cleanup fails',
@@ -679,6 +751,10 @@ class _TestRoomDanmakuController extends RoomDanmakuController {
   DanmakuSession? boundSession;
   LiveRoomDetail? boundRoomDetail;
   int closeSessionCalls = 0;
+  Future<void> Function({
+    required LiveRoomDetail activeRoomDetail,
+    required DanmakuSession? session,
+  })? onBind;
 
   @override
   void configure({
@@ -705,6 +781,10 @@ class _TestRoomDanmakuController extends RoomDanmakuController {
   }) async {
     boundRoomDetail = activeRoomDetail;
     boundSession = session;
+    await onBind?.call(
+      activeRoomDetail: activeRoomDetail,
+      session: session,
+    );
   }
 
   @override

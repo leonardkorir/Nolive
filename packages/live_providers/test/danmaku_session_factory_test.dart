@@ -45,6 +45,53 @@ void main() {
     expect(session, isA<BilibiliDanmakuSession>());
   });
 
+  test(
+      'bilibili live detail without danmaku auth token uses unavailable session',
+      () async {
+    final provider = BilibiliProvider.preview();
+    final detail = LiveRoomDetail(
+      providerId: ProviderId.bilibili.value,
+      roomId: '1234',
+      title: 'test',
+      streamerName: 'tester',
+      danmakuToken: {
+        'mode': 'unavailable',
+        'reason': '暂未拿到可用弹幕连接参数',
+      },
+    );
+
+    final session = await provider.createDanmakuSession(detail);
+
+    expect(session, isA<ProviderUnavailableDanmakuSession>());
+  });
+
+  test('bilibili danmaku session prefers cookie uid and drops bare stored uid',
+      () {
+    final anonymousSession = BilibiliDanmakuSession(
+      tokenData: {
+        'roomId': 1234,
+        'uid': 998877,
+        'token': 'mock-token',
+        'serverHost': 'broadcastlv.chat.bilibili.com',
+        'buvid': 'mock-buvid',
+        'cookie': '',
+      },
+    );
+    final cookieBoundSession = BilibiliDanmakuSession(
+      tokenData: {
+        'roomId': 1234,
+        'uid': 998877,
+        'token': 'mock-token',
+        'serverHost': 'broadcastlv.chat.bilibili.com',
+        'buvid': 'mock-buvid',
+        'cookie': 'SESSDATA=test; DedeUserID=445566;',
+      },
+    );
+
+    expect(anonymousSession.uid, 0);
+    expect(cookieBoundSession.uid, 445566);
+  });
+
   test('chaturbate preview detail keeps deterministic ticker danmaku',
       () async {
     final provider = ChaturbateProvider.preview();

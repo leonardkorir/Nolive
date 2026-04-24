@@ -2,6 +2,8 @@ import 'player_backend.dart';
 
 enum PlaybackBufferProfile {
   defaultLowLatency,
+  edgeLowLatencyHls,
+  chaturbateLlHlsProxyStable,
   heavyStreamStable,
 }
 
@@ -68,13 +70,19 @@ class PlaybackSource {
     required this.url,
     this.headers = const {},
     this.externalAudio,
+    this.masterPlaylistUrl,
+    this.masterPlaylistContent,
     this.bufferProfile = PlaybackBufferProfile.defaultLowLatency,
+    this.hlsBitrate,
   });
 
   final Uri url;
   final Map<String, String> headers;
   final PlaybackExternalMedia? externalAudio;
+  final Uri? masterPlaylistUrl;
+  final String? masterPlaylistContent;
   final PlaybackBufferProfile bufferProfile;
+  final String? hlsBitrate;
 }
 
 class PlaybackExternalMedia {

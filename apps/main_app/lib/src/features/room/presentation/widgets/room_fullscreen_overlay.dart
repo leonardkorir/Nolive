@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:live_core/live_core.dart';
 
 class RoomFullscreenOverlay extends StatelessWidget {
   const RoomFullscreenOverlay({
@@ -74,6 +75,7 @@ class RoomFullscreenOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalizedGestureTip = normalizeDisplayText(gestureTipText);
     return ColoredBox(
       key: const Key('room-fullscreen-overlay'),
       color: Colors.black,
@@ -91,7 +93,7 @@ class RoomFullscreenOverlay extends StatelessWidget {
               child: player,
             ),
           ),
-          if (gestureTipText != null)
+          if (normalizedGestureTip.isNotEmpty)
             Center(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -102,7 +104,7 @@ class RoomFullscreenOverlay extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                   child: Text(
-                    gestureTipText!,
+                    normalizedGestureTip,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
@@ -235,77 +237,214 @@ class RoomFullscreenTopChrome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalizedTitle = normalizeDisplayText(title);
     return Positioned(
       left: 0,
       right: 0,
       top: 0,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(
-          10,
-          MediaQuery.paddingOf(context).top + 6,
-          10,
-          8,
-        ),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.black87, Colors.transparent],
-          ),
-        ),
-        child: Row(
-          children: [
-            _FullscreenChromeIconButton(
-              key: const Key('room-exit-fullscreen-button'),
-              onPressed: onExitFullscreen,
-              icon: const Icon(Icons.arrow_back),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-            ),
-            if (pipSupported)
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final viewportHeight = MediaQuery.sizeOf(context).height;
+          final compactLandscape = viewportHeight < 420;
+          final compact = constraints.maxWidth < 720;
+          final dense = constraints.maxWidth < 600 || viewportHeight < 320;
+          final narrow = constraints.maxWidth < 520 || viewportHeight < 300;
+          final visibleSecondaryActionCount =
+              (pipSupported && !narrow ? 1 : 0) +
+                  (supportsDesktopMiniWindow && !narrow ? 1 : 0) +
+                  (supportsPlayerCapture && !narrow ? 1 : 0) +
+                  (!narrow ? 1 : 0);
+          final stackedActions = constraints.maxWidth < 700 ||
+              viewportHeight < 300 ||
+              (constraints.maxWidth < 820 &&
+                  normalizedTitle.length > 18 &&
+                  visibleSecondaryActionCount >= 3);
+          final ultraCompact = constraints.maxWidth < 420 ||
+              viewportHeight < 300 ||
+              compactLandscape;
+          final baseButtonExtent = ultraCompact
+              ? 32.0
+              : compact
+                  ? 36.0
+                  : 40.0;
+          final buttonExtent = stackedActions
+              ? (baseButtonExtent -
+                      (dense
+                          ? 8.0
+                          : compactLandscape
+                              ? 6.0
+                              : 2.0))
+                  .clamp(26.0, 40.0)
+                  .toDouble()
+              : baseButtonExtent;
+          final iconSize = ultraCompact
+              ? 20.0
+              : compact
+                  ? 22.0
+                  : 24.0;
+          final titleFontSize = stackedActions
+              ? ultraCompact
+                  ? 15.0
+                  : dense
+                      ? 16.0
+                      : 17.0
+              : compact
+                  ? 16.0
+                  : ultraCompact
+                      ? 15.0
+                      : 18.0;
+          final horizontalPadding = compactLandscape
+              ? 6.0
+              : compact
+                  ? 8.0
+                  : 10.0;
+          final bottomPadding = compactLandscape
+              ? 4.0
+              : compact
+                  ? 6.0
+                  : 8.0;
+          final secondaryActions = <Widget>[
+            if (pipSupported && !narrow)
               _FullscreenChromeIconButton(
                 key: const Key('room-fullscreen-pip-button'),
                 onPressed: onEnterPictureInPicture,
+                extent: buttonExtent,
+                iconSize: iconSize,
                 icon: const Icon(Icons.picture_in_picture_alt_outlined),
               ),
-            if (supportsDesktopMiniWindow)
+            if (supportsDesktopMiniWindow && !narrow)
               _FullscreenChromeIconButton(
                 key: const Key('room-fullscreen-desktop-mini-window-button'),
                 onPressed: onToggleDesktopMiniWindow,
+                extent: buttonExtent,
+                iconSize: iconSize,
                 icon: Icon(
                   desktopMiniWindowActive
                       ? Icons.close_fullscreen_rounded
                       : Icons.open_in_new_rounded,
                 ),
               ),
-            if (supportsPlayerCapture)
+            if (supportsPlayerCapture && !narrow)
               _FullscreenChromeIconButton(
                 key: const Key('room-fullscreen-capture-button'),
                 onPressed: onCapture,
+                extent: buttonExtent,
+                iconSize: iconSize,
                 icon: const Icon(Icons.camera_alt_outlined),
               ),
-            _FullscreenChromeIconButton(
-              key: const Key('room-fullscreen-debug-button'),
-              onPressed: onShowDebug,
-              icon: const Icon(Icons.bug_report_outlined),
+            if (!narrow)
+              _FullscreenChromeIconButton(
+                key: const Key('room-fullscreen-debug-button'),
+                onPressed: onShowDebug,
+                extent: buttonExtent,
+                iconSize: iconSize,
+                icon: const Icon(Icons.bug_report_outlined),
+              ),
+          ];
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              MediaQuery.paddingOf(context).top + (compactLandscape ? 4 : 6),
+              horizontalPadding,
+              bottomPadding,
             ),
-            _FullscreenChromeIconButton(
-              key: const Key('room-fullscreen-more-button'),
-              onPressed: onShowMore,
-              icon: const Icon(Icons.more_horiz_rounded),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.black87, Colors.transparent],
+              ),
             ),
-          ],
-        ),
+            child: stackedActions
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          _FullscreenChromeIconButton(
+                            key: const Key('room-exit-fullscreen-button'),
+                            onPressed: onExitFullscreen,
+                            extent: buttonExtent,
+                            iconSize: iconSize,
+                            icon: const Icon(Icons.arrow_back),
+                          ),
+                          SizedBox(width: compact ? 2 : 4),
+                          Expanded(
+                            child: Text(
+                              normalizedTitle,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    fontSize: titleFontSize,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                          _FullscreenChromeIconButton(
+                            key: const Key('room-fullscreen-more-button'),
+                            onPressed: onShowMore,
+                            extent: buttonExtent,
+                            iconSize: iconSize,
+                            icon: const Icon(Icons.more_horiz_rounded),
+                          ),
+                        ],
+                      ),
+                      if (secondaryActions.isNotEmpty) ...[
+                        SizedBox(height: dense ? 2 : 4),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Wrap(
+                            spacing: 0,
+                            runSpacing: 0,
+                            alignment: WrapAlignment.end,
+                            children: secondaryActions,
+                          ),
+                        ),
+                      ],
+                    ],
+                  )
+                : Row(
+                    children: [
+                      _FullscreenChromeIconButton(
+                        key: const Key('room-exit-fullscreen-button'),
+                        onPressed: onExitFullscreen,
+                        extent: buttonExtent,
+                        iconSize: iconSize,
+                        icon: const Icon(Icons.arrow_back),
+                      ),
+                      SizedBox(width: compact ? 2 : 4),
+                      Expanded(
+                        child: Text(
+                          normalizedTitle,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontSize: titleFontSize,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                        ),
+                      ),
+                      ...secondaryActions,
+                      _FullscreenChromeIconButton(
+                        key: const Key('room-fullscreen-more-button'),
+                        onPressed: onShowMore,
+                        extent: buttonExtent,
+                        iconSize: iconSize,
+                        icon: const Icon(Icons.more_horiz_rounded),
+                      ),
+                    ],
+                  ),
+          );
+        },
       ),
     );
   }
@@ -339,73 +478,145 @@ class RoomFullscreenBottomChrome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalizedLiveDuration = normalizeDisplayText(liveDuration);
+    final normalizedQualityLabel = normalizeDisplayText(qualityLabel);
     return Positioned(
       left: 0,
       right: 0,
       bottom: 0,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(
-          14,
-          18,
-          14,
-          MediaQuery.paddingOf(context).bottom + 12,
-        ),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black87],
-          ),
-        ),
-        child: Row(
-          children: [
-            _FullscreenChromeIconButton(
-              key: const Key('room-fullscreen-refresh-button'),
-              onPressed: onRefresh,
-              icon: const Icon(Icons.refresh),
-            ),
-            _FullscreenChromeIconButton(
-              key: const Key('room-fullscreen-danmaku-toggle-button'),
-              onPressed: onToggleDanmakuOverlay,
-              icon: Icon(
-                showDanmakuOverlay
-                    ? Icons.subtitles_outlined
-                    : Icons.subtitles_off_outlined,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final viewportHeight = MediaQuery.sizeOf(context).height;
+          final veryShort = viewportHeight < 300;
+          final compact = constraints.maxWidth < 720;
+          final dense = constraints.maxWidth < 640 || veryShort;
+          final ultraCompact = constraints.maxWidth < 520 || veryShort;
+          final baseButtonExtent = veryShort
+              ? 30.0
+              : dense
+                  ? 36.0
+                  : compact
+                      ? 38.0
+                      : 42.0;
+          final buttonExtent = baseButtonExtent;
+          final iconSize = veryShort
+              ? 17.0
+              : dense
+                  ? ultraCompact
+                      ? 19.0
+                      : 21.0
+                  : compact
+                      ? 22.0
+                      : 24.0;
+          final baseLabelMaxWidth = dense
+              ? ultraCompact
+                  ? 46.0
+                  : 52.0
+              : compact
+                  ? 60.0
+                  : 72.0;
+          final labelMaxWidth = baseLabelMaxWidth + (dense ? 4.0 : 10.0);
+          final exitButtonWidth = buttonExtent;
+          final labelFontSize = veryShort
+              ? 12.0
+              : dense
+                  ? 13.0
+                  : 14.0;
+          final bottomInset = MediaQuery.paddingOf(context).bottom;
+          final horizontalPadding = dense ? 10.0 : 14.0;
+          final topPadding = 0.0;
+          final maxChromeHeight = (viewportHeight * (veryShort ? 0.28 : 0.16))
+              .clamp(42.0, 72.0)
+              .toDouble();
+          final chrome = Row(
+            children: [
+              _FullscreenChromeIconButton(
+                key: const Key('room-fullscreen-refresh-button'),
+                onPressed: onRefresh,
+                extent: buttonExtent,
+                iconSize: iconSize,
+                icon: const Icon(Icons.refresh),
               ),
-            ),
-            _FullscreenChromeIconButton(
-              key: const Key('room-fullscreen-danmaku-settings-button'),
-              onPressed: onOpenDanmakuSettings,
-              icon: const Icon(Icons.tune_rounded),
-            ),
-            Expanded(
-              child: Center(
-                child: Text(
-                  liveDuration,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
+              _FullscreenChromeIconButton(
+                key: const Key('room-fullscreen-danmaku-toggle-button'),
+                onPressed: onToggleDanmakuOverlay,
+                extent: buttonExtent,
+                iconSize: iconSize,
+                icon: Icon(
+                  showDanmakuOverlay
+                      ? Icons.subtitles_outlined
+                      : Icons.subtitles_off_outlined,
                 ),
               ),
+              _FullscreenChromeIconButton(
+                key: const Key('room-fullscreen-danmaku-settings-button'),
+                onPressed: onOpenDanmakuSettings,
+                extent: buttonExtent,
+                iconSize: iconSize,
+                icon: const Icon(Icons.tune_rounded),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    normalizedLiveDuration,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontSize: veryShort ? 13.0 : 15.0,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+              ),
+              _FullscreenChromeLabelButton(
+                key: const Key('room-fullscreen-quality-button'),
+                onPressed: onShowQuality,
+                label: normalizedQualityLabel.isEmpty
+                    ? '清晰度'
+                    : normalizedQualityLabel,
+                maxWidth: labelMaxWidth,
+                fontSize: labelFontSize,
+                horizontalPadding: dense ? 4 : 6,
+              ),
+              _FullscreenChromeLabelButton(
+                key: const Key('room-fullscreen-line-button'),
+                onPressed: onShowLine,
+                label: '线路',
+                maxWidth: labelMaxWidth,
+                fontSize: labelFontSize,
+                horizontalPadding: dense ? 4 : 6,
+              ),
+              _FullscreenChromeIconButton(
+                key: const Key('room-fullscreen-exit-button'),
+                onPressed: onExitFullscreen,
+                extent: exitButtonWidth,
+                iconSize: iconSize,
+                icon: const Icon(Icons.fullscreen_exit),
+              ),
+            ],
+          );
+          return Container(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              topPadding,
+              horizontalPadding,
+              bottomInset,
             ),
-            _FullscreenChromeLabelButton(
-              key: const Key('room-fullscreen-quality-button'),
-              onPressed: onShowQuality,
-              label: qualityLabel,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Colors.black87],
+              ),
             ),
-            _FullscreenChromeLabelButton(
-              key: const Key('room-fullscreen-line-button'),
-              onPressed: onShowLine,
-              label: lineLabel,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxChromeHeight),
+              child: chrome,
             ),
-            _FullscreenChromeIconButton(
-              key: const Key('room-fullscreen-exit-button'),
-              onPressed: onExitFullscreen,
-              icon: const Icon(Icons.fullscreen_exit),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -415,11 +626,15 @@ class _FullscreenChromeIconButton extends StatelessWidget {
   const _FullscreenChromeIconButton({
     required this.icon,
     required this.onPressed,
+    this.extent = 40,
+    this.iconSize = 22,
     super.key,
   });
 
   final Widget icon;
   final VoidCallback onPressed;
+  final double extent;
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
@@ -428,8 +643,8 @@ class _FullscreenChromeIconButton extends StatelessWidget {
       color: Colors.white,
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-      iconSize: 22,
+      constraints: BoxConstraints.tightFor(width: extent, height: extent),
+      iconSize: iconSize,
       splashRadius: 20,
       icon: icon,
     );
@@ -440,11 +655,17 @@ class _FullscreenChromeLabelButton extends StatelessWidget {
   const _FullscreenChromeLabelButton({
     required this.label,
     required this.onPressed,
+    this.maxWidth = 72,
+    this.fontSize = 13,
+    this.horizontalPadding = 4,
     super.key,
   });
 
   final String label;
   final VoidCallback onPressed;
+  final double maxWidth;
+  final double fontSize;
+  final double horizontalPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -452,20 +673,20 @@ class _FullscreenChromeLabelButton extends StatelessWidget {
       onPressed: onPressed,
       style: TextButton.styleFrom(
         foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        minimumSize: const Size(0, 32),
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        minimumSize: Size(0, fontSize + 12),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 72),
+        constraints: BoxConstraints(maxWidth: maxWidth),
         child: Text(
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           softWrap: false,
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.white,
-            fontSize: 13,
+            fontSize: fontSize,
             fontWeight: FontWeight.w500,
           ),
         ),

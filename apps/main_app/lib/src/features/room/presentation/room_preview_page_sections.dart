@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/features/room/presentation/room_panel_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_panels.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_section_widgets.dart';
@@ -27,15 +28,21 @@ class RoomLoadingShellViewData {
 class RoomLoadingRoomShell extends StatelessWidget {
   const RoomLoadingRoomShell({
     required this.data,
+    this.embeddedPlayerView,
     super.key,
   });
 
   final RoomLoadingShellViewData data;
+  final Widget? embeddedPlayerView;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final providerLabel = normalizeDisplayText(data.providerLabel);
+    final roomTitle = normalizeDisplayText(data.roomTitle);
+    final streamerName = normalizeDisplayText(data.streamerName);
+    final avatarLabel = normalizeDisplayText(data.avatarLabel);
 
     Widget buildTab(String label, Key key, bool selected) {
       return Expanded(
@@ -69,6 +76,10 @@ class RoomLoadingRoomShell extends StatelessWidget {
                           fallback: const SizedBox.shrink(),
                         ),
                 ),
+                if (embeddedPlayerView != null)
+                  IgnorePointer(
+                    child: embeddedPlayerView!,
+                  ),
                 const DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -100,7 +111,7 @@ class RoomLoadingRoomShell extends StatelessWidget {
                         const CircularProgressIndicator.adaptive(),
                         const SizedBox(height: 14),
                         Text(
-                          '正在进入 ${data.providerLabel} 房间',
+                          '正在进入 $providerLabel 房间',
                           textAlign: TextAlign.center,
                           style: theme.textTheme.titleMedium?.copyWith(
                             color: Colors.white,
@@ -109,7 +120,7 @@ class RoomLoadingRoomShell extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          data.roomTitle,
+                          roomTitle,
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: Colors.white.withValues(alpha: 0.9),
@@ -133,7 +144,7 @@ class RoomLoadingRoomShell extends StatelessWidget {
                     radius: 21,
                     backgroundColor: colorScheme.secondaryContainer,
                     child: Text(
-                      data.avatarLabel,
+                      avatarLabel.isEmpty ? '?' : avatarLabel,
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: colorScheme.onSecondaryContainer,
                         fontWeight: FontWeight.w700,
@@ -146,9 +157,7 @@ class RoomLoadingRoomShell extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          data.streamerName.isEmpty
-                              ? '正在读取主播信息'
-                              : data.streamerName,
+                          streamerName.isEmpty ? '正在读取主播信息' : streamerName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.titleMedium?.copyWith(
@@ -157,7 +166,7 @@ class RoomLoadingRoomShell extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          data.providerLabel,
+                          providerLabel,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(

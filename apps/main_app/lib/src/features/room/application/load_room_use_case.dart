@@ -7,6 +7,8 @@ const LivePlayQuality _kUnavailablePlayQuality = LivePlayQuality(
   label: '不可用',
   isDefault: true,
 );
+const int _kChaturbateStartupMaxBandwidth = 2400000;
+const int _kChaturbateStartupMaxHeight = 540;
 
 class LoadRoomUseCase {
   const LoadRoomUseCase(
@@ -62,7 +64,10 @@ class LoadRoomUseCase {
     } else {
       qualities = loadedQualities;
       selectedQuality = preferHighestQuality
-          ? _selectHighestQuality(qualities)
+          ? _selectStartupQuality(
+              providerId: providerId,
+              qualities: qualities,
+            )
           : _selectDefaultQuality(
               providerId: providerId,
               qualities: qualities,
@@ -112,6 +117,18 @@ class LoadRoomUseCase {
     required LiveProvider provider,
     required String roomId,
   }) async {
+    Object? providerError;
+    StackTrace? providerStackTrace;
+    final roomDetail = provider.requireContract<SupportsRoomDetail>(
+      ProviderCapability.roomDetail,
+    );
+    try {
+      return await roomDetail.fetchRoomDetail(roomId);
+    } catch (error, stackTrace) {
+      providerError = error;
+      providerStackTrace = stackTrace;
+    }
+
     final overridden = await roomDetailOverride?.call(
       providerId: provider.descriptor.id,
       roomId: roomId,
@@ -119,10 +136,10 @@ class LoadRoomUseCase {
     if (overridden != null) {
       return overridden;
     }
-    final roomDetail = provider.requireContract<SupportsRoomDetail>(
-      ProviderCapability.roomDetail,
+    Error.throwWithStackTrace(
+      providerError,
+      providerStackTrace,
     );
-    return roomDetail.fetchRoomDetail(roomId);
   }
 
   LivePlayQuality _selectHighestQuality(List<LivePlayQuality> qualities) {
@@ -132,6 +149,50 @@ class LoadRoomUseCase {
     final sorted = [...qualities]
       ..sort((a, b) => b.sortOrder.compareTo(a.sortOrder));
     return sorted.first;
+  }
+
+  LivePlayQuality _selectStartupQuality({
+    required ProviderId providerId,
+    required List<LivePlayQuality> qualities,
+  }) {
+    if (providerId == ProviderId.chaturbate) {
+      return _selectChaturbateStartupQuality(qualities);
+    }
+    return _selectHighestQuality(qualities);
+  }
+
+  LivePlayQuality _selectChaturbateStartupQuality(
+    List<LivePlayQuality> qualities,
+  ) {
+    final fixedQualities = qualities
+        .where((item) => item.id.trim().toLowerCase() != 'auto')
+        .toList(growable: false);
+    if (fixedQualities.isEmpty) {
+      return _selectHighestQuality(qualities);
+    }
+    final safeCandidates = fixedQualities
+        .where(_isChaturbateStartupSafeQuality)
+        .toList(growable: false);
+    if (safeCandidates.isNotEmpty) {
+      return _selectHighestQuality(safeCandidates);
+    }
+    final sortedAscending = [...fixedQualities]
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return sortedAscending.first;
+  }
+
+  bool _isChaturbateStartupSafeQuality(LivePlayQuality quality) {
+    final metadata = quality.metadata;
+    final height = int.tryParse(metadata?['height']?.toString() ?? '');
+    if (height != null &&
+        height > 0 &&
+        height <= _kChaturbateStartupMaxHeight) {
+      return true;
+    }
+    final bandwidth = int.tryParse(metadata?['bandwidth']?.toString() ?? '');
+    return bandwidth != null &&
+        bandwidth > 0 &&
+        bandwidth <= _kChaturbateStartupMaxBandwidth;
   }
 
   LivePlayQuality _selectDefaultQuality({

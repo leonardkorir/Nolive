@@ -309,6 +309,30 @@ void main() {
     expect(harness.refreshRuntime?.refreshCount, 1);
   });
 
+  testWidgets(
+      'cleanup playback stops MPV backend without refresh on Android leave', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness(
+      playerBackend: PlayerBackend.mpv,
+      refreshableRuntime: true,
+    );
+    addTearDown(harness.dispose);
+    harness.player.emit(
+      PlayerState(
+        backend: PlayerBackend.mpv,
+        status: PlaybackStatus.playing,
+        source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
+      ),
+    );
+
+    await harness.controller.cleanupPlaybackOnLeave();
+
+    expect(harness.player.events, contains('stop'));
+    expect(harness.player.events, isNot(contains('refreshBackend')));
+    expect(harness.refreshRuntime?.refreshCount, 0);
+  });
+
   test('cleanup helper only refreshes active MDK sessions', () {
     expect(
       shouldRefreshMdkBackendAfterCleanup(
@@ -335,6 +359,45 @@ void main() {
           status: PlaybackStatus.playing,
           source:
               PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
+        ),
+      ),
+      isFalse,
+    );
+  });
+
+  test('leave-cleanup helper does not refresh MPV on normal leave', () {
+    expect(
+      shouldRefreshNativeBackendAfterLeaveCleanup(
+        const PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.playing,
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRefreshNativeBackendAfterLeaveCleanup(
+        const PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.error,
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      shouldRefreshNativeBackendAfterLeaveCleanup(
+        const PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.ready,
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      shouldRefreshNativeBackendAfterLeaveCleanup(
+        const PlayerState(
+          backend: PlayerBackend.memory,
+          status: PlaybackStatus.playing,
         ),
       ),
       isFalse,

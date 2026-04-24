@@ -9,10 +9,23 @@ import 'package:web_socket_channel/io.dart';
 
 import 'danmaku_web_socket.dart';
 
+typedef BilibiliDanmakuSocketConnector = Future<IOWebSocketChannel> Function(
+  Uri uri, {
+  Map<String, dynamic>? headers,
+  Iterable<String>? protocols,
+  Duration connectTimeout,
+});
+
 class BilibiliDanmakuSession implements DanmakuSession {
-  BilibiliDanmakuSession({required Map<String, Object?> tokenData})
-      : roomId = _toInt(tokenData['roomId']),
-        uid = _toInt(tokenData['uid']),
+  BilibiliDanmakuSession({
+    required Map<String, Object?> tokenData,
+    BilibiliDanmakuSocketConnector? channelConnector,
+  })  : _channelConnector = channelConnector ?? connectDanmakuWebSocket,
+        roomId = _toInt(tokenData['roomId']),
+        uid = _resolveUid(
+          rawUid: tokenData['uid'],
+          rawCookie: tokenData['cookie'],
+        ),
         token = tokenData['token']?.toString() ?? '',
         serverHost = tokenData['serverHost']?.toString().isNotEmpty == true
             ? tokenData['serverHost']!.toString()
@@ -20,6 +33,13 @@ class BilibiliDanmakuSession implements DanmakuSession {
         buvid = tokenData['buvid']?.toString() ?? '',
         cookie = tokenData['cookie']?.toString() ?? '';
 
+  static const String _origin = 'https://live.bilibili.com';
+  static const String _referer = 'https://live.bilibili.com/';
+  static const String _userAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0';
+
+  final BilibiliDanmakuSocketConnector _channelConnector;
   final int roomId;
   final int uid;
   final String token;
@@ -34,6 +54,8 @@ class BilibiliDanmakuSession implements DanmakuSession {
   StreamSubscription<dynamic>? _subscription;
   Timer? _heartbeatTimer;
   bool _connected = false;
+  bool _handshakeReady = false;
+  Completer<void>? _connectReady;
 
   @override
   Stream<LiveMessage> get messages => _controller.stream;
@@ -43,29 +65,40 @@ class BilibiliDanmakuSession implements DanmakuSession {
     if (_connected) {
       return;
     }
-    final headers = <String, dynamic>{};
-    if (cookie.isNotEmpty) {
-      headers['cookie'] = cookie;
-    }
-    final channel = await connectDanmakuWebSocket(
+    final headers = _buildConnectionHeaders();
+    final channel = await _channelConnector(
       Uri.parse('wss://$serverHost/sub'),
       headers: headers.isEmpty ? null : headers,
     );
     try {
       _channel = channel;
       _connected = true;
+      _handshakeReady = false;
+      _connectReady = Completer<void>();
       _subscription = _channel!.stream.listen(
         _handleRawMessage,
         onError: (error) {
-          _emit(
-            LiveMessage(
-              type: LiveMessageType.notice,
-              content: 'Bilibili 弹幕连接异常：$error',
-              timestamp: DateTime.now(),
-            ),
-          );
+          if (!_handshakeReady) {
+            _failConnectReady(error);
+            return;
+          }
+          if (_connected) {
+            _emit(
+              LiveMessage(
+                type: LiveMessageType.notice,
+                content: 'Bilibili 弹幕连接异常：$error',
+                timestamp: DateTime.now(),
+              ),
+            );
+          }
         },
         onDone: () {
+          if (!_handshakeReady) {
+            _failConnectReady(
+              _buildConnectFailure('Bilibili 弹幕连接在握手完成前已断开。'),
+            );
+            return;
+          }
           if (_connected) {
             _emit(
               LiveMessage(
@@ -83,6 +116,7 @@ class BilibiliDanmakuSession implements DanmakuSession {
         const Duration(seconds: 30),
         (_) => _sendHeartbeat(),
       );
+      await _connectReady!.future;
       _emit(
         LiveMessage(
           type: LiveMessageType.notice,
@@ -92,6 +126,10 @@ class BilibiliDanmakuSession implements DanmakuSession {
       );
     } catch (_) {
       _connected = false;
+      _handshakeReady = false;
+      _connectReady = null;
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
       await _subscription?.cancel();
       _subscription = null;
       await channel.sink.close();
@@ -105,6 +143,8 @@ class BilibiliDanmakuSession implements DanmakuSession {
   @override
   Future<void> disconnect() async {
     _connected = false;
+    _handshakeReady = false;
+    _connectReady = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
     await _subscription?.cancel();
@@ -176,7 +216,13 @@ class BilibiliDanmakuSession implements DanmakuSession {
     final operation = _readInt(packet, 8, 4);
     var body = packet.sublist(16);
 
+    if (operation == 8) {
+      _handleJoinAck(body);
+      return;
+    }
+
     if (operation == 3 && body.length >= 4) {
+      _completeConnectReady();
       _emit(
         LiveMessage(
           type: LiveMessageType.online,
@@ -191,6 +237,7 @@ class BilibiliDanmakuSession implements DanmakuSession {
       return;
     }
 
+    _completeConnectReady();
     if (protocolVersion == 2) {
       body = Uint8List.fromList(zlib.decode(body));
       _decodePackets(body);
@@ -210,6 +257,57 @@ class BilibiliDanmakuSession implements DanmakuSession {
     for (final item in groups) {
       _parseJsonMessage(item);
     }
+  }
+
+  Map<String, dynamic> _buildConnectionHeaders() {
+    final headers = <String, dynamic>{
+      'origin': _origin,
+      'referer': _referer,
+      'user-agent': _userAgent,
+      'accept-language': 'zh-CN,zh;q=0.9',
+      'cache-control': 'no-cache',
+      'pragma': 'no-cache',
+    };
+    if (cookie.isNotEmpty) {
+      headers['cookie'] = cookie;
+    }
+    return headers;
+  }
+
+  void _handleJoinAck(Uint8List body) {
+    final failureMessage = _parseJoinAckFailure(body);
+    if (failureMessage == null) {
+      _completeConnectReady();
+      return;
+    }
+    _failConnectReady(
+      _buildConnectFailure(failureMessage),
+    );
+  }
+
+  String? _parseJoinAckFailure(Uint8List body) {
+    if (body.isEmpty) {
+      return null;
+    }
+    final raw = utf8.decode(body, allowMalformed: true).trim();
+    if (raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final code = _toInt(decoded['code']);
+          if (code == 0) {
+            return null;
+          }
+          return 'Bilibili 弹幕鉴权失败 code=$code';
+        }
+      } catch (_) {
+        // Fall through to the binary status parsing below.
+      }
+    }
+    if (body.length >= 4 && _readInt(body, 0, 4) == 0) {
+      return null;
+    }
+    return 'Bilibili 弹幕鉴权失败';
   }
 
   void _parseJsonMessage(String text) {
@@ -315,6 +413,32 @@ class BilibiliDanmakuSession implements DanmakuSession {
     _controller.add(message);
   }
 
+  void _completeConnectReady() {
+    if (_handshakeReady) {
+      return;
+    }
+    _handshakeReady = true;
+    final ready = _connectReady;
+    if (ready != null && !ready.isCompleted) {
+      ready.complete();
+    }
+  }
+
+  void _failConnectReady(Object error, [StackTrace? stackTrace]) {
+    final ready = _connectReady;
+    if (ready == null || ready.isCompleted) {
+      return;
+    }
+    ready.completeError(error, stackTrace);
+  }
+
+  ProviderParseException _buildConnectFailure(String message) {
+    return ProviderParseException(
+      providerId: ProviderId.bilibili,
+      message: message,
+    );
+  }
+
   static int _readInt(Uint8List bytes, int offset, int length) {
     final data = ByteData.sublistView(bytes, offset, offset + length);
     return switch (length) {
@@ -329,5 +453,30 @@ class BilibiliDanmakuSession implements DanmakuSession {
       return value;
     }
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static int _resolveUid({
+    required Object? rawUid,
+    required Object? rawCookie,
+  }) {
+    final cookie = rawCookie?.toString() ?? '';
+    if (!_hasAuthenticatedCookie(cookie)) {
+      return 0;
+    }
+    final cookieUid = _extractCookieUid(cookie);
+    if (cookieUid != null && cookieUid > 0) {
+      return cookieUid;
+    }
+    final uid = _toInt(rawUid);
+    return uid > 0 ? uid : 0;
+  }
+
+  static bool _hasAuthenticatedCookie(String cookie) {
+    return RegExp(r'(?:^|;\s*)SESSDATA=').hasMatch(cookie);
+  }
+
+  static int? _extractCookieUid(String cookie) {
+    final match = RegExp(r'(?:^|;\s*)DedeUserID=(\d+)').firstMatch(cookie);
+    return int.tryParse(match?.group(1) ?? '');
   }
 }

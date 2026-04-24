@@ -124,4 +124,43 @@ void main() {
       topics: const {},
     );
   });
+
+  test('chaturbate room context can suppress configured cookie header',
+      () async {
+    final client = HttpChaturbateApiClient(
+      cookie: 'cf_clearance=test-clearance; __cf_bm=test-bm',
+      client: MockClient((request) async {
+        expect(request.url.path, '/api/chatvideocontext/kittengirlxo/');
+        expect(request.headers.containsKey('cookie'), isFalse);
+        return http.Response('{}', 200);
+      }),
+    );
+
+    await client.fetchRoomContext(
+      'kittengirlxo',
+      cookie: '',
+    );
+  });
+
+  test('chaturbate hls playlist can suppress configured cookie header',
+      () async {
+    final client = HttpChaturbateApiClient(
+      cookie: 'cf_clearance=test-clearance; __cf_bm=test-bm',
+      client: MockClient((request) async {
+        expect(
+          request.url.toString(),
+          'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.demo/llhls.m3u8?token=test',
+        );
+        expect(request.headers.containsKey('cookie'), isFalse);
+        expect(request.headers['referer'], 'https://chaturbate.com/');
+        return http.Response('#EXTM3U', 200);
+      }),
+    );
+
+    await client.fetchHlsPlaylist(
+      'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.demo/llhls.m3u8?token=test',
+      referer: 'https://chaturbate.com/demo/',
+      cookie: '',
+    );
+  });
 }

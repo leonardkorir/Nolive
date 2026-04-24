@@ -14,6 +14,28 @@ class AppLog {
   static const int _maxLogFileBytes = 8 * 1024 * 1024;
   static const String _logFilePrefix = 'nolive-mobile';
   static const Duration _flushDebounce = Duration(milliseconds: 250);
+  static final RegExp _sensitiveUrlParameterPattern = RegExp(
+    r'([?&](?:token|sig|signature|session|auth|authorization|wsauth|cookie|csrfmiddlewaretoken|cf_clearance|__cf_bm)=)([^&#\s]+)',
+    caseSensitive: false,
+  );
+  static final RegExp _quotedSensitiveHeaderPattern = RegExp(
+    r'"((?:cookie|set-cookie|authorization|proxy-authorization)\s*:\s*)((?:\\.|[^"\\])*)"',
+    caseSensitive: false,
+  );
+  static final RegExp _inlineSensitiveHeaderPattern = RegExp(
+    r'(?<!")((?:cookie|set-cookie|authorization|proxy-authorization)\s*:\s*)([^\r\n]+)',
+    caseSensitive: false,
+    multiLine: true,
+  );
+  static final RegExp _sensitiveHeaderAssignmentPattern = RegExp(
+    r'((?:^|[\s\[{,(])(?:cookie|set-cookie|authorization|proxy-authorization)\s*=\s*)([^\r\n,\]]+)',
+    caseSensitive: false,
+    multiLine: true,
+  );
+  static final RegExp _sensitiveJsonFieldPattern = RegExp(
+    r'("(?:token|cookie|authorization|requestCookie|csrfToken)"\s*:\s*")([^"]+)(")',
+    caseSensitive: false,
+  );
 
   Future<void>? _initializeFuture;
   Future<void> _writeChain = Future<void>.value();
@@ -204,7 +226,7 @@ class AppLog {
       return;
     }
     final stamp = (timestamp ?? DateTime.now()).toIso8601String();
-    final normalized = message.trimRight();
+    final normalized = sanitizeMessageForPersistence(message).trimRight();
     final lines =
         normalized.isEmpty ? const <String>[''] : normalized.split('\n');
     for (final line in lines) {
@@ -259,6 +281,21 @@ class AppLog {
       return true;
     }
     return tag == 'room' || tag == 'player' || tag.startsWith('player/');
+  }
+
+  @visibleForTesting
+  static String sanitizeMessageForPersistence(String message) {
+    return message.replaceAllMapped(_sensitiveUrlParameterPattern, (match) {
+      return '${match.group(1)}<redacted>';
+    }).replaceAllMapped(_sensitiveJsonFieldPattern, (match) {
+      return '${match.group(1)}<redacted>${match.group(3)}';
+    }).replaceAllMapped(_quotedSensitiveHeaderPattern, (match) {
+      return '"${match.group(1)}<redacted>"';
+    }).replaceAllMapped(_inlineSensitiveHeaderPattern, (match) {
+      return '${match.group(1)}<redacted>';
+    }).replaceAllMapped(_sensitiveHeaderAssignmentPattern, (match) {
+      return '${match.group(1)}<redacted>';
+    });
   }
 
   void _scheduleFlush() {

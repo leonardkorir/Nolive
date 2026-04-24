@@ -63,8 +63,9 @@ class RoomSuperChatPanel extends StatelessWidget {
 class RoomChatPanel extends StatelessWidget {
   const RoomChatPanel({
     required this.messagesListenable,
-    required this.ancillaryLoading,
-    required this.hasDanmakuSession,
+    required this.statusListenable,
+    required this.resolveAncillaryLoading,
+    required this.resolveHasDanmakuSession,
     required this.room,
     required this.scrollController,
     required this.chatTextSize,
@@ -75,8 +76,9 @@ class RoomChatPanel extends StatelessWidget {
   });
 
   final ValueListenable<List<LiveMessage>> messagesListenable;
-  final bool ancillaryLoading;
-  final bool hasDanmakuSession;
+  final Listenable statusListenable;
+  final bool Function() resolveAncillaryLoading;
+  final bool Function() resolveHasDanmakuSession;
   final LiveRoomDetail room;
   final ScrollController scrollController;
   final double chatTextSize;
@@ -86,9 +88,13 @@ class RoomChatPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<LiveMessage>>(
-      valueListenable: messagesListenable,
-      builder: (context, messages, _) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([messagesListenable, statusListenable]),
+      builder: (context, _) {
+        final messages = messagesListenable.value;
+        final ancillaryLoading = resolveAncillaryLoading();
+        final hasDanmakuSession = resolveHasDanmakuSession();
+        final showLoadingState = ancillaryLoading && !hasDanmakuSession;
         final theme = Theme.of(context);
         final statusPresentation =
             resolveRoomChaturbateStatusPresentation(room);
@@ -130,7 +136,7 @@ class RoomChatPanel extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      ancillaryLoading ? '房间页已进入，正在补齐聊天数据' : '当前还没有聊天消息',
+                      showLoadingState ? '房间页已进入，正在补齐聊天数据' : '当前还没有聊天消息',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontSize: chatTextSize,
                         height: 1.28,
@@ -138,7 +144,11 @@ class RoomChatPanel extends StatelessWidget {
                     ),
                     SizedBox(height: chatTextGap + 6),
                     Text(
-                      ancillaryLoading ? '正在连接弹幕服务器' : '可以稍后手动刷新房间状态',
+                      showLoadingState
+                          ? '正在连接弹幕服务器'
+                          : hasDanmakuSession
+                              ? '弹幕连接已建立，等待新消息'
+                              : '可以稍后手动刷新房间状态',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontSize: chatTextSize,
                         height: 1.28,
@@ -146,7 +156,11 @@ class RoomChatPanel extends StatelessWidget {
                     ),
                     SizedBox(height: chatTextGap + 6),
                     Text(
-                      ancillaryLoading ? '视频和关注状态会继续在后台加载' : '弹幕建立后会在这里继续滚动',
+                      showLoadingState
+                          ? '视频和关注状态会继续在后台加载'
+                          : hasDanmakuSession
+                              ? '新消息到达后会在这里继续滚动'
+                              : '弹幕建立后会在这里继续滚动',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontSize: chatTextSize,
                         height: 1.28,

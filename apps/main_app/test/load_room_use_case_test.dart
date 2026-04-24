@@ -27,7 +27,8 @@ void main() {
     expect(history.single.viewedAt, firstRecord.viewedAt);
   });
 
-  test('load room uses injected room detail override before provider detail',
+  test(
+      'load room falls back to injected room detail override on provider failure',
       () async {
     _OverrideRoomProvider.fetchRoomDetailCalls = 0;
     final registry = ProviderRegistry()
@@ -67,7 +68,43 @@ void main() {
     expect(snapshot.detail.roomId, 'milabunny_');
     expect(snapshot.detail.title, 'override room');
     expect(snapshot.playUrls.single.url, 'https://example.com/live.m3u8');
-    expect(_OverrideRoomProvider.fetchRoomDetailCalls, 0);
+    expect(_OverrideRoomProvider.fetchRoomDetailCalls, 1);
+  });
+
+  test('load room prefers provider detail before injected override', () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: _kStableChaturbateDescriptor,
+          builder: _StableChaturbateProvider.new,
+        ),
+      );
+    final useCase = LoadRoomUseCase(
+      registry,
+      historyRepository: InMemoryHistoryRepository(),
+      roomDetailOverride: ({
+        required providerId,
+        required roomId,
+      }) async {
+        return LiveRoomDetail(
+          providerId: providerId.value,
+          roomId: roomId,
+          title: 'override room',
+          streamerName: roomId,
+          isLive: true,
+          metadata: const {'hlsSource': 'https://example.com/override.m3u8'},
+        );
+      },
+    );
+
+    final snapshot = await useCase(
+      providerId: ProviderId.chaturbate,
+      roomId: 'dewdropdoll',
+      preferHighestQuality: true,
+    );
+
+    expect(snapshot.detail.title, isNot('override room'));
+    expect(snapshot.playUrls.single.url, contains('/480p.m3u8'));
   });
 
   test('load room keeps chaturbate private show rooms openable', () async {
@@ -196,6 +233,32 @@ void main() {
     expect(snapshot.selectedQuality.id, '1080p60');
     expect(snapshot.playUrls.single.url, contains('1080p60'));
   });
+
+  test('load room caps chaturbate startup quality to a safer fixed tier',
+      () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: _kStableChaturbateDescriptor,
+          builder: _StableChaturbateProvider.new,
+        ),
+      );
+    final useCase = LoadRoomUseCase(
+      registry,
+      historyRepository: InMemoryHistoryRepository(),
+    );
+
+    final snapshot = await useCase(
+      providerId: ProviderId.chaturbate,
+      roomId: 'dewdropdoll',
+      preferHighestQuality: true,
+    );
+
+    expect(snapshot.hasPlayback, isTrue);
+    expect(snapshot.selectedQuality.id, '1296000');
+    expect(snapshot.selectedQuality.label, '480p');
+    expect(snapshot.playUrls.single.url, contains('/480p.m3u8'));
+  });
 }
 
 const _kOverrideDescriptor = ProviderDescriptor(
@@ -242,6 +305,72 @@ class _OverrideRoomProvider extends LiveProvider
   }) async {
     return [
       LivePlayUrl(url: detail.metadata?['hlsSource']?.toString() ?? ''),
+    ];
+  }
+}
+
+const _kStableChaturbateDescriptor = ProviderDescriptor(
+  id: ProviderId.chaturbate,
+  displayName: 'Chaturbate',
+  capabilities: {
+    ProviderCapability.roomDetail,
+    ProviderCapability.playQualities,
+    ProviderCapability.playUrls,
+  },
+  supportedPlatforms: {ProviderPlatform.android},
+  maturity: ProviderMaturity.inMigration,
+);
+
+class _StableChaturbateProvider extends LiveProvider
+    implements SupportsRoomDetail, SupportsPlayQualities, SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => _kStableChaturbateDescriptor;
+
+  @override
+  Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
+    return LiveRoomDetail(
+      providerId: ProviderId.chaturbate.value,
+      roomId: roomId,
+      title: roomId,
+      streamerName: roomId,
+      isLive: true,
+    );
+  }
+
+  @override
+  Future<List<LivePlayQuality>> fetchPlayQualities(
+    LiveRoomDetail detail,
+  ) async {
+    return const [
+      LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
+      LivePlayQuality(
+        id: '1296000',
+        label: '480p',
+        sortOrder: 1296000,
+        metadata: {'height': 480, 'bandwidth': 1296000},
+      ),
+      LivePlayQuality(
+        id: '3600000',
+        label: '720p',
+        sortOrder: 3600000,
+        metadata: {'height': 720, 'bandwidth': 3600000},
+      ),
+      LivePlayQuality(
+        id: '5200000',
+        label: '1080p',
+        sortOrder: 5200000,
+        metadata: {'height': 1080, 'bandwidth': 5200000},
+      ),
+    ];
+  }
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return [
+      LivePlayUrl(url: 'https://example.com/${quality.label}.m3u8'),
     ];
   }
 }

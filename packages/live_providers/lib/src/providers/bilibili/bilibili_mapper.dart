@@ -29,7 +29,7 @@ class BilibiliMapper {
       providerId: ProviderId.bilibili.value,
       roomId: item['roomid'].toString(),
       title: _stripHighlight(item['title']?.toString()),
-      streamerName: item['uname']?.toString() ?? '',
+      streamerName: normalizeDisplayText(item['uname']?.toString()),
       coverUrl: _normalizeAssetUrl(item['user_cover']?.toString()),
       keyframeUrl: _normalizeAssetUrl(item['cover']?.toString()),
       areaName: _stripHighlight(item['cate_name']?.toString()),
@@ -56,33 +56,43 @@ class BilibiliMapper {
         .toList(growable: false);
     final realRoomId = roomInfo['room_id']?.toString() ?? requestedRoomId;
     final liveStartTime = _asInt(roomInfo['live_start_time']);
+    final danmakuMode = danmakuInfoData['mode']?.toString() ?? '';
+    final danmakuToken = danmakuMode == 'unavailable'
+        ? <String, Object?>{
+            'mode': 'unavailable',
+            'reason': danmakuInfoData['reason']?.toString() ??
+                '哔哩哔哩当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',
+            if (danmakuInfoData['cause'] != null)
+              'cause': danmakuInfoData['cause']?.toString(),
+          }
+        : <String, Object?>{
+            'roomId': _asInt(realRoomId) ?? 0,
+            'uid': userId,
+            'token': danmakuInfoData['token']?.toString() ?? '',
+            'serverHost': serverHosts.isNotEmpty
+                ? serverHosts.first
+                : 'broadcastlv.chat.bilibili.com',
+            'buvid': buvid3,
+            'cookie': cookie,
+          };
 
     return LiveRoomDetail(
       providerId: ProviderId.bilibili.value,
       roomId: realRoomId,
-      title: roomInfo['title']?.toString() ?? '',
-      streamerName: anchorBaseInfo['uname']?.toString() ?? '',
+      title: normalizeDisplayText(roomInfo['title']?.toString()),
+      streamerName: normalizeDisplayText(anchorBaseInfo['uname']?.toString()),
       streamerAvatarUrl: _normalizeAssetUrl(anchorBaseInfo['face']?.toString()),
       coverUrl: roomInfo['cover']?.toString(),
       keyframeUrl: roomInfo['keyframe']?.toString(),
-      areaName: roomInfo['area_name']?.toString(),
-      description: roomInfo['description']?.toString(),
+      areaName: normalizeDisplayText(roomInfo['area_name']?.toString()),
+      description: normalizeDisplayText(roomInfo['description']?.toString()),
       sourceUrl: 'https://live.bilibili.com/$requestedRoomId',
       startedAt: liveStartTime == null || liveStartTime <= 0
           ? null
           : DateTime.fromMillisecondsSinceEpoch(liveStartTime * 1000),
       isLive: (_asInt(roomInfo['live_status']) ?? 0) == 1,
       viewerCount: _asInt(roomInfo['online']),
-      danmakuToken: {
-        'roomId': _asInt(realRoomId) ?? 0,
-        'uid': userId,
-        'token': danmakuInfoData['token']?.toString() ?? '',
-        'serverHost': serverHosts.isNotEmpty
-            ? serverHosts.first
-            : 'broadcastlv.chat.bilibili.com',
-        'buvid': buvid3,
-        'cookie': cookie,
-      },
+      danmakuToken: danmakuToken,
       metadata: {
         'requestedRoomId': requestedRoomId,
         'shortId': roomInfo['short_id']?.toString(),
@@ -135,7 +145,11 @@ class BilibiliMapper {
 
   static List<LivePlayUrl> mapPlayUrls(Map<String, dynamic> response) {
     final playUrl = _playUrlPayload(response);
-    final urls = <({String url, String lineLabel})>[];
+    final urls = <({
+      String url,
+      String lineLabel,
+      Map<String, Object?> metadata,
+    })>[];
 
     for (final stream in _asList(playUrl['stream'])) {
       for (final format in _asList(_asMap(stream)['format'])) {
@@ -150,20 +164,48 @@ class BilibiliMapper {
             if (fullUrl.isEmpty) {
               continue;
             }
+            final uri = Uri.tryParse(fullUrl);
+            final qn = _asInt(codecMap['current_qn']) ??
+                _asInt(playUrl['current_qn']) ??
+                _asInt(uri?.queryParameters['qn']);
+            final expectedQn =
+                _asInt(uri?.queryParameters['expected_qn']) ?? qn;
             urls.add(
-                (url: fullUrl, lineLabel: Uri.tryParse(host)?.host ?? host));
+              (
+                url: fullUrl,
+                lineLabel: Uri.tryParse(host)?.host ?? host,
+                metadata: <String, Object?>{
+                  if (qn != null) 'qn': qn,
+                  if (expectedQn != null) 'expectedQn': expectedQn,
+                },
+              ),
+            );
           }
         }
       }
     }
 
-    final uniqueUrls = <String, String>{};
+    final uniqueUrls =
+        <String, ({String lineLabel, Map<String, Object?> metadata})>{};
     for (final item in urls) {
-      uniqueUrls.putIfAbsent(item.url, () => item.lineLabel);
+      uniqueUrls.putIfAbsent(
+        item.url,
+        () => (lineLabel: item.lineLabel, metadata: item.metadata),
+      );
     }
 
     final sorted = uniqueUrls.entries.toList(growable: false)
       ..sort((a, b) {
+        final leftQn = _asInt(a.value.metadata['expectedQn']) ??
+            _asInt(a.value.metadata['qn']) ??
+            0;
+        final rightQn = _asInt(b.value.metadata['expectedQn']) ??
+            _asInt(b.value.metadata['qn']) ??
+            0;
+        final qualityCompare = rightQn.compareTo(leftQn);
+        if (qualityCompare != 0) {
+          return qualityCompare;
+        }
         final leftPenalty = a.key.contains('mcdn') ? 1 : 0;
         final rightPenalty = b.key.contains('mcdn') ? 1 : 0;
         return leftPenalty.compareTo(rightPenalty);
@@ -180,7 +222,8 @@ class BilibiliMapper {
                       '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 '
                       'Edg/126.0.0.0',
             },
-            lineLabel: entry.value,
+            lineLabel: entry.value.lineLabel,
+            metadata: entry.value.metadata,
           ),
         )
         .toList(growable: false);
@@ -204,7 +247,9 @@ class BilibiliMapper {
   }
 
   static String _stripHighlight(String? value) {
-    return (value ?? '').replaceAll(RegExp(r'<.*?em.*?>'), '');
+    return normalizeDisplayText(
+      (value ?? '').replaceAll(RegExp(r'<.*?em.*?>'), ''),
+    );
   }
 
   static String? _normalizeAssetUrl(String? value) {

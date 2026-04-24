@@ -22,7 +22,9 @@ class RoomControlsSettingsReturnActions {
       targetPlatform: context.targetPlatform,
       isWeb: context.isWeb,
     );
+    var backendChanged = false;
     if (context.runtime.resolveBackend() != runtimeBackend) {
+      backendChanged = true;
       context.trace(
         'player settings return enforce backend '
         '${context.runtime.resolveBackend().name} -> ${runtimeBackend.name}',
@@ -53,16 +55,21 @@ class RoomControlsSettingsReturnActions {
       return;
     }
     final playerState = context.runtime.readCurrentState();
+    final forceBootstrap = shouldForcePlaybackBootstrap(playerState);
+    if (!backendChanged && !forceBootstrap) {
+      return;
+    }
     context.trace(
       'player settings return rebootstrap '
       'status=${playerState.status.name} '
-      'source=${_summarizePlaybackSource(playbackSource)}',
+      'source=${_summarizePlaybackSource(playbackSource)} '
+      'backendChanged=$backendChanged',
     );
     context.schedulePlaybackBootstrap(
       playbackSource: playbackSource,
       hasPlayback: playbackAvailable,
       autoPlay: nextPreferences.autoPlayEnabled,
-      force: shouldForcePlaybackBootstrap(playerState),
+      force: forceBootstrap,
     );
   }
 

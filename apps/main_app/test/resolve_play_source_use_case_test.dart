@@ -96,6 +96,51 @@ void main() {
     expect(resolved.effectiveQuality.label, '超清');
   });
 
+  test('resolve play source prefers bilibili url matching requested qn',
+      () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: const ProviderDescriptor(
+            id: ProviderId.bilibili,
+            displayName: '哔哩哔哩',
+            capabilities: {ProviderCapability.playUrls},
+            supportedPlatforms: {ProviderPlatform.android},
+            maturity: ProviderMaturity.ready,
+          ),
+          builder: _FakeBilibiliMixedQnPlayUrlProvider.new,
+        ),
+      );
+    const detail = LiveRoomDetail(
+      providerId: 'bilibili',
+      roomId: '1',
+      title: 'Test Room',
+      streamerName: 'Tester',
+      isLive: true,
+      sourceUrl: 'https://live.bilibili.com/1',
+    );
+    const quality = LivePlayQuality(
+      id: '10000',
+      label: '原画',
+      sortOrder: 10000,
+      metadata: {
+        'qualityMap': {250: '超清', 10000: '原画'},
+      },
+    );
+    final useCase = ResolvePlaySourceUseCase(registry);
+
+    final resolved = await useCase(
+      providerId: ProviderId.bilibili,
+      detail: detail,
+      quality: quality,
+    );
+
+    expect(resolved.isQualityFallback, isFalse);
+    expect(
+        resolved.playbackSource.url.toString(), contains('expected_qn=10000'));
+    expect(resolved.effectiveQuality.id, '10000');
+  });
+
   test('resolve play source maps external audio metadata into playback source',
       () async {
     final registry = ProviderRegistry()
@@ -144,6 +189,35 @@ void main() {
       resolved.playbackSource.externalAudio?.headers['referer'],
       'https://m.youtube.com/watch?v=test',
     );
+  });
+
+  test('playback source maps preferred hls bitrate metadata', () {
+    const playUrl = LivePlayUrl(
+      url:
+          'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.demo/llhls.m3u8?token=test',
+      metadata: {
+        'masterPlaylistUrl':
+            'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.demo/master.m3u8?token=test',
+        'hlsBitrate': '5128000',
+      },
+    );
+
+    final source = playbackSourceFromLivePlayUrl(
+      playUrl,
+      quality: const LivePlayQuality(
+        id: '5128000',
+        label: '1080p',
+        sortOrder: 1080,
+      ),
+    );
+
+    expect(source.url.toString(), playUrl.url);
+    expect(
+      source.masterPlaylistUrl?.toString(),
+      'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.demo/master.m3u8?token=test',
+    );
+    expect(source.hlsBitrate, '5128000');
+    expect(source.externalAudio, isNull);
   });
 
   test('resolve play source marks 1440p stream as heavy stable', () async {
@@ -268,6 +342,48 @@ void main() {
     expect(
       resolved.playbackSource.bufferProfile,
       PlaybackBufferProfile.heavyStreamStable,
+    );
+  });
+
+  test(
+      'resolve play source maps mmcdn edge ll-hls onto dedicated low latency profile',
+      () async {
+    const playUrl = LivePlayUrl(
+      url:
+          'https://edge2-lax.live.mmcdn.com/v1/edge/streams/origin.demo/chunklist_4_video_1816682507370709677_llhls.m3u8',
+      metadata: {
+        'audioUrl':
+            'https://edge2-lax.live.mmcdn.com/v1/edge/streams/origin.demo/chunklist_6_audio_1816682507370709677_llhls.m3u8',
+      },
+    );
+    const quality = LivePlayQuality(
+      id: '1080',
+      label: '1080p',
+      sortOrder: 1080,
+    );
+
+    expect(
+      resolvePlaybackBufferProfile(playUrl: playUrl, quality: quality),
+      PlaybackBufferProfile.edgeLowLatencyHls,
+    );
+  });
+
+  test(
+      'resolve play source maps mmcdn live-hls chunklist onto dedicated low latency profile',
+      () async {
+    const playUrl = LivePlayUrl(
+      url:
+          'https://edge19-phx.live.mmcdn.com/live-hls/amlst:maca_hugo-sd-demo/chunklist_w525982405_b2796000_t64RlBTOjI5.m3u8',
+    );
+    const quality = LivePlayQuality(
+      id: '2796000',
+      label: '720p',
+      sortOrder: 720,
+    );
+
+    expect(
+      resolvePlaybackBufferProfile(playUrl: playUrl, quality: quality),
+      PlaybackBufferProfile.edgeLowLatencyHls,
     );
   });
 
@@ -499,6 +615,134 @@ void main() {
     expect(wrapCalls, 1);
   });
 
+  test('resolve play source keeps chaturbate mmcdn fallback on stable profile',
+      () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: const ProviderDescriptor(
+            id: ProviderId.chaturbate,
+            displayName: 'Chaturbate',
+            capabilities: {ProviderCapability.playUrls},
+            supportedPlatforms: {ProviderPlatform.android},
+            maturity: ProviderMaturity.ready,
+          ),
+          builder: _FakeChaturbateMasterHlsProvider.new,
+        ),
+      );
+    const detail = LiveRoomDetail(
+      providerId: 'chaturbate',
+      roomId: 'xdreamangel',
+      title: 'Chaturbate Room',
+      streamerName: 'Tester',
+      isLive: true,
+      sourceUrl: 'https://chaturbate.com/xdreamangel/',
+    );
+    const quality = LivePlayQuality(
+      id: '1830000',
+      label: '540p',
+      sortOrder: 540,
+    );
+    final useCase = ResolvePlaySourceUseCase(
+      registry,
+      wrapChaturbatePlayUrls: ({
+        required quality,
+        required playUrls,
+      }) async =>
+          playUrls,
+    );
+
+    final resolved = await useCase(
+      providerId: ProviderId.chaturbate,
+      detail: detail,
+      quality: quality,
+    );
+
+    expect(
+      resolved.playbackSource.bufferProfile,
+      PlaybackBufferProfile.chaturbateLlHlsProxyStable,
+    );
+    expect(
+      resolved.playUrls.first.metadata?['chaturbateStableFallback'],
+      isTrue,
+    );
+    expect(
+      resolved.playUrls.first.metadata?['chaturbateProxyFallbackReason'],
+      'proxy-unavailable',
+    );
+  });
+
+  test('resolve play source wraps chaturbate ll-hls when proxy is available',
+      () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: const ProviderDescriptor(
+            id: ProviderId.chaturbate,
+            displayName: 'Chaturbate',
+            capabilities: {ProviderCapability.playUrls},
+            supportedPlatforms: {ProviderPlatform.android},
+            maturity: ProviderMaturity.ready,
+          ),
+          builder: _FakeChaturbateSplitLlHlsProvider.new,
+        ),
+      );
+    const detail = LiveRoomDetail(
+      providerId: 'chaturbate',
+      roomId: 'demo',
+      title: 'Chaturbate Room',
+      streamerName: 'Tester',
+      isLive: true,
+      sourceUrl: 'https://chaturbate.com/demo/',
+    );
+    const quality = LivePlayQuality(
+      id: '2096000',
+      label: '540p',
+      sortOrder: 540,
+    );
+    var wrapCalls = 0;
+    final useCase = ResolvePlaySourceUseCase(
+      registry,
+      wrapChaturbatePlayUrls: ({
+        required quality,
+        required playUrls,
+      }) async {
+        wrapCalls += 1;
+        return [
+          LivePlayUrl(
+            url: 'http://127.0.0.1:9999/chaturbate-llhls/session/stream.m3u8',
+            headers: const {},
+            lineLabel: playUrls.first.lineLabel,
+            metadata: {
+              'proxied': true,
+              'proxyKind': 'chaturbate-llhls',
+              'upstreamUrl': playUrls.first.url,
+            },
+          ),
+        ];
+      },
+    );
+
+    final resolved = await useCase(
+      providerId: ProviderId.chaturbate,
+      detail: detail,
+      quality: quality,
+    );
+
+    expect(
+      resolved.playbackSource.url.toString(),
+      contains('127.0.0.1'),
+    );
+    expect(resolved.playbackSource.url.path, contains('chaturbate-llhls'));
+    expect(resolved.playbackSource.externalAudio, isNull);
+    expect(
+      resolved.playbackSource.bufferProfile,
+      PlaybackBufferProfile.chaturbateLlHlsProxyStable,
+    );
+    expect(resolved.playUrls.first.metadata?['proxied'], isTrue);
+    expect(wrapCalls, 1);
+  });
+
   test('resolve play source prefers twitch popout line before site', () async {
     final registry = ProviderRegistry()
       ..register(
@@ -579,6 +823,35 @@ class _FakeBilibiliPlayUrlProvider extends LiveProvider
     return const [
       LivePlayUrl(
         url: 'https://example.com/live.flv?qn=250&expected_qn=250',
+      ),
+    ];
+  }
+}
+
+class _FakeBilibiliMixedQnPlayUrlProvider extends LiveProvider
+    implements SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => const ProviderDescriptor(
+        id: ProviderId.bilibili,
+        displayName: '哔哩哔哩',
+        capabilities: {ProviderCapability.playUrls},
+        supportedPlatforms: {ProviderPlatform.android},
+        maturity: ProviderMaturity.ready,
+      );
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return const [
+      LivePlayUrl(
+        url: 'https://example.com/live-low.flv?qn=250&expected_qn=250',
+        metadata: {'qn': 250, 'expectedQn': 250},
+      ),
+      LivePlayUrl(
+        url: 'https://example.com/live-origin.flv?qn=10000&expected_qn=10000',
+        metadata: {'qn': 10000, 'expectedQn': 10000},
       ),
     ];
   }
@@ -792,6 +1065,73 @@ class _FakeTwitchPlayUrlProvider extends LiveProvider
         url: 'https://usher.ttvnw.net/master.m3u8',
         lineLabel: '优选 Embed',
         metadata: {'playerType': 'embed'},
+      ),
+    ];
+  }
+}
+
+class _FakeChaturbateMasterHlsProvider extends LiveProvider
+    implements SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => const ProviderDescriptor(
+        id: ProviderId.chaturbate,
+        displayName: 'Chaturbate',
+        capabilities: {ProviderCapability.playUrls},
+        supportedPlatforms: {ProviderPlatform.android},
+        maturity: ProviderMaturity.ready,
+      );
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return const [
+      LivePlayUrl(
+        url:
+            'https://edge9-phx.live.mmcdn.com/live-hls/amlst:xdreamangel-sd-demo/playlist.m3u8',
+        headers: {'referer': 'https://chaturbate.com/xdreamangel/'},
+        lineLabel: 'PHX',
+        metadata: {
+          'bandwidth': 1830000,
+          'width': 960,
+          'height': 540,
+        },
+      ),
+    ];
+  }
+}
+
+class _FakeChaturbateSplitLlHlsProvider extends LiveProvider
+    implements SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => const ProviderDescriptor(
+        id: ProviderId.chaturbate,
+        displayName: 'Chaturbate',
+        capabilities: {ProviderCapability.playUrls},
+        supportedPlatforms: {ProviderPlatform.android},
+        maturity: ProviderMaturity.ready,
+      );
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return const [
+      LivePlayUrl(
+        url:
+            'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.demo/chunklist_2_video_llhls.m3u8?session=test',
+        headers: {'referer': 'https://chaturbate.com/demo/'},
+        lineLabel: 'LAX',
+        metadata: {
+          'audioUrl':
+              'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.demo/chunklist_7_audio_llhls.m3u8?session=test',
+          'audioHeaders': {'referer': 'https://chaturbate.com/demo/'},
+          'bandwidth': 2096000,
+          'width': 960,
+          'height': 540,
+        },
       ),
     ];
   }

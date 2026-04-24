@@ -27,9 +27,15 @@ abstract interface class ChaturbateApiClient {
 
   Future<String> fetchRoomPage(String roomId);
 
+  Future<Map<String, dynamic>> fetchRoomContext(
+    String roomId, {
+    String? cookie,
+  });
+
   Future<String> fetchHlsPlaylist(
     String url, {
     String? referer,
+    String? cookie,
   });
 
   Future<Map<String, dynamic>> authenticatePushService({
@@ -72,6 +78,39 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     'sec-ch-ua-mobile': browserSecChUaMobile,
     'sec-ch-ua-platform': browserSecChUaPlatform,
   };
+
+  static Map<String, String> buildPlaybackHeaders({
+    required String referer,
+    String cookie = '',
+  }) {
+    final normalizedReferer = _normalizePlaybackReferer(referer);
+    final normalizedCookie = cookie.trim();
+    return <String, String>{
+      ..._baseHeaders,
+      'accept': '*/*',
+      'origin': 'https://chaturbate.com',
+      'priority': 'u=4, i',
+      'referer': normalizedReferer,
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'cross-site',
+      if (normalizedCookie.isNotEmpty) 'cookie': normalizedCookie,
+    };
+  }
+
+  static String _normalizePlaybackReferer(String referer) {
+    final normalized = referer.trim();
+    if (normalized.isEmpty) {
+      return 'https://chaturbate.com/';
+    }
+    final uri = Uri.tryParse(normalized);
+    if (uri == null) {
+      return 'https://chaturbate.com/';
+    }
+    return uri.host.endsWith('chaturbate.com')
+        ? 'https://chaturbate.com/'
+        : normalized;
+  }
 
   @override
   Future<Map<String, dynamic>> fetchDiscoverCarousel(
@@ -149,14 +188,38 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
   }
 
   @override
+  Future<Map<String, dynamic>> fetchRoomContext(
+    String roomId, {
+    String? cookie,
+  }) async {
+    final response = await _client.get(
+      Uri.https('chaturbate.com', '/api/chatvideocontext/$roomId/'),
+      headers: _buildApiHeaders(
+        referer: _buildRoomReferer(roomId),
+        cookieOverride: cookie,
+      ),
+    );
+    _ensureSuccessfulResponse(
+      response,
+      context: 'room context request for $roomId',
+    );
+    return _decodeJson(
+      response.body,
+      context: 'room context response for $roomId',
+    );
+  }
+
+  @override
   Future<String> fetchHlsPlaylist(
     String url, {
     String? referer,
+    String? cookie,
   }) async {
     final response = await _client.get(
       Uri.parse(url),
       headers: _buildMediaHeaders(
         referer: referer ?? 'https://chaturbate.com/',
+        cookieOverride: cookie,
       ),
     );
     _ensureSuccessfulResponse(response, context: 'hls playlist request');
@@ -228,6 +291,7 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
 
   Map<String, String> _buildDocumentHeaders({
     required String referer,
+    String? cookieOverride,
   }) {
     return _buildHeaders({
       'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,'
@@ -241,12 +305,13 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
       'sec-fetch-site': 'same-origin',
       'sec-fetch-user': '?1',
       'upgrade-insecure-requests': '1',
-    });
+    }, cookieOverride: cookieOverride);
   }
 
   Map<String, String> _buildApiHeaders({
     required String referer,
     Map<String, String> extraHeaders = const {},
+    String? cookieOverride,
   }) {
     return _buildHeaders({
       'accept': '*/*',
@@ -257,22 +322,16 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
       'sec-fetch-site': 'same-origin',
       'x-requested-with': 'XMLHttpRequest',
       ...extraHeaders,
-    });
+    }, cookieOverride: cookieOverride);
   }
 
   Map<String, String> _buildMediaHeaders({
     required String referer,
+    String? cookieOverride,
   }) {
-    return _buildHeaders(
-      {
-        'accept': '*/*',
-        'priority': 'u=4, i',
-        'referer': referer,
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'cross-site',
-      },
-      includeCookie: false,
+    return HttpChaturbateApiClient.buildPlaybackHeaders(
+      referer: referer,
+      cookie: cookieOverride ?? cookie,
     );
   }
 
@@ -319,12 +378,13 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
   Map<String, String> _buildHeaders(
     Map<String, String> extraHeaders, {
     bool includeCookie = true,
+    String? cookieOverride,
   }) {
     final headers = <String, String>{
       ..._baseHeaders,
       ...extraHeaders,
     };
-    final normalizedCookie = cookie.trim();
+    final normalizedCookie = (cookieOverride ?? cookie).trim();
     if (includeCookie && normalizedCookie.isNotEmpty) {
       headers['cookie'] = normalizedCookie;
     }

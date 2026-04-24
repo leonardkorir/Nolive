@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:live_core/live_core.dart';
+import 'package:live_providers/src/providers/chaturbate/chaturbate_api_client.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_hls_master_playlist_parser.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_mapper.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_room_page_parser.dart';
@@ -151,12 +152,25 @@ void main() {
         expect(qualities.single.id, 'auto');
         expect(qualities.single.label, 'Auto');
         expect(qualities.single.isDefault, isTrue);
+        expect(
+          qualities.single.metadata?['masterPlaylistUrl'],
+          detail.metadata?['hlsSource'],
+        );
+        expect(qualities.single.metadata?['hlsBitrate'], 'max');
 
         final urls = ChaturbateMapper.mapPlayUrls(detail, qualities.single);
         expect(urls, hasLength(1));
         expect(urls.single.url, contains('playlist.m3u8'));
         expect(urls.single.lineLabel, 'AUS');
-        expect(urls.single.headers, isEmpty);
+        expect(urls.single.headers['referer'], 'https://chaturbate.com/');
+        expect(
+          urls.single.headers['origin'],
+          'https://chaturbate.com',
+        );
+        expect(
+          urls.single.headers['user-agent'],
+          HttpChaturbateApiClient.browserUserAgent,
+        );
       });
 
       test('hls master playlist parser derives fixed qualities and urls', () {
@@ -182,6 +196,7 @@ void main() {
 
         final qualities = ChaturbateMapper.mapPlayQualitiesFromVariants(
           variants: variants,
+          fallbackPlaylistUrl: fixture.url,
         );
 
         expect(qualities, hasLength(5));
@@ -192,9 +207,24 @@ void main() {
         );
 
         final urls = ChaturbateMapper.mapPlayUrls(detail, qualities[1]);
-        expect(urls.single.url, contains('chunklist'));
-        expect(urls.single.url, contains('b5128000'));
+        expect(
+          urls.single.url,
+          fixture.url,
+        );
+        expect(urls.single.metadata?['hlsBitrate'], qualities[1].id);
+        expect(
+          urls.single.metadata?['resolvedVariantUrl'],
+          qualities[1].metadata?['playlistUrl'],
+        );
+        expect(
+          urls.single.metadata?['audioUrl'],
+          anyOf(isNull, contains('chunklist')),
+        );
+        if (urls.single.metadata?['audioUrl'] != null) {
+          expect(urls.single.metadata?['audioHeaders'], urls.single.headers);
+        }
         expect(urls.single.lineLabel, 'CHI');
+        expect(urls.single.headers['referer'], 'https://chaturbate.com/');
       });
 
       test('ll-hls parser keeps paired audio rendition for each video variant',
@@ -220,6 +250,7 @@ void main() {
         );
         final qualities = ChaturbateMapper.mapPlayQualitiesFromVariants(
           variants: variants,
+          fallbackPlaylistUrl: playlistUrl,
         );
         final detail = LiveRoomDetail(
           providerId: ProviderId.chaturbate.value,
@@ -238,20 +269,198 @@ void main() {
           variants.first.audioUrl,
           contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
         );
-        expect(qualities.first.metadata?['audioUrl'], isNotNull);
+        expect(
+          qualities.first.metadata?['masterPlaylistUrl'],
+          playlistUrl,
+        );
+        expect(qualities.first.metadata?['hlsBitrate'], '1296000');
 
         final autoUrls = ChaturbateMapper.mapPlayUrls(detail, qualities.first);
-        expect(autoUrls.single.metadata?['audioUrl'], isNotNull);
+        expect(
+          autoUrls.single.url,
+          contains('chunklist_2_video_3689313794811747259_llhls.m3u8'),
+        );
+        expect(autoUrls.single.metadata?['hlsBitrate'], '1296000');
+        expect(
+          autoUrls.single.metadata?['masterPlaylistUrl'],
+          playlistUrl,
+        );
+        expect(
+          autoUrls.single.metadata?['audioUrl'],
+          contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
+        );
 
         final fixedUrls = ChaturbateMapper.mapPlayUrls(detail, qualities[1]);
+        expect(
+          fixedUrls.single.url,
+          contains('chunklist_4_video_3689313794811747259_llhls.m3u8'),
+        );
+        expect(
+          fixedUrls.single.metadata?['hlsBitrate'],
+          '3296000',
+        );
+        expect(
+          fixedUrls.single.metadata?['masterPlaylistUrl'],
+          playlistUrl,
+        );
         expect(
           fixedUrls.single.metadata?['audioUrl'],
           contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
         );
-        expect(
-          fixedUrls.single.metadata?['audioMimeType'],
-          'application/x-mpegURL',
+      });
+
+      test('play mapper ignores request cookie for playback headers', () {
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.chaturbate.value,
+          roomId: 'realcest',
+          title: 'realcest room',
+          streamerName: 'realcest',
+          sourceUrl: 'https://chaturbate.com/realcest/',
+          metadata: const {
+            'edgeRegion': 'CHI',
+            'hlsSource': 'https://edge.example.com/llhls.m3u8?token=test',
+            'requestCookie': 'cf_clearance=demo; csrftoken=demo',
+          },
         );
+        const quality = LivePlayQuality(
+          id: '720p',
+          label: '720p',
+          metadata: {
+            'playlistUrl':
+                'https://edge.example.com/chunklist_video.m3u8?token=test',
+            'audioUrl':
+                'https://edge.example.com/chunklist_audio.m3u8?token=test',
+            'audioMimeType': 'application/x-mpegURL',
+          },
+        );
+
+        final urls = ChaturbateMapper.mapPlayUrls(detail, quality);
+
+        expect(urls.single.headers.containsKey('cookie'), isFalse);
+        expect(
+          urls.single.url,
+          'https://edge.example.com/chunklist_video.m3u8?token=test',
+        );
+        expect(urls.single.metadata?['audioHeaders'], urls.single.headers);
+        expect(
+          urls.single.metadata?['audioUrl'],
+          'https://edge.example.com/chunklist_audio.m3u8?token=test',
+        );
+        expect(
+          (urls.single.metadata?['audioHeaders'] as Map<String, String>)
+              .containsKey('cookie'),
+          isFalse,
+        );
+      });
+
+      test(
+          'auto quality keeps ll-hls master playback on a safer startup variant',
+          () {
+        const parser = ChaturbateHlsMasterPlaylistParser();
+        final fixture = ChaturbateFixtureLoader.loadHlsMasterPlaylist(
+          harName: 'room-page-realcest-auto-0415.har',
+        );
+        final variants = parser.parse(
+          playlistUrl: fixture.url,
+          source: fixture.content,
+        );
+        final qualities = ChaturbateMapper.mapPlayQualitiesFromVariants(
+          variants: variants,
+          fallbackPlaylistUrl: fixture.url,
+        );
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.chaturbate.value,
+          roomId: 'realcest',
+          title: 'realcest room',
+          streamerName: 'realcest',
+          sourceUrl: 'https://chaturbate.com/realcest/',
+          metadata: {
+            'edgeRegion': 'LAX',
+            'hlsSource': fixture.url,
+          },
+        );
+
+        final autoUrls = ChaturbateMapper.mapPlayUrls(detail, qualities.first);
+        final fixedUrls = ChaturbateMapper.mapPlayUrls(detail, qualities[1]);
+
+        expect(variants, isNotEmpty);
+        expect(autoUrls.single.url, variants[2].url);
+        expect(
+          autoUrls.single.metadata?['hlsBitrate'],
+          variants[2].bandwidth.toString(),
+        );
+        expect(
+          autoUrls.single.metadata?['masterPlaylistUrl'],
+          fixture.url,
+        );
+        expect(autoUrls.single.metadata?['audioUrl'], isNotNull);
+        expect(
+          qualities.first.metadata?['masterPlaylistUrl'],
+          fixture.url,
+        );
+        expect(fixedUrls.single.url, variants.first.url);
+        expect(
+          fixedUrls.single.metadata?['hlsBitrate'],
+          variants.first.bandwidth.toString(),
+        );
+        expect(
+          fixedUrls.single.metadata?['masterPlaylistUrl'],
+          fixture.url,
+        );
+        expect(fixedUrls.single.metadata?['audioUrl'], isNotNull);
+      });
+
+      test(
+          'auto fallback can derive split playback directly from master playlist content',
+          () {
+        const playlistUrl =
+            'https://edge18-sin.live.mmcdn.com/v1/edge/streams/origin.teyyumi.demo/llhls.m3u8?token=fresh';
+        const masterPlaylistContent = '''
+#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio_aac_96",NAME="Audio",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,CHANNELS="2",URI="/v1/edge/streams/origin.teyyumi.demo/chunklist_7_audio_llhls.m3u8?session=fresh"
+#EXT-X-STREAM-INF:BANDWIDTH=2096000,RESOLUTION=960x540,FRAME-RATE=30.000,CODECS="avc1.4d401f,mp4a.40.2",AUDIO="audio_aac_96"
+/v1/edge/streams/origin.teyyumi.demo/chunklist_2_video_llhls.m3u8?session=fresh
+#EXT-X-STREAM-INF:BANDWIDTH=5128000,RESOLUTION=1920x1080,FRAME-RATE=30.000,CODECS="avc1.640028,mp4a.40.2",AUDIO="audio_aac_96"
+/v1/edge/streams/origin.teyyumi.demo/chunklist_4_video_llhls.m3u8?session=fresh
+''';
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.chaturbate.value,
+          roomId: 'teyyumi',
+          title: 'teyyumi room',
+          streamerName: 'teyyumi',
+          sourceUrl: 'https://chaturbate.com/teyyumi/',
+          metadata: const {
+            'edgeRegion': 'SIN',
+            'hlsSource': playlistUrl,
+            'hlsMasterPlaylistContent': masterPlaylistContent,
+          },
+        );
+
+        final urls = ChaturbateMapper.mapPlayUrls(
+          detail,
+          const LivePlayQuality(
+            id: 'auto',
+            label: 'Auto',
+            isDefault: true,
+          ),
+        );
+
+        expect(urls, hasLength(1));
+        expect(
+          urls.single.url,
+          contains('chunklist_2_video_llhls.m3u8?session=fresh'),
+        );
+        expect(
+          urls.single.metadata?['masterPlaylistUrl'],
+          playlistUrl,
+        );
+        expect(
+          urls.single.metadata?['audioUrl'],
+          contains('chunklist_7_audio_llhls.m3u8?session=fresh'),
+        );
+        expect(urls.single.metadata?['hlsBitrate'], '2096000');
       });
 
       test('danmaku mapper parses history and realtime payloads from fixtures',

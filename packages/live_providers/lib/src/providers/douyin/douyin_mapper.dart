@@ -24,8 +24,8 @@ class DouyinMapper {
     return LiveRoom(
       providerId: ProviderId.douyin.value,
       roomId: owner['web_rid']?.toString() ?? '',
-      title: item['title']?.toString() ?? '',
-      streamerName: owner['nickname']?.toString() ?? '',
+      title: normalizeDisplayText(item['title']?.toString()),
+      streamerName: normalizeDisplayText(owner['nickname']?.toString()),
       coverUrl: _firstUrl(_asMap(item['cover'])),
       keyframeUrl: _firstUrl(_asMap(item['cover'])),
       areaName: '',
@@ -57,17 +57,17 @@ class DouyinMapper {
     return LiveRoomDetail(
       providerId: ProviderId.douyin.value,
       roomId: webRid,
-      title: roomData['title']?.toString() ?? '',
+      title: normalizeDisplayText(roomData['title']?.toString()),
       streamerName: roomStatus
-          ? owner['nickname']?.toString() ?? ''
-          : userData['nickname']?.toString() ?? '',
+          ? normalizeDisplayText(owner['nickname']?.toString())
+          : normalizeDisplayText(userData['nickname']?.toString()),
       streamerAvatarUrl: roomStatus
           ? _firstUrl(_asMap(owner['avatar_thumb']))
           : _firstUrl(_asMap(userData['avatar_thumb'])),
       coverUrl: roomStatus ? _firstUrl(_asMap(roomData['cover'])) : null,
       keyframeUrl: roomStatus ? _firstUrl(_asMap(roomData['cover'])) : null,
-      areaName: areaName,
-      description: owner['signature']?.toString(),
+      areaName: normalizeDisplayText(areaName),
+      description: normalizeDisplayText(owner['signature']?.toString()),
       sourceUrl: 'https://live.douyin.com/$webRid',
       isLive: roomStatus,
       viewerCount: roomStatus
@@ -127,17 +127,17 @@ class DouyinMapper {
     return LiveRoomDetail(
       providerId: ProviderId.douyin.value,
       roomId: webRid,
-      title: room['title']?.toString() ?? '',
+      title: normalizeDisplayText(room['title']?.toString()),
       streamerName: roomStatus
-          ? owner['nickname']?.toString() ?? ''
-          : anchor['nickname']?.toString() ?? '',
+          ? normalizeDisplayText(owner['nickname']?.toString())
+          : normalizeDisplayText(anchor['nickname']?.toString()),
       streamerAvatarUrl: roomStatus
           ? _firstUrl(_asMap(owner['avatar_thumb']))
           : _firstUrl(_asMap(anchor['avatar_thumb'])),
       coverUrl: roomStatus ? _firstUrl(_asMap(room['cover'])) : null,
       keyframeUrl: roomStatus ? _firstUrl(_asMap(room['cover'])) : null,
       areaName: '',
-      description: owner['signature']?.toString(),
+      description: normalizeDisplayText(owner['signature']?.toString()),
       sourceUrl: 'https://live.douyin.com/$webRid',
       isLive: roomStatus,
       viewerCount: roomStatus

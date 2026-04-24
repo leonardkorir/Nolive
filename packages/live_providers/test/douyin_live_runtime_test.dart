@@ -162,6 +162,52 @@ void main() {
     expect(urls, isNotEmpty);
     expect(urls.first.url, contains('/origin.'));
   });
+
+  test('live douyin runtime normalizes malformed display text', () async {
+    final transport = _MalformedTextDouyinTransport();
+    final signService = HttpDouyinSignService(cookie: 'ttwid=test-cookie');
+    final provider = DouyinProvider(
+      dataSource: DouyinLiveDataSource(
+        transport: transport,
+        signService: signService,
+      ),
+    );
+
+    final rooms = await provider.searchRooms('测试');
+    final detail = await provider.fetchRoomDetail(rooms.items.single.roomId);
+
+    expect(rooms.items.single.title, '抖音游戏厅');
+    expect(rooms.items.single.streamerName, '抖音热门主播');
+    expect(detail.title, '抖音游戏厅');
+    expect(detail.streamerName, '抖音热门主播');
+    expect(detail.areaName, '热门游戏');
+    expect(detail.description, '主播简介');
+  });
+
+  test('douyin room detail falls back to html when web enter stalls', () async {
+    final provider = DouyinProvider(
+      dataSource: DouyinLiveDataSource(
+        transport: _TimeoutThenHtmlDouyinTransport(),
+        signService: HttpDouyinSignService(cookie: 'ttwid=test-cookie'),
+        roomDetailApiTimeout: const Duration(milliseconds: 20),
+        roomDetailHtmlTimeout: const Duration(milliseconds: 200),
+      ),
+    );
+
+    final detail = await provider.fetchRoomDetail('416144012050');
+    final qualities = await provider.fetchPlayQualities(detail);
+    final urls = await provider.fetchPlayUrls(
+      detail: detail,
+      quality: qualities.firstWhere((item) => item.isDefault),
+    );
+
+    expect(detail.title, '抖音 HTML 直播间');
+    expect(detail.streamerName, '抖音 HTML 主播');
+    expect(detail.isLive, isTrue);
+    expect(qualities, isNotEmpty);
+    expect(urls, isNotEmpty);
+    expect(urls.first.url, contains('/origin.'));
+  });
 }
 
 class _FakeDouyinTransport extends DouyinTransport {
@@ -405,5 +451,202 @@ class _CategoryIconDouyinTransport extends DouyinTransport {
           r'{\"pathname\":\"/\",\"categoryData\":[{\"partition\":{\"id_str\":\"720\",\"type\":1,\"title\":\"游戏\",\"icon\":{\"url\":\"https://douyin.test/category-icon.png\"}},\"sub_partition\":[]}]}],',
       headers: const {},
     );
+  }
+}
+
+class _MalformedTextDouyinTransport extends _FakeDouyinTransport {
+  static final String _badTitle =
+      '抖音游${String.fromCharCode(0xD800)}戏${String.fromCharCode(0xDC00)}厅';
+  static final String _badName = '抖音熱${String.fromCharCode(0xD800)}門主播';
+  static final String _badArea = '熱門遊${String.fromCharCode(0xDC00)}戲';
+  static final String _badDescription = '主播簡${String.fromCharCode(0xD800)}介';
+
+  @override
+  Future<DouyinHttpResponse> getResponse(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    final uri = Uri.parse(url).replace(
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
+    );
+    if (uri
+        .toString()
+        .startsWith('https://www.douyin.com/aweme/v1/web/live/search/')) {
+      return DouyinHttpResponse(
+        body: jsonEncode({
+          'status_code': 0,
+          'data': [
+            {
+              'lives': {
+                'rawdata': jsonEncode({
+                  'title': _badTitle,
+                  'owner': {
+                    'web_rid': '416144012050',
+                    'nickname': _badName,
+                    'avatar_medium': {
+                      'url_list': ['https://douyin.test/avatar.jpg']
+                    },
+                  },
+                  'cover': {
+                    'url_list': ['https://douyin.test/cover.jpg']
+                  },
+                  'stats': {'total_user': 12345},
+                  'room': {'title': _badTitle},
+                }),
+              },
+            },
+          ],
+        }),
+        headers: const {},
+      );
+    }
+    if (uri
+        .toString()
+        .startsWith('https://live.douyin.com/webcast/room/web/enter/')) {
+      return DouyinHttpResponse(
+        body: jsonEncode({
+          'data': {
+            'data': [
+              {
+                'id_str': '7376429659866598196',
+                'title': _badTitle,
+                'status': 2,
+                'cover': {
+                  'url_list': ['https://douyin.test/cover.jpg']
+                },
+                'owner': {
+                  'nickname': _badName,
+                  'avatar_thumb': {
+                    'url_list': ['https://douyin.test/avatar.jpg']
+                  },
+                  'signature': _badDescription,
+                },
+                'room_view_stats': {'display_value': 12345},
+                'stream_url': {
+                  'flv_pull_url': {
+                    'FULL_HD1': 'https://douyin.test/origin.flv',
+                  },
+                  'hls_pull_url_map': {
+                    'FULL_HD1': 'https://douyin.test/origin.m3u8',
+                  },
+                  'live_core_sdk_data': {
+                    'pull_data': {
+                      'options': {
+                        'qualities': [
+                          {'sdk_key': 'FULL_HD1', 'name': '原画', 'level': 0},
+                        ],
+                      },
+                      'stream_data': '',
+                    },
+                  },
+                },
+              },
+            ],
+            'user': {
+              'nickname': _badName,
+            },
+            'partition_road_map': {
+              'partition': {'title': _badArea},
+            },
+          },
+        }),
+        headers: const {},
+      );
+    }
+    return super.getResponse(
+      url,
+      queryParameters: queryParameters,
+      headers: headers,
+    );
+  }
+}
+
+class _TimeoutThenHtmlDouyinTransport extends DouyinTransport {
+  @override
+  Future<DouyinHttpResponse> getResponse(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    final uri = Uri.parse(url).replace(
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
+    );
+    if (uri
+        .toString()
+        .startsWith('https://live.douyin.com/webcast/room/web/enter/')) {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      return const DouyinHttpResponse(body: '{}', headers: {});
+    }
+    if (uri.toString() == 'https://live.douyin.com/416144012050') {
+      final payload = jsonEncode({
+        'state': {
+          'appStore': {},
+          'roomStore': {
+            'roomInfo': {
+              'room': {
+                'id_str': '7376429659866598196',
+                'title': '抖音 HTML 直播间',
+                'status': 2,
+                'cover': {
+                  'url_list': ['https://douyin.test/cover.jpg'],
+                },
+                'owner': {
+                  'nickname': '抖音 HTML 主播',
+                  'signature': 'HTML 签名',
+                  'avatar_thumb': {
+                    'url_list': ['https://douyin.test/avatar.jpg'],
+                  },
+                },
+                'room_view_stats': {
+                  'display_value': 54321,
+                },
+                'stream_url': {
+                  'live_core_sdk_data': {
+                    'pull_data': {
+                      'options': {
+                        'qualities': [
+                          {
+                            'name': '原画',
+                            'level': 0,
+                            'sdk_key': 'origin',
+                          },
+                        ],
+                      },
+                      'stream_data': jsonEncode({
+                        'data': {
+                          'origin': {
+                            'main': {
+                              'flv': 'https://douyin.test/origin.flv',
+                              'hls': 'https://douyin.test/origin.m3u8',
+                            },
+                          },
+                        },
+                      }),
+                    },
+                  },
+                },
+              },
+              'anchor': {
+                'nickname': '抖音 HTML 主播',
+                'avatar_thumb': {
+                  'url_list': ['https://douyin.test/avatar.jpg'],
+                },
+              },
+            },
+          },
+          'userStore': {
+            'odin': {
+              'user_unique_id': '123456789012',
+            },
+          },
+        },
+      }).replaceAll('"', r'\"');
+      return DouyinHttpResponse(
+        body: '$payload]\\n',
+        headers: const {},
+      );
+    }
+    fail('Unexpected douyin timeout/html request: $uri');
   }
 }

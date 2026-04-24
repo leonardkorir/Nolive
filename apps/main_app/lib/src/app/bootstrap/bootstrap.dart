@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:nolive_app/src/app/bootstrap/default_state.dart';
 import 'package:nolive_app/src/app/platform/douyin_danmaku_signature_service.dart';
 import 'package:nolive_app/src/app/runtime_bridges/app_runtime_bridges.dart';
+import 'package:nolive_app/src/app/runtime_bridges/chaturbate/chaturbate_llhls_proxy.dart';
 import 'package:nolive_app/src/app/runtime_bridges/chaturbate/chaturbate_web_room_detail_loader.dart';
 import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_ad_guard_proxy.dart';
 import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_web_playback_bridge.dart';
@@ -95,6 +96,7 @@ AppBootstrap createAppBootstrap({
         secureSnapshot: secureCredentialStore.snapshot,
       ),
       secureCredentialStore: secureCredentialStore,
+      warmUpSecureCredentialStore: secureCredentialStore.ensureReady,
       accountClients: _BootstrapAccountClients(
         bilibili: bilibiliAccountClient ?? HttpBilibiliAccountClient(),
         douyin: douyinAccountClient ?? HttpDouyinAccountClient(),
@@ -109,6 +111,7 @@ Future<AppBootstrap> createPersistentAppBootstrap({
   BilibiliAccountClient? bilibiliAccountClient,
   DouyinAccountClient? douyinAccountClient,
   SecureCredentialStore? secureCredentialStore,
+  Future<SecureCredentialStore> Function()? secureCredentialStoreLoader,
 }) async {
   final resolvedDirectory =
       storageDirectory ?? await getApplicationSupportDirectory();
@@ -122,16 +125,54 @@ Future<AppBootstrap> createPersistentAppBootstrap({
     'bootstrap',
     'resolved storage file=${storageFile.path}',
   );
+  AppLog.instance.info(
+    'bootstrap',
+    'storage file store open start path=${storageFile.path}',
+  );
   final store = await LocalStorageFileStore.open(file: storageFile);
+  AppLog.instance.info(
+    'bootstrap',
+    'storage file store open done path=${storageFile.path}',
+  );
   final repositories = _BootstrapRepositories.persistent(store);
-  final resolvedSecureCredentialStore =
-      secureCredentialStore ?? await FlutterSecureCredentialStore.open();
   final state = _BootstrapStateBundle();
+  ProviderRegistry? liveProviderRegistry;
+  final resolvedSecureCredentialStore = secureCredentialStore ??
+      LazySecureCredentialStore(
+        settingsRepository: repositories.settingsRepository,
+        allowedKeys: SensitiveSettingKeys.secureCredentialKeys,
+        initialSettings: repositories.settingsSnapshot(),
+        loader:
+            secureCredentialStoreLoader ?? FlutterSecureCredentialStore.open,
+        onSnapshotChanged: (_) {
+          AppLog.instance.info(
+            'bootstrap',
+            'secure credential snapshot changed; clear live provider cache',
+          );
+          liveProviderRegistry?.clearCache();
+          state.providerCatalogRevision.value += 1;
+        },
+      );
+  AppLog.instance.info(
+    'bootstrap',
+    'secure store bootstrap ready mode='
+        '${secureCredentialStore == null ? 'deferred' : 'provided'} '
+        'separate=${resolvedSecureCredentialStore.storesSecureValuesSeparately} '
+        'keys=${resolvedSecureCredentialStore.snapshot().length}',
+  );
 
-  await MigrateSensitiveSettingsToSecureStoreUseCase(
-    settingsRepository: repositories.settingsRepository,
-    secureCredentialStore: resolvedSecureCredentialStore,
-  )();
+  if (secureCredentialStore != null &&
+      resolvedSecureCredentialStore.storesSecureValuesSeparately) {
+    await MigrateSensitiveSettingsToSecureStoreUseCase(
+      settingsRepository: repositories.settingsRepository,
+      secureCredentialStore: resolvedSecureCredentialStore,
+    )();
+  } else if (secureCredentialStore != null) {
+    AppLog.instance.info(
+      'bootstrap',
+      'secure settings migration skipped mode=legacy-settings-fallback',
+    );
+  }
 
   await ensureDefaultAppState(
     settingsRepository: repositories.settingsRepository,
@@ -143,7 +184,7 @@ Future<AppBootstrap> createPersistentAppBootstrap({
     preferencesNotifier: state.layoutPreferences,
   );
 
-  return _assembleAppBootstrap(
+  final bootstrap = _assembleAppBootstrap(
     _BootstrapAssemblyContext(
       mode: mode,
       state: state,
@@ -153,17 +194,21 @@ Future<AppBootstrap> createPersistentAppBootstrap({
         secureSnapshot: resolvedSecureCredentialStore.snapshot,
       ),
       secureCredentialStore: resolvedSecureCredentialStore,
+      warmUpSecureCredentialStore: resolvedSecureCredentialStore.ensureReady,
       accountClients: _BootstrapAccountClients(
         bilibili: bilibiliAccountClient ?? HttpBilibiliAccountClient(),
         douyin: douyinAccountClient ?? HttpDouyinAccountClient(),
       ),
     ),
   );
+  liveProviderRegistry = bootstrap.providerRegistry;
+  return bootstrap;
 }
 
 class AppBootstrap {
   const AppBootstrap({
     required this.mode,
+    required this.warmUpSecureCredentialStore,
     required this.themeMode,
     required this.layoutPreferences,
     required this.providerCatalogRevision,
@@ -252,6 +297,7 @@ class AppBootstrap {
   });
 
   final AppRuntimeMode mode;
+  final Future<void> Function() warmUpSecureCredentialStore;
   final ValueNotifier<ThemeMode> themeMode;
   final ValueNotifier<LayoutPreferences> layoutPreferences;
   final ValueNotifier<int> providerCatalogRevision;

@@ -84,6 +84,40 @@ void main() {
     expect(find.text('加载更多'), findsNothing);
   });
 
+  testWidgets('douyin category page retries first category load automatically',
+      (tester) async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    bootstrap.providerRegistry.register(
+      ProviderRegistration(
+        descriptor: const ProviderDescriptor(
+          id: ProviderId.douyin,
+          displayName: '抖音',
+          capabilities: {
+            ProviderCapability.categories,
+          },
+          supportedPlatforms: {ProviderPlatform.android},
+        ),
+        builder: () => _FlakyDouyinCategoryProvider(),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProviderCategoriesPage(
+          dependencies: buildCategoryFeatureDependencies(bootstrap),
+          providerId: ProviderId.douyin,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const Key('provider-category-room-douyin-room-1')),
+        findsOneWidget);
+    expect(find.text('分区加载失败'), findsNothing);
+  });
+
   testWidgets('category page follows provider resolved page after sparse page',
       (tester) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -300,6 +334,69 @@ class _FakeDouyinCategoryProvider extends LiveProvider
           page: page,
         ),
     };
+  }
+}
+
+class _FlakyDouyinCategoryProvider extends LiveProvider
+    implements SupportsCategories, SupportsCategoryRooms {
+  static const ProviderDescriptor _descriptor = ProviderDescriptor(
+    id: ProviderId.douyin,
+    displayName: '抖音',
+    capabilities: {
+      ProviderCapability.categories,
+    },
+    supportedPlatforms: {ProviderPlatform.android},
+  );
+
+  var _fetchCount = 0;
+
+  @override
+  ProviderDescriptor get descriptor => _descriptor;
+
+  @override
+  Future<List<LiveCategory>> fetchCategories() async {
+    _fetchCount += 1;
+    if (_fetchCount == 1) {
+      throw ProviderParseException(
+        providerId: ProviderId.douyin,
+        message: 'transient douyin category parse failure',
+      );
+    }
+    return const [
+      LiveCategory(
+        id: '720,1',
+        name: '游戏',
+        children: [
+          LiveSubCategory(
+            id: '720,1',
+            parentId: '720,1',
+            name: '热门',
+            pic: 'https://example.com/icon.png',
+          ),
+        ],
+      ),
+    ];
+  }
+
+  @override
+  Future<PagedResponse<LiveRoom>> fetchCategoryRooms(
+    LiveSubCategory category, {
+    int page = 1,
+  }) async {
+    return PagedResponse(
+      items: const [
+        LiveRoom(
+          providerId: 'douyin',
+          roomId: 'room-1',
+          title: '重试成功',
+          streamerName: '主播一',
+          coverUrl: 'https://example.com/cover-1.png',
+          isLive: true,
+        ),
+      ],
+      hasMore: false,
+      page: page,
+    );
   }
 }
 

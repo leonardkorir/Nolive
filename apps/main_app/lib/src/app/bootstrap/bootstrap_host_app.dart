@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:nolive_app/src/app/app.dart';
@@ -23,6 +25,7 @@ class BootstrapHostApp extends StatefulWidget {
 
 class _BootstrapHostAppState extends State<BootstrapHostApp> {
   late Future<AppBootstrap> _bootstrapFuture;
+  AppBootstrap? _warmedBootstrap;
 
   @override
   void initState() {
@@ -33,6 +36,17 @@ class _BootstrapHostAppState extends State<BootstrapHostApp> {
   void _retry() {
     setState(() {
       _bootstrapFuture = widget.bootstrapLoader();
+      _warmedBootstrap = null;
+    });
+  }
+
+  void _scheduleDeferredWarmup(AppBootstrap bootstrap) {
+    if (identical(_warmedBootstrap, bootstrap)) {
+      return;
+    }
+    _warmedBootstrap = bootstrap;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(bootstrap.warmUpSecureCredentialStore());
     });
   }
 
@@ -42,6 +56,7 @@ class _BootstrapHostAppState extends State<BootstrapHostApp> {
       future: _bootstrapFuture,
       builder: (context, snapshot) {
         if (snapshot.hasData) {
+          _scheduleDeferredWarmup(snapshot.data!);
           return NoliveApp(appBootstrap: snapshot.data!);
         }
         return MaterialApp(

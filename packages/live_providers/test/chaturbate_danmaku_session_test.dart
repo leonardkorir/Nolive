@@ -53,7 +53,6 @@ void main() {
         await subscription.cancel();
         await session.disconnect();
       });
-
     },
   );
 
@@ -115,16 +114,77 @@ void main() {
     await subscription.cancel();
     await session.disconnect();
   });
+
+  test(
+      'chaturbate danmaku session keeps realtime connection when room history returns 403',
+      () async {
+    final socket = _FixtureSocketClient(
+      incomingFrames: const ['{"action":4}'],
+    );
+    final session = ChaturbateDanmakuSession(
+      roomId: 'realcest',
+      broadcasterUid: 'EZ8KVAC',
+      csrfToken: 'fixture-csrf',
+      backend: 'a',
+      apiClient: _FixtureDanmakuApiClient(
+        authResponse: {
+          'token': 'fixture-token',
+          'channels': {
+            'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': 'room:message',
+          },
+          'settings': {
+            'host': 'realtime-primary.example',
+          },
+        },
+        history: const [],
+        historyError: ProviderParseException(
+          providerId: ProviderId.chaturbate,
+          message:
+              'Chaturbate /push_service/room_history/ request failed with status 403.',
+        ),
+      ),
+      socketClientFactory: (_) => socket,
+      presenceId: '+fixture',
+    );
+
+    final collected = <LiveMessage>[];
+    final subscription = session.messages.listen(collected.add);
+
+    await session.connect();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(
+      collected.any(
+        (item) =>
+            item.type == LiveMessageType.notice &&
+            item.content.contains('仅实时弹幕'),
+      ),
+      isTrue,
+    );
+    expect(
+      collected.any(
+        (item) =>
+            item.type == LiveMessageType.notice &&
+            item.content.contains('实时弹幕已连接'),
+      ),
+      isTrue,
+    );
+
+    await subscription.cancel();
+    await session.disconnect();
+  });
 }
 
 class _FixtureDanmakuApiClient implements ChaturbateApiClient {
   _FixtureDanmakuApiClient({
     required this.authResponse,
     required this.history,
+    this.historyError,
   });
 
   final Map<String, dynamic> authResponse;
   final List<Map<String, dynamic>> history;
+  final Object? historyError;
 
   @override
   Future<Map<String, dynamic>> authenticatePushService({
@@ -151,6 +211,9 @@ class _FixtureDanmakuApiClient implements ChaturbateApiClient {
     expect(roomId, 'realcest');
     expect(csrfToken, 'fixture-csrf');
     expect(topics, contains('RoomMessageTopic#RoomMessageTopic:EZ8KVAC'));
+    if (historyError != null) {
+      throw historyError!;
+    }
     return history;
   }
 
@@ -180,11 +243,23 @@ class _FixtureDanmakuApiClient implements ChaturbateApiClient {
   }
 
   @override
+  Future<Map<String, dynamic>> fetchRoomContext(
+    String roomId, {
+    String? cookie,
+  }) async {
+    fail('Unexpected fetchRoomContext call: $roomId cookie=${cookie ?? ''}');
+  }
+
+  @override
   Future<String> fetchHlsPlaylist(
     String url, {
     String? referer,
+    String? cookie,
   }) async {
-    fail('Unexpected fetchHlsPlaylist call: $url referer=${referer ?? ''}');
+    fail(
+      'Unexpected fetchHlsPlaylist call: '
+      'url=$url referer=${referer ?? ''} cookie=${cookie ?? ''}',
+    );
   }
 }
 

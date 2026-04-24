@@ -35,6 +35,39 @@ abstract class BilibiliTransport {
   }
 }
 
+int bilibiliResponseCode(Map<String, dynamic> response) {
+  final value = response['code'];
+  if (value is int) {
+    return value;
+  }
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+String bilibiliResponseMessage(Map<String, dynamic> response) {
+  final message = response['message']?.toString().trim() ??
+      response['msg']?.toString().trim() ??
+      '';
+  return message;
+}
+
+Map<String, dynamic> ensureBilibiliSuccess(
+  Map<String, dynamic> response, {
+  required String operation,
+  Set<int> acceptedCodes = const {0},
+}) {
+  final code = bilibiliResponseCode(response);
+  if (acceptedCodes.contains(code)) {
+    return response;
+  }
+  final message = bilibiliResponseMessage(response);
+  throw ProviderParseException(
+    providerId: ProviderId.bilibili,
+    message: message.isEmpty
+        ? 'Bilibili $operation failed with code $code.'
+        : 'Bilibili $operation failed with code $code: $message',
+  );
+}
+
 class HttpBilibiliTransport implements BilibiliTransport {
   HttpBilibiliTransport({http.Client? client})
       : _client = client ?? http.Client();

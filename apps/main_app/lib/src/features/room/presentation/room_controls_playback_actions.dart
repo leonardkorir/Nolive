@@ -164,23 +164,37 @@ class RoomControlsPlaybackActions {
         resetAttempts: resetTwitchRecoveryAttempts,
       );
     }
-    final bound = await context.bindPlaybackSourceWithRecovery(
-      playbackSource: resolved.playbackSource,
-      label: 'manual apply source',
-      autoPlay: context.resolveAutoPlayEnabled(),
-      autoPlayDelay: context.providerId == ProviderId.twitch
-          ? const Duration(milliseconds: 120)
-          : Duration.zero,
-      preferFreshBackendBeforeFirstSetSource:
-          shouldPreRefreshMdkBackendBeforeSameSourceRebind(
-        state: context.runtime.readCurrentState(),
+    final currentState = context.runtime.readCurrentState();
+    var playbackSourceToStore = resolved.playbackSource;
+    if (_shouldSkipEquivalentChaturbateRebind(
+      currentState: currentState,
+      resolved: resolved,
+      selectedQuality: selectedQuality,
+    )) {
+      playbackSourceToStore = currentState.source ?? resolved.playbackSource;
+      context.trace(
+        'manual apply source skipped equivalent chaturbate proxy '
+        'playback=${_summarizePlaybackSource(playbackSourceToStore)}',
+      );
+    } else {
+      final bound = await context.bindPlaybackSourceWithRecovery(
         playbackSource: resolved.playbackSource,
-        runtimeBackend: context.runtime.resolveBackend(),
-        currentPlaybackSource: context.resolvePlaybackReferenceSource(),
-      ),
-    );
-    if (!bound || !context.isMounted()) {
-      return;
+        label: 'manual apply source',
+        autoPlay: context.resolveAutoPlayEnabled(),
+        autoPlayDelay: context.providerId == ProviderId.twitch
+            ? const Duration(milliseconds: 120)
+            : Duration.zero,
+        preferFreshBackendBeforeFirstSetSource:
+            shouldPreRefreshMdkBackendBeforeSameSourceRebind(
+          state: currentState,
+          playbackSource: resolved.playbackSource,
+          runtimeBackend: context.runtime.resolveBackend(),
+          currentPlaybackSource: context.resolvePlaybackReferenceSource(),
+        ),
+      );
+      if (!bound || !context.isMounted()) {
+        return;
+      }
     }
     final activeRoomDetail = context.resolveActiveRoomDetail() ??
         context.resolveLatestLoadedState()?.snapshot.detail;
@@ -195,9 +209,46 @@ class RoomControlsPlaybackActions {
       activeRoomDetail: activeRoomDetail,
       selectedQuality: nextSelectedQuality,
       effectiveQuality: resolved.effectiveQuality,
-      playbackSource: resolved.playbackSource,
+      playbackSource: playbackSourceToStore,
       playUrls: resolved.playUrls,
     );
+  }
+
+  bool _shouldSkipEquivalentChaturbateRebind({
+    required PlayerState currentState,
+    required ResolvedPlaySource resolved,
+    LivePlayQuality? selectedQuality,
+  }) {
+    if (context.providerId != ProviderId.chaturbate) {
+      return false;
+    }
+    final currentSource = currentState.source;
+    if (currentSource == null ||
+        !_isChaturbateProxySource(currentSource) ||
+        !_isChaturbateProxySource(resolved.playbackSource)) {
+      return false;
+    }
+    if (currentState.status == PlaybackStatus.error ||
+        currentState.status == PlaybackStatus.idle ||
+        currentState.status == PlaybackStatus.completed) {
+      return false;
+    }
+    final requestedQuality =
+        selectedQuality ?? context.resolveSelectedQuality();
+    final currentEffectiveQuality = context.resolveEffectiveQuality();
+    if (requestedQuality != null &&
+        currentEffectiveQuality != null &&
+        (requestedQuality.id != currentEffectiveQuality.id ||
+            requestedQuality.label != currentEffectiveQuality.label)) {
+      return false;
+    }
+    return true;
+  }
+
+  bool _isChaturbateProxySource(PlaybackSource source) {
+    final uri = source.url;
+    return uri.host == '127.0.0.1' &&
+        uri.pathSegments.contains('chaturbate-llhls');
   }
 
   void _showQualityFallbackHint({

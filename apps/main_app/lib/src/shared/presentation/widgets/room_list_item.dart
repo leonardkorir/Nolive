@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:live_core/live_core.dart';
 
 import 'app_surface_card.dart';
 import 'persisted_network_image.dart';
@@ -31,6 +32,15 @@ class RoomListItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final normalizedTitle = normalizeDisplayText(title);
+    final normalizedSubtitle = normalizeDisplayText(subtitle);
+    final normalizedTrailing = normalizeDisplayText(trailing);
+    final normalizedAvatarFallbackText =
+        normalizeDisplayText(avatarFallbackText);
+    final normalizedTags = tags
+        .map(normalizeDisplayText)
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
     return AppSurfaceCard(
       padding: EdgeInsets.zero,
       child: InkWell(
@@ -46,10 +56,10 @@ class RoomListItem extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if ((avatarImageUrl?.isNotEmpty ?? false) ||
-                      (avatarFallbackText?.isNotEmpty ?? false)) ...[
+                      normalizedAvatarFallbackText.isNotEmpty) ...[
                     _RoomListAvatar(
                       imageUrl: avatarImageUrl,
-                      fallbackText: avatarFallbackText,
+                      fallbackText: normalizedAvatarFallbackText,
                     ),
                     const SizedBox(width: 12),
                   ],
@@ -58,7 +68,7 @@ class RoomListItem extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          title,
+                          normalizedTitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.titleSmall?.copyWith(
@@ -67,7 +77,7 @@ class RoomListItem extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          subtitle,
+                          normalizedSubtitle,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                             height: 1.25,
@@ -87,7 +97,7 @@ class RoomListItem extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      trailing,
+                      normalizedTrailing,
                       style: theme.textTheme.labelLarge?.copyWith(
                         color: colorScheme.onPrimaryContainer,
                       ),
@@ -95,13 +105,13 @@ class RoomListItem extends StatelessWidget {
                   ),
                 ],
               ),
-              if (tags.isNotEmpty) ...[
+              if (normalizedTags.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
                   children: [
-                    for (final tag in tags)
+                    for (final tag in normalizedTags)
                       Chip(
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,

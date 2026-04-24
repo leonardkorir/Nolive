@@ -52,7 +52,7 @@ class InspectParsedRoomUseCase {
     throw ProviderParseException(
       providerId: ProviderId.chaturbate,
       message:
-          'Chaturbate 当前需要浏览器 Cookie。请先在账号管理粘贴可正常打开 Chaturbate 的浏览器完整 Cookie，再进行房间检查。',
+          'Chaturbate 这次房间检查需要浏览器 Cookie 才能通过房间页 / Cloudflare 预热。请先在账号管理粘贴可正常打开该房间的浏览器完整 Cookie，再进行房间检查。',
     );
   }
 }

@@ -8,6 +8,7 @@ import 'package:nolive_app/src/features/category/application/manage_favorite_cat
 import 'package:nolive_app/src/features/category/application/load_provider_categories_use_case.dart';
 import 'package:nolive_app/src/features/category/presentation/category_search_support.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
+import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
@@ -76,7 +77,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
     }
   }
 
-  Future<void> _loadCategories() async {
+  Future<void> _loadCategories({int attempt = 0}) async {
     setState(() {
       _loadingCategories = true;
       _categoriesError = null;
@@ -101,7 +102,21 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
       if (initialCategory != null) {
         await _loadRooms(category: initialCategory);
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLog.instance.error(
+        'categories',
+        'provider categories load failed provider=${widget.providerId.value}',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (_shouldRetryCategoriesLoad(error: error, attempt: attempt)) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        if (!mounted) {
+          return;
+        }
+        await _loadCategories(attempt: attempt + 1);
+        return;
+      }
       if (!mounted) {
         return;
       }
@@ -110,6 +125,15 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
         _loadingCategories = false;
       });
     }
+  }
+
+  bool _shouldRetryCategoriesLoad({
+    required Object error,
+    required int attempt,
+  }) {
+    return widget.providerId == ProviderId.douyin &&
+        attempt < 1 &&
+        error is ProviderParseException;
   }
 
   Future<void> _reloadFavoriteTags() async {
@@ -159,7 +183,15 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
         _loadingMore = false;
       });
       _scheduleAutoLoadMoreIfNeeded();
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLog.instance.error(
+        'categories',
+        'category rooms load failed '
+            'provider=${widget.providerId.value} '
+            'category=${category.id} page=$page append=$append attempt=$attempt',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (_shouldRetryRoomsLoad(
         category: category,
         page: page,
@@ -235,7 +267,15 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
         _loadingMore = false;
       });
       _scheduleAutoLoadMoreIfNeeded();
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLog.instance.error(
+        'categories',
+        'category rooms load-more failed '
+            'provider=${widget.providerId.value} '
+            'category=${category.id} page=${_currentPage + 1}',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) {
         return;
       }

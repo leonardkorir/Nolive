@@ -68,11 +68,68 @@ void main() {
           expect(urls, hasLength(1));
           expect(
             urls.single.url,
+            detail.metadata?['hlsSource'],
+          );
+          expect(urls.single.metadata?['hlsBitrate'], qualities[1].id);
+          expect(
+            urls.single.metadata?['resolvedVariantUrl'],
             contains('chunklist'),
           );
+          expect(
+            urls.single.metadata?['audioUrl'],
+            anyOf(isNull, contains('chunklist')),
+          );
           expect(urls.single.lineLabel, 'AUS');
+          expect(
+            urls.single.headers['referer'],
+            'https://chaturbate.com/',
+          );
+          expect(
+            urls.single.headers['origin'],
+            'https://chaturbate.com',
+          );
         },
       );
+
+      test(
+          'fetch room detail primes playback bootstrap so play qualities avoid a second full hls wait',
+          () async {
+        final masterFixture = ChaturbateFixtureLoader.loadHlsMasterPlaylist();
+        final apiClient = _FixtureChaturbateApiClient(
+          roomPages: {
+            'kittengirlxo': ChaturbateFixtureLoader.loadRoomPage(),
+          },
+          roomContexts: {
+            'kittengirlxo': {
+              'hls_source': masterFixture.url,
+            },
+          },
+          hlsPlaylists: {
+            masterFixture.url: masterFixture.content,
+          },
+          roomPageDelays: const {
+            'kittengirlxo': Duration(milliseconds: 180),
+          },
+          roomContextDelays: const {
+            'kittengirlxo': Duration(milliseconds: 30),
+          },
+          hlsPlaylistDelays: {
+            masterFixture.url: const Duration(milliseconds: 180),
+          },
+        );
+        final dataSource = ChaturbateLiveDataSource(apiClient: apiClient);
+
+        final detail = await dataSource.fetchRoomDetail('kittengirlxo');
+        final stopwatch = Stopwatch()..start();
+        final qualities = await dataSource.fetchPlayQualities(detail);
+        stopwatch.stop();
+
+        expect(qualities, hasLength(greaterThan(1)));
+        expect(
+          stopwatch.elapsed,
+          lessThan(const Duration(milliseconds: 150)),
+        );
+      });
 
       test('empty carousel response returns an empty recommend page', () async {
         final provider = ChaturbateProvider(
@@ -95,7 +152,8 @@ void main() {
         expect(recommend.page, 1);
       });
 
-      test('ll-hls runtime exposes separate audio rendition in play urls',
+      test(
+          'll-hls runtime keeps split playback when room detail still exposes classic hls_source',
           () async {
         final provider = ChaturbateProvider(
           dataSource: ChaturbateLiveDataSource(
@@ -127,14 +185,275 @@ void main() {
 
         expect(qualities, hasLength(3));
         expect(
-          qualities.first.metadata?['audioUrl'],
-          contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
+          qualities.first.metadata?['masterPlaylistUrl'],
+          detail.metadata?['hlsSource'],
+        );
+        expect(qualities.first.metadata?['hlsBitrate'], '1296000');
+        expect(
+          qualities.first.metadata?['masterPlaylistContent'],
+          contains('#EXT-X-STREAM-INF:'),
+        );
+        expect(urls.single.url, contains('chunklist_4_video'));
+        expect(
+          urls.single.metadata?['hlsBitrate'],
+          '3296000',
+        );
+        expect(
+          urls.single.metadata?['masterPlaylistContent'],
+          contains('#EXT-X-STREAM-INF:'),
+        );
+        expect(urls.single.metadata?['resolvedVariantUrl'], isNull);
+        expect(
+          urls.single.metadata?['audioUrl'],
+          contains('chunklist_5_audio'),
+        );
+        expect(urls.single.headers['referer'], 'https://chaturbate.com/');
+        expect(
+          urls.single.headers['origin'],
+          'https://chaturbate.com',
+        );
+      });
+
+      test(
+          'play qualities refresh stale room context without forwarding request cookie to ll-hls playback',
+          () async {
+        const stalePlaylistUrl =
+            'https://edge18-sin.live.mmcdn.com/v1/edge/streams/origin.dewdropdoll.stale/llhls.m3u8?token=stale';
+        const refreshedPlaylistUrl =
+            'https://edge3-lax.live.mmcdn.com/v1/edge/streams/origin.dewdropdoll.fresh/llhls.m3u8?token=fresh';
+        final apiClient = _FixtureChaturbateApiClient(
+          roomContexts: {
+            'dewdropdoll': const {
+              'hls_source': refreshedPlaylistUrl,
+            },
+          },
+          hlsPlaylists: {
+            refreshedPlaylistUrl: '''
+#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio_aac_96",NAME="Audio_1_1_5",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,CHANNELS="2",URI="/v1/edge/streams/origin.dewdropdoll.fresh/chunklist_5_audio_llhls.m3u8?session=fresh"
+
+#EXT-X-STREAM-INF:BANDWIDTH=1296000,RESOLUTION=852x480,FRAME-RATE=30.000,CODECS="avc1.4d401f,mp4a.40.2",AUDIO="audio_aac_96"
+/v1/edge/streams/origin.dewdropdoll.fresh/chunklist_2_video_llhls.m3u8?session=fresh
+#EXT-X-STREAM-INF:BANDWIDTH=3296000,RESOLUTION=1280x720,FRAME-RATE=30.000,CODECS="avc1.4d401f,mp4a.40.2",AUDIO="audio_aac_96"
+/v1/edge/streams/origin.dewdropdoll.fresh/chunklist_4_video_llhls.m3u8?session=fresh
+''',
+          },
+          failingHlsUrls: const {stalePlaylistUrl},
+        );
+        final dataSource = ChaturbateLiveDataSource(apiClient: apiClient);
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.chaturbate.value,
+          roomId: 'dewdropdoll',
+          title: 'dewdropdoll room',
+          streamerName: 'dewdropdoll',
+          sourceUrl: 'https://chaturbate.com/dewdropdoll/',
+          metadata: const {
+            'hlsSource': stalePlaylistUrl,
+            'requestCookie': 'cf_clearance=demo; csrftoken=demo',
+          },
+        );
+
+        final qualities = await dataSource.fetchPlayQualities(detail);
+        final urls = await dataSource.fetchPlayUrls(
+          detail: detail,
+          quality: qualities.first,
+        );
+
+        expect(qualities, hasLength(3));
+        expect(qualities.first.metadata?['masterPlaylistUrl'],
+            refreshedPlaylistUrl);
+        expect(qualities.first.metadata?['hlsBitrate'], '1296000');
+        expect(
+          qualities.first.metadata?['masterPlaylistContent'],
+          contains('#EXT-X-STREAM-INF:'),
+        );
+        expect(urls.single.url, contains('chunklist_2_video_llhls.m3u8'));
+        expect(urls.single.metadata?['hlsBitrate'], '1296000');
+        expect(
+          urls.single.metadata?['masterPlaylistUrl'],
+          refreshedPlaylistUrl,
+        );
+        expect(
+          urls.single.metadata?['masterPlaylistContent'],
+          contains('#EXT-X-STREAM-INF:'),
         );
         expect(
           urls.single.metadata?['audioUrl'],
-          contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
+          contains('chunklist_5_audio_llhls.m3u8'),
         );
-        expect(urls.single.url, contains('chunklist_4_video'));
+        expect(
+          apiClient.hlsPlaylistCookies[stalePlaylistUrl],
+          anyOf(isNull, isEmpty),
+        );
+        expect(
+          apiClient.hlsPlaylistCookies[refreshedPlaylistUrl],
+          anyOf(isNull, isEmpty),
+        );
+        expect(
+          apiClient.roomContextCookies['dewdropdoll'],
+          anyOf(isNull, isEmpty),
+        );
+      });
+
+      test(
+          'play qualities refresh runs room context timeout and room page fallback in parallel',
+          () async {
+        const stalePlaylistUrl =
+            'https://edge18-sin.live.mmcdn.com/v1/edge/streams/origin.kittengirlxo.stale/llhls.m3u8?token=stale';
+        final apiClient = _FixtureChaturbateApiClient(
+          roomPages: {
+            'kittengirlxo': ChaturbateFixtureLoader.loadRoomPage(),
+          },
+          roomContexts: {
+            'kittengirlxo': const {
+              'hls_source': stalePlaylistUrl,
+            },
+          },
+          defaultHlsPlaylist:
+              ChaturbateFixtureLoader.loadHlsMasterPlaylist().content,
+          failingHlsUrls: const {stalePlaylistUrl},
+          roomContextDelays: const {
+            'kittengirlxo': Duration(milliseconds: 200),
+          },
+          roomPageDelays: const {
+            'kittengirlxo': Duration(milliseconds: 80),
+          },
+        );
+        final dataSource = ChaturbateLiveDataSource(
+          apiClient: apiClient,
+          roomContextRequestTimeout: const Duration(milliseconds: 50),
+          roomPageRequestTimeout: const Duration(milliseconds: 150),
+          hlsPlaylistRequestTimeout: const Duration(milliseconds: 150),
+        );
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.chaturbate.value,
+          roomId: 'kittengirlxo',
+          title: 'kittengirlxo room',
+          streamerName: 'kittengirlxo',
+          sourceUrl: 'https://chaturbate.com/kittengirlxo/',
+          metadata: const {
+            'hlsSource': stalePlaylistUrl,
+          },
+        );
+
+        final stopwatch = Stopwatch()..start();
+        final qualities = await dataSource.fetchPlayQualities(detail);
+        stopwatch.stop();
+
+        expect(qualities, hasLength(greaterThan(1)));
+        expect(
+          stopwatch.elapsed,
+          lessThan(const Duration(milliseconds: 150)),
+        );
+      });
+
+      test(
+          'play urls refresh stale auto fallback into a fresh chaturbate playback url',
+          () async {
+        const stalePlaylistUrl =
+            'https://edge18-sin.live.mmcdn.com/v1/edge/streams/origin.ana_maria11.stale/llhls.m3u8?token=stale';
+        const refreshedPlaylistUrl =
+            'https://edge29-sin.live.mmcdn.com/v1/edge/streams/origin.ana_maria11.fresh/llhls.m3u8?token=fresh';
+        final apiClient = _FixtureChaturbateApiClient(
+          roomContexts: {
+            'ana_maria11': const {
+              'hls_source': refreshedPlaylistUrl,
+            },
+          },
+          hlsPlaylists: {
+            refreshedPlaylistUrl: '''
+#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio_aac_96",NAME="Audio_1_1_5",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,CHANNELS="2",URI="/v1/edge/streams/origin.ana_maria11.fresh/chunklist_6_audio_llhls.m3u8?session=fresh"
+
+#EXT-X-STREAM-INF:BANDWIDTH=3296000,RESOLUTION=1280x720,FRAME-RATE=30.000,CODECS="avc1.4d401f,mp4a.40.2",AUDIO="audio_aac_96"
+/v1/edge/streams/origin.ana_maria11.fresh/chunklist_4_video_llhls.m3u8?session=fresh
+''',
+          },
+          failingHlsUrls: const {stalePlaylistUrl},
+        );
+        final dataSource = ChaturbateLiveDataSource(apiClient: apiClient);
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.chaturbate.value,
+          roomId: 'ana_maria11',
+          title: 'ana_maria11 room',
+          streamerName: 'ana_maria11',
+          sourceUrl: 'https://chaturbate.com/ana_maria11/',
+          metadata: const {
+            'hlsSource': stalePlaylistUrl,
+            'requestCookie': 'cf_clearance=demo; csrftoken=demo',
+          },
+        );
+
+        final urls = await dataSource.fetchPlayUrls(
+          detail: detail,
+          quality: const LivePlayQuality(
+            id: 'auto',
+            label: 'Auto',
+            isDefault: true,
+          ),
+        );
+
+        expect(urls, hasLength(1));
+        expect(urls.single.url, contains('chunklist_4_video_llhls.m3u8'));
+        expect(urls.single.metadata?['hlsBitrate'], '3296000');
+        expect(
+          urls.single.metadata?['masterPlaylistUrl'],
+          refreshedPlaylistUrl,
+        );
+        expect(
+          urls.single.metadata?['audioUrl'],
+          contains('chunklist_6_audio_llhls.m3u8'),
+        );
+        expect(
+          apiClient.roomContextCookies['ana_maria11'],
+          anyOf(isNull, isEmpty),
+        );
+        expect(
+          apiClient.hlsPlaylistCookies[refreshedPlaylistUrl],
+          anyOf(isNull, isEmpty),
+        );
+      });
+
+      test(
+          'playback refresh falls back to room page when detail and room context miss hlsSource',
+          () async {
+        final masterFixture = ChaturbateFixtureLoader.loadHlsMasterPlaylist(
+          harName: 'room-page-realcest-auto.har',
+        );
+        final apiClient = _FixtureChaturbateApiClient(
+          roomPages: {
+            'kittengirlxo': ChaturbateFixtureLoader.loadRoomPage(),
+          },
+          roomContexts: {
+            'kittengirlxo': const {},
+          },
+          defaultHlsPlaylist: masterFixture.content,
+        );
+        final dataSource = ChaturbateLiveDataSource(apiClient: apiClient);
+        const detail = LiveRoomDetail(
+          providerId: 'chaturbate',
+          roomId: 'kittengirlxo',
+          title: "Kittengirlxo's room",
+          streamerName: 'kittengirlxo',
+          sourceUrl: 'https://chaturbate.com/kittengirlxo/',
+          isLive: true,
+        );
+
+        final qualities = await dataSource.fetchPlayQualities(detail);
+        final urls = await dataSource.fetchPlayUrls(
+          detail: detail,
+          quality: qualities.first,
+        );
+
+        expect(qualities, isNotEmpty);
+        expect(qualities.first.metadata?['masterPlaylistUrl'], isNotNull);
+        expect(urls, hasLength(1));
+        expect(urls.single.url, contains('.m3u8'));
+        expect(urls.single.metadata?['masterPlaylistUrl'], isNotNull);
       });
 
       test('spy_shows carousel is filtered out of recommend flow', () async {
@@ -269,23 +588,40 @@ class _FixtureChaturbateApiClient implements ChaturbateApiClient {
     Map<String, Map<String, dynamic>>? discoverCarousels,
     Map<String, Map<String, dynamic>>? searchResponses,
     Map<String, String>? roomPages,
+    Map<String, Map<String, dynamic>>? roomContexts,
     Map<String, String>? hlsPlaylists,
     String? defaultHlsPlaylist,
     Set<String>? failOnceDiscoverKeys,
+    Set<String>? failingHlsUrls,
+    Map<String, Duration>? roomPageDelays,
+    Map<String, Duration>? roomContextDelays,
+    Map<String, Duration>? hlsPlaylistDelays,
   })  : _discoverCarousels = discoverCarousels ?? const {},
         _searchResponses = searchResponses ?? const {},
         _roomPages = roomPages ?? const {},
+        _roomContexts = roomContexts ?? const {},
         _hlsPlaylists = hlsPlaylists ?? const {},
         _defaultHlsPlaylist = defaultHlsPlaylist,
-        _failOnceDiscoverKeys = {...?failOnceDiscoverKeys};
+        _failOnceDiscoverKeys = {...?failOnceDiscoverKeys},
+        _failingHlsUrls = {...?failingHlsUrls},
+        _roomPageDelays = roomPageDelays ?? const {},
+        _roomContextDelays = roomContextDelays ?? const {},
+        _hlsPlaylistDelays = hlsPlaylistDelays ?? const {};
 
   final Map<String, Map<String, dynamic>> _discoverCarousels;
   final Map<String, Map<String, dynamic>> _searchResponses;
   final Map<String, String> _roomPages;
+  final Map<String, Map<String, dynamic>> _roomContexts;
   final Map<String, String> _hlsPlaylists;
   final String? _defaultHlsPlaylist;
   final Set<String> _failOnceDiscoverKeys;
+  final Set<String> _failingHlsUrls;
+  final Map<String, Duration> _roomPageDelays;
+  final Map<String, Duration> _roomContextDelays;
+  final Map<String, Duration> _hlsPlaylistDelays;
   final Map<String, int> discoverRequestCounts = <String, int>{};
+  final Map<String, String?> hlsPlaylistCookies = <String, String?>{};
+  final Map<String, String?> roomContextCookies = <String, String?>{};
 
   @override
   Future<Map<String, dynamic>> fetchDiscoverCarousel(
@@ -328,6 +664,10 @@ class _FixtureChaturbateApiClient implements ChaturbateApiClient {
 
   @override
   Future<String> fetchRoomPage(String roomId) async {
+    final delay = _roomPageDelays[roomId];
+    if (delay != null) {
+      await Future<void>.delayed(delay);
+    }
     final roomPage = _roomPages[roomId];
     if (roomPage == null) {
       fail('Unexpected Chaturbate room page request: $roomId');
@@ -336,15 +676,44 @@ class _FixtureChaturbateApiClient implements ChaturbateApiClient {
   }
 
   @override
+  Future<Map<String, dynamic>> fetchRoomContext(
+    String roomId, {
+    String? cookie,
+  }) async {
+    roomContextCookies[roomId] = cookie;
+    final delay = _roomContextDelays[roomId];
+    if (delay != null) {
+      await Future<void>.delayed(delay);
+    }
+    final payload = _roomContexts[roomId];
+    if (payload == null) {
+      fail('Unexpected Chaturbate room context request: $roomId');
+    }
+    return payload;
+  }
+
+  @override
   Future<String> fetchHlsPlaylist(
     String url, {
     String? referer,
+    String? cookie,
   }) async {
+    hlsPlaylistCookies[url] = cookie;
+    final delay = _hlsPlaylistDelays[url];
+    if (delay != null) {
+      await Future<void>.delayed(delay);
+    }
+    if (_failingHlsUrls.contains(url)) {
+      throw ProviderParseException(
+        providerId: ProviderId.chaturbate,
+        message: 'fixture stale hls playlist: $url',
+      );
+    }
     final payload = _hlsPlaylists[url] ?? _defaultHlsPlaylist;
     if (payload == null) {
       fail(
         'Unexpected Chaturbate HLS playlist request: '
-        'url=$url referer=${referer ?? ''}',
+        'url=$url referer=${referer ?? ''} cookie=${cookie ?? ''}',
       );
     }
     return payload;

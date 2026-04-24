@@ -28,6 +28,60 @@ void main() {
     expect(find.text('测试主播'), findsOneWidget);
   });
 
+  testWidgets('loading shell normalizes malformed UTF-16 labels',
+      (tester) async {
+    const badText = '房间\uD800标题';
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: RoomLoadingRoomShell(
+            data: RoomLoadingShellViewData(
+              providerLabel: '平\uD800台',
+              roomTitle: badText,
+              streamerName: '主\uD800播',
+              avatarLabel: '\uD800',
+              posterUrl: null,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('正在进入 平台 房间'), findsOneWidget);
+    expect(find.text('房间标题'), findsOneWidget);
+    expect(find.text('主播'), findsOneWidget);
+  });
+
+  testWidgets('loading shell can pre-mount embedded player view',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: RoomLoadingRoomShell(
+            data: RoomLoadingShellViewData(
+              providerLabel: 'Chaturbate',
+              roomTitle: '房间号 2000',
+              streamerName: '测试主播',
+              avatarLabel: '测',
+              posterUrl: null,
+            ),
+            embeddedPlayerView: ColoredBox(
+              key: Key('loading-embedded-player-view'),
+              color: Colors.black,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const Key('loading-embedded-player-view')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('room preview sections renders surface, pager and bottom actions',
       (tester) async {
     final pageController = PageController();

@@ -2,6 +2,7 @@ export 'src/provider_registry.dart';
 export 'src/providers/bilibili/bilibili_provider.dart';
 export 'src/providers/chaturbate/chaturbate_mapper.dart';
 export 'src/providers/chaturbate/chaturbate_provider.dart';
+export 'src/providers/chaturbate/chaturbate_hls_master_playlist_parser.dart';
 export 'src/providers/chaturbate/chaturbate_room_page_parser.dart';
 export 'src/providers/douyin/douyin_provider.dart';
 export 'src/providers/douyu/douyu_provider.dart';

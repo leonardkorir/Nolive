@@ -31,6 +31,10 @@ bool shouldRefreshMdkBackendAfterCleanup(PlayerState state) {
       };
 }
 
+bool shouldRefreshNativeBackendAfterLeaveCleanup(PlayerState state) {
+  return shouldRefreshMdkBackendAfterCleanup(state);
+}
+
 class RoomFullscreenSessionBindings {
   const RoomFullscreenSessionBindings({
     required this.runtime,
@@ -129,7 +133,8 @@ class RoomFullscreenSessionController extends ChangeNotifier {
         androidPlaybackBridge: platforms.androidPlaybackBridge,
         readViewUiState: () => _viewUiState,
         trace: bindings.trace,
-        shouldRefreshBackendAfterCleanup: shouldRefreshMdkBackendAfterCleanup,
+        shouldRefreshBackendAfterCleanup:
+            shouldRefreshNativeBackendAfterLeaveCleanup,
       ),
     );
   }

@@ -7,6 +7,7 @@ import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_action_context.dart';
+import 'package:path_provider/path_provider.dart';
 
 class RoomControlsUtilityActions {
   RoomControlsUtilityActions({
@@ -23,7 +24,9 @@ class RoomControlsUtilityActions {
   DateTime? _scheduledCloseAt;
 
   DateTime? get scheduledCloseAt => _scheduledCloseAt;
-  bool get supportsPlayerCapture => context.runtime.supportsScreenshot;
+  bool get supportsPlayerCapture =>
+      context.runtime.supportsScreenshot ||
+      context.captureRenderedPlayerSurface != null;
 
   void dispose() {
     _autoCloseTimer?.cancel();
@@ -52,8 +55,14 @@ class RoomControlsUtilityActions {
       context.showMessage('当前版本暂不支持截图');
       return;
     }
+    _trace('capture start');
     try {
-      final bytes = await context.runtime.captureScreenshot();
+      var bytes = await context.runtime.captureScreenshot();
+      if ((bytes == null || bytes.isEmpty) &&
+          context.captureRenderedPlayerSurface != null) {
+        _trace('capture fallback=rendered-surface');
+        bytes = await context.captureRenderedPlayerSurface!.call();
+      }
       if (bytes == null || bytes.isEmpty) {
         throw const FormatException('未获取到图像数据');
       }
@@ -63,6 +72,10 @@ class RoomControlsUtilityActions {
         bytes: bytes,
         fileName: fileName,
       );
+      _trace(
+        'capture complete bytes=${bytes.length} '
+        'target=${savedTarget ?? 'cancelled'}',
+      );
       final message = switch (savedTarget) {
         null => '已取消截图保存',
         String path when path == 'gallery' => '已保存截图到系统相册',
@@ -70,6 +83,7 @@ class RoomControlsUtilityActions {
       };
       context.showMessage(message);
     } catch (error) {
+      _trace('capture failed error=$error');
       context.showMessage('截图失败：$error');
     }
   }
@@ -100,12 +114,24 @@ class RoomControlsUtilityActions {
     required String fileName,
   }) async {
     if (Platform.isAndroid || Platform.isIOS) {
-      final result = await ImageGallerySaverPlus.saveImage(
-        bytes,
-        name: fileName.replaceAll('.png', ''),
-        quality: 100,
+      final backupPath = await _persistMobileScreenshotBackup(
+        bytes: bytes,
+        fileName: fileName,
       );
-      return _resolveGallerySaveResult(result);
+      _trace('persist mobile backup=$backupPath');
+      try {
+        final result = await ImageGallerySaverPlus.saveImage(
+          bytes,
+          name: fileName.replaceAll('.png', ''),
+          quality: 100,
+        );
+        final savedTarget = _resolveGallerySaveResult(result);
+        _trace('persist gallery result=$savedTarget');
+        return savedTarget == 'gallery' ? backupPath : savedTarget;
+      } catch (error) {
+        _trace('persist gallery fallback error=$error backup=$backupPath');
+        return backupPath;
+      }
     }
     final path = await FilePicker.platform.saveFile(
       dialogTitle: '保存截图',
@@ -118,6 +144,7 @@ class RoomControlsUtilityActions {
     }
     final file = File(path);
     await file.writeAsBytes(bytes, flush: true);
+    _trace('persist desktop path=${file.path}');
     return file.path;
   }
 
@@ -148,5 +175,30 @@ class RoomControlsUtilityActions {
       return 'gallery';
     }
     throw StateError('系统相册返回未知结果');
+  }
+
+  Future<String> _persistMobileScreenshotBackup({
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    final baseDirectory = Platform.isAndroid
+        ? await getExternalStorageDirectory()
+        : await getApplicationDocumentsDirectory();
+    if (baseDirectory == null) {
+      throw StateError('无法获取截图保存目录');
+    }
+    final directory = Directory(
+      '${baseDirectory.path}${Platform.pathSeparator}screenshots',
+    );
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+    final file = File('${directory.path}${Platform.pathSeparator}$fileName');
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  void _trace(String message) {
+    context.trace('screenshot $message');
   }
 }

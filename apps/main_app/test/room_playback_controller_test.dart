@@ -380,6 +380,49 @@ void main() {
     );
     expect(player.events, containsAllInOrder(<String>['setSource', 'play']));
   });
+
+  test(
+      'room playback controller waits initial embedded surface bootstrap on android mpv',
+      () async {
+    final scheduler = _TestPlaybackScheduler();
+    final player = _TestPlaybackPlayer(
+      initialState: const PlayerState(
+        backend: PlayerBackend.mpv,
+        status: PlaybackStatus.ready,
+      ),
+    );
+    final runtime = _RefreshTrackingRuntime(player);
+    final waitDurations = <Duration>[];
+    final controller = RoomPlaybackController(
+      playerRuntime: runtime,
+      providerId: ProviderId.bilibili,
+      trace: (_) {},
+      isMounted: () => true,
+      resolveCurrentPlaybackSource: () => null,
+      resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+      waitForInitialEmbeddedSurfaceBootstrap: true,
+      schedulePostFrame: scheduler.schedule,
+      delay: (duration) async {
+        waitDurations.add(duration);
+      },
+      waitForEndOfFrame: () async {},
+    );
+    addTearDown(controller.dispose);
+    addTearDown(player.dispose);
+
+    controller.schedulePlaybackBootstrap(
+      playbackSource: source('initial'),
+      hasPlayback: true,
+      autoPlay: true,
+    );
+    await scheduler.flush();
+
+    expect(
+      waitDurations,
+      contains(const Duration(milliseconds: 220)),
+    );
+    expect(player.events, containsAllInOrder(<String>['setSource', 'play']));
+  });
 }
 
 class _TestPlaybackScheduler {

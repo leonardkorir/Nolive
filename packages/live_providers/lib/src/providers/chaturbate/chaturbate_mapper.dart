@@ -1,10 +1,14 @@
 import 'package:live_core/live_core.dart';
 
+import 'chaturbate_api_client.dart';
 import 'chaturbate_hls_master_playlist_parser.dart';
 import 'chaturbate_room_page_parser.dart';
 
 class ChaturbateMapper {
   const ChaturbateMapper._();
+
+  static const int _startupMaxBandwidth = 2400000;
+  static const int _startupMaxHeight = 540;
 
   static const String categoriesRootId = 'genders';
   static const List<LiveCategory> categories = [
@@ -59,7 +63,7 @@ class ChaturbateMapper {
       providerId: ProviderId.chaturbate.value,
       roomId: roomId,
       title: title,
-      streamerName: roomId,
+      streamerName: normalizeDisplayText(roomId),
       coverUrl: _nonEmptyString(payload['img']),
       areaName: _genderLabel(payload['gender']),
       viewerCount: viewerCount,
@@ -114,7 +118,7 @@ class ChaturbateMapper {
         normalizeDisplayText(dossier['room_title']?.toString()),
         roomId,
       ]),
-      streamerName: roomId,
+      streamerName: normalizeDisplayText(roomId),
       areaName: _genderLabel(dossier['broadcaster_gender']),
       sourceUrl:
           roomId.isEmpty ? null : 'https://chaturbate.com/${roomId.trim()}/',
@@ -132,47 +136,66 @@ class ChaturbateMapper {
   }
 
   static List<LivePlayQuality> mapPlayQualities(LiveRoomDetail detail) {
-    return const [
+    final metadata = detail.metadata ?? const <String, Object?>{};
+    final masterPlaylistUrl = metadata['hlsSource']?.toString().trim() ?? '';
+    final masterPlaylistContent =
+        metadata['hlsMasterPlaylistContent']?.toString() ?? '';
+    final autoMetadata = <String, Object?>{};
+    if (masterPlaylistUrl.isNotEmpty) {
+      autoMetadata['masterPlaylistUrl'] = masterPlaylistUrl;
+      autoMetadata['hlsBitrate'] = 'max';
+    }
+    if (masterPlaylistContent.trim().isNotEmpty) {
+      autoMetadata['masterPlaylistContent'] = masterPlaylistContent;
+    }
+    return [
       LivePlayQuality(
         id: 'auto',
         label: 'Auto',
         isDefault: true,
+        metadata: autoMetadata.isEmpty ? null : autoMetadata,
       ),
     ];
   }
 
   static List<LivePlayQuality> mapPlayQualitiesFromVariants({
     required List<ChaturbateHlsVariant> variants,
+    String? fallbackPlaylistUrl,
+    String? masterPlaylistContent,
   }) {
-    final defaultAudioUrl = variants
-        .map((item) => item.audioUrl?.trim() ?? '')
-        .firstWhere((item) => item.isNotEmpty, orElse: () => '');
+    final normalizedFallbackPlaylistUrl = fallbackPlaylistUrl?.trim() ?? '';
+    final normalizedMasterPlaylistContent = masterPlaylistContent?.trim() ?? '';
+    final startupVariant = _selectStartupVariant(variants);
+    final autoMetadata = startupVariant == null
+        ? <String, Object?>{}
+        : _buildQualityMetadata(
+            variant: startupVariant,
+            fallbackPlaylistUrl: normalizedFallbackPlaylistUrl,
+            masterPlaylistContent: normalizedMasterPlaylistContent,
+          );
+    if (normalizedFallbackPlaylistUrl.isNotEmpty) {
+      autoMetadata['masterPlaylistUrl'] = normalizedFallbackPlaylistUrl;
+      if (startupVariant == null) {
+        autoMetadata['hlsBitrate'] = 'max';
+      }
+    }
+    if (normalizedMasterPlaylistContent.isNotEmpty) {
+      autoMetadata['masterPlaylistContent'] = normalizedMasterPlaylistContent;
+    }
     final qualities = <LivePlayQuality>[
       LivePlayQuality(
         id: 'auto',
         label: 'Auto',
         isDefault: true,
-        metadata: defaultAudioUrl.isEmpty
-            ? null
-            : <String, Object?>{
-                'audioUrl': defaultAudioUrl,
-                'audioMimeType': 'application/x-mpegURL',
-              },
+        metadata: autoMetadata.isEmpty ? null : autoMetadata,
       ),
     ];
     for (final variant in variants) {
-      final metadata = <String, Object?>{
-        'playlistUrl': variant.url,
-        'bandwidth': variant.bandwidth,
-        'width': variant.width,
-        'height': variant.height,
-      };
-      final audioUrl = variant.audioUrl?.trim() ?? '';
-      if (audioUrl.isNotEmpty) {
-        metadata['audioGroupId'] = variant.audioGroupId;
-        metadata['audioUrl'] = audioUrl;
-        metadata['audioMimeType'] = 'application/x-mpegURL';
-      }
+      final metadata = _buildQualityMetadata(
+        variant: variant,
+        fallbackPlaylistUrl: normalizedFallbackPlaylistUrl,
+        masterPlaylistContent: normalizedMasterPlaylistContent,
+      );
       qualities.add(
         LivePlayQuality(
           id: variant.bandwidth.toString(),
@@ -185,27 +208,274 @@ class ChaturbateMapper {
     return qualities;
   }
 
+  static ChaturbateHlsVariant? _selectStartupVariant(
+    List<ChaturbateHlsVariant> variants,
+  ) {
+    if (variants.isEmpty) {
+      return null;
+    }
+    for (final variant in variants) {
+      if (_isStartupSafeVariant(variant)) {
+        return variant;
+      }
+    }
+    final ascending = [...variants]..sort((left, right) {
+        final compare = left.sortOrder.compareTo(right.sortOrder);
+        if (compare != 0) {
+          return compare;
+        }
+        return left.bandwidth.compareTo(right.bandwidth);
+      });
+    return ascending.first;
+  }
+
+  static bool _isStartupSafeVariant(ChaturbateHlsVariant variant) {
+    final height = variant.height ?? 0;
+    if (height > 0 && height <= _startupMaxHeight) {
+      return true;
+    }
+    final bandwidth = variant.bandwidth;
+    return bandwidth > 0 && bandwidth <= _startupMaxBandwidth;
+  }
+
   static List<LivePlayUrl> mapPlayUrls(
     LiveRoomDetail detail,
     LivePlayQuality quality,
   ) {
     final metadata = detail.metadata ?? const <String, Object?>{};
-    final selectedUrl = _firstNonEmpty([
+    final initialVariantPlaylistUrl = _firstNonEmpty([
       quality.metadata?['playlistUrl']?.toString(),
+    ]);
+    final masterPlaylistUrl = _firstNonEmpty([
+      quality.metadata?['masterPlaylistUrl']?.toString(),
       metadata['hlsSource']?.toString(),
     ]);
+    final masterPlaylistContent = _firstNonEmpty([
+      quality.metadata?['masterPlaylistContent']?.toString(),
+      metadata['hlsMasterPlaylistContent']?.toString(),
+    ]);
+    final derivedVariant = initialVariantPlaylistUrl.isNotEmpty
+        ? null
+        : _resolveVariantFromMasterPlaylist(
+            quality: quality,
+            masterPlaylistUrl: masterPlaylistUrl,
+            masterPlaylistContent: masterPlaylistContent,
+          );
+    final variantPlaylistUrl = _firstNonEmpty([
+      initialVariantPlaylistUrl,
+      derivedVariant?.url,
+    ]);
+    final preferMasterPlaylist = _shouldPreferMasterPlaylistForPlayback(
+      variantPlaylistUrl: variantPlaylistUrl,
+      masterPlaylistUrl: masterPlaylistUrl,
+      qualityMetadata: quality.metadata,
+    );
+    final useMasterPlaylist = masterPlaylistUrl.isNotEmpty &&
+        (variantPlaylistUrl.isEmpty || preferMasterPlaylist);
+    final selectedUrl =
+        useMasterPlaylist ? masterPlaylistUrl : variantPlaylistUrl;
     if (selectedUrl.isEmpty) {
       return const [];
     }
 
     final edgeRegion = metadata['edgeRegion']?.toString() ?? '';
+    final playbackHeaders = _buildPlaybackHeaders(detail);
+    final derivedAudioUrl = derivedVariant?.audioUrl?.trim() ?? '';
+    final derivedBandwidth = derivedVariant?.bandwidth ?? 0;
+    final playMetadata = <String, Object?>{
+      ...?quality.metadata,
+      if (derivedVariant != null) 'playlistUrl': derivedVariant.url,
+      if (masterPlaylistUrl.isNotEmpty) 'masterPlaylistUrl': masterPlaylistUrl,
+      if (masterPlaylistContent.isNotEmpty)
+        'masterPlaylistContent': masterPlaylistContent,
+      if (derivedVariant != null && derivedBandwidth > 0)
+        'bandwidth': derivedBandwidth,
+      if (derivedVariant?.width != null) 'width': derivedVariant!.width,
+      if (derivedVariant?.height != null) 'height': derivedVariant!.height,
+      if (useMasterPlaylist &&
+          (quality.metadata?['hlsBitrate']?.toString().trim().isEmpty ?? true))
+        'hlsBitrate': quality.id == 'auto'
+            ? 'max'
+            : quality.metadata?['bandwidth']?.toString(),
+      if (!useMasterPlaylist &&
+          derivedVariant != null &&
+          (quality.metadata?['hlsBitrate']?.toString().trim().isEmpty ??
+              true) &&
+          derivedBandwidth > 0)
+        'hlsBitrate': derivedBandwidth.toString(),
+      if (useMasterPlaylist && variantPlaylistUrl.isNotEmpty)
+        'resolvedVariantUrl': variantPlaylistUrl,
+      if (!useMasterPlaylist &&
+          ((quality.metadata?['audioUrl']?.toString().trim().isNotEmpty ??
+                  false) ||
+              derivedAudioUrl.isNotEmpty))
+        'audioHeaders': playbackHeaders,
+      if (!useMasterPlaylist && derivedAudioUrl.isNotEmpty)
+        'audioUrl': derivedAudioUrl,
+      if (!useMasterPlaylist && derivedAudioUrl.isNotEmpty)
+        'audioMimeType': 'application/x-mpegURL',
+      if (!useMasterPlaylist && derivedVariant?.audioGroupId != null)
+        'audioGroupId': derivedVariant!.audioGroupId,
+    };
+    if (useMasterPlaylist) {
+      playMetadata
+        ..remove('audioUrl')
+        ..remove('audioHeaders')
+        ..remove('audioMimeType')
+        ..remove('audioGroupId');
+    }
     return [
       LivePlayUrl(
         url: selectedUrl,
+        headers: playbackHeaders,
         lineLabel: edgeRegion.isEmpty ? null : edgeRegion,
-        metadata: quality.metadata,
+        metadata: playMetadata,
       ),
     ];
+  }
+
+  static bool _shouldPreferMasterPlaylistForPlayback({
+    required String variantPlaylistUrl,
+    required String masterPlaylistUrl,
+    required Map<String, Object?>? qualityMetadata,
+  }) {
+    if (variantPlaylistUrl.isEmpty || masterPlaylistUrl.isEmpty) {
+      return false;
+    }
+    final audioUrl = qualityMetadata?['audioUrl']?.toString().trim() ?? '';
+    if (audioUrl.isEmpty) {
+      return _looksLikeMmcdnLegacyChunklistPlaybackUrl(variantPlaylistUrl) &&
+          _looksLikeMmcdnLegacyMasterPlaylistUrl(masterPlaylistUrl);
+    }
+    final uri = Uri.tryParse(masterPlaylistUrl);
+    if (uri == null) {
+      return masterPlaylistUrl.contains('/v1/edge/streams/') &&
+          masterPlaylistUrl.contains('llhls.m3u8');
+    }
+    // Browsers currently resolve the v1/edge LL-HLS master into split
+    // video/audio chunklists. Treat the master as metadata for later refresh
+    // or diagnostics, but keep playback pinned to the resolved split variant.
+    return false;
+  }
+
+  static bool _looksLikeMmcdnLegacyChunklistPlaybackUrl(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      return false;
+    }
+    final host = uri.host.trim().toLowerCase();
+    final path = uri.path.trim().toLowerCase();
+    return host.endsWith('live.mmcdn.com') &&
+        path.contains('/live-hls/amlst:') &&
+        path.contains('chunklist_') &&
+        path.endsWith('.m3u8');
+  }
+
+  static bool _looksLikeMmcdnLegacyMasterPlaylistUrl(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      return false;
+    }
+    final host = uri.host.trim().toLowerCase();
+    final path = uri.path.trim().toLowerCase();
+    return host.endsWith('live.mmcdn.com') &&
+        path.contains('/live-hls/amlst:') &&
+        path.endsWith('playlist.m3u8');
+  }
+
+  static ChaturbateHlsVariant? _resolveVariantFromMasterPlaylist({
+    required LivePlayQuality quality,
+    required String masterPlaylistUrl,
+    required String masterPlaylistContent,
+  }) {
+    if (masterPlaylistUrl.isEmpty || masterPlaylistContent.trim().isEmpty) {
+      return null;
+    }
+    final variants = const ChaturbateHlsMasterPlaylistParser().parse(
+      playlistUrl: masterPlaylistUrl,
+      source: masterPlaylistContent,
+    );
+    if (variants.isEmpty) {
+      return null;
+    }
+    return _selectVariantForQuality(
+      quality: quality,
+      variants: variants,
+    );
+  }
+
+  static ChaturbateHlsVariant? _selectVariantForQuality({
+    required LivePlayQuality quality,
+    required List<ChaturbateHlsVariant> variants,
+  }) {
+    if (variants.isEmpty) {
+      return null;
+    }
+    if (quality.id.trim().toLowerCase() == 'auto') {
+      return _selectStartupVariant(variants);
+    }
+    final requestedBandwidth = int.tryParse(quality.id.trim());
+    if (requestedBandwidth != null) {
+      for (final variant in variants) {
+        if (variant.bandwidth == requestedBandwidth) {
+          return variant;
+        }
+      }
+      variants.sort((left, right) {
+        final leftDelta = (left.bandwidth - requestedBandwidth).abs();
+        final rightDelta = (right.bandwidth - requestedBandwidth).abs();
+        final compare = leftDelta.compareTo(rightDelta);
+        if (compare != 0) {
+          return compare;
+        }
+        return left.bandwidth.compareTo(right.bandwidth);
+      });
+      return variants.first;
+    }
+    final requestedLabel = quality.label.trim().toLowerCase();
+    if (requestedLabel.isNotEmpty) {
+      for (final variant in variants) {
+        if (variant.label.trim().toLowerCase() == requestedLabel) {
+          return variant;
+        }
+      }
+    }
+    return variants.first;
+  }
+
+  static Map<String, String> _buildPlaybackHeaders(LiveRoomDetail detail) {
+    return HttpChaturbateApiClient.buildPlaybackHeaders(
+      referer: detail.sourceUrl ?? 'https://chaturbate.com/',
+    );
+  }
+
+  static Map<String, Object?> _buildQualityMetadata({
+    required ChaturbateHlsVariant variant,
+    required String fallbackPlaylistUrl,
+    required String masterPlaylistContent,
+  }) {
+    final metadata = <String, Object?>{
+      'playlistUrl': variant.url,
+      'bandwidth': variant.bandwidth,
+      'width': variant.width,
+      'height': variant.height,
+    };
+    if (fallbackPlaylistUrl.isNotEmpty) {
+      metadata['masterPlaylistUrl'] = fallbackPlaylistUrl;
+    }
+    if (masterPlaylistContent.isNotEmpty) {
+      metadata['masterPlaylistContent'] = masterPlaylistContent;
+    }
+    if (variant.bandwidth > 0) {
+      metadata['hlsBitrate'] = variant.bandwidth.toString();
+    }
+    final audioUrl = variant.audioUrl?.trim() ?? '';
+    if (audioUrl.isNotEmpty) {
+      metadata['audioGroupId'] = variant.audioGroupId;
+      metadata['audioUrl'] = audioUrl;
+      metadata['audioMimeType'] = 'application/x-mpegURL';
+    }
+    return metadata;
   }
 
   static String? genderQueryForCategory(LiveSubCategory category) {

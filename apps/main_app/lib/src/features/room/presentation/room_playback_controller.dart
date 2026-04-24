@@ -12,6 +12,8 @@ const Duration _mdkTexturePreRefreshRetryDelay = Duration(milliseconds: 320);
 const Duration _mdkTextureRecoveryFirstRetryDelay = Duration(milliseconds: 180);
 const Duration _mdkTextureRecoveryBackendRefreshRetryDelay =
     Duration(milliseconds: 320);
+const Duration _initialEmbeddedBootstrapSurfaceWait =
+    Duration(milliseconds: 220);
 
 typedef RoomPlaybackPostFrameScheduler = void Function(
   Future<void> Function() action,
@@ -82,6 +84,7 @@ class RoomPlaybackController extends ChangeNotifier {
     required this.isMounted,
     required this.resolveCurrentPlaybackSource,
     required this.resetEmbeddedPlayerViewAfterBackendRefresh,
+    this.waitForInitialEmbeddedSurfaceBootstrap = false,
     RoomPlaybackPostFrameScheduler? schedulePostFrame,
     RoomPlaybackDelay? delay,
     RoomPlaybackEndOfFrame? waitForEndOfFrame,
@@ -96,6 +99,7 @@ class RoomPlaybackController extends ChangeNotifier {
   final RoomPlaybackResolveCurrentSource resolveCurrentPlaybackSource;
   final RoomPlaybackResetEmbeddedView
       resetEmbeddedPlayerViewAfterBackendRefresh;
+  final bool waitForInitialEmbeddedSurfaceBootstrap;
   final RoomPlaybackPostFrameScheduler _schedulePostFrame;
   final RoomPlaybackDelay _delay;
   final RoomPlaybackEndOfFrame _waitForEndOfFrame;
@@ -197,8 +201,13 @@ class RoomPlaybackController extends ChangeNotifier {
 
     final currentState = playerRuntime.currentState;
     final currentSource = currentState.source;
+    final isInitialBootstrap = currentSource == null;
+    final shouldWaitForInitialEmbeddedBootstrap = isInitialBootstrap &&
+        waitForInitialEmbeddedSurfaceBootstrap &&
+        playerRuntime.supportsEmbeddedView &&
+        playerRuntime.backend == PlayerBackend.mpv;
     final isInitialTwitchBootstrap =
-        providerId == ProviderId.twitch && currentSource == null;
+        providerId == ProviderId.twitch && isInitialBootstrap;
 
     if (!targetAvailable || targetSource == null) {
       resetRecoveryState();
@@ -214,13 +223,17 @@ class RoomPlaybackController extends ChangeNotifier {
       return;
     }
 
-    if (isInitialTwitchBootstrap) {
-      trace('twitch initial bootstrap wait-surface');
+    if (isInitialTwitchBootstrap || shouldWaitForInitialEmbeddedBootstrap) {
+      trace(
+        isInitialTwitchBootstrap
+            ? 'twitch initial bootstrap wait-surface'
+            : 'initial embedded bootstrap wait-surface',
+      );
       await _waitForEndOfFrame();
       if (!_isActive) {
         return;
       }
-      await _delay(const Duration(milliseconds: 220));
+      await _delay(_initialEmbeddedBootstrapSurfaceWait);
       if (!_isActive) {
         return;
       }

@@ -188,8 +188,11 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
   bool get _isActive => !_disposed && isMounted();
 
   Future<RoomSessionLoadResult> startInitialLoad({String? preferredQualityId}) {
-    final future =
-        _trackRoomFuture(_load(preferredQualityId: preferredQualityId));
+    final future = _trackRoomFuture(
+      _waitForPendingRoomTeardownAndLoad(
+        preferredQualityId: preferredQualityId,
+      ),
+    );
     _roomFuture = future;
     return future;
   }
@@ -414,10 +417,17 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     }
   }
 
-  Future<void> cleanupPlaybackOnLeave() async {
-    await waitForPlayerBindingToFinish(reason: 'cleanup playback');
-    await fullscreenSessionController.cleanupPlaybackOnLeave();
-    await danmakuController.closeSession();
+  Future<void> cleanupPlaybackOnLeave() {
+    trace('cleanup playback coordinator queued');
+    return sessionController.dependencies.playerRuntime.serializeRoomTeardown(
+      () async {
+        trace('cleanup playback coordinator start');
+        await waitForPlayerBindingToFinish(reason: 'cleanup playback');
+        await fullscreenSessionController.cleanupPlaybackOnLeave();
+        await danmakuController.closeSession();
+        trace('cleanup playback coordinator complete');
+      },
+    );
   }
 
   Future<PlaybackSource?> resolvePlaybackSourceForLifecycleRestore() async {
@@ -455,6 +465,18 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     return sessionController.load(
       preferredQualityId: preferredQualityId,
     );
+  }
+
+  Future<RoomSessionLoadResult> _waitForPendingRoomTeardownAndLoad({
+    String? preferredQualityId,
+  }) async {
+    final runtime = sessionController.dependencies.playerRuntime;
+    if (runtime.hasPendingRoomTeardown) {
+      trace('load waiting for pending cleanup');
+      await runtime.waitForPendingRoomTeardown();
+      trace('load pending cleanup released');
+    }
+    return _load(preferredQualityId: preferredQualityId);
   }
 
   Future<RoomSessionLoadResult> _trackRoomFuture(
@@ -595,16 +617,23 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
       await result.danmakuSession?.disconnect();
       return;
     }
-    await bindDanmakuSession(result.danmakuSession);
-    if (!_isActive || token != _ancillaryLoadToken) {
-      return;
-    }
     _replaceState(
       _state.copyWith(
         isFollowed: result.isFollowed,
         ancillaryLoading: false,
       ),
     );
+    if (!_isActive || token != _ancillaryLoadToken) {
+      await result.danmakuSession?.disconnect();
+      return;
+    }
+    await danmakuController.bindSession(
+      activeRoomDetail: snapshot.detail,
+      session: result.danmakuSession,
+    );
+    if (!_isActive || token != _ancillaryLoadToken) {
+      return;
+    }
   }
 
   Future<RoomSessionLoadResult> _refreshRoomData({

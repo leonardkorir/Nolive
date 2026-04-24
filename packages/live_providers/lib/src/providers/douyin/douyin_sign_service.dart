@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:http/http.dart' as http;
 
 import 'douyin_request_params.dart';
@@ -11,14 +13,19 @@ abstract class DouyinSignService {
 }
 
 class HttpDouyinSignService implements DouyinSignService {
-  HttpDouyinSignService({this.cookie = '', http.Client? client})
-      : _client = client ?? http.Client();
+  HttpDouyinSignService({
+    this.cookie = '',
+    http.Client? client,
+    Duration cookieRequestTimeout = const Duration(seconds: 2),
+  })  : _client = client ?? http.Client(),
+        _cookieRequestTimeout = cookieRequestTimeout;
 
   static const String defaultCookie =
       'ttwid=1%7CB1qls3GdnZhUov9o2NxOMxxYS2ff6OSvEWbv0ytbES4%7C1680522049%7C280d802d6d478e3e78d0c807f7c487e7ffec0ae4e5fdd6a0fe74c3c6af149511';
 
   final String cookie;
   final http.Client _client;
+  final Duration _cookieRequestTimeout;
 
   String _cookieCache = '';
 
@@ -66,7 +73,7 @@ class HttpDouyinSignService implements DouyinSignService {
               'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
           'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
         },
-      );
+      ).timeout(_cookieRequestTimeout);
       final setCookie = response.headers['set-cookie'] ?? '';
       final cookies = <String>[];
       for (final part in setCookie.split(',')) {

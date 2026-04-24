@@ -146,6 +146,7 @@ class _BootstrapAssemblyContext {
     required this.repositories,
     required this.settings,
     required this.secureCredentialStore,
+    required this.warmUpSecureCredentialStore,
     required this.accountClients,
   });
 
@@ -154,6 +155,7 @@ class _BootstrapAssemblyContext {
   final _BootstrapRepositories repositories;
   final _BootstrapSettingReaders settings;
   final SecureCredentialStore secureCredentialStore;
+  final Future<void> Function() warmUpSecureCredentialStore;
   final _BootstrapAccountClients accountClients;
 }
 
@@ -268,6 +270,7 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
 
   return AppBootstrap(
     mode: context.mode,
+    warmUpSecureCredentialStore: context.warmUpSecureCredentialStore,
     themeMode: context.state.themeMode,
     layoutPreferences: context.state.layoutPreferences,
     providerCatalogRevision: context.state.providerCatalogRevision,
@@ -317,6 +320,7 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     openRoomDanmaku: OpenRoomDanmakuUseCase(providerRegistry),
     resolvePlaySource: ResolvePlaySourceUseCase(
       providerRegistry,
+      wrapChaturbatePlayUrls: runtimeBridges.chaturbateLlHlsProxy?.wrapPlayUrls,
       wrapTwitchPlayUrls: runtimeBridges.twitchAdGuardProxy?.wrapPlayUrls,
     ),
     searchProviderRooms: SearchProviderRoomsUseCase(providerRegistry),
@@ -523,13 +527,17 @@ AppRuntimeBridges _buildAppRuntimeBridges({
     loadProviderAccountSettings: loadProviderAccountSettings,
   );
   return AppRuntimeBridges(
+    chaturbateLlHlsProxy: _buildChaturbateLlHlsProxy(mode: mode),
     roomDetailOverride: chaturbateWebRoomDetailLoader?.call,
     twitchWebPlaybackBridge: _buildTwitchWebPlaybackBridge(
       mode: mode,
       loadProviderAccountSettings: loadProviderAccountSettings,
     ),
     twitchAdGuardProxy: _buildTwitchAdGuardProxy(mode: mode),
-    requireChaturbateCookiePreflight: mode == AppRuntimeMode.live,
+    // Chaturbate can often resolve room detail and playback anonymously.
+    // Saved browser cookies are now treated as a fallback for WebView /
+    // Cloudflare bootstrap instead of a hard prerequisite.
+    requireChaturbateCookiePreflight: false,
   );
 }
 
@@ -609,6 +617,18 @@ ChaturbateWebRoomDetailLoader? _buildChaturbateRoomDetailLoader({
   return ChaturbateWebRoomDetailLoader(
     loadProviderAccountSettings: loadProviderAccountSettings,
   );
+}
+
+ChaturbateLlHlsProxy? _buildChaturbateLlHlsProxy({
+  required AppRuntimeMode mode,
+}) {
+  if (mode != AppRuntimeMode.live) {
+    return null;
+  }
+  if (!Platform.isAndroid && !Platform.isIOS) {
+    return null;
+  }
+  return ChaturbateLlHlsProxy();
 }
 
 TwitchWebPlaybackBridge? _buildTwitchWebPlaybackBridge({

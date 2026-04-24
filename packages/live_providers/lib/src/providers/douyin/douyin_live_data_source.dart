@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:live_core/live_core.dart';
 
@@ -14,11 +15,17 @@ class DouyinLiveDataSource implements DouyinDataSource {
   DouyinLiveDataSource({
     required DouyinTransport transport,
     required DouyinSignService signService,
+    Duration roomDetailApiTimeout = const Duration(seconds: 4),
+    Duration roomDetailHtmlTimeout = const Duration(seconds: 4),
   })  : _transport = transport,
-        _signService = signService;
+        _signService = signService,
+        _roomDetailApiTimeout = roomDetailApiTimeout,
+        _roomDetailHtmlTimeout = roomDetailHtmlTimeout;
 
   final DouyinTransport _transport;
   final DouyinSignService _signService;
+  final Duration _roomDetailApiTimeout;
+  final Duration _roomDetailHtmlTimeout;
 
   static final RegExp _kRiskControlStatusPattern =
       RegExp(r'status (444|403|429)');
@@ -294,8 +301,8 @@ class DouyinLiveDataSource implements DouyinDataSource {
           return LiveRoom(
             providerId: ProviderId.douyin.value,
             roomId: owner['web_rid']?.toString() ?? '',
-            title: data['title']?.toString() ?? '',
-            streamerName: owner['nickname']?.toString() ?? '',
+            title: normalizeDisplayText(data['title']?.toString()),
+            streamerName: normalizeDisplayText(owner['nickname']?.toString()),
             coverUrl: _firstUrl(cover),
             keyframeUrl: _firstUrl(cover),
             areaName: '',
@@ -369,44 +376,109 @@ class DouyinLiveDataSource implements DouyinDataSource {
   }
 
   Future<LiveRoomDetail> _fetchRoomDetailByWebRid(String webRid) async {
+    LiveRoomDetail? apiDetail;
+    Object? apiError;
     try {
-      final requestUrl = _signService.buildSignedUrl(
-        'https://live.douyin.com/webcast/room/web/enter/',
-        {
-          'app_name': 'douyin_web',
-          'enter_from': 'web_live',
-          'live_id': '1',
-          'web_rid': webRid,
-          'is_need_double_stream': 'false',
-        },
-      );
-      final responseResult = await _requestWithRetry(
-        refererPath: webRid,
-        request: (headers) => _transport.getJson(
-          requestUrl,
-          headers: headers,
-        ),
-      );
-      return DouyinMapper.mapRoomDetailFromApi(
-        _asMap(responseResult.data['data']),
-        webRid: webRid,
-        cookie: responseResult.headers['cookie'] ?? '',
-      );
-    } catch (_) {
-      final htmlResult = await _requestWithRetry(
-        refererPath: webRid,
-        request: (headers) => _transport.getText(
-          'https://live.douyin.com/$webRid',
-          headers: headers,
-        ),
-      );
-      final state = DouyinMapper.parseHtmlState(htmlResult.data);
-      return DouyinMapper.mapRoomDetailFromHtml(
-        state,
-        webRid: webRid,
-        cookie: htmlResult.headers['cookie'] ?? '',
+      apiDetail = await _fetchRoomDetailByWebRidViaApi(webRid)
+          .timeout(_roomDetailApiTimeout);
+      if (_hasUsablePlaybackMetadata(apiDetail)) {
+        return apiDetail;
+      }
+    } catch (error) {
+      apiError = error;
+    }
+
+    try {
+      final htmlDetail = await _fetchRoomDetailByWebRidViaHtml(webRid)
+          .timeout(_roomDetailHtmlTimeout);
+      if (_hasUsablePlaybackMetadata(htmlDetail)) {
+        return htmlDetail;
+      }
+      return apiDetail ?? htmlDetail;
+    } catch (htmlError) {
+      if (apiDetail != null) {
+        return apiDetail;
+      }
+      if (apiError != null) {
+        Error.throwWithStackTrace(
+          _wrapRoomDetailError(apiError, webRid: webRid, stage: 'web-enter'),
+          StackTrace.current,
+        );
+      }
+      Error.throwWithStackTrace(
+        _wrapRoomDetailError(htmlError, webRid: webRid, stage: 'html'),
+        StackTrace.current,
       );
     }
+  }
+
+  Future<LiveRoomDetail> _fetchRoomDetailByWebRidViaApi(String webRid) async {
+    final requestUrl = _signService.buildSignedUrl(
+      'https://live.douyin.com/webcast/room/web/enter/',
+      {
+        'app_name': 'douyin_web',
+        'enter_from': 'web_live',
+        'live_id': '1',
+        'web_rid': webRid,
+        'is_need_double_stream': 'false',
+      },
+    );
+    final responseResult = await _requestWithRetry(
+      refererPath: webRid,
+      request: (headers) => _transport.getJson(
+        requestUrl,
+        headers: headers,
+      ),
+    );
+    return DouyinMapper.mapRoomDetailFromApi(
+      _asMap(responseResult.data['data']),
+      webRid: webRid,
+      cookie: responseResult.headers['cookie'] ?? '',
+    );
+  }
+
+  Future<LiveRoomDetail> _fetchRoomDetailByWebRidViaHtml(String webRid) async {
+    final htmlResult = await _requestWithRetry(
+      refererPath: webRid,
+      request: (headers) => _transport.getText(
+        'https://live.douyin.com/$webRid',
+        headers: headers,
+      ),
+    );
+    final state = DouyinMapper.parseHtmlState(htmlResult.data);
+    return DouyinMapper.mapRoomDetailFromHtml(
+      state,
+      webRid: webRid,
+      cookie: htmlResult.headers['cookie'] ?? '',
+    );
+  }
+
+  bool _hasUsablePlaybackMetadata(LiveRoomDetail detail) {
+    if (!detail.isLive) {
+      return true;
+    }
+    return _asMap(detail.metadata?['streamUrl']).isNotEmpty;
+  }
+
+  ProviderParseException _wrapRoomDetailError(
+    Object error, {
+    required String webRid,
+    required String stage,
+  }) {
+    if (error is ProviderParseException) {
+      return error;
+    }
+    if (error is TimeoutException) {
+      return ProviderParseException(
+        providerId: ProviderId.douyin,
+        message:
+            'Douyin room detail request timed out at $stage for web_rid=$webRid.',
+      );
+    }
+    return ProviderParseException(
+      providerId: ProviderId.douyin,
+      message: 'Douyin room detail request failed at $stage for web_rid=$webRid: $error',
+    );
   }
 
   @override
@@ -429,11 +501,13 @@ class DouyinLiveDataSource implements DouyinDataSource {
     return LiveRoom(
       providerId: ProviderId.douyin.value,
       roomId: item['web_rid']?.toString() ?? owner['web_rid']?.toString() ?? '',
-      title: room['title']?.toString() ?? '',
-      streamerName: owner['nickname']?.toString() ?? '',
+      title: normalizeDisplayText(room['title']?.toString()),
+      streamerName: normalizeDisplayText(owner['nickname']?.toString()),
       coverUrl: _firstUrl(_asMap(room['cover'])),
       keyframeUrl: _firstUrl(_asMap(room['cover'])),
-      areaName: item['tag_name']?.toString() ?? categoryNameFromRoom(room),
+      areaName: normalizeDisplayText(
+        item['tag_name']?.toString() ?? categoryNameFromRoom(room),
+      ),
       streamerAvatarUrl: _firstUrl(_asMap(owner['avatar_medium'])),
       viewerCount: _asInt(_asMap(room['room_view_stats'])['display_value']),
       isLive: true,
@@ -442,7 +516,9 @@ class DouyinLiveDataSource implements DouyinDataSource {
 
   String categoryNameFromRoom(Map<String, dynamic> room) {
     final partitionRoadMap = _asMap(room['partition_road_map']);
-    return _asMap(partitionRoadMap['partition'])['title']?.toString() ?? '';
+    return normalizeDisplayText(
+      _asMap(partitionRoadMap['partition'])['title']?.toString(),
+    );
   }
 
   List<LiveSubCategory> _extractLeafSubCategories(

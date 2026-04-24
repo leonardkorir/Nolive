@@ -9,6 +9,7 @@ class ChaturbateFixtureLoader {
     'discover-female.har',
     'room-page-realcest.har',
     'room-page-realcest-auto.har',
+    'room-page-realcest-auto-0415.har',
     'search-global.har',
     'view-source_https___chaturbate.com_kittengirlxo_.html',
   ];
@@ -125,13 +126,16 @@ class ChaturbateFixtureLoader {
         for (final entry in entries) {
           final request = _asMap(entry['request']);
           final url = request['url']?.toString() ?? '';
-          if (!url.endsWith('/playlist.m3u8')) {
-            continue;
-          }
           final response = _asMap(entry['response']);
           final content = _asMap(response['content']);
           final text = content['text']?.toString() ?? '';
-          if (text.isEmpty) {
+          if (url.isEmpty || text.isEmpty) {
+            continue;
+          }
+          if (!url.contains('.m3u8')) {
+            continue;
+          }
+          if (!text.contains('#EXT-X-STREAM-INF:')) {
             continue;
           }
           return ChaturbateHlsPlaylistFixture(

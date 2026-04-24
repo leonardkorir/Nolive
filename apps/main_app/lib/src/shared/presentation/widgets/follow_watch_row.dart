@@ -36,12 +36,13 @@ class FollowWatchRow extends StatelessWidget {
     final presentationBrightness =
         highContrastOverlay ? Brightness.dark : theme.brightness;
     final room = entry.detail;
-    final displayStreamerName = entry.displayStreamerName;
-    final areaLabel = entry.displayAreaName;
-    final tagsLabel = entry.displayTags.join(' · ');
+    final displayStreamerName = normalizeDisplayText(entry.displayStreamerName);
+    final areaLabel = normalizeDisplayText(entry.displayAreaName);
+    final tagsLabel = normalizeDisplayText(entry.displayTags.join(' · '));
     final liveDuration = _liveDuration(room?.startedAt);
-    final subtitle =
-        entry.hasError && room == null ? '状态刷新失败，点击后可继续尝试进入房间' : entry.title;
+    final subtitle = normalizeDisplayText(
+      entry.hasError && room == null ? '状态刷新失败，点击后可继续尝试进入房间' : entry.title,
+    );
     final titleColor =
         highContrastOverlay ? const Color(0xFFF8FAFC) : colorScheme.onSurface;
     final subtitleColor = highContrastOverlay
@@ -90,6 +91,9 @@ class FollowWatchRow extends StatelessWidget {
                 : Colors.white.withValues(alpha: 0.12),
           )
         : null;
+    final compactOverlayLayout = highContrastOverlay;
+    final placeBadgesWithTrailingAction =
+        !compactOverlayLayout && (onRemove != null || showChevron);
 
     return Material(
       color: Colors.transparent,
@@ -125,11 +129,11 @@ class FollowWatchRow extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Text(
+                        if (compactOverlayLayout)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
                                 displayStreamerName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -140,62 +144,197 @@ class FollowWatchRow extends StatelessWidget {
                                   height: 1.08,
                                 ),
                               ),
-                            ),
-                            if (areaLabel.isNotEmpty) ...[
-                              const SizedBox(width: 5),
-                              _MiniPill(
-                                label: areaLabel,
-                                foreground: highContrastOverlay
-                                    ? const Color(0xFF8ED9FF)
-                                    : theme.brightness == Brightness.dark
-                                        ? const Color(0xFF95D0FF)
-                                        : const Color(0xFF5EA2EB),
-                                background: highContrastOverlay
-                                    ? const Color(0xFF13283A)
-                                    : theme.brightness == Brightness.dark
-                                        ? const Color(0xFF102438)
-                                        : const Color(0xFFF0F7FF),
+                              const SizedBox(height: 3),
+                              Wrap(
+                                spacing: 5,
+                                runSpacing: 4,
+                                children: [
+                                  if (areaLabel.isNotEmpty)
+                                    _MiniPill(
+                                      label: areaLabel,
+                                      maxWidth: 84,
+                                      foreground: highContrastOverlay
+                                          ? const Color(0xFF8ED9FF)
+                                          : theme.brightness == Brightness.dark
+                                              ? const Color(0xFF95D0FF)
+                                              : const Color(0xFF5EA2EB),
+                                      background: highContrastOverlay
+                                          ? const Color(0xFF13283A)
+                                          : theme.brightness == Brightness.dark
+                                              ? const Color(0xFF102438)
+                                              : const Color(0xFFF0F7FF),
+                                    ),
+                                  _MiniPill(
+                                    label: status.label,
+                                    foreground: status.foreground,
+                                    background: status.background,
+                                  ),
+                                ],
                               ),
                             ],
-                            const SizedBox(width: 5),
-                            _MiniPill(
-                              label: status.label,
-                              foreground: status.foreground,
-                              background: status.background,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 1),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: subtitleColor,
-                            fontWeight: FontWeight.w600,
-                            fontSize: showSurface ? 10.8 : 11.2,
-                            height: 1.14,
-                          ),
-                        ),
-                        SizedBox(height: showSurface ? 2 : 3),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Flexible(
-                              child: _ProviderMeta(
-                                providerDescriptor: providerDescriptor,
-                                textStyle: theme.textTheme.bodySmall?.copyWith(
-                                  color: metaColor,
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: showSurface ? 10.1 : 10.4,
-                                  height: 1.1,
-                                ),
+                          )
+                        else if (placeBadgesWithTrailingAction)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      displayStreamerName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style:
+                                          theme.textTheme.titleMedium?.copyWith(
+                                        color: titleColor,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: showSurface ? 13.8 : 14.8,
+                                        height: 1.08,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _TrailingBadges(
+                                    areaLabel: areaLabel,
+                                    status: status,
+                                    areaForeground: highContrastOverlay
+                                        ? const Color(0xFF8ED9FF)
+                                        : theme.brightness == Brightness.dark
+                                            ? const Color(0xFF95D0FF)
+                                            : const Color(0xFF5EA2EB),
+                                    areaBackground: highContrastOverlay
+                                        ? const Color(0xFF13283A)
+                                        : theme.brightness == Brightness.dark
+                                            ? const Color(0xFF102438)
+                                            : const Color(0xFFF0F7FF),
+                                  ),
+                                ],
                               ),
-                            ),
-                            if (tagsLabel.isNotEmpty) ...[
-                              const SizedBox(width: 6),
+                              const SizedBox(height: 2),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      subtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.left,
+                                      style:
+                                          theme.textTheme.bodyMedium?.copyWith(
+                                        color: subtitleColor,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: showSurface ? 11.8 : 12.0,
+                                        height: 1.14,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _TrailingAction(
+                                    showChevron: showChevron,
+                                    onRemove: onRemove,
+                                    chevronColor: highContrastOverlay
+                                        ? const Color(0xFFF8FAFC)
+                                        : null,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          )
+                        else ...[
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               Expanded(
                                 child: Text(
+                                  displayStreamerName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: titleColor,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: showSurface ? 13.8 : 14.8,
+                                    height: 1.08,
+                                  ),
+                                ),
+                              ),
+                              if (areaLabel.isNotEmpty) ...[
+                                const SizedBox(width: 5),
+                                _MiniPill(
+                                  label: areaLabel,
+                                  maxWidth: 96,
+                                  foreground: highContrastOverlay
+                                      ? const Color(0xFF8ED9FF)
+                                      : theme.brightness == Brightness.dark
+                                          ? const Color(0xFF95D0FF)
+                                          : const Color(0xFF5EA2EB),
+                                  background: highContrastOverlay
+                                      ? const Color(0xFF13283A)
+                                      : theme.brightness == Brightness.dark
+                                          ? const Color(0xFF102438)
+                                          : const Color(0xFFF0F7FF),
+                                ),
+                              ],
+                              const SizedBox(width: 5),
+                              _MiniPill(
+                                label: status.label,
+                                foreground: status.foreground,
+                                background: status.background,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.left,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: subtitleColor,
+                                fontWeight: FontWeight.w700,
+                                fontSize: compactOverlayLayout
+                                    ? (showSurface ? 10.8 : 11.2)
+                                    : (showSurface ? 11.8 : 12.0),
+                                height: 1.14,
+                              ),
+                            ),
+                          ),
+                        ],
+                        SizedBox(height: showSurface ? 2 : 3),
+                        if (compactOverlayLayout)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: _ProviderMeta(
+                                      providerDescriptor: providerDescriptor,
+                                      textStyle:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color: metaColor,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: showSurface ? 10.1 : 10.4,
+                                        height: 1.1,
+                                      ),
+                                    ),
+                                  ),
+                                  if (liveDuration.isNotEmpty) ...[
+                                    const SizedBox(width: 6),
+                                    _DurationText(
+                                      label: liveDuration,
+                                      foregroundColor: metaColor,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              if (tagsLabel.isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Text(
                                   tagsLabel,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -206,21 +345,55 @@ class FollowWatchRow extends StatelessWidget {
                                     height: 1.1,
                                   ),
                                 ),
+                              ],
+                            ],
+                          )
+                        else
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Flexible(
+                                child: _ProviderMeta(
+                                  providerDescriptor: providerDescriptor,
+                                  textStyle:
+                                      theme.textTheme.bodySmall?.copyWith(
+                                    color: metaColor,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: showSurface ? 10.1 : 10.4,
+                                    height: 1.1,
+                                  ),
+                                ),
                               ),
-                            ] else
-                              const Spacer(),
-                            if (liveDuration.isNotEmpty)
-                              _DurationText(
-                                label: liveDuration,
-                                foregroundColor: metaColor,
-                              ),
-                          ],
-                        ),
+                              if (tagsLabel.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    tagsLabel,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: metaColor,
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: showSurface ? 9.9 : 10.2,
+                                      height: 1.1,
+                                    ),
+                                  ),
+                                ),
+                              ] else
+                                const Spacer(),
+                              if (liveDuration.isNotEmpty)
+                                _DurationText(
+                                  label: liveDuration,
+                                  foregroundColor: metaColor,
+                                ),
+                            ],
+                          ),
                       ],
                     ),
                   ),
-                  if (onRemove != null || showChevron) ...[
-                    const SizedBox(width: 1),
+                  if (!placeBadgesWithTrailingAction &&
+                      (onRemove != null || showChevron)) ...[
+                    SizedBox(width: placeBadgesWithTrailingAction ? 6 : 1),
                     _TrailingAction(
                       showChevron: showChevron,
                       onRemove: onRemove,
@@ -249,6 +422,55 @@ class FollowWatchRow extends StatelessWidget {
     final minutes = elapsed.inMinutes.remainder(60);
     final seconds = elapsed.inSeconds.remainder(60);
     return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
+class _TrailingBadges extends StatelessWidget {
+  const _TrailingBadges({
+    required this.areaLabel,
+    required this.status,
+    required this.areaForeground,
+    required this.areaBackground,
+  });
+
+  final String areaLabel;
+  final _FollowStatusPresentation status;
+  final Color areaForeground;
+  final Color areaBackground;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 156),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (areaLabel.isNotEmpty) ...[
+            Flexible(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: _MiniPill(
+                  label: areaLabel,
+                  maxWidth: 96,
+                  foreground: areaForeground,
+                  background: areaBackground,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
+          Flexible(
+            child: _MiniPill(
+              label: status.label,
+              maxWidth: 64,
+              foreground: status.foreground,
+              background: status.background,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -314,7 +536,7 @@ class _ProviderMeta extends StatelessWidget {
       _ => providerDescriptor.displayName,
     };
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: MainAxisSize.max,
       children: [
         if (logoAsset != null)
           Image.asset(
@@ -412,29 +634,39 @@ class _MiniPill extends StatelessWidget {
     required this.label,
     required this.foreground,
     required this.background,
+    this.maxWidth,
   });
 
   final String label;
   final Color foreground;
   final Color background;
+  final double? maxWidth;
 
   @override
   Widget build(BuildContext context) {
+    final child = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: foreground,
+            fontWeight: FontWeight.w700,
+            fontSize: 9.2,
+            height: 1.0,
+          ),
+    );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: foreground,
-              fontWeight: FontWeight.w700,
-              fontSize: 9.2,
-              height: 1.0,
+      child: maxWidth == null
+          ? child
+          : ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxWidth!),
+              child: child,
             ),
-      ),
     );
   }
 }

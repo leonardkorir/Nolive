@@ -167,6 +167,61 @@ void main() {
   });
 
   test(
+      'room controls action coordinator skips equivalent chaturbate proxy rebind',
+      () async {
+    PlaybackSource chaturbateProxy(String token) => PlaybackSource(
+          url: Uri.parse(
+            'http://127.0.0.1:9999/chaturbate-llhls/$token/stream.m3u8',
+          ),
+          bufferProfile: PlaybackBufferProfile.chaturbateLlHlsProxyStable,
+        );
+
+    final harness = _CoordinatorHarness(providerId: ProviderId.chaturbate);
+    final currentSource = chaturbateProxy('current');
+    final nextSource = chaturbateProxy('next');
+    final stateSnapshot = snapshot(
+      providerId: ProviderId.chaturbate,
+      detail: harness.detail,
+      selectedQuality: highQuality,
+      playUrls: [playUrl('current', lineLabel: '主线路')],
+    );
+    harness.latestLoadedState = latestState(
+      providerId: ProviderId.chaturbate,
+      detail: harness.detail,
+      snapshot: stateSnapshot,
+    );
+    harness.selectedQuality = highQuality;
+    harness.effectiveQuality = highQuality;
+    harness.activeRoomDetail = harness.detail;
+    harness.runtime.player.emit(
+      PlayerState(
+        status: PlaybackStatus.playing,
+        source: currentSource,
+        backend: PlayerBackend.mpv,
+      ),
+    );
+    harness.nextResolved = ResolvedPlaySource(
+      quality: highQuality,
+      effectiveQuality: highQuality,
+      playUrls: [playUrl('next', lineLabel: '主线路')],
+      playbackSource: nextSource,
+    );
+    final coordinator = harness.createCoordinator();
+    addTearDown(coordinator.dispose);
+    addTearDown(harness.dispose);
+
+    await coordinator.switchQuality(stateSnapshot, highQuality);
+
+    expect(harness.boundPlaybackSource, isNull);
+    expect(harness.replacedSession?.playbackSource, currentSource);
+    expect(
+      harness.traces,
+      contains(
+          contains('manual apply source skipped equivalent chaturbate proxy')),
+    );
+  });
+
+  test(
       'room controls action coordinator switches line with current session semantics',
       () async {
     final harness = _CoordinatorHarness(providerId: ProviderId.twitch);
@@ -445,6 +500,25 @@ void main() {
     await failingCoordinator.captureScreenshot();
     expect(failingHarness.messages.single, startsWith('截图失败：'));
 
+    final fallbackHarness = _CoordinatorHarness();
+    fallbackHarness.runtime.screenshotBytes = null;
+    fallbackHarness.renderedSurfaceScreenshotBytes =
+        Uint8List.fromList([4, 5, 6]);
+    final fallbackCoordinator = fallbackHarness.createCoordinator(
+      persistScreenshot: ({
+        required bytes,
+        required fileName,
+      }) async {
+        expect(bytes, orderedEquals(const [4, 5, 6]));
+        return '/tmp/rendered-surface.png';
+      },
+    );
+    addTearDown(fallbackCoordinator.dispose);
+    addTearDown(fallbackHarness.dispose);
+
+    await fallbackCoordinator.captureScreenshot();
+    expect(fallbackHarness.messages.single, '已保存截图到 /tmp/rendered-surface.png');
+
     final successHarness = _CoordinatorHarness();
     successHarness.runtime.screenshotBytes = Uint8List.fromList([1, 2, 3]);
     final successCoordinator = successHarness.createCoordinator(
@@ -619,6 +693,7 @@ class _CoordinatorHarness {
   PlaybackSource? boundPlaybackSource;
   DanmakuSession? openedDanmakuSession;
   DanmakuSession? boundDanmakuSession;
+  Uint8List? renderedSurfaceScreenshotBytes;
   final List<LiveRoomDetail> openRoomDanmakuCalls = <LiveRoomDetail>[];
   VoidCallback? onEnsureBackendWithoutPlaybackState;
 
@@ -754,6 +829,9 @@ class _CoordinatorHarness {
         leaveRoom: () async {
           leaveRoomCalls += 1;
         },
+        captureRenderedPlayerSurface: renderedSurfaceScreenshotBytes == null
+            ? null
+            : () async => renderedSurfaceScreenshotBytes,
       ),
       persistScreenshot: persistScreenshot,
     );

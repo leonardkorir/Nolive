@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:live_player/live_player.dart';
 
 class PlayerRuntimeController {
-  const PlayerRuntimeController(this._delegate);
+  PlayerRuntimeController(this._delegate);
 
   final BasePlayer _delegate;
+  Future<void> _pendingRoomTeardown = Future<void>.value();
+  int _queuedRoomTeardowns = 0;
 
   PlayerBackend get backend => _delegate.backend;
 
@@ -21,6 +24,8 @@ class PlayerRuntimeController {
   bool get supportsEmbeddedView => _delegate.supportsEmbeddedView;
 
   bool get supportsScreenshot => _delegate.supportsScreenshot;
+
+  bool get hasPendingRoomTeardown => _queuedRoomTeardowns > 0;
 
   List<PlayerBackend> get supportedBackends {
     final delegate = _delegate;
@@ -41,8 +46,18 @@ class PlayerRuntimeController {
     PlayerBackend nextBackend,
   ) async {
     final delegate = _delegate;
-    if (delegate is SwitchablePlayer && delegate.backend != nextBackend) {
-      await delegate.switchBackendWithoutPlaybackState(nextBackend);
+    if (delegate is SwitchablePlayer) {
+      if (delegate.backend != nextBackend) {
+        await delegate.switchBackendWithoutPlaybackState(nextBackend);
+        return;
+      }
+      if (_hasPlaybackState(delegate.currentState)) {
+        await delegate.refreshBackendWithoutPlaybackState();
+      }
+      return;
+    }
+    if (_hasPlaybackState(currentState)) {
+      await _delegate.stop();
     }
   }
 
@@ -94,6 +109,29 @@ class PlayerRuntimeController {
 
   Future<Uint8List?> captureScreenshot() => _delegate.captureScreenshot();
 
+  Future<void> waitForPendingRoomTeardown() => _pendingRoomTeardown;
+
+  Future<void> serializeRoomTeardown(Future<void> Function() action) {
+    final previous = _pendingRoomTeardown;
+    final hadPendingRoomTeardown = hasPendingRoomTeardown;
+    final completer = Completer<void>();
+    _queuedRoomTeardowns += 1;
+    _pendingRoomTeardown = completer.future;
+    return (() async {
+      try {
+        if (hadPendingRoomTeardown) {
+          await previous;
+        }
+        await action();
+      } finally {
+        _queuedRoomTeardowns -= 1;
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      }
+    })();
+  }
+
   Widget buildView({
     Key? key,
     double? aspectRatio,
@@ -108,5 +146,20 @@ class PlayerRuntimeController {
       pauseUponEnteringBackgroundMode: pauseUponEnteringBackgroundMode,
       resumeUponEnteringForegroundMode: resumeUponEnteringForegroundMode,
     );
+  }
+
+  bool _hasPlaybackState(PlayerState state) {
+    if (state.source != null) {
+      return true;
+    }
+    return switch (state.status) {
+      PlaybackStatus.buffering ||
+      PlaybackStatus.playing ||
+      PlaybackStatus.paused ||
+      PlaybackStatus.completed ||
+      PlaybackStatus.error =>
+        true,
+      _ => false,
+    };
   }
 }

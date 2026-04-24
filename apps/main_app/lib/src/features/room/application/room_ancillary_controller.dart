@@ -63,12 +63,18 @@ class RoomAncillaryController {
 
     _trace(
       'ancillary complete in ${DateTime.now().difference(startedAt).inMilliseconds}ms '
-      'danmaku=${danmakuSession != null} followed=$isFollowed',
+      'danmaku=${danmakuSession != null} '
+      'session=${_describeDanmakuSession(danmakuSession)} '
+      'followed=$isFollowed',
     );
     return RoomAncillaryLoadResult(
       danmakuSession: danmakuSession,
       isFollowed: isFollowed,
     );
+  }
+
+  String _describeDanmakuSession(DanmakuSession? session) {
+    return session?.runtimeType.toString() ?? '-';
   }
 
   void _trace(String message) {

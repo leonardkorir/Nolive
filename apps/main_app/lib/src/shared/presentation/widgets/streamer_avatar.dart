@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/shared/presentation/theme/zh_text.dart';
 
 import 'persisted_network_image.dart';
@@ -32,7 +33,7 @@ class StreamerAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final trimmed = fallbackText.trim();
+    final trimmed = normalizeDisplayText(fallbackText).trim();
     final initial =
         trimmed.isEmpty ? '主' : trimmed.substring(0, 1).toUpperCase();
     final palette = _AvatarPalette.forBrightness(theme.brightness);

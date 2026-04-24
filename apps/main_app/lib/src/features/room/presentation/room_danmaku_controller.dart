@@ -76,10 +76,15 @@ bool shouldRetryDanmakuConnectionError({
 }
 
 class RoomDanmakuController {
+  static const Duration _defaultConnectTimeout = Duration(seconds: 6);
+  static const Duration _douyuConnectTimeout = Duration(seconds: 20);
+  static const Duration _chaturbateConnectTimeout = Duration(seconds: 20);
+
   RoomDanmakuController({
     required this.dependencies,
     required this.providerId,
     this.trace,
+    this.connectTimeout = _defaultConnectTimeout,
   })  : _state = ValueNotifier<RoomDanmakuState>(
           const RoomDanmakuState.initial(),
         ),
@@ -102,6 +107,7 @@ class RoomDanmakuController {
   final RoomDanmakuDependencies dependencies;
   final ProviderId providerId;
   final void Function(String message)? trace;
+  final Duration connectTimeout;
   final ValueNotifier<RoomDanmakuState> _state;
   final ValueNotifier<List<LiveMessage>> _messages;
   final ValueNotifier<List<LiveMessage>> _superChats;
@@ -175,13 +181,28 @@ class RoomDanmakuController {
     final bindGeneration = ++_bindGeneration;
     _suspendedByLifecycle = false;
     _activeRoomDetail = activeRoomDetail;
-    await _disposeSessionInternal(clearSession: true);
+    _trace(
+      'danmaku bind start room=${activeRoomDetail.roomId} '
+      'bind=$bindGeneration session=${_describeSession(session)}',
+    );
+    await _disposeSessionInternal(
+      clearSession: true,
+      reason: 'bind start',
+    );
     resetReconnectState();
     if (_disposed || bindGeneration != _bindGeneration) {
+      _trace(
+        'danmaku bind abandoned room=${activeRoomDetail.roomId} '
+        'bind=$bindGeneration disposed=$_disposed stale=${bindGeneration != _bindGeneration}',
+      );
       await session?.disconnect();
       return;
     }
     if (session == null) {
+      _trace(
+        'danmaku bind ready room=${activeRoomDetail.roomId} '
+        'bind=$bindGeneration session=-',
+      );
       _emit(current.copyWith(clearSession: true));
       return;
     }
@@ -195,7 +216,11 @@ class RoomDanmakuController {
         return;
       }
       if (_shouldReconnectDanmaku(message)) {
-        _scheduleDanmakuReconnect();
+        _trace(
+          'danmaku reconnect trigger room=${_describeRoom(_activeRoomDetail)} '
+          'notice=${_summarizeReconnectCause(message.content)}',
+        );
+        _scheduleDanmakuReconnect(cause: message.content);
       }
       _pendingDanmakuMessages.add(message);
       if (_pendingDanmakuMessages.length >= _danmakuFlushBurstLimit) {
@@ -210,29 +235,49 @@ class RoomDanmakuController {
         _buildDanmakuNotice('弹幕连接异常：$error'),
       );
       _flushPendingDanmaku();
-      _scheduleDanmakuReconnect();
+      _scheduleDanmakuReconnect(cause: 'stream-error=$error');
     });
 
     try {
-      await session.connect();
+      final effectiveConnectTimeout = _resolveConnectTimeout();
+      _trace(
+        'danmaku connect start room=${activeRoomDetail.roomId} '
+        'bind=$bindGeneration session=${_describeSession(session)} '
+        'timeout=${effectiveConnectTimeout.inMilliseconds}ms',
+      );
+      await session.connect().timeout(effectiveConnectTimeout);
       if (_disposed || bindGeneration != _bindGeneration) {
+        _trace(
+          'danmaku connect stale room=${activeRoomDetail.roomId} '
+          'bind=$bindGeneration disposed=$_disposed stale=${bindGeneration != _bindGeneration}',
+        );
         await session.disconnect();
         return;
       }
+      _trace(
+        'danmaku connect ready room=${activeRoomDetail.roomId} '
+        'bind=$bindGeneration session=${_describeSession(session)}',
+      );
       _flushPendingDanmaku();
     } catch (error) {
-      _trace('danmaku connect failed: $error');
+      _trace(
+        'danmaku connect failed room=${activeRoomDetail.roomId} '
+        'bind=$bindGeneration session=${_describeSession(session)} error=$error',
+      );
       _pendingDanmakuMessages.add(
         _buildDanmakuNotice('弹幕连接失败：$error'),
       );
       _flushPendingDanmaku();
       if (!_disposed && bindGeneration == _bindGeneration) {
-        await _disposeSessionInternal(clearSession: true);
+        await _disposeSessionInternal(
+          clearSession: true,
+          reason: 'connect failure',
+        );
         if (shouldRetryDanmakuConnectionError(
           providerId: providerId,
           error: error,
         )) {
-          _scheduleDanmakuReconnect();
+          _scheduleDanmakuReconnect(cause: 'connect-failed=$error');
         } else {
           _trace('danmaku reconnect suppressed for non-retryable error');
           resetReconnectState();
@@ -243,12 +288,27 @@ class RoomDanmakuController {
     }
   }
 
+  Duration _resolveConnectTimeout() {
+    return resolveDanmakuConnectTimeout(
+      providerId: providerId,
+      configuredTimeout: connectTimeout,
+    );
+  }
+
   Future<void> closeSession() async {
+    final detail = _activeRoomDetail;
     _bindGeneration += 1;
     _suspendedByLifecycle = false;
     _activeRoomDetail = null;
+    _trace(
+      'danmaku close room=${_describeRoom(detail)} '
+      'session=${_describeSession(current.session)}',
+    );
     resetReconnectState();
-    await _disposeSessionInternal(clearSession: true);
+    await _disposeSessionInternal(
+      clearSession: true,
+      reason: 'close session',
+    );
   }
 
   Future<void> handleLifecycleState({
@@ -278,8 +338,16 @@ class RoomDanmakuController {
       return;
     }
     _suspendedByLifecycle = true;
+    _trace(
+      'danmaku lifecycle suspend state=${state.name} '
+      'room=${_describeRoom(_activeRoomDetail)} '
+      'session=${_describeSession(current.session)}',
+    );
     resetReconnectState();
-    await _disposeSessionInternal(clearSession: true);
+    await _disposeSessionInternal(
+      clearSession: true,
+      reason: 'lifecycle ${state.name}',
+    );
   }
 
   void resetReconnectState() {
@@ -302,6 +370,8 @@ class RoomDanmakuController {
     if (_disposed) {
       return;
     }
+    final detail = _activeRoomDetail;
+    final session = current.session;
     _disposed = true;
     _suspendedByLifecycle = false;
     _bindGeneration += 1;
@@ -313,10 +383,13 @@ class RoomDanmakuController {
     _danmakuReconnectTimer?.cancel();
     _danmakuReconnectTimer = null;
     _pendingDanmakuMessages.clear();
+    _trace(
+      'danmaku dispose room=${_describeRoom(detail)} '
+      'session=${_describeSession(session)}',
+    );
 
     final subscription = _danmakuSubscription;
     _danmakuSubscription = null;
-    final session = current.session;
     final disconnectFuture = session?.disconnect();
 
     if (subscription != null) {
@@ -350,11 +423,18 @@ class RoomDanmakuController {
         .any((signal) => message.content.contains(signal));
   }
 
-  void _scheduleDanmakuReconnect() {
+  void _scheduleDanmakuReconnect({String? cause}) {
     if (_activeRoomDetail == null ||
         _disposed ||
+        _suspendedByLifecycle ||
         current.reconnectInFlight ||
         current.reconnectScheduled) {
+      if (_suspendedByLifecycle && !_disposed && _activeRoomDetail != null) {
+        _trace(
+          'danmaku reconnect suppressed while lifecycle suspended '
+          'room=${_describeRoom(_activeRoomDetail)}',
+        );
+      }
       return;
     }
     final attempt = current.reconnectAttempt + 1;
@@ -369,7 +449,8 @@ class RoomDanmakuController {
     );
     _trace(
       'danmaku reconnect scheduled attempt=$attempt '
-      'delay=${delay.inSeconds}s',
+      'delay=${delay.inSeconds}s room=${_describeRoom(_activeRoomDetail)} '
+      'cause=${_summarizeReconnectCause(cause)}',
     );
     final reconnectGeneration = _reconnectGeneration;
     _danmakuReconnectTimer = Timer(delay, () {
@@ -395,24 +476,34 @@ class RoomDanmakuController {
     final bindGeneration = _bindGeneration;
     if (detail == null ||
         _disposed ||
+        _suspendedByLifecycle ||
         current.reconnectInFlight ||
         reconnectGeneration != _reconnectGeneration) {
       return;
     }
     _emit(current.copyWith(reconnectInFlight: true));
     try {
+      _trace(
+        'danmaku reconnect open attempt=$attempt '
+        'room=${_describeRoom(detail)}',
+      );
       final nextSession = await dependencies.openRoomDanmaku(
         providerId: providerId,
         detail: detail,
       );
       if (_disposed ||
+          _suspendedByLifecycle ||
           reconnectGeneration != _reconnectGeneration ||
           bindGeneration != _bindGeneration ||
           !_sameRoom(detail, _activeRoomDetail)) {
         await nextSession?.disconnect();
         return;
       }
-      _trace('danmaku reconnect attempt=$attempt');
+      _trace(
+        'danmaku reconnect bind attempt=$attempt '
+        'room=${_describeRoom(detail)} '
+        'session=${_describeSession(nextSession)}',
+      );
       await bindSession(
         activeRoomDetail: detail,
         session: nextSession,
@@ -427,7 +518,7 @@ class RoomDanmakuController {
         providerId: providerId,
         error: error,
       )) {
-        _scheduleDanmakuReconnect();
+        _scheduleDanmakuReconnect(cause: 'reconnect-failed=$error');
       } else {
         _trace('danmaku reconnect halted after non-retryable error');
         resetReconnectState();
@@ -435,7 +526,10 @@ class RoomDanmakuController {
     }
   }
 
-  Future<void> _disposeSessionInternal({required bool clearSession}) async {
+  Future<void> _disposeSessionInternal({
+    required bool clearSession,
+    required String reason,
+  }) async {
     _danmakuFlushTimer?.cancel();
     _danmakuFlushTimer = null;
     _pendingDanmakuMessages.clear();
@@ -444,6 +538,13 @@ class RoomDanmakuController {
     final subscription = _danmakuSubscription;
     _danmakuSubscription = null;
     final session = current.session;
+    if (subscription != null || session != null) {
+      _trace(
+        'danmaku session dispose reason=$reason '
+        'room=${_describeRoom(_activeRoomDetail)} '
+        'session=${_describeSession(session)} clear=$clearSession',
+      );
+    }
     final disconnectFuture = session?.disconnect();
     if (!_disposed && clearSession) {
       _emit(current.copyWith(clearSession: true));
@@ -470,6 +571,9 @@ class RoomDanmakuController {
       return;
     }
     try {
+      _trace(
+        'danmaku lifecycle resume open room=${_describeRoom(detail)}',
+      );
       final nextSession = await dependencies.openRoomDanmaku(
         providerId: providerId,
         detail: detail,
@@ -480,6 +584,10 @@ class RoomDanmakuController {
         await nextSession?.disconnect();
         return;
       }
+      _trace(
+        'danmaku lifecycle resume bind room=${_describeRoom(detail)} '
+        'session=${_describeSession(nextSession)}',
+      );
       await bindSession(
         activeRoomDetail: detail,
         session: nextSession,
@@ -565,4 +673,40 @@ class RoomDanmakuController {
   void _trace(String message) {
     trace?.call(message);
   }
+
+  String _describeSession(DanmakuSession? session) {
+    return session?.runtimeType.toString() ?? '-';
+  }
+
+  String _describeRoom(LiveRoomDetail? detail) {
+    return detail?.roomId ?? '-';
+  }
+
+  String _summarizeReconnectCause(String? cause) {
+    final normalized = cause?.replaceAll(RegExp(r'\s+'), ' ').trim() ?? '';
+    if (normalized.isEmpty) {
+      return '-';
+    }
+    if (normalized.length <= 120) {
+      return normalized;
+    }
+    return '${normalized.substring(0, 117)}...';
+  }
+}
+
+@visibleForTesting
+Duration resolveDanmakuConnectTimeout({
+  required ProviderId providerId,
+  required Duration configuredTimeout,
+}) {
+  if (configuredTimeout != RoomDanmakuController._defaultConnectTimeout) {
+    return configuredTimeout;
+  }
+  if (providerId == ProviderId.douyu) {
+    return RoomDanmakuController._douyuConnectTimeout;
+  }
+  if (providerId == ProviderId.chaturbate) {
+    return RoomDanmakuController._chaturbateConnectTimeout;
+  }
+  return configuredTimeout;
 }

@@ -253,8 +253,10 @@ class ImportCredentialMigrationBundleUseCase {
       password: password,
     );
     await secureCredentialStore.writeAll(bundle.credentials);
-    for (final key in bundle.credentials.keys) {
-      await settingsRepository.remove(key);
+    if (secureCredentialStore.storesSecureValuesSeparately) {
+      for (final key in bundle.credentials.keys) {
+        await settingsRepository.remove(key);
+      }
     }
     _invalidateProviderCaches();
     return bundle;

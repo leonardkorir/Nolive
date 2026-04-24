@@ -109,6 +109,30 @@ void main() {
     );
   });
 
+  test('room preview dispose cleanup is skipped after explicit leave', () {
+    expect(
+      shouldCleanupPlaybackOnRoomPreviewDispose(
+        preserveRoomTransitionOnDispose: false,
+        leavingRoom: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldCleanupPlaybackOnRoomPreviewDispose(
+        preserveRoomTransitionOnDispose: false,
+        leavingRoom: false,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldCleanupPlaybackOnRoomPreviewDispose(
+        preserveRoomTransitionOnDispose: true,
+        leavingRoom: false,
+      ),
+      isFalse,
+    );
+  });
+
   testWidgets('room preview exposes quick actions and settings tab', (
     tester,
   ) async {
@@ -295,6 +319,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(seconds: 2));
+    await _pumpUntilPlayerEventCount(tester, player, 'setSource', 1);
+    await _pumpUntilPlayerEventCount(tester, player, 'play', 1);
 
     final initializeCount =
         player.events.where((event) => event == 'initialize').length;
@@ -328,6 +354,10 @@ void main() {
       'returning from player settings rebinds same source when playback is errored',
       (tester) async {
     final base = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final preferences = await base.loadPlayerPreferences();
+    await base.updatePlayerPreferences(
+      preferences.copyWith(backend: PlayerBackend.mdk),
+    );
     final player = _FailOnceMdkPlayer(failFirstSetSource: false);
     final runtime = _RefreshTrackingMdkPlayerRuntime(player);
     addTearDown(player.dispose);
@@ -360,6 +390,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(seconds: 2));
+    await _pumpUntilPlayerEventCount(tester, player, 'setSource', 1);
+    await _pumpUntilPlayerEventCount(tester, player, 'play', 1);
 
     player.emitStickySourceError();
     player.armNextSetSourceFailure(retainSource: true);
@@ -613,6 +645,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(seconds: 2));
+    await _pumpUntilPlayerEventCount(tester, player, 'setSource', 1);
+    await _pumpUntilPlayerEventCount(tester, player, 'play', 1);
 
     await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
     await tester.pump(const Duration(milliseconds: 40));
@@ -628,6 +662,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 700));
 
     expect(player.events, contains('refreshBackend'));
+    player.events.clear();
 
     await tester.tap(find.byKey(const Key('room-exit-fullscreen-button')));
     await tester.pump();
@@ -1334,6 +1369,9 @@ void main() {
   testWidgets('fullscreen follow drawer keeps fullscreen when switching room',
       (tester) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final player = _RecordingPlayer();
+    final runtime = PlayerRuntimeController(player);
+    addTearDown(player.dispose);
     bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
       entries: const [
         FollowWatchEntry(
@@ -1364,7 +1402,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap),
+          dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
           providerId: ProviderId.bilibili,
           roomId: '66666',
         ),
@@ -1377,7 +1415,7 @@ void main() {
           return MaterialPageRoute<void>(
             settings: settings,
             builder: (_) => RoomPreviewPage(
-              dependencies: _roomDependencies(bootstrap),
+              dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
               providerId: arguments.providerId,
               roomId: arguments.roomId,
               startInFullscreen: arguments.startInFullscreen,
@@ -1405,6 +1443,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(seconds: 2));
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(const Key('room-fullscreen-overlay')),
+    );
 
     expect(pushedSettings?.name, AppRoutes.room);
     final arguments = pushedSettings?.arguments as RoomRouteArguments?;
@@ -2712,6 +2754,34 @@ RoomFullscreenSessionPlatforms _defaultTestPlatforms() {
     screenAwake: TestRoomScreenAwakeFacade(),
     systemUi: TestRoomSystemUiFacade(),
   );
+}
+
+
+Future<void> _pumpUntilPlayerEventCount(
+  WidgetTester tester,
+  _RecordingPlayer player,
+  String event,
+  int expectedCount,
+) async {
+  for (var attempt = 0; attempt < 40; attempt += 1) {
+    if (player.events.where((item) => item == event).length >= expectedCount) {
+      return;
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
+
+Future<void> _pumpUntilFinder(
+  WidgetTester tester,
+  Finder finder,
+) async {
+  for (var attempt = 0; attempt < 40; attempt += 1) {
+    if (finder.evaluate().isNotEmpty) {
+      return;
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+  }
 }
 
 class _RecordingPlayer implements BasePlayer {

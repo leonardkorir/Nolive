@@ -6,16 +6,46 @@ import 'package:live_core/live_core.dart';
 import 'package:web_socket_channel/io.dart';
 
 import 'danmaku_web_socket.dart';
+import '../providers/douyu/douyu_sign_service.dart';
+
+abstract interface class DouyuSocketClient {
+  Stream<dynamic> get stream;
+
+  void add(dynamic data);
+
+  Future<void> close();
+}
+
+typedef DouyuSocketClientConnector = Future<DouyuSocketClient> Function(
+  Uri uri, {
+  required Map<String, dynamic> headers,
+  required Duration connectTimeout,
+});
 
 class DouyuDanmakuSession implements DanmakuSession {
-  DouyuDanmakuSession({required this.roomId});
+  DouyuDanmakuSession({
+    required this.roomId,
+    DouyuSocketClientConnector? socketConnector,
+  }) : _socketConnector = socketConnector ?? _defaultSocketConnector;
+
+  static const List<String> _candidateSocketUrls = <String>[
+    'wss://danmuproxy.douyu.com:8502/',
+    'wss://danmuproxy.douyu.com:8506/',
+  ];
+  static const Duration _endpointConnectTimeout = Duration(seconds: 4);
+  static const Map<String, dynamic> _socketHeaders = <String, dynamic>{
+    'origin': 'https://www.douyu.com',
+    'referer': 'https://www.douyu.com/',
+    'user-agent': HttpDouyuSignService.defaultUserAgent,
+  };
 
   final String roomId;
+  final DouyuSocketClientConnector _socketConnector;
 
   final StreamController<LiveMessage> _controller =
       StreamController<LiveMessage>.broadcast();
 
-  IOWebSocketChannel? _channel;
+  DouyuSocketClient? _channel;
   StreamSubscription<dynamic>? _subscription;
   Timer? _heartbeatTimer;
   bool _connected = false;
@@ -28,9 +58,7 @@ class DouyuDanmakuSession implements DanmakuSession {
     if (_connected) {
       return;
     }
-    final channel = await connectDanmakuWebSocket(
-      Uri.parse('wss://danmuproxy.douyu.com:8506'),
-    );
+    final channel = await _connectSocket();
     try {
       _channel = channel;
       _connected = true;
@@ -75,7 +103,7 @@ class DouyuDanmakuSession implements DanmakuSession {
       _connected = false;
       await _subscription?.cancel();
       _subscription = null;
-      await channel.sink.close();
+      await channel.close();
       if (identical(_channel, channel)) {
         _channel = null;
       }
@@ -90,7 +118,7 @@ class DouyuDanmakuSession implements DanmakuSession {
     _heartbeatTimer = null;
     await _subscription?.cancel();
     _subscription = null;
-    await _channel?.sink.close();
+    await _channel?.close();
     _channel = null;
     if (!_controller.isClosed) {
       await _controller.close();
@@ -98,7 +126,7 @@ class DouyuDanmakuSession implements DanmakuSession {
   }
 
   void _send(String body) {
-    _channel?.sink.add(_serialize(body));
+    _channel?.add(_serialize(body));
   }
 
   void _handleRawMessage(dynamic raw) {
@@ -227,5 +255,80 @@ class DouyuDanmakuSession implements DanmakuSession {
       return;
     }
     _controller.add(message);
+  }
+
+  Future<DouyuSocketClient> _connectSocket() async {
+    final completer = Completer<DouyuSocketClient>();
+    var remaining = _candidateSocketUrls.length;
+    Object? lastError;
+
+    for (final rawUrl in _candidateSocketUrls) {
+      unawaited(
+        () async {
+          try {
+            final client = await _socketConnector(
+              Uri.parse(rawUrl),
+              headers: _socketHeaders,
+              connectTimeout: _endpointConnectTimeout,
+            );
+            if (completer.isCompleted) {
+              await client.close();
+              return;
+            }
+            completer.complete(client);
+          } catch (error, stackTrace) {
+            lastError = error;
+            remaining -= 1;
+            if (remaining == 0 && !completer.isCompleted) {
+              completer.completeError(
+                error,
+                stackTrace,
+              );
+            }
+          }
+        }(),
+      );
+    }
+
+    try {
+      return await completer.future;
+    } catch (_) {
+      if (lastError != null) {
+        throw lastError!;
+      }
+      rethrow;
+    }
+  }
+}
+
+Future<DouyuSocketClient> _defaultSocketConnector(
+  Uri uri, {
+  required Map<String, dynamic> headers,
+  required Duration connectTimeout,
+}) async {
+  final channel = await connectDanmakuWebSocket(
+    uri,
+    headers: headers,
+    connectTimeout: connectTimeout,
+  );
+  return _IoDouyuSocketClient(channel);
+}
+
+class _IoDouyuSocketClient implements DouyuSocketClient {
+  _IoDouyuSocketClient(this._channel);
+
+  final IOWebSocketChannel _channel;
+
+  @override
+  Stream<dynamic> get stream => _channel.stream;
+
+  @override
+  void add(dynamic data) {
+    _channel.sink.add(data);
+  }
+
+  @override
+  Future<void> close() {
+    return _channel.sink.close();
   }
 }

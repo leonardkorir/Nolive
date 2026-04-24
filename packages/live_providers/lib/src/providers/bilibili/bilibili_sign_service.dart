@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:live_core/live_core.dart';
 
 import 'bilibili_auth_context.dart';
 import 'bilibili_transport.dart';
@@ -90,23 +91,30 @@ class BilibiliSignService {
   String get cookie => _authContext.cookie;
   int get userId => _authContext.userId;
   String get buvid3 => _authContext.buvid3;
+  bool get isPublicAuthCookieSuppressed =>
+      _authContext.suppressAuthCookieForPublicApis;
 
-  Future<Map<String, String>> buildHeaders() async {
-    if (_authContext.buvid3.isEmpty) {
-      await _loadBuvid();
-    }
+  String get publicCookie =>
+      isPublicAuthCookieSuppressed ? '' : _authContext.cookie;
 
-    final cookie = _authContext.cookie.isEmpty
-        ? 'buvid3=${_authContext.buvid3};buvid4=${_authContext.buvid4};'
-        : _authContext.cookie.contains('buvid3')
-            ? _authContext.cookie
-            : '${_authContext.cookie};buvid3=${_authContext.buvid3};buvid4=${_authContext.buvid4};';
+  int get publicUserId =>
+      isPublicAuthCookieSuppressed ? 0 : _authContext.userId;
 
-    return {
-      'user-agent': defaultUserAgent,
-      'referer': defaultReferer,
-      'cookie': cookie,
-    };
+  // Keep public catalog/detail/play requests anonymous. The reference rust-srec
+  // extractor signs Bilibili public APIs without account cookies and only uses
+  // credentials for account flows / danmaku auth projection.
+  Future<Map<String, String>> buildHeaders({bool includeAuthCookie = false}) {
+    return _buildHeaders(
+      includeAuthCookie: includeAuthCookie,
+      respectPublicSuppression: true,
+    );
+  }
+
+  Future<Map<String, String>> buildAccountHeaders() {
+    return _buildHeaders(
+      includeAuthCookie: true,
+      respectPublicSuppression: false,
+    );
   }
 
   Future<Map<String, String>> signUrl(String url) async {
@@ -136,13 +144,15 @@ class BilibiliSignService {
   }
 
   Future<void> _loadBuvid() async {
-    final response = await _transport.getJson(
-      'https://api.bilibili.com/x/frontend/finger/spi',
-      headers: {
-        'user-agent': defaultUserAgent,
-        'referer': defaultReferer,
-        'cookie': _authContext.cookie,
-      },
+    final response = ensureBilibiliSuccess(
+      await _transport.getJson(
+        'https://api.bilibili.com/x/frontend/finger/spi',
+        headers: {
+          'user-agent': defaultUserAgent,
+          'referer': defaultReferer,
+        },
+      ),
+      operation: 'load buvid',
     );
     final data =
         (response['data'] as Map?)?.cast<String, dynamic>() ?? const {};
@@ -177,9 +187,30 @@ class BilibiliSignService {
       return (_authContext.imgKey, _authContext.subKey);
     }
 
-    final response = await _transport.getJson(
-      'https://api.bilibili.com/x/web-interface/nav',
-      headers: await buildHeaders(),
+    if (cookie.trim().isNotEmpty) {
+      try {
+        return await _loadWbiKeys(includeAuthCookie: true);
+      } on ProviderParseException catch (error) {
+        if (!_shouldRetryWbiKeysAnonymously(error)) {
+          rethrow;
+        }
+      }
+    }
+
+    return _loadWbiKeys(includeAuthCookie: false);
+  }
+
+  Future<(String, String)> _loadWbiKeys({
+    required bool includeAuthCookie,
+  }) async {
+    final response = ensureBilibiliSuccess(
+      await _transport.getJson(
+        'https://api.bilibili.com/x/web-interface/nav',
+        headers: includeAuthCookie
+            ? await buildAccountHeaders()
+            : await buildHeaders(),
+      ),
+      operation: 'load WBI keys',
     );
     final data =
         (response['data'] as Map?)?.cast<String, dynamic>() ?? const {};
@@ -195,6 +226,13 @@ class BilibiliSignService {
     return (_authContext.imgKey, _authContext.subKey);
   }
 
+  bool _shouldRetryWbiKeysAnonymously(ProviderParseException error) {
+    final message = error.message.toLowerCase();
+    return message.contains('code -101') ||
+        message.contains('账号未登录') ||
+        message.contains('not login');
+  }
+
   String _getMixinKey(String origin) {
     return _mixinKeyEncTable
         .fold<String>(
@@ -202,5 +240,53 @@ class BilibiliSignService {
           (buffer, index) => buffer + origin[index],
         )
         .substring(0, 32);
+  }
+
+  Future<Map<String, String>> _buildHeaders({
+    required bool includeAuthCookie,
+    required bool respectPublicSuppression,
+  }) async {
+    if (_authContext.buvid3.isEmpty) {
+      await _loadBuvid();
+    }
+    final cookie = _buildCookieHeader(
+      includeAuthCookie: includeAuthCookie,
+      respectPublicSuppression: respectPublicSuppression,
+    );
+    return {
+      'user-agent': defaultUserAgent,
+      'referer': defaultReferer,
+      if (cookie.isNotEmpty) 'cookie': cookie,
+    };
+  }
+
+  String _buildCookieHeader({
+    required bool includeAuthCookie,
+    required bool respectPublicSuppression,
+  }) {
+    final parts = <String>[];
+    final allowAuthCookie = includeAuthCookie &&
+        (!respectPublicSuppression ||
+            !_authContext.suppressAuthCookieForPublicApis);
+    final authCookie = allowAuthCookie ? _authContext.cookie.trim() : '';
+    if (authCookie.isNotEmpty) {
+      parts.add(authCookie);
+    }
+    if (_authContext.buvid3.isNotEmpty &&
+        !_containsCookieName(authCookie, 'buvid3')) {
+      parts.add('buvid3=${_authContext.buvid3}');
+    }
+    if (_authContext.buvid4.isNotEmpty &&
+        !_containsCookieName(authCookie, 'buvid4')) {
+      parts.add('buvid4=${_authContext.buvid4}');
+    }
+    return parts.join('; ');
+  }
+
+  bool _containsCookieName(String cookie, String name) {
+    if (cookie.isEmpty) {
+      return false;
+    }
+    return RegExp('(?:^|;\\s*)$name=').hasMatch(cookie);
   }
 }

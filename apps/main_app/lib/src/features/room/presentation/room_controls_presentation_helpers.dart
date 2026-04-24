@@ -42,37 +42,41 @@ String roomLineLabelOfPlayback(
   if (playUrls.isEmpty) {
     return '线路';
   }
-  return playUrls
+  final resolved = playUrls
           .firstWhere(
             (item) => item.url == playbackSource.url.toString(),
             orElse: () => playUrls.first,
           )
           .lineLabel ??
       '线路';
+  final normalized = normalizeDisplayText(resolved);
+  return normalized.isEmpty ? '线路' : normalized;
 }
 
 String compactRoomQualityLabel(String label) {
-  if (label.contains('原画')) {
+  final normalized = normalizeDisplayText(label);
+  if (normalized.contains('原画')) {
     return '原画';
   }
-  if (label.contains('蓝光')) {
+  if (normalized.contains('蓝光')) {
     return '蓝光';
   }
-  if (label.contains('超清')) {
+  if (normalized.contains('超清')) {
     return '超清';
   }
-  if (label.contains('高清')) {
+  if (normalized.contains('高清')) {
     return '高清';
   }
-  if (label.contains('流畅') || label.contains('标清')) {
+  if (normalized.contains('流畅') || normalized.contains('标清')) {
     return '流畅';
   }
-  return label.length <= 4 ? label : label.substring(0, 4);
+  return normalized.length <= 4 ? normalized : normalized.substring(0, 4);
 }
 
 String compactRoomLineLabel(String label) {
-  if (label.startsWith('线路')) {
-    return label;
+  final normalized = normalizeDisplayText(label);
+  if (normalized.startsWith('线路')) {
+    return normalized;
   }
   return '线路';
 }

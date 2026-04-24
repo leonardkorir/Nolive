@@ -163,7 +163,7 @@ class HuyaLiveDataSource implements HuyaDataSource {
       return LiveSubCategory(
         id: gameId,
         parentId: categoryId,
-        name: data['gameFullName']?.toString() ?? '',
+        name: normalizeDisplayText(data['gameFullName']?.toString()),
         pic: gameId.isEmpty
             ? null
             : 'https://huyaimg.msstatic.com/cdnimage/game/$gameId-MS.jpg',
@@ -184,11 +184,11 @@ class HuyaLiveDataSource implements HuyaDataSource {
     return LiveRoom(
       providerId: ProviderId.huya.value,
       roomId: item['profileRoom']?.toString() ?? '',
-      title: title,
-      streamerName: item['nick']?.toString() ?? '',
+      title: normalizeDisplayText(title),
+      streamerName: normalizeDisplayText(item['nick']?.toString()),
       coverUrl: cover,
       keyframeUrl: cover,
-      areaName: item['gameFullName']?.toString(),
+      areaName: normalizeDisplayText(item['gameFullName']?.toString()),
       streamerAvatarUrl: item['avatar180']?.toString(),
       viewerCount: _asInt(item['totalCount']),
       isLive: true,

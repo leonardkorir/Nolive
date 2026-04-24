@@ -128,6 +128,10 @@ class MigrateSensitiveSettingsToSecureStoreUseCase {
       await secureCredentialStore.writeAll(secureValues);
     }
 
+    if (!secureCredentialStore.storesSecureValuesSeparately) {
+      return;
+    }
+
     for (final key in SensitiveSettingKeys.secureCredentialKeys) {
       if (settings.containsKey(key)) {
         await settingsRepository.remove(key);

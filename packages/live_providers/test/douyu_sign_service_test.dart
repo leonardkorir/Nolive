@@ -3,6 +3,18 @@ import 'package:live_providers/src/providers/douyu/douyu_transport.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('constructor schedules douyu signer warmup', () {
+    var warmupScheduled = false;
+    HttpDouyuSignService(
+      transport: _NoopDouyuTransport(),
+      scheduleSignerWarmUp: () {
+        warmupScheduled = true;
+      },
+    );
+
+    expect(warmupScheduled, isTrue);
+  });
+
   test('extendPlayBody keeps douyu origin-friendly playback flags', () {
     final service = HttpDouyuSignService(
       transport: _NoopDouyuTransport(),

@@ -69,6 +69,12 @@ scripts/run_main_app_android_smoke.sh
   支持 `start`、`stop`、`status`、`pull`、`pull-app-logs` 五个子命令。
   其中 `start/stop/status/pull` 面向设备侧 `logcat + dumpsys meminfo/top` 持续采集，会写入 `/sdcard/Download/nolive-logs/`；
   `pull-app-logs` 单独拉取 app 自己持续落盘的 `/sdcard/Android/data/app.nolive.mobile/files/logs/`，不依赖 active capture session。
+  拉取结果会直接平铺到本地 `app-logs/`，不再额外嵌套一层 `logs/` 目录。
+
+- `scripts/extract_main_app_persisted_log_window.sh`
+  从拉下来的 app 持久化日志里提取安装时间之后的窗口日志。
+  会递归扫描 `nolive-mobile-YYYY-MM-DD.log` 和 `nolive-mobile-YYYY-MM-DD-01.log` 这类轮转分段，避免漏掉 8MB 轮转后的新日志。
+  生成窗口文件时会自动排除已有的 `*-post-install-window.log`，并去掉完全重复的记录，避免重复执行提取时把旧窗口输出再读回去。
 
 - `scripts/run_main_app_android_smoke.sh`
   在已连接 Android 设备或模拟器上执行主链路 smoke。

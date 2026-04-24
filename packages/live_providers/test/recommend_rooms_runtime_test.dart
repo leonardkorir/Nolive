@@ -105,6 +105,29 @@ void main() {
     expect(recommend.items.single.roomId, '32558935');
     expect(recommend.items.single.viewerCount, 54321);
   });
+
+  test(
+      'bilibili recommend rooms fall back when homepage API is risk-controlled',
+      () async {
+    final transport = _FakeBilibiliRecommendFallbackTransport();
+    final authContext = BilibiliAuthContext(cookie: 'SESSDATA=test', userId: 1);
+    final provider = BilibiliProvider(
+      dataSource: BilibiliLiveDataSource(
+        transport: transport,
+        signService: BilibiliSignService(
+          transport: transport,
+          authContext: authContext,
+        ),
+        authContext: authContext,
+      ),
+    );
+
+    final recommend = await provider.fetchRecommendRooms();
+
+    expect(recommend.items, hasLength(1));
+    expect(recommend.items.single.roomId, '987654');
+    expect(recommend.items.single.viewerCount, 77777);
+  });
 }
 
 class _FakeDouyinRecommendTransport extends DouyinTransport {
@@ -384,5 +407,101 @@ class _FakeBilibiliRecommendTransport extends BilibiliTransport {
       });
     }
     fail('Unexpected bilibili recommend request: $uri');
+  }
+}
+
+class _FakeBilibiliRecommendFallbackTransport extends BilibiliTransport {
+  @override
+  Future<String> getText(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    final uri = Uri.parse(url).replace(
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
+    );
+    if (uri.toString().startsWith(
+          'https://api.bilibili.com/x/frontend/finger/spi',
+        )) {
+      return jsonEncode({
+        'code': 0,
+        'data': {'b_3': 'mock-buvid3', 'b_4': 'mock-buvid4'},
+      });
+    }
+    if (uri
+        .toString()
+        .startsWith('https://api.bilibili.com/x/web-interface/nav')) {
+      return jsonEncode({
+        'code': 0,
+        'data': {
+          'wbi_img': {
+            'img_url':
+                'https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png',
+            'sub_url':
+                'https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png',
+          },
+        },
+      });
+    }
+    if (uri.toString() == 'https://live.bilibili.com/lol') {
+      return r'{"access_id":"fallback-access"}';
+    }
+    if (uri.toString().startsWith(
+          'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
+        )) {
+      expect(uri.queryParameters['w_rid'], isNotNull);
+      expect(uri.queryParameters['wts'], isNotNull);
+      return jsonEncode({
+        'code': -352,
+        'message': 'risk control',
+        'data': {'list': const []},
+      });
+    }
+    if (uri.toString().startsWith(
+          'https://api.live.bilibili.com/room/v1/Area/getList',
+        )) {
+      return jsonEncode({
+        'code': 0,
+        'data': [
+          {
+            'id': 1,
+            'name': '网游',
+            'list': [
+              {
+                'id': 101,
+                'parent_id': 1,
+                'name': '英雄联盟',
+              },
+            ],
+          },
+        ],
+      });
+    }
+    if (uri.toString().startsWith(
+          'https://api.live.bilibili.com/xlive/web-interface/v1/second/getList',
+        )) {
+      expect(uri.queryParameters['w_rid'], isNotNull);
+      expect(uri.queryParameters['wts'], isNotNull);
+      return jsonEncode({
+        'code': 0,
+        'data': {
+          'has_more': 0,
+          'list': [
+            {
+              'roomid': 987654,
+              'title': '分类兜底房间',
+              'cover': 'https://bilibili.test/fallback-cover.jpg',
+              'system_cover': 'https://bilibili.test/fallback-keyframe.webp',
+              'area_name': '英雄联盟',
+              'uname': '分类兜底主播',
+              'face': 'https://bilibili.test/fallback-avatar.jpg',
+              'online': 77777,
+              'live_status': 1,
+            },
+          ],
+        },
+      });
+    }
+    fail('Unexpected bilibili fallback recommend request: $uri');
   }
 }

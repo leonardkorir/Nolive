@@ -5,6 +5,7 @@ import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/home/application/home_feature_dependencies.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
+import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
 import 'package:nolive_app/src/shared/presentation/gestures/responsive_tab_swipe_switcher.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
@@ -189,6 +190,8 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
   final ScrollController _scrollController = ScrollController();
 
   int _initialViewportPrefetchPasses = 0;
+  int _loadRequestId = 0;
+  int _observedProviderCatalogRevision = 0;
   bool _loadingInitial = true;
   bool _loadingMore = false;
   bool _hasMore = false;
@@ -201,12 +204,39 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
   @override
   void initState() {
     super.initState();
+    _observedProviderCatalogRevision =
+        widget.dependencies.providerCatalogRevision.value;
+    widget.dependencies.providerCatalogRevision.addListener(
+      _handleProviderCatalogRevisionChanged,
+    );
     _scrollController.addListener(_handleScroll);
     _loadFirstPage();
   }
 
   @override
+  void didUpdateWidget(covariant _HomeProviderFeedTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(
+      oldWidget.dependencies.providerCatalogRevision,
+      widget.dependencies.providerCatalogRevision,
+    )) {
+      return;
+    }
+    oldWidget.dependencies.providerCatalogRevision.removeListener(
+      _handleProviderCatalogRevisionChanged,
+    );
+    _observedProviderCatalogRevision =
+        widget.dependencies.providerCatalogRevision.value;
+    widget.dependencies.providerCatalogRevision.addListener(
+      _handleProviderCatalogRevisionChanged,
+    );
+  }
+
+  @override
   void dispose() {
+    widget.dependencies.providerCatalogRevision.removeListener(
+      _handleProviderCatalogRevisionChanged,
+    );
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -223,7 +253,17 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
     }
   }
 
+  void _handleProviderCatalogRevisionChanged() {
+    final nextRevision = widget.dependencies.providerCatalogRevision.value;
+    if (nextRevision == _observedProviderCatalogRevision) {
+      return;
+    }
+    _observedProviderCatalogRevision = nextRevision;
+    _loadFirstPage();
+  }
+
   Future<void> _loadFirstPage() async {
+    final requestId = ++_loadRequestId;
     setState(() {
       _loadingInitial = true;
       _error = null;
@@ -234,7 +274,7 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
 
     try {
       final response = await _loadRecommendPage(page: 1);
-      if (!mounted) {
+      if (!mounted || requestId != _loadRequestId) {
         return;
       }
       if (response.items.isEmpty) {
@@ -250,10 +290,17 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
         _loadingInitial = false;
       });
       _scheduleAutoLoadMoreIfNeeded();
-    } catch (error) {
-      if (!mounted) {
+    } catch (error, stackTrace) {
+      if (!mounted || requestId != _loadRequestId) {
         return;
       }
+      AppLog.instance.error(
+        'home',
+        'provider recommend load failed '
+            'provider=${widget.descriptor.id.value} page=1',
+        error: error,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _error = error;
         _loadingInitial = false;
@@ -268,9 +315,10 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
     setState(() {
       _loadingMore = true;
     });
+    final requestId = ++_loadRequestId;
     try {
       final response = await _loadRecommendPage(page: _currentPage + 1);
-      if (!mounted) {
+      if (!mounted || requestId != _loadRequestId) {
         return;
       }
       final mergedRooms = _mergeRooms(_rooms, response.items);
@@ -283,10 +331,17 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
         _loadingMore = false;
       });
       _scheduleAutoLoadMoreIfNeeded();
-    } catch (error) {
-      if (!mounted) {
+    } catch (error, stackTrace) {
+      if (!mounted || requestId != _loadRequestId) {
         return;
       }
+      AppLog.instance.error(
+        'home',
+        'provider recommend load failed '
+            'provider=${widget.descriptor.id.value} page=${_currentPage + 1}',
+        error: error,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _error = error;
         _loadingMore = false;

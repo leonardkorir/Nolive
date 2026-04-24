@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/settings/application/sensitive_setting_keys.dart';
 import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 void main() {
@@ -118,6 +121,189 @@ void main() {
       expect(
         snapshot.follows.single.lastTitle,
         '旧文件标题',
+      );
+    } finally {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    }
+  });
+
+  test(
+      'persistent bootstrap returns before deferred secure storage preload completes',
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'nolive-bootstrap-secure-deferred-',
+    );
+
+    try {
+      final storageFile = File(
+        '${tempDir.path}${Platform.pathSeparator}nolive_storage.json',
+      );
+      await storageFile.writeAsString(
+        jsonEncode({
+          'settings': {
+            'theme_mode': 'dark',
+            'account_chaturbate_cookie': 'cf_clearance=legacy-cookie',
+            'account_douyin_cookie': 'legacy-douyin-cookie',
+          },
+          'history': const [],
+          'follows': const [],
+          'tags': const [],
+        }),
+      );
+      final loaderCompleter = Completer<SecureCredentialStore>();
+
+      final bootstrap = await createPersistentAppBootstrap(
+        mode: AppRuntimeMode.live,
+        storageDirectory: tempDir,
+        secureCredentialStoreLoader: () => loaderCompleter.future,
+      ).timeout(const Duration(seconds: 10));
+
+      expect(bootstrap.themeMode.value, ThemeMode.dark);
+      expect(
+        bootstrap
+            .listAvailableProviders()
+            .any((descriptor) => descriptor.id == ProviderId.chaturbate),
+        isTrue,
+      );
+
+      loaderCompleter.complete(
+        InMemorySecureCredentialStore(
+          initialValues: {
+            SensitiveSettingKeys.accountDouyinCookie: 'secure-douyin-cookie',
+          },
+        ),
+      );
+      await bootstrap.warmUpSecureCredentialStore();
+
+      final accountSettings = await bootstrap.loadProviderAccountSettings();
+      expect(accountSettings.douyinCookie, 'secure-douyin-cookie');
+      expect(
+        await bootstrap.settingsRepository.readValue<String>(
+          SensitiveSettingKeys.accountDouyinCookie,
+        ),
+        isNull,
+      );
+    } finally {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    }
+  });
+
+  test(
+      'persistent bootstrap invalidates cached providers after secure credential preload changes snapshot',
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'nolive-bootstrap-provider-cache-refresh-',
+    );
+
+    try {
+      final storageFile = File(
+        '${tempDir.path}${Platform.pathSeparator}nolive_storage.json',
+      );
+      await storageFile.writeAsString(
+        jsonEncode({
+          'settings': {
+            'account_bilibili_cookie': 'SESSDATA=legacy-cookie',
+            'account_bilibili_user_id': 12345,
+          },
+          'history': const [],
+          'follows': const [],
+          'tags': const [],
+        }),
+      );
+      final loaderCompleter = Completer<SecureCredentialStore>();
+
+      final bootstrap = await createPersistentAppBootstrap(
+        mode: AppRuntimeMode.live,
+        storageDirectory: tempDir,
+        secureCredentialStoreLoader: () => loaderCompleter.future,
+      );
+
+      final firstProvider =
+          bootstrap.providerRegistry.create(ProviderId.bilibili);
+
+      loaderCompleter.complete(
+        InMemorySecureCredentialStore(
+          initialValues: {
+            SensitiveSettingKeys.accountBilibiliCookie:
+                'SESSDATA=secure-cookie',
+          },
+        ),
+      );
+      await bootstrap.warmUpSecureCredentialStore();
+
+      final secondProvider =
+          bootstrap.providerRegistry.create(ProviderId.bilibili);
+      final accountSettings = await bootstrap.loadProviderAccountSettings();
+
+      expect(identical(firstProvider, secondProvider), isFalse);
+      expect(accountSettings.bilibiliCookie, 'SESSDATA=secure-cookie');
+      expect(
+        await bootstrap.settingsRepository.readValue<String>(
+          SensitiveSettingKeys.accountBilibiliCookie,
+        ),
+        isNull,
+      );
+    } finally {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    }
+  });
+
+  test(
+      'persistent bootstrap falls back to legacy settings when secure storage is unavailable',
+      () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'nolive-bootstrap-secure-fallback-',
+    );
+
+    try {
+      final storageFile = File(
+        '${tempDir.path}${Platform.pathSeparator}nolive_storage.json',
+      );
+      await storageFile.writeAsString(
+        jsonEncode({
+          'settings': {
+            'theme_mode': 'dark',
+            'sync_webdav_password': 'legacy-webdav-password',
+            'account_douyin_cookie': 'legacy-douyin-cookie',
+          },
+          'history': const [],
+          'follows': const [],
+          'tags': const [],
+        }),
+      );
+
+      final bootstrap = await createPersistentAppBootstrap(
+        mode: AppRuntimeMode.live,
+        storageDirectory: tempDir,
+        secureCredentialStoreLoader: () async {
+          throw const SecureCredentialStoreUnavailableException(
+            'simulated keystore failure',
+          );
+        },
+      );
+      final syncPreferences = await bootstrap.loadSyncPreferences();
+      final accountSettings = await bootstrap.loadProviderAccountSettings();
+
+      expect(bootstrap.themeMode.value, ThemeMode.dark);
+      expect(syncPreferences.webDavPassword, 'legacy-webdav-password');
+      expect(accountSettings.douyinCookie, 'legacy-douyin-cookie');
+      expect(
+        await bootstrap.settingsRepository.readValue<String>(
+          'sync_webdav_password',
+        ),
+        'legacy-webdav-password',
+      );
+      expect(
+        await bootstrap.settingsRepository.readValue<String>(
+          'account_douyin_cookie',
+        ),
+        'legacy-douyin-cookie',
       );
     } finally {
       if (await tempDir.exists()) {

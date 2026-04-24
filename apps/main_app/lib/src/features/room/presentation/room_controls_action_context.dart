@@ -83,6 +83,8 @@ typedef RoomPersistScreenshot = Future<String?> Function({
   required String fileName,
 });
 
+typedef RoomCaptureRenderedPlayerSurface = Future<Uint8List?> Function();
+
 class RoomControlsActionContext {
   const RoomControlsActionContext({
     required this.providerId,
@@ -122,6 +124,7 @@ class RoomControlsActionContext {
     required this.openRoomDanmaku,
     required this.bindDanmakuSession,
     required this.leaveRoom,
+    this.captureRenderedPlayerSurface,
   });
 
   final ProviderId providerId;
@@ -165,4 +168,5 @@ class RoomControlsActionContext {
       openRoomDanmaku;
   final Future<void> Function(DanmakuSession? session) bindDanmakuSession;
   final Future<void> Function() leaveRoom;
+  final RoomCaptureRenderedPlayerSurface? captureRenderedPlayerSurface;
 }

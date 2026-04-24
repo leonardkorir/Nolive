@@ -123,7 +123,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   Future<void> _editChaturbateCookie(ProviderAccountDashboard dashboard) async {
     final result = await _showCookieEditor(
       title: 'Chaturbate Cookie',
-      subtitle: '建议直接粘贴浏览器完整 Cookie；有 `cf_clearance` 一起带上。',
+      subtitle:
+          '默认播放取流可匿名；如果房间页加载或 Cloudflare 校验失败，再粘贴浏览器完整 Cookie，`cf_clearance` 一并带上。',
       initialCookie: dashboard.settings.chaturbateCookie,
     );
     if (result == null) {
