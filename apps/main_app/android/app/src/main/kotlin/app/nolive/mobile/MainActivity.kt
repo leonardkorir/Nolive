@@ -171,14 +171,22 @@ class MainActivity : FlutterActivity() {
         return true
     }
 
+    private fun isTabletDevice(): Boolean {
+        val screenLayout = resources.configuration.screenLayout
+        val screenLayoutSize = screenLayout and Configuration.SCREENLAYOUT_SIZE_MASK
+        return screenLayoutSize >= Configuration.SCREENLAYOUT_SIZE_LARGE
+    }
+
     private fun lockPortrait(): Boolean {
         clearFullscreenLandscapeManagement()
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         return true
     }
 
     private fun lockPortraitFullscreen(): Boolean {
-        return lockPortrait()
+        clearFullscreenLandscapeManagement()
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        return true
     }
 
     private fun prepareForPictureInPicture(): Boolean {

@@ -1800,7 +1800,7 @@ void main() {
 
       expect(android.events, contains('getMediaVolume'));
       expect(android.events, contains('setMediaVolume'));
-      expect(find.textContaining('音量'), findsOneWidget);
+      expect(find.textContaining('音量'), findsWidgets);
 
       overlayWidget().onVerticalDragEnd(DragEndDetails());
       await tester.pump();

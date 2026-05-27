@@ -2,7 +2,7 @@ class ReleaseInfoManifest {
   const ReleaseInfoManifest._();
 
   static const fallbackAppName = 'Nolive';
-  static const fallbackVersion = '0.3.4+7';
+  static const fallbackVersion = '0.3.5+8';
   static const fallbackBundleId = 'app.nolive.mobile';
   static const primaryPlatform = 'Android mobile';
   static const flutterBaseline = 'Flutter 3.35+ stable / Dart 3.6+';
@@ -32,6 +32,7 @@ class ReleaseInfoManifest {
   ];
 
   static const highlights = <String>[
+    '修复若干已知 BUG，优化发布稳定性',
     '新增 Stripchat 平台接入，补齐房间、播放与弹幕链路',
     '文件仓储驱动的 settings / follows / history / tags 持久化链路',
     '首页、分类发现、搜索、关注、我的 已按 Android 内容流重新设计',

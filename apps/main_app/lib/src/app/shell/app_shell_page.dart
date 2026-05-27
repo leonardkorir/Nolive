@@ -48,6 +48,11 @@ class _AppShellPageState extends State<AppShellPage> {
     ),
   };
 
+  /// A GlobalKey used to preserve the state of the tab pages (e.g. scroll positions, active streams)
+  /// when the IndexedStack is reparented during screen rotation (swapping between bottom navbar
+  /// and navigation rail layouts). This key does not need to be accessed programmatically.
+  final GlobalKey _indexedStackKey = GlobalKey();
+
   late final Map<ShellTabId, Widget?> _pages = {
     for (final tabId in ShellTabId.values) tabId: null,
   };
@@ -97,6 +102,7 @@ class _AppShellPageState extends State<AppShellPage> {
         final useExtendedRail = shortestSide >= 1280;
         _pageAt(selectedTab);
         final content = IndexedStack(
+          key: _indexedStackKey,
           index: selectedIndex,
           children: [
             for (final destination in destinations)

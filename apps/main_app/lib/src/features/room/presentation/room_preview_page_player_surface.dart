@@ -231,6 +231,10 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
     this.onKeepInlinePlayerChromeVisible,
     this.danmakuOverlay,
     this.playerSuperChatOverlay,
+    this.gestureTipText,
+    this.onVerticalDragStart,
+    this.onVerticalDragUpdate,
+    this.onVerticalDragEnd,
     super.key,
   });
 
@@ -247,6 +251,10 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
   final VoidCallback? onKeepInlinePlayerChromeVisible;
   final Widget? danmakuOverlay;
   final Widget? playerSuperChatOverlay;
+  final String? gestureTipText;
+  final GestureDragStartCallback? onVerticalDragStart;
+  final GestureDragUpdateCallback? onVerticalDragUpdate;
+  final GestureDragEndCallback? onVerticalDragEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -257,49 +265,52 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
       hasPlaybackError: data.playbackStatus == PlaybackStatus.error,
     );
 
-    return AspectRatio(
-      aspectRatio:
-          data.fullscreen ? MediaQuery.of(context).size.aspectRatio : 16 / 9,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          if (!data.fullscreen &&
-              constraints.maxWidth > 0 &&
-              constraints.maxHeight > 0) {
-            onInlineViewportChanged?.call(constraints.biggest);
-          }
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              DecoratedBox(
-                decoration: const BoxDecoration(color: Colors.black),
-                child: !showPosterBackdrop || data.posterUrl == null
-                    ? null
-                    : PersistedNetworkImage(
-                        imageUrl: data.posterUrl!,
-                        bucket: PersistedImageBucket.roomCover,
-                        fit: BoxFit.cover,
-                        fallback: const SizedBox.shrink(),
-                      ),
-              ),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0x66000000),
-                      Color(0x22000000),
-                      Color(0x88000000),
-                    ],
-                  ),
+    final orientation = MediaQuery.orientationOf(context);
+    final useAspectRatio = !data.fullscreen && orientation == Orientation.portrait;
+
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        if (!data.fullscreen &&
+            constraints.maxWidth > 0 &&
+            constraints.maxHeight > 0) {
+          onInlineViewportChanged?.call(constraints.biggest);
+        }
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: const BoxDecoration(color: Colors.black),
+              child: !showPosterBackdrop || data.posterUrl == null
+                  ? null
+                  : PersistedNetworkImage(
+                      imageUrl: data.posterUrl!,
+                      bucket: PersistedImageBucket.roomCover,
+                      fit: BoxFit.cover,
+                      fallback: const SizedBox.shrink(),
+                    ),
+            ),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0x66000000),
+                    Color(0x22000000),
+                    Color(0x88000000),
+                  ],
                 ),
               ),
-              if (data.embedPlayer &&
-                  data.hasPlayback &&
-                  !data.suspendEmbeddedPlayer)
-                Positioned.fill(
-                  child: data.supportsEmbeddedView
-                      ? buildEmbeddedPlayerView(data.fullscreen ? null : 16 / 9)
+            ),
+            if (data.embedPlayer &&
+                data.hasPlayback &&
+                !data.suspendEmbeddedPlayer)
+              Positioned.fill(
+                child: data.supportsEmbeddedView
+                    ? buildEmbeddedPlayerView(
+                        data.fullscreen || orientation == Orientation.landscape
+                            ? null
+                            : 16 / 9)
                       : LayoutBuilder(
                           builder: (context, constraints) {
                             final compact = constraints.maxHeight < 140;
@@ -464,7 +475,32 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
                     behavior: HitTestBehavior.opaque,
                     onTap: onToggleInlineChrome,
                     onDoubleTap: data.hasPlayback ? onEnterFullscreen : null,
+                    onVerticalDragStart: orientation == Orientation.landscape ? onVerticalDragStart : null,
+                    onVerticalDragUpdate: orientation == Orientation.landscape ? onVerticalDragUpdate : null,
+                    onVerticalDragEnd: orientation == Orientation.landscape ? onVerticalDragEnd : null,
                     child: const SizedBox.expand(),
+                  ),
+                ),
+              if (!data.fullscreen && gestureTipText != null && gestureTipText!.isNotEmpty)
+                Center(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                      child: Text(
+                        gestureTipText!,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
                   ),
                 ),
               if (data.fullscreen &&
@@ -720,7 +756,14 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
             ],
           );
         },
-      ),
-    );
+      );
+
+    if (useAspectRatio) {
+      return AspectRatio(
+        aspectRatio: 16 / 9,
+        child: content,
+      );
+    }
+    return content;
   }
 }

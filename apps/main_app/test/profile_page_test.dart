@@ -11,14 +11,14 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ProfilePage(
-            versionLoader: () async => '0.3.4',
+            versionLoader: () async => '0.3.5',
             updateService: GithubAppUpdateService(
               releaseResolver: () async => GithubReleaseInfo(
-                version: '0.3.4',
+                version: '0.3.5',
                 releaseUri: Uri(
                   scheme: 'https',
                   host: 'github.com',
-                  path: '/leonardkorir/Nolive/releases/tag/v0.3.4',
+                  path: '/leonardkorir/Nolive/releases/tag/v0.3.5',
                 ),
               ),
             ),
@@ -43,7 +43,7 @@ void main() {
     expect(find.text('免责声明'), findsOneWidget);
     expect(find.text('开源主页'), findsOneWidget);
     expect(find.text('检查更新'), findsOneWidget);
-    expect(find.text('Ver 0.3.4'), findsOneWidget);
+    expect(find.text('Ver 0.3.5'), findsOneWidget);
   });
 
   testWidgets('profile page shows update dialog when newer release exists', (
@@ -53,14 +53,14 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ProfilePage(
-            versionLoader: () async => '0.3.4',
+            versionLoader: () async => '0.3.5',
             updateService: GithubAppUpdateService(
               releaseResolver: () async => GithubReleaseInfo(
-                version: '0.3.5',
+                version: '0.3.6',
                 releaseUri: Uri(
                   scheme: 'https',
                   host: 'github.com',
-                  path: '/leonardkorir/Nolive/releases/tag/v0.3.5',
+                  path: '/leonardkorir/Nolive/releases/tag/v0.3.6',
                 ),
               ),
             ),
@@ -81,7 +81,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('发现新版本 v0.3.5'), findsOneWidget);
+    expect(find.text('发现新版本 v0.3.6'), findsOneWidget);
     expect(find.text('前往更新'), findsOneWidget);
   });
 
@@ -92,14 +92,14 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ProfilePage(
-            versionLoader: () async => '0.3.4',
+            versionLoader: () async => '0.3.5',
             updateService: GithubAppUpdateService(
               releaseResolver: () async => GithubReleaseInfo(
-                version: '0.3.4',
+                version: '0.3.5',
                 releaseUri: Uri(
                   scheme: 'https',
                   host: 'github.com',
-                  path: '/leonardkorir/Nolive/releases/tag/v0.3.4',
+                  path: '/leonardkorir/Nolive/releases/tag/v0.3.5',
                 ),
               ),
             ),
@@ -128,7 +128,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ProfilePage(
-            versionLoader: () async => '0.3.4',
+            versionLoader: () async => '0.3.5',
             updateService: GithubAppUpdateService(
               releaseResolver: () async {
                 throw StateError('network down');

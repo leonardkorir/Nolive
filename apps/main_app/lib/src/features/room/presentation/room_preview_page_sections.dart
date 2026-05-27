@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
+import 'package:nolive_app/src/features/room/presentation/room_layout_constants.dart';
 import 'package:nolive_app/src/features/room/presentation/room_panel_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_panels.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_section_widgets.dart';
@@ -55,6 +56,203 @@ class RoomLoadingRoomShell extends StatelessWidget {
       );
     }
 
+    final loadingPlayer = Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          decoration: const BoxDecoration(color: Colors.black),
+          child: data.posterUrl == null
+              ? null
+              : PersistedNetworkImage(
+                  imageUrl: data.posterUrl!,
+                  bucket: PersistedImageBucket.roomCover,
+                  fit: BoxFit.cover,
+                  fallback: const SizedBox.shrink(),
+                ),
+        ),
+        if (embeddedPlayerView != null)
+          IgnorePointer(
+            child: embeddedPlayerView!,
+          ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0x66000000),
+                Color(0x22000000),
+                Color(0xAA000000),
+              ],
+            ),
+          ),
+        ),
+        Center(
+          child: Container(
+            key: const Key('room-loading-shell'),
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 16,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.62),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator.adaptive(),
+                const SizedBox(height: 14),
+                Text(
+                  '正在进入 $providerLabel 房间',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  roomTitle,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final orientation = MediaQuery.orientationOf(context);
+    if (orientation == Orientation.landscape) {
+      return ColoredBox(
+        color: colorScheme.surface,
+        child: Row(
+          children: [
+            Expanded(
+              child: loadingPlayer,
+            ),
+            const VerticalDivider(width: 1),
+            SizedBox(
+              width: kRoomLandscapeSidePanelWidth,
+              child: Column(
+                children: [
+                  Material(
+                    color: colorScheme.surface,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 21,
+                            backgroundColor: colorScheme.secondaryContainer,
+                            child: Text(
+                              avatarLabel.isEmpty ? '?' : avatarLabel,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: colorScheme.onSecondaryContainer,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  streamerName.isEmpty ? '正在读取主播信息' : streamerName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  providerLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  IgnorePointer(
+                    child: Material(
+                      color: colorScheme.surface,
+                      child: Row(
+                        children: [
+                          buildTab('聊天', const Key('room-panel-tab-chat'), true),
+                          buildTab(
+                            'SC',
+                            const Key('room-panel-tab-super-chat'),
+                            false,
+                          ),
+                          buildTab('关注', const Key('room-panel-tab-follow'), false),
+                          buildTab(
+                            '设置',
+                            const Key('room-panel-tab-settings'),
+                            false,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      children: [
+                        AppSurfaceCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '房间已经进入，后台继续加载播放和聊天数据',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                '视频源解析中',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '弹幕与关注状态稍后补齐',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return ColoredBox(
       color: colorScheme.surface,
       child: ListView(
@@ -62,77 +260,7 @@ class RoomLoadingRoomShell extends StatelessWidget {
         children: [
           AspectRatio(
             aspectRatio: 16 / 9,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                DecoratedBox(
-                  decoration: const BoxDecoration(color: Colors.black),
-                  child: data.posterUrl == null
-                      ? null
-                      : PersistedNetworkImage(
-                          imageUrl: data.posterUrl!,
-                          bucket: PersistedImageBucket.roomCover,
-                          fit: BoxFit.cover,
-                          fallback: const SizedBox.shrink(),
-                        ),
-                ),
-                if (embeddedPlayerView != null)
-                  IgnorePointer(
-                    child: embeddedPlayerView!,
-                  ),
-                const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Color(0x66000000),
-                        Color(0x22000000),
-                        Color(0xAA000000),
-                      ],
-                    ),
-                  ),
-                ),
-                Center(
-                  child: Container(
-                    key: const Key('room-loading-shell'),
-                    constraints: const BoxConstraints(maxWidth: 320),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.62),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const CircularProgressIndicator.adaptive(),
-                        const SizedBox(height: 14),
-                        Text(
-                          '正在进入 $providerLabel 房间',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          roomTitle,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: Colors.white.withValues(alpha: 0.9),
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            child: loadingPlayer,
           ),
           Material(
             color: colorScheme.surface,
@@ -306,6 +434,45 @@ class RoomPreviewSections extends StatelessWidget {
         _RoomPanelScrollPage(child: controlsPanel),
       ],
     );
+
+    final orientation = MediaQuery.orientationOf(context);
+    if (orientation == Orientation.landscape) {
+      return ColoredBox(
+        color: Theme.of(context).colorScheme.surface,
+        child: Column(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Expanded(child: playerSurface),
+                  const VerticalDivider(width: 1),
+                  SizedBox(
+                    width: kRoomLandscapeSidePanelWidth,
+                    child: Column(
+                      children: [
+                        _RoomHeader(data: data),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                            child: panelPager,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _RoomBottomActions(
+              isFollowed: data.isFollowed,
+              onToggleFollow: onToggleFollow,
+              onRefresh: onRefresh,
+              onShareRoom: onShareRoom,
+            ),
+          ],
+        ),
+      );
+    }
 
     return ColoredBox(
       color: Theme.of(context).colorScheme.surface,

@@ -361,6 +361,12 @@ class RoomFullscreenSessionController extends ChangeNotifier {
           DeviceOrientation.landscapeRight,
         ]);
       }
+      if (_disposed) {
+        return;
+      }
+      await platforms.systemUi.setEnabledSystemUIMode(
+        SystemUiMode.immersiveSticky,
+      );
     } catch (error) {
       bindings.trace('apply fullscreen system ui failed: $error');
       bindings.showMessage('切换全屏失败：$error');
@@ -374,11 +380,10 @@ class RoomFullscreenSessionController extends ChangeNotifier {
     try {
       if (platforms.androidPlaybackBridge.isSupported) {
         await platforms.androidPlaybackBridge.lockPortrait();
-      } else {
-        await platforms.systemUi.setPreferredOrientations(
-          DeviceOrientation.values,
-        );
       }
+      await platforms.systemUi.setPreferredOrientations(
+        DeviceOrientation.values,
+      );
       if (_disposed) {
         return;
       }

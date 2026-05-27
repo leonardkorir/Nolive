@@ -5,6 +5,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 
 import 'room_fullscreen_session_platforms.dart';
 import 'room_gesture_ui_state.dart';
+import 'room_layout_constants.dart';
 import 'room_view_ui_state.dart';
 
 class RoomFullscreenChromeContext {
@@ -263,16 +264,22 @@ class RoomFullscreenChromeController {
       return;
     }
     final viewState = context.readViewUiState();
+    final screenSize = context.resolveScreenSize();
+    // Note: screenSize.width > screenSize.height matches Orientation.landscape logic
+    // where BuildContext is not directly available in this controller context.
+    final isLandscapeInline = !viewState.fullscreenSessionActive && screenSize.width > screenSize.height;
     if (!context.androidPlaybackBridge.isSupported ||
-        !viewState.fullscreenSessionActive ||
+        (!viewState.fullscreenSessionActive && !isLandscapeInline) ||
         viewState.lockFullscreenControls) {
       return;
     }
-    final screenSize = context.resolveScreenSize();
+    final widthThreshold = (screenSize.width - kRoomLandscapeSidePanelWidth).clamp(0.0, double.infinity);
     context.updateGestureUiState(
       (current) => current.copyWith(
         tracking: true,
-        adjustingBrightness: details.globalPosition.dx < screenSize.width / 2,
+        adjustingBrightness: viewState.fullscreenSessionActive
+            ? details.globalPosition.dx < screenSize.width / 2
+            : details.globalPosition.dx < widthThreshold / 2,
         startY: details.globalPosition.dy,
       ),
     );

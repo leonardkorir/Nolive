@@ -100,6 +100,29 @@ void main() {
     await harness.dispose();
   });
 
+  testWidgets('cancel pending fullscreen bootstrap restores tablet orientation', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness(screenSize: const Size(800, 1280));
+    addTearDown(harness.dispose);
+
+    await harness.controller.initialize(startInFullscreen: true);
+    await harness.controller.cancelPendingFullscreenBootstrap(
+      scheduleInlineChrome: true,
+    );
+
+    expect(harness.controller.viewUiState.isFullscreen, isFalse);
+    expect(harness.controller.viewUiState.fullscreenBootstrapPending, isFalse);
+    expect(harness.controller.viewUiState.showInlinePlayerChrome, isTrue);
+    expect(harness.android.events, contains('lockPortrait'));
+    expect(
+      harness.systemUi.lastOrientations,
+      containsAll(DeviceOrientation.values),
+    );
+
+    await harness.dispose();
+  });
+
   testWidgets('enter fullscreen swallows platform failures and reports them', (
     tester,
   ) async {
@@ -609,6 +632,7 @@ class _ControllerHarness {
     this.playerBackend = PlayerBackend.mpv,
     this.refreshableRuntime = false,
     this.verticalVideo = false,
+    this.screenSize = const Size(360, 640),
   }) : player = TestRecordingPlayer(playerBackend: playerBackend),
        android = TestRoomAndroidPlaybackBridgeFacade(),
        pipHost = TestRoomPipHostFacade(),
@@ -638,7 +662,7 @@ class _ControllerHarness {
           volume = value;
         },
         resolvePipAspectRatio: () => Rational(16, 9),
-        resolveScreenSize: () => const Size(1080, 1920),
+        resolveScreenSize: () => screenSize,
         resolvePlaybackSourceForLifecycleRestore: () async {
           resolvePlaybackSourceForLifecycleRestoreCalls += 1;
           return restoredPlaybackSource;
@@ -659,6 +683,7 @@ class _ControllerHarness {
   final PlayerBackend playerBackend;
   final bool refreshableRuntime;
   final bool verticalVideo;
+  final Size screenSize;
   final TestRecordingPlayer player;
   final TestRoomAndroidPlaybackBridgeFacade android;
   final TestRoomPipHostFacade pipHost;

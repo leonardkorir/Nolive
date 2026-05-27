@@ -1805,6 +1805,10 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                           : null,
                     ),
                     buildEmbeddedPlayerView: _embeddedPlayerView,
+                    gestureTipText: _gestureUiState.tipText,
+                    onVerticalDragStart: _handleVerticalDragStart,
+                    onVerticalDragUpdate: _handleVerticalDragUpdate,
+                    onVerticalDragEnd: _handleVerticalDragEnd,
                     onInlineViewportChanged: (size) {
                       if (_inlinePlayerViewportSize == size) {
                         return;
