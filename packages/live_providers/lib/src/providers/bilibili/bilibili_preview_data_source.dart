@@ -62,7 +62,7 @@ class BilibiliPreviewDataSource implements BilibiliDataSource {
       sourceUrl: 'https://live.bilibili.com/6',
       isLive: true,
       viewerCount: 1024,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
     ),
     '66666': LiveRoomDetail(
       providerId: 'bilibili',
@@ -77,11 +77,11 @@ class BilibiliPreviewDataSource implements BilibiliDataSource {
       sourceUrl: 'https://live.bilibili.com/66666',
       isLive: true,
       viewerCount: 2048,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
     ),
   };
 
-  static const List<LivePlayQuality> _qualities = [
+  static final List<LivePlayQuality> _qualities = List.unmodifiable([
     LivePlayQuality(
       id: '80',
       label: '流畅',
@@ -95,7 +95,7 @@ class BilibiliPreviewDataSource implements BilibiliDataSource {
       sortOrder: 150,
       metadata: {'qn': 150},
     ),
-  ];
+  ]);
 
   @override
   Future<List<LiveCategory>> fetchCategories() async {

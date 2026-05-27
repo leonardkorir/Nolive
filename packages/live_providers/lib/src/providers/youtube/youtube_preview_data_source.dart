@@ -69,9 +69,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       sourceUrl: 'https://www.youtube.com/watch?v=Z3eFGbFcaXs',
       isLive: true,
       viewerCount: 12034,
-      danmakuToken: {
-        'mode': 'preview',
-      },
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'resolvedVideoId': 'Z3eFGbFcaXs',
         'hlsManifestUrl':
@@ -88,9 +86,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       sourceUrl: 'https://www.youtube.com/watch?v=Z3eFGbFcaXs',
       isLive: true,
       viewerCount: 12034,
-      danmakuToken: {
-        'mode': 'preview',
-      },
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'resolvedVideoId': 'Z3eFGbFcaXs',
         'hlsManifestUrl':
@@ -107,9 +103,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       sourceUrl: 'https://www.youtube.com/watch?v=Z3eFGbFcaXs',
       isLive: true,
       viewerCount: 4821,
-      danmakuToken: {
-        'mode': 'preview',
-      },
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'resolvedVideoId': 'Z3eFGbFcaXs',
         'hlsManifestUrl':
@@ -126,9 +120,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       sourceUrl: 'https://www.youtube.com/watch?v=jfKfPfyJRdk',
       isLive: true,
       viewerCount: 35687,
-      danmakuToken: {
-        'mode': 'preview',
-      },
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'resolvedVideoId': 'jfKfPfyJRdk',
         'hlsManifestUrl':

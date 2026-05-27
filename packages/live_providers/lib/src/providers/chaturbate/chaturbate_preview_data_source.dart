@@ -57,7 +57,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
       sourceUrl: 'https://chaturbate.com/kittengirlxo/',
       isLive: true,
       viewerCount: 9627,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'roomStatus': 'public',
         'edgeRegion': 'AUS',
@@ -77,7 +77,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
       sourceUrl: 'https://chaturbate.com/emilygrey_/',
       isLive: true,
       viewerCount: 8910,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'roomStatus': 'public',
         'edgeRegion': 'AUS',
@@ -94,7 +94,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
       sourceUrl: 'https://chaturbate.com/sladkoesolnishko/',
       isLive: true,
       viewerCount: 4210,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'roomStatus': 'public',
         'edgeRegion': 'AMS',
@@ -111,7 +111,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
       sourceUrl: 'https://chaturbate.com/cutie_lilliana/',
       isLive: true,
       viewerCount: 506,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'roomStatus': 'public',
         'edgeRegion': 'IAD',
@@ -121,13 +121,13 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
     ),
   };
 
-  static const List<LivePlayQuality> _qualities = [
+  static final List<LivePlayQuality> _qualities = List.unmodifiable([
     LivePlayQuality(
       id: 'auto',
       label: 'Auto',
       isDefault: true,
     ),
-  ];
+  ]);
 
   @override
   Future<List<LiveCategory>> fetchCategories() async {

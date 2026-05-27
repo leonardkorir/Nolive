@@ -102,7 +102,7 @@ class ChaturbateHlsMasterPlaylistParser {
     required String playlistUrl,
     required List<String> lines,
   }) {
-    final groups = <String, String>{};
+    final groups = <String, ({String url, int score})>{};
     final baseUri = Uri.parse(playlistUrl);
     for (final line in lines) {
       if (!line.startsWith('#EXT-X-MEDIA:')) {
@@ -119,9 +119,26 @@ class ChaturbateHlsMasterPlaylistParser {
       if (groupId.isEmpty || uri.isEmpty) {
         continue;
       }
-      groups[groupId] = baseUri.resolve(uri).toString();
+      final resolvedUrl = baseUri.resolve(uri).toString();
+      final score =
+          _audioGroupScore(attributes['DEFAULT'], attributes['AUTOSELECT']);
+      final existing = groups[groupId];
+      if (existing == null || score >= existing.score) {
+        groups[groupId] = (url: resolvedUrl, score: score);
+      }
     }
-    return groups;
+    return groups.map((key, value) => MapEntry(key, value.url));
+  }
+
+  int _audioGroupScore(String? defaultValue, String? autoselectValue) {
+    var score = 0;
+    if ((defaultValue ?? '').trim().toUpperCase() == 'YES') {
+      score += 2;
+    }
+    if ((autoselectValue ?? '').trim().toUpperCase() == 'YES') {
+      score += 1;
+    }
+    return score;
   }
 
   Map<String, String> _parseAttributes(String raw) {

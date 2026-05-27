@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+
 import 'package:dart_sm/dart_sm.dart';
+
+import 'douyin_request_params.dart';
 
 class StringProcessor {
   static String toCharStr(List<int> codes) {
@@ -620,7 +623,7 @@ class ABogus {
   ABogus({String? fp, String? userAgent, List<int>? options})
       : userAgent = userAgent != null && userAgent.isNotEmpty
             ? userAgent
-            : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+            : DouyinRequestParams.kDefaultUserAgent,
         browserFp = fp != null && fp.isNotEmpty
             ? fp
             : BrowserFingerprintGenerator.generateFingerprint(

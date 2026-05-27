@@ -1,5 +1,8 @@
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
+import 'bilibili_sign_service.dart';
+
 class BilibiliMapper {
   const BilibiliMapper._();
 
@@ -7,15 +10,16 @@ class BilibiliMapper {
     Map<String, dynamic> response, {
     required int page,
   }) {
-    final data = _asMap(response['data']);
-    final result = _asMap(data['result']);
-    final rooms = _asList(result['live_room']);
+    final data = ProviderJson.asMap(response['data']);
+    final result = ProviderJson.asMap(data['result']);
+    final rooms = ProviderJson.asList(result['live_room']);
     final items = rooms
-        .map((item) => mapSearchRoom(_asMap(item)))
+        .map((item) => _tryMapSearchRoom(ProviderJson.asMap(item)))
+        .whereType<LiveRoom>()
         .toList(growable: false);
-    final pageInfo = _asMap(data['pageinfo']);
-    final liveRoomInfo = _asMap(pageInfo['live_room']);
-    final numPages = _asInt(liveRoomInfo['numPages']) ?? 1;
+    final pageInfo = ProviderJson.asMap(data['pageinfo']);
+    final liveRoomInfo = ProviderJson.asMap(pageInfo['live_room']);
+    final numPages = ProviderJson.asInt(liveRoomInfo['numPages']) ?? 1;
 
     return PagedResponse(
       items: items,
@@ -25,18 +29,40 @@ class BilibiliMapper {
   }
 
   static LiveRoom mapSearchRoom(Map<String, dynamic> item) {
+    final roomId = _normalizeRoomId(item['roomid']);
+    if (roomId == null) {
+      throw ProviderParseException(
+        providerId: ProviderId.bilibili,
+        message: 'Bilibili 搜索结果缺少有效 roomid。',
+      );
+    }
     return LiveRoom(
       providerId: ProviderId.bilibili.value,
-      roomId: item['roomid'].toString(),
+      roomId: roomId,
       title: _stripHighlight(item['title']?.toString()),
       streamerName: normalizeDisplayText(item['uname']?.toString()),
       coverUrl: _normalizeAssetUrl(item['user_cover']?.toString()),
       keyframeUrl: _normalizeAssetUrl(item['cover']?.toString()),
       areaName: _stripHighlight(item['cate_name']?.toString()),
       streamerAvatarUrl: _normalizeAssetUrl(item['uface']?.toString()),
-      viewerCount: _asInt(item['online']),
-      isLive: (_asInt(item['live_status']) ?? 0) == 1,
+      viewerCount: ProviderJson.asInt(item['online']),
+      isLive: (ProviderJson.asInt(item['live_status']) ?? 0) == 1,
     );
+  }
+
+  static LiveRoom? _tryMapSearchRoom(Map<String, dynamic> item) {
+    if (_normalizeRoomId(item['roomid']) == null) {
+      return null;
+    }
+    return mapSearchRoom(item);
+  }
+
+  static String? _normalizeRoomId(Object? value) {
+    final roomId = value?.toString().trim() ?? '';
+    if (roomId.isEmpty || roomId == 'null') {
+      return null;
+    }
+    return roomId;
   }
 
   static LiveRoomDetail mapRoomDetail({
@@ -47,34 +73,32 @@ class BilibiliMapper {
     required String cookie,
     required int userId,
   }) {
-    final roomInfo = _asMap(roomInfoData['room_info']);
-    final anchorInfo = _asMap(roomInfoData['anchor_info']);
-    final anchorBaseInfo = _asMap(anchorInfo['base_info']);
-    final serverHosts = _asList(danmakuInfoData['host_list'])
-        .map((item) => _asMap(item)['host']?.toString() ?? '')
+    final roomInfo = ProviderJson.asMap(roomInfoData['room_info']);
+    final anchorInfo = ProviderJson.asMap(roomInfoData['anchor_info']);
+    final anchorBaseInfo = ProviderJson.asMap(anchorInfo['base_info']);
+    final serverHosts = ProviderJson.asList(danmakuInfoData['host_list'])
+        .map((item) => ProviderJson.asMap(item)['host']?.toString() ?? '')
         .where((item) => item.isNotEmpty)
         .toList(growable: false);
     final realRoomId = roomInfo['room_id']?.toString() ?? requestedRoomId;
-    final liveStartTime = _asInt(roomInfo['live_start_time']);
+    final liveStartTime = ProviderJson.asInt(roomInfo['live_start_time']);
     final danmakuMode = danmakuInfoData['mode']?.toString() ?? '';
     final danmakuToken = danmakuMode == 'unavailable'
-        ? <String, Object?>{
-            'mode': 'unavailable',
-            'reason': danmakuInfoData['reason']?.toString() ??
+        ? UnavailableDanmakuToken(
+            reason: danmakuInfoData['reason']?.toString() ??
                 '哔哩哔哩当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',
-            if (danmakuInfoData['cause'] != null)
-              'cause': danmakuInfoData['cause']?.toString(),
-          }
-        : <String, Object?>{
-            'roomId': _asInt(realRoomId) ?? 0,
-            'uid': userId,
-            'token': danmakuInfoData['token']?.toString() ?? '',
-            'serverHost': serverHosts.isNotEmpty
+            cause: danmakuInfoData['cause']?.toString(),
+          )
+        : BilibiliDanmakuToken(
+            roomId: ProviderJson.asInt(realRoomId) ?? 0,
+            uid: userId,
+            token: danmakuInfoData['token']?.toString() ?? '',
+            serverHost: serverHosts.isNotEmpty
                 ? serverHosts.first
                 : 'broadcastlv.chat.bilibili.com',
-            'buvid': buvid3,
-            'cookie': cookie,
-          };
+            buvid: buvid3,
+            cookie: cookie,
+          );
 
     return LiveRoomDetail(
       providerId: ProviderId.bilibili.value,
@@ -90,8 +114,8 @@ class BilibiliMapper {
       startedAt: liveStartTime == null || liveStartTime <= 0
           ? null
           : DateTime.fromMillisecondsSinceEpoch(liveStartTime * 1000),
-      isLive: (_asInt(roomInfo['live_status']) ?? 0) == 1,
-      viewerCount: _asInt(roomInfo['online']),
+      isLive: (ProviderJson.asInt(roomInfo['live_status']) ?? 0) == 1,
+      viewerCount: ProviderJson.asInt(roomInfo['online']),
       danmakuToken: danmakuToken,
       metadata: {
         'requestedRoomId': requestedRoomId,
@@ -102,17 +126,17 @@ class BilibiliMapper {
 
   static List<LivePlayQuality> mapPlayQualities(Map<String, dynamic> response) {
     final playUrl = _playUrlPayload(response);
-    final currentQn = _asInt(playUrl['current_qn']);
+    final currentQn = ProviderJson.asInt(playUrl['current_qn']);
     final qualityMap = <int, String>{
-      for (final item in _asList(playUrl['g_qn_desc']))
-        _asInt(_asMap(item)['qn']) ?? 0:
-            _asMap(item)['desc']?.toString() ?? '未知清晰度',
+      for (final item in ProviderJson.asList(playUrl['g_qn_desc']))
+        ProviderJson.asInt(ProviderJson.asMap(item)['qn']) ?? 0:
+            ProviderJson.asMap(item)['desc']?.toString() ?? '未知清晰度',
     };
 
     final firstCodec = _firstCodec(playUrl);
-    final acceptQn = _asList(firstCodec['accept_qn']);
+    final acceptQn = ProviderJson.asList(firstCodec['accept_qn']);
     final qualities = acceptQn
-        .map((item) => _asInt(item) ?? 0)
+        .map((item) => ProviderJson.asInt(item) ?? 0)
         .where((item) => item > 0)
         .map(
           (item) => LivePlayQuality(
@@ -151,13 +175,17 @@ class BilibiliMapper {
       Map<String, Object?> metadata,
     })>[];
 
-    for (final stream in _asList(playUrl['stream'])) {
-      for (final format in _asList(_asMap(stream)['format'])) {
-        for (final codec in _asList(_asMap(format)['codec'])) {
-          final codecMap = _asMap(codec);
+    for (final stream in ProviderJson.asList(playUrl['stream'])) {
+      for (final format in ProviderJson.asList(
+        ProviderJson.asMap(stream)['format'],
+      )) {
+        for (final codec in ProviderJson.asList(
+          ProviderJson.asMap(format)['codec'],
+        )) {
+          final codecMap = ProviderJson.asMap(codec);
           final baseUrl = codecMap['base_url']?.toString() ?? '';
-          for (final urlInfo in _asList(codecMap['url_info'])) {
-            final urlInfoMap = _asMap(urlInfo);
+          for (final urlInfo in ProviderJson.asList(codecMap['url_info'])) {
+            final urlInfoMap = ProviderJson.asMap(urlInfo);
             final host = urlInfoMap['host']?.toString() ?? '';
             final extra = urlInfoMap['extra']?.toString() ?? '';
             final fullUrl = '$host$baseUrl$extra';
@@ -165,11 +193,13 @@ class BilibiliMapper {
               continue;
             }
             final uri = Uri.tryParse(fullUrl);
-            final qn = _asInt(codecMap['current_qn']) ??
-                _asInt(playUrl['current_qn']) ??
-                _asInt(uri?.queryParameters['qn']);
-            final expectedQn =
-                _asInt(uri?.queryParameters['expected_qn']) ?? qn;
+            final qn = ProviderJson.asInt(codecMap['current_qn']) ??
+                ProviderJson.asInt(playUrl['current_qn']) ??
+                ProviderJson.asInt(uri?.queryParameters['qn']);
+            final expectedQn = ProviderJson.asInt(
+                  uri?.queryParameters['expected_qn'],
+                ) ??
+                qn;
             urls.add(
               (
                 url: fullUrl,
@@ -196,11 +226,11 @@ class BilibiliMapper {
 
     final sorted = uniqueUrls.entries.toList(growable: false)
       ..sort((a, b) {
-        final leftQn = _asInt(a.value.metadata['expectedQn']) ??
-            _asInt(a.value.metadata['qn']) ??
+        final leftQn = ProviderJson.asInt(a.value.metadata['expectedQn']) ??
+            ProviderJson.asInt(a.value.metadata['qn']) ??
             0;
-        final rightQn = _asInt(b.value.metadata['expectedQn']) ??
-            _asInt(b.value.metadata['qn']) ??
+        final rightQn = ProviderJson.asInt(b.value.metadata['expectedQn']) ??
+            ProviderJson.asInt(b.value.metadata['qn']) ??
             0;
         final qualityCompare = rightQn.compareTo(leftQn);
         if (qualityCompare != 0) {
@@ -217,10 +247,7 @@ class BilibiliMapper {
             url: entry.key,
             headers: const {
               'referer': 'https://live.bilibili.com',
-              'user-agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                      '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 '
-                      'Edg/126.0.0.0',
+              'user-agent': BilibiliSignService.defaultUserAgent,
             },
             lineLabel: entry.value.lineLabel,
             metadata: entry.value.metadata,
@@ -230,20 +257,24 @@ class BilibiliMapper {
   }
 
   static Map<String, dynamic> _playUrlPayload(Map<String, dynamic> response) {
-    final data = _asMap(response['data']);
-    final playurlInfo = _asMap(data['playurl_info']);
-    return _asMap(playurlInfo['playurl']);
+    final data = ProviderJson.asMap(response['data']);
+    final playurlInfo = ProviderJson.asMap(data['playurl_info']);
+    return ProviderJson.asMap(playurlInfo['playurl']);
   }
 
   static Map<String, dynamic> _firstCodec(Map<String, dynamic> playUrl) {
-    final streams = _asList(playUrl['stream']);
-    final stream =
-        streams.isEmpty ? const <String, dynamic>{} : _asMap(streams.first);
-    final formats = _asList(stream['format']);
-    final format =
-        formats.isEmpty ? const <String, dynamic>{} : _asMap(formats.first);
-    final codecs = _asList(format['codec']);
-    return codecs.isEmpty ? const <String, dynamic>{} : _asMap(codecs.first);
+    final streams = ProviderJson.asList(playUrl['stream']);
+    final stream = streams.isEmpty
+        ? const <String, dynamic>{}
+        : ProviderJson.asMap(streams.first);
+    final formats = ProviderJson.asList(stream['format']);
+    final format = formats.isEmpty
+        ? const <String, dynamic>{}
+        : ProviderJson.asMap(formats.first);
+    final codecs = ProviderJson.asList(format['codec']);
+    return codecs.isEmpty
+        ? const <String, dynamic>{}
+        : ProviderJson.asMap(codecs.first);
   }
 
   static String _stripHighlight(String? value) {
@@ -260,29 +291,5 @@ class BilibiliMapper {
       return 'https:$value';
     }
     return value;
-  }
-
-  static Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
-  }
-
-  static List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
-  }
-
-  static int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    return int.tryParse(value?.toString() ?? '');
   }
 }

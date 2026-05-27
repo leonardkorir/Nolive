@@ -6,6 +6,7 @@ APP_DIR="$ROOT_DIR/apps/main_app"
 MANIFEST_FILE="$APP_DIR/lib/src/features/settings/application/release_info_manifest.dart"
 PUBSPEC_FILE="$APP_DIR/pubspec.yaml"
 ANDROID_BUILD_FILE="$APP_DIR/android/app/build.gradle.kts"
+ANDROID_MANIFEST_FILE="$APP_DIR/android/app/src/main/AndroidManifest.xml"
 CHANGELOG_FILE="$ROOT_DIR/CHANGELOG.md"
 README_FILE="$ROOT_DIR/README.md"
 SCRIPTS_README_FILE="$ROOT_DIR/scripts/README.md"
@@ -76,6 +77,8 @@ check_contains 'Android guide' 'scripts/build_main_app.sh android-release-accept
 check_contains 'Release checklist' 'scripts/build_main_app.sh android-release-ready' "$RELEASE_CHECKLIST_FILE"
 check_contains 'Release checklist' 'scripts/run_main_app_android_smoke.sh' "$RELEASE_CHECKLIST_FILE"
 check_contains 'Release checklist' 'scripts/build_main_app.sh android-release-acceptance' "$RELEASE_CHECKLIST_FILE"
+check_contains 'Android manifest' 'android:name="android.hardware.camera"' "$ANDROID_MANIFEST_FILE"
+check_contains 'Android manifest' 'android:required="false"' "$ANDROID_MANIFEST_FILE"
 
 if [[ "$failures" -gt 0 ]]; then
   echo "[release-metadata] verification failed with $failures issue(s)" >&2

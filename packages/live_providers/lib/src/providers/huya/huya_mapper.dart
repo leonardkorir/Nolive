@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
+
 class HuyaMapper {
   const HuyaMapper._();
 
@@ -9,7 +11,10 @@ class HuyaMapper {
     String responseText, {
     required int page,
   }) {
-    final response = jsonDecode(responseText) as Map<String, dynamic>;
+    final response = _decodeMap(
+      responseText,
+      context: 'search response',
+    );
     final docs = _asList(_asMap(_asMap(response['response'])['3'])['docs']);
     final numFound =
         _asInt(_asMap(_asMap(response['response'])['3'])['numFound']) ?? 0;
@@ -58,8 +63,14 @@ class HuyaMapper {
       );
     }
 
-    final roomData = jsonDecode(roomDataJson) as Map<String, dynamic>;
-    final streamJson = jsonDecode(streamJsonRaw) as Map<String, dynamic>;
+    final roomData = _decodeMap(
+      roomDataJson,
+      context: 'room data',
+    );
+    final streamJson = _decodeMap(
+      streamJsonRaw,
+      context: 'stream data',
+    );
     final streamDataJson = _asMap(_asList(streamJson['data']).firstOrNull);
     final liveInfo = _asMap(streamDataJson['gameLiveInfo']);
     final streamInfoList = _asList(streamDataJson['gameStreamInfoList']);
@@ -134,11 +145,11 @@ class HuyaMapper {
       sourceUrl: 'https://www.huya.com/$requestedRoomId',
       isLive: status,
       viewerCount: _asInt(liveInfo['totalCount']),
-      danmakuToken: {
-        'ayyuid': yySid ?? 0,
-        'topSid': topSid ?? 0,
-        'subSid': subSid ?? 0,
-      },
+      danmakuToken: HuyaDanmakuToken(
+        ayyuid: yySid ?? 0,
+        topSid: topSid ?? 0,
+        subSid: subSid ?? 0,
+      ),
       metadata: {
         'isReplay': roomData['isReplay'] == true,
         'lines': lines,
@@ -226,31 +237,42 @@ class HuyaMapper {
         }
       }
     }
+    if (depth > 0) {
+      throw ProviderParseException(
+        providerId: ProviderId.huya,
+        message: 'Huya $marker JSON payload was truncated.',
+      );
+    }
     return null;
   }
 
   static Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   static List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   static int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
+    return ProviderJson.asInt(value);
+  }
+
+  static Map<String, dynamic> _decodeMap(
+    String source, {
+    required String context,
+  }) {
+    final decoded = jsonDecode(source);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
     }
-    return int.tryParse(value?.toString() ?? '');
+    if (decoded is Map) {
+      return decoded.cast<String, dynamic>();
+    }
+    throw ProviderParseException(
+      providerId: ProviderId.huya,
+      message: 'Huya $context payload type was ${decoded.runtimeType}.',
+    );
   }
 }
 

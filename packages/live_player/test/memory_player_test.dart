@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
+import 'package:live_player/src/simulated_backend_player.dart';
 
 void main() {
   test('memory player emits ready and playing states', () async {
@@ -28,6 +29,57 @@ void main() {
     expect(player.supportsEmbeddedView, isFalse);
 
     await subscription.cancel();
+    await player.dispose();
+  });
+
+  test('memory player stop clears current source', () async {
+    final player = MemoryPlayer();
+    final source =
+        PlaybackSource(url: Uri.parse('https://example.com/live.m3u8'));
+
+    await player.initialize();
+    await player.setSource(source);
+    await player.stop();
+
+    expect(player.currentSource, isNull);
+    expect(player.currentState.source, isNull);
+    expect(player.currentState.status, PlaybackStatus.ready);
+
+    await player.dispose();
+  });
+
+  test('simulated player stop clears source before next play', () async {
+    final player = SimulatedBackendPlayer(
+      backend: PlayerBackend.memory,
+      startupDelay: Duration.zero,
+      bufferDelay: Duration.zero,
+    );
+    final source =
+        PlaybackSource(url: Uri.parse('https://example.com/live.m3u8'));
+
+    await player.initialize();
+    await player.setSource(source);
+    await player.stop();
+    await player.play();
+
+    expect(player.currentState.source, isNull);
+    expect(player.currentState.status, PlaybackStatus.error);
+    expect(
+      player.currentState.errorMessage,
+      'Playback source has not been resolved.',
+    );
+
+    await player.dispose();
+  });
+
+  test('simulated player dispose is idempotent', () async {
+    final player = SimulatedBackendPlayer(
+      backend: PlayerBackend.memory,
+      startupDelay: Duration.zero,
+      bufferDelay: Duration.zero,
+    );
+
+    await player.dispose();
     await player.dispose();
   });
 

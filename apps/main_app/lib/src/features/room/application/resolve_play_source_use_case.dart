@@ -3,25 +3,35 @@ import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:live_providers/live_providers.dart';
 
-typedef WrapTwitchPlayUrls = Future<List<LivePlayUrl>> Function({
-  required LivePlayQuality quality,
-  required List<LivePlayUrl> playUrls,
-});
+typedef WrapTwitchPlayUrls =
+    Future<List<LivePlayUrl>> Function({
+      required LivePlayQuality quality,
+      required List<LivePlayUrl> playUrls,
+    });
 
-typedef WrapChaturbatePlayUrls = Future<List<LivePlayUrl>> Function({
-  required LivePlayQuality quality,
-  required List<LivePlayUrl> playUrls,
-});
+typedef WrapChaturbatePlayUrls =
+    Future<List<LivePlayUrl>> Function({
+      required LivePlayQuality quality,
+      required List<LivePlayUrl> playUrls,
+    });
+
+typedef WrapStripchatPlayUrls =
+    Future<List<LivePlayUrl>> Function({
+      required LivePlayQuality quality,
+      required List<LivePlayUrl> playUrls,
+    });
 
 class ResolvePlaySourceUseCase {
   const ResolvePlaySourceUseCase(
     this.registry, {
     this.wrapChaturbatePlayUrls,
+    this.wrapStripchatPlayUrls,
     this.wrapTwitchPlayUrls,
   });
 
   final ProviderRegistry registry;
   final WrapChaturbatePlayUrls? wrapChaturbatePlayUrls;
+  final WrapStripchatPlayUrls? wrapStripchatPlayUrls;
   final WrapTwitchPlayUrls? wrapTwitchPlayUrls;
 
   Future<ResolvedPlaySource> call({
@@ -32,15 +42,11 @@ class ResolvePlaySourceUseCase {
     List<LivePlayUrl>? preloadedPlayUrls,
   }) async {
     final provider = registry.create(providerId);
-    final urls = preloadedPlayUrls ??
+    final urls =
+        preloadedPlayUrls ??
         await provider
-            .requireContract<SupportsPlayUrls>(
-              ProviderCapability.playUrls,
-            )
-            .fetchPlayUrls(
-              detail: detail,
-              quality: quality,
-            );
+            .requireContract<SupportsPlayUrls>(ProviderCapability.playUrls)
+            .fetchPlayUrls(detail: detail, quality: quality);
     if (urls.isEmpty) {
       throw ProviderParseException(
         providerId: providerId,
@@ -62,6 +68,23 @@ class ResolvePlaySourceUseCase {
         'source=${preloadedPlayUrls == null ? 'network' : 'preloaded'} '
         'urls=${urls.length} proxied=${effectiveUrls.length} '
         'stableFallbacks=${effectiveUrls.where(_isChaturbateStableFallback).length} '
+        'lines=${_describeLines(effectiveUrls)}',
+      );
+    }
+    if (providerId == ProviderId.stripchat) {
+      final proxied = await wrapStripchatPlayUrls?.call(
+        quality: quality,
+        playUrls: urls,
+      );
+      if (proxied != null && proxied.isNotEmpty) {
+        effectiveUrls = proxied;
+      }
+      effectiveUrls = _ensureStripchatStableFallbackUrls(effectiveUrls);
+      _debugTrace(
+        'stripchat resolve quality=${quality.id}/${quality.label} '
+        'source=${preloadedPlayUrls == null ? 'network' : 'preloaded'} '
+        'urls=${urls.length} proxied=${effectiveUrls.length} '
+        'stableFallbacks=${effectiveUrls.where(_isStripchatStableFallback).length} '
         'lines=${_describeLines(effectiveUrls)}',
       );
     }
@@ -151,17 +174,19 @@ class ResolvePlaySourceUseCase {
       if (requestedQn == null) {
         return ordered;
       }
-      final exactMatch = ordered.where((item) {
-        return _extractBilibiliEffectiveQn(item) == requestedQn;
-      }).toList(growable: false);
+      final exactMatch = ordered
+          .where((item) {
+            return _extractBilibiliEffectiveQn(item) == requestedQn;
+          })
+          .toList(growable: false);
       return exactMatch.isEmpty ? ordered : exactMatch;
     }
     if (providerId == ProviderId.chaturbate) {
       final ordered = List<LivePlayUrl>.from(urls);
       ordered.sort((left, right) {
-        return _chaturbatePlaybackPriority(left).compareTo(
-          _chaturbatePlaybackPriority(right),
-        );
+        return _chaturbatePlaybackPriority(
+          left,
+        ).compareTo(_chaturbatePlaybackPriority(right));
       });
       return ordered;
     }
@@ -171,9 +196,7 @@ class ResolvePlaySourceUseCase {
         return _twitchPlayerTypePriority(
           left.metadata?['playerType']?.toString(),
         ).compareTo(
-          _twitchPlayerTypePriority(
-            right.metadata?['playerType']?.toString(),
-          ),
+          _twitchPlayerTypePriority(right.metadata?['playerType']?.toString()),
         );
       });
       return ordered;
@@ -185,9 +208,12 @@ class ResolvePlaySourceUseCase {
     if (requestedRate == null) {
       return urls;
     }
-    final exactMatch = urls.where((item) {
-      return _extractIntMetadataValue(item, const ['rate']) == requestedRate;
-    }).toList(growable: false);
+    final exactMatch = urls
+        .where((item) {
+          return _extractIntMetadataValue(item, const ['rate']) ==
+              requestedRate;
+        })
+        .toList(growable: false);
     return exactMatch.isEmpty ? urls : exactMatch;
   }
 
@@ -263,8 +289,9 @@ class ResolvePlaySourceUseCase {
       return requestedQuality;
     }
 
-    final qualityMap =
-        _readIntLabelMap(requestedQuality.metadata?['qualityMap']);
+    final qualityMap = _readIntLabelMap(
+      requestedQuality.metadata?['qualityMap'],
+    );
     final label = qualityMap[effectiveId];
     return LivePlayQuality(
       id: effectiveId.toString(),
@@ -351,6 +378,9 @@ PlaybackSource playbackSourceFromLivePlayUrl(
   LivePlayQuality? quality,
 }) {
   final audioUrl = playUrl.metadata?['audioUrl']?.toString().trim() ?? '';
+  final suppressMasterMetadata = _shouldSuppressMasterMetadataForPlaybackSource(
+    playUrl,
+  );
   final masterPlaylistUrl =
       playUrl.metadata?['masterPlaylistUrl']?.toString().trim() ?? '';
   final masterPlaylistContent =
@@ -374,10 +404,13 @@ PlaybackSource playbackSourceFromLivePlayUrl(
   return PlaybackSource(
     url: Uri.parse(playUrl.url),
     headers: playUrl.headers,
-    masterPlaylistUrl:
-        masterPlaylistUrl.isEmpty ? null : Uri.parse(masterPlaylistUrl),
+    masterPlaylistUrl: suppressMasterMetadata || masterPlaylistUrl.isEmpty
+        ? null
+        : Uri.parse(masterPlaylistUrl),
     masterPlaylistContent:
-        masterPlaylistContent.trim().isEmpty ? null : masterPlaylistContent,
+        suppressMasterMetadata || masterPlaylistContent.trim().isEmpty
+        ? null
+        : masterPlaylistContent,
     bufferProfile: bufferProfile,
     hlsBitrate: hlsBitrate.isEmpty ? null : hlsBitrate,
     externalAudio: audioUrl.isEmpty
@@ -391,23 +424,30 @@ PlaybackSource playbackSourceFromLivePlayUrl(
   );
 }
 
-const _heavyStreamQualityKeywords = <String>[
-  '蓝光30m',
-  '蓝光',
-  '原画',
-];
+bool _shouldSuppressMasterMetadataForPlaybackSource(LivePlayUrl playUrl) {
+  return _isStripchatLlHlsProxy(playUrl);
+}
+
+const _heavyStreamQualityKeywords = <String>['蓝光30m', '蓝光', '原画'];
 
 @visibleForTesting
 PlaybackBufferProfile resolvePlaybackBufferProfile({
   required LivePlayUrl playUrl,
   LivePlayQuality? quality,
 }) {
+  if (_isStripchatLlHlsProxy(playUrl) ||
+      _isStripchatStableFallback(playUrl)) {
+    return PlaybackBufferProfile.loopbackStableHls;
+  }
   if (_isChaturbateLlHlsProxy(playUrl) ||
       _isChaturbateStableFallback(playUrl)) {
     return PlaybackBufferProfile.chaturbateLlHlsProxyStable;
   }
 
   if (_looksLikeMmcdnLowLatencySource(playUrl)) {
+    return PlaybackBufferProfile.edgeLowLatencyHls;
+  }
+  if (_looksLikeDoppioLowLatencySource(playUrl)) {
     return PlaybackBufferProfile.edgeLowLatencyHls;
   }
 
@@ -447,10 +487,7 @@ PlaybackBufferProfile resolvePlaybackBufferProfile({
     return PlaybackBufferProfile.heavyStreamStable;
   }
 
-  final labels = <String>[
-    quality?.label ?? '',
-    playUrl.lineLabel ?? '',
-  ];
+  final labels = <String>[quality?.label ?? '', playUrl.lineLabel ?? ''];
   for (final label in labels) {
     if (_matchesHeavyStreamLabel(label)) {
       return PlaybackBufferProfile.heavyStreamStable;
@@ -461,23 +498,25 @@ PlaybackBufferProfile resolvePlaybackBufferProfile({
 }
 
 List<LivePlayUrl> _ensureChaturbateStableFallbackUrls(List<LivePlayUrl> urls) {
-  return urls.map((playUrl) {
-    if (_isChaturbateLlHlsProxy(playUrl) ||
-        _isChaturbateStableFallback(playUrl) ||
-        !_looksLikeMmcdnLowLatencySource(playUrl)) {
-      return playUrl;
-    }
-    return LivePlayUrl(
-      url: playUrl.url,
-      headers: playUrl.headers,
-      lineLabel: playUrl.lineLabel,
-      metadata: {
-        ...?playUrl.metadata,
-        'chaturbateStableFallback': true,
-        'chaturbateProxyFallbackReason': 'proxy-unavailable',
-      },
-    );
-  }).toList(growable: false);
+  return urls
+      .map((playUrl) {
+        if (_isChaturbateLlHlsProxy(playUrl) ||
+            _isChaturbateStableFallback(playUrl) ||
+            !_looksLikeMmcdnLowLatencySource(playUrl)) {
+          return playUrl;
+        }
+        return LivePlayUrl(
+          url: playUrl.url,
+          headers: playUrl.headers,
+          lineLabel: playUrl.lineLabel,
+          metadata: {
+            ...?playUrl.metadata,
+            'chaturbateStableFallback': true,
+            'chaturbateProxyFallbackReason': 'proxy-unavailable',
+          },
+        );
+      })
+      .toList(growable: false);
 }
 
 bool _isChaturbateStableFallback(LivePlayUrl playUrl) {
@@ -491,6 +530,46 @@ bool _isChaturbateLlHlsProxy(LivePlayUrl playUrl) {
   }
   final uri = Uri.tryParse(playUrl.url);
   return uri != null && uri.path.contains('/chaturbate-llhls/');
+}
+
+bool _isStripchatLlHlsProxy(LivePlayUrl playUrl) {
+  final proxyKind = playUrl.metadata?['proxyKind']?.toString().trim();
+  if (proxyKind == 'stripchat-llhls') {
+    return true;
+  }
+  final uri = Uri.tryParse(playUrl.url);
+  return uri != null && uri.path.contains('/stripchat-llhls/');
+}
+
+List<LivePlayUrl> _ensureStripchatStableFallbackUrls(List<LivePlayUrl> urls) {
+  return urls
+      .map((playUrl) {
+        if (_isStripchatLlHlsProxy(playUrl) ||
+            _isStripchatStableFallback(playUrl)) {
+          return playUrl;
+        }
+        final uri = Uri.tryParse(playUrl.url);
+        final host = uri?.host.toLowerCase() ?? '';
+        final isDoppio = host.contains('doppiocdn') || host.contains('strpst');
+        if (!isDoppio) {
+          return playUrl;
+        }
+        return LivePlayUrl(
+          url: playUrl.url,
+          headers: playUrl.headers,
+          lineLabel: playUrl.lineLabel,
+          metadata: {
+            ...?playUrl.metadata,
+            'stripchatStableFallback': true,
+            'stripchatProxyFallbackReason': 'proxy-unavailable',
+          },
+        );
+      })
+      .toList(growable: false);
+}
+
+bool _isStripchatStableFallback(LivePlayUrl playUrl) {
+  return playUrl.metadata?['stripchatStableFallback'] == true;
 }
 
 int? _readIntAcrossMetadata({
@@ -555,6 +634,31 @@ bool _looksLikeMmcdnLowLatencySource(LivePlayUrl playUrl) {
   return false;
 }
 
+bool _looksLikeDoppioLowLatencySource(LivePlayUrl playUrl) {
+  final candidates = <String>[
+    playUrl.url,
+    playUrl.metadata?['audioUrl']?.toString() ?? '',
+    playUrl.metadata?['masterPlaylistUrl']?.toString() ?? '',
+  ];
+  for (final candidate in candidates) {
+    final uri = Uri.tryParse(candidate);
+    if (uri == null) {
+      continue;
+    }
+    final host = uri.host.toLowerCase();
+    if (!(host.startsWith('media-hls.') || host.startsWith('edge-hls.'))) {
+      continue;
+    }
+    if (!uri.path.toLowerCase().endsWith('.m3u8')) {
+      continue;
+    }
+    if (uri.queryParameters['playlistType']?.toLowerCase() == 'lowlatency') {
+      return true;
+    }
+  }
+  return false;
+}
+
 Map<String, String> _readHeadersMap(Object? raw) {
   if (raw is! Map) {
     return const {};
@@ -587,7 +691,8 @@ String _shortPlaybackDescriptor(String rawUrl) {
   }
   if (parts.length == 1) {
     parts.add(
-        uri.path.split('/').where((item) => item.isNotEmpty).take(2).join('/'));
+      uri.path.split('/').where((item) => item.isNotEmpty).take(2).join('/'),
+    );
   }
   return parts.join(' ');
 }
@@ -608,4 +713,14 @@ class ResolvedPlaySource {
   bool get isQualityFallback =>
       quality.id != effectiveQuality.id ||
       quality.label != effectiveQuality.label;
+
+  bool get hasPdkeyHealthAlert {
+    for (final playUrl in playUrls) {
+      final checker = playUrl.metadata?['pdkeyHealthAlertChecker'];
+      if (checker is bool Function() && checker()) {
+        return true;
+      }
+    }
+    return false;
+  }
 }

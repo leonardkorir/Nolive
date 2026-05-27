@@ -18,76 +18,80 @@ import 'package:nolive_app/src/shared/application/player_runtime_controller.dart
 import 'room_fullscreen_test_fakes.dart';
 
 void main() {
-  test('fullscreen preserve transition cleans up MDK runtime before commit',
-      () async {
-    final harness = _TestRoomTransitionHarness(
-      playerBackend: PlayerBackend.mdk,
-    );
-    addTearDown(harness.dispose);
-    harness.fullscreenController.replaceViewUiState(
-      const RoomViewUiState(
-        isFullscreen: true,
-        showFullscreenFollowDrawer: true,
-      ),
-    );
-    harness.player.emit(
-      PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.playing,
-        source: harness.source,
-      ),
-    );
+  test(
+    'fullscreen preserve transition cleans up MDK runtime before commit',
+    () async {
+      final harness = _TestRoomTransitionHarness(
+        playerBackend: PlayerBackend.mdk,
+      );
+      addTearDown(harness.dispose);
+      harness.fullscreenController.replaceViewUiState(
+        const RoomViewUiState(
+          isFullscreen: true,
+          showFullscreenFollowDrawer: true,
+        ),
+      );
+      harness.player.emit(
+        PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.playing,
+          source: harness.source,
+        ),
+      );
 
-    var preserveFullscreen = false;
-    await harness.coordinator.openFollowRoom(
-      leavingRoom: false,
-      commitNavigation: (preserve) {
-        preserveFullscreen = preserve;
-      },
-      showMessage: harness.messages.add,
-    );
+      var preserveFullscreen = false;
+      await harness.coordinator.openFollowRoom(
+        leavingRoom: false,
+        commitNavigation: (preserve) {
+          preserveFullscreen = preserve;
+        },
+        showMessage: harness.messages.add,
+      );
 
-    expect(preserveFullscreen, isTrue);
-    expect(harness.player.events, contains('stop'));
-    expect(harness.runtime.refreshCount, 1);
-    expect(harness.messages, isEmpty);
-  });
+      expect(preserveFullscreen, isTrue);
+      expect(harness.player.events, contains('stop'));
+      expect(harness.runtime.refreshCount, 1);
+      expect(harness.messages, isEmpty);
+    },
+  );
 
-  test('cleanup failure restores current playback and reports message',
-      () async {
-    final harness = _TestRoomTransitionHarness(
-      playerBackend: PlayerBackend.mdk,
-      throwOnRefresh: true,
-    );
-    addTearDown(harness.dispose);
-    harness.fullscreenController.replaceViewUiState(
-      const RoomViewUiState(isFullscreen: true),
-    );
-    harness.player.emit(
-      PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.playing,
-        source: harness.source,
-      ),
-    );
-    var commitCalled = false;
+  test(
+    'cleanup failure restores current playback and reports message',
+    () async {
+      final harness = _TestRoomTransitionHarness(
+        playerBackend: PlayerBackend.mdk,
+        throwOnRefresh: true,
+      );
+      addTearDown(harness.dispose);
+      harness.fullscreenController.replaceViewUiState(
+        const RoomViewUiState(isFullscreen: true),
+      );
+      harness.player.emit(
+        PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.playing,
+          source: harness.source,
+        ),
+      );
+      var commitCalled = false;
 
-    await harness.coordinator.openFollowRoom(
-      leavingRoom: false,
-      commitNavigation: (_) {
-        commitCalled = true;
-      },
-      showMessage: harness.messages.add,
-    );
+      await harness.coordinator.openFollowRoom(
+        leavingRoom: false,
+        commitNavigation: (_) {
+          commitCalled = true;
+        },
+        showMessage: harness.messages.add,
+      );
 
-    expect(commitCalled, isFalse);
-    expect(harness.runtime.refreshCount, 1);
-    expect(
-      harness.player.events,
-      containsAllInOrder(<String>['stop', 'setSource', 'play']),
-    );
-    expect(harness.messages, contains('切换直播间失败，请稍后重试'));
-  });
+      expect(commitCalled, isFalse);
+      expect(harness.runtime.refreshCount, 1);
+      expect(
+        harness.player.events,
+        containsAllInOrder(<String>['stop', 'setSource', 'play']),
+      );
+      expect(harness.messages, contains('切换直播间失败，请稍后重试'));
+    },
+  );
 
   test('navigation failure after cleanup restores current playback', () async {
     final harness = _TestRoomTransitionHarness(
@@ -116,11 +120,56 @@ void main() {
     expect(harness.runtime.refreshCount, 1);
     expect(
       harness.player.events,
-      containsAllInOrder(
-          <String>['stop', 'refreshBackend', 'setSource', 'play']),
+      containsAllInOrder(<String>[
+        'stop',
+        'refreshBackend',
+        'setSource',
+        'play',
+      ]),
     );
     expect(harness.messages, contains('切换直播间失败，请稍后重试'));
   });
+
+  test(
+    'async navigation failure after cleanup restores current playback',
+    () async {
+      final harness = _TestRoomTransitionHarness(
+        playerBackend: PlayerBackend.mdk,
+      );
+      addTearDown(harness.dispose);
+      harness.fullscreenController.replaceViewUiState(
+        const RoomViewUiState(isFullscreen: true),
+      );
+      harness.player.emit(
+        PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.playing,
+          source: harness.source,
+        ),
+      );
+
+      await harness.coordinator.openFollowRoom(
+        leavingRoom: false,
+        commitNavigation: (_) async {
+          await Future<void>.delayed(Duration.zero);
+          throw StateError('async navigation failed');
+        },
+        showMessage: harness.messages.add,
+      );
+
+      expect(harness.runtime.refreshCount, 1);
+      expect(
+        harness.player.events,
+        containsAllInOrder(<String>[
+          'stop',
+          'refreshBackend',
+          'setSource',
+          'play',
+        ]),
+      );
+      expect(harness.messages, contains('切换直播间失败，请稍后重试'));
+    },
+  );
 
   test('non-fullscreen non-MDK transition takes light path', () async {
     final harness = _TestRoomTransitionHarness(
@@ -150,43 +199,45 @@ void main() {
     expect(harness.messages, isEmpty);
   });
 
-  test('disposed stale transition does not continue cleanup or navigation',
-      () async {
-    final endOfFrame = Completer<void>();
-    final harness = _TestRoomTransitionHarness(
-      playerBackend: PlayerBackend.mdk,
-      waitForEndOfFrame: () => endOfFrame.future,
-    );
-    harness.fullscreenController.replaceViewUiState(
-      const RoomViewUiState(isFullscreen: true),
-    );
-    harness.player.emit(
-      PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.playing,
-        source: harness.source,
-      ),
-    );
-    var commitCalled = false;
+  test(
+    'disposed stale transition does not continue cleanup or navigation',
+    () async {
+      final endOfFrame = Completer<void>();
+      final harness = _TestRoomTransitionHarness(
+        playerBackend: PlayerBackend.mdk,
+        waitForEndOfFrame: () => endOfFrame.future,
+      );
+      harness.fullscreenController.replaceViewUiState(
+        const RoomViewUiState(isFullscreen: true),
+      );
+      harness.player.emit(
+        PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.playing,
+          source: harness.source,
+        ),
+      );
+      var commitCalled = false;
 
-    final future = harness.coordinator.openFollowRoom(
-      leavingRoom: false,
-      commitNavigation: (_) {
-        commitCalled = true;
-      },
-      showMessage: harness.messages.add,
-    );
-    harness.coordinator.dispose();
-    endOfFrame.complete();
-    await future;
-    harness.playbackController.dispose();
-    harness.fullscreenController.dispose();
-    await harness.player.dispose();
+      final future = harness.coordinator.openFollowRoom(
+        leavingRoom: false,
+        commitNavigation: (_) {
+          commitCalled = true;
+        },
+        showMessage: harness.messages.add,
+      );
+      harness.coordinator.dispose();
+      endOfFrame.complete();
+      await future;
+      harness.playbackController.dispose();
+      harness.fullscreenController.dispose();
+      await harness.player.dispose();
 
-    expect(commitCalled, isFalse);
-    expect(harness.runtime.refreshCount, 0);
-    expect(harness.messages, isEmpty);
-  });
+      expect(commitCalled, isFalse);
+      expect(harness.runtime.refreshCount, 0);
+      expect(harness.messages, isEmpty);
+    },
+  );
 }
 
 class _TestRoomTransitionHarness {
@@ -196,10 +247,7 @@ class _TestRoomTransitionHarness {
     Future<void> Function()? waitForEndOfFrame,
   }) : messages = <String>[] {
     player = _RecordingTestPlayer(playerBackend: playerBackend);
-    runtime = _TestRefreshRuntime(
-      player,
-      throwOnRefresh: throwOnRefresh,
-    );
+    runtime = _TestRefreshRuntime(player, throwOnRefresh: throwOnRefresh);
     playbackController = RoomPlaybackController(
       playerRuntime: runtime,
       providerId: ProviderId.bilibili,
@@ -228,6 +276,7 @@ class _TestRoomTransitionHarness {
         resolvePipAspectRatio: () => const Rational(16, 9),
         resolveScreenSize: () => const Size(1080, 1920),
         resolvePlaybackSourceForLifecycleRestore: () async => null,
+        resolveIsVerticalVideo: () => false,
       ),
       platforms: RoomFullscreenSessionPlatforms(
         androidPlaybackBridge: TestRoomAndroidPlaybackBridgeFacade(),
@@ -268,10 +317,8 @@ class _TestRoomTransitionHarness {
 }
 
 class _TestRefreshRuntime extends PlayerRuntimeController {
-  _TestRefreshRuntime(
-    this.player, {
-    this.throwOnRefresh = false,
-  }) : super(player);
+  _TestRefreshRuntime(this.player, {this.throwOnRefresh = false})
+    : super(player);
 
   final _RecordingTestPlayer player;
   final bool throwOnRefresh;
@@ -288,9 +335,8 @@ class _TestRefreshRuntime extends PlayerRuntimeController {
 }
 
 class _RecordingTestPlayer implements BasePlayer {
-  _RecordingTestPlayer({
-    this.playerBackend = PlayerBackend.mpv,
-  }) : _currentState = PlayerState(backend: playerBackend);
+  _RecordingTestPlayer({this.playerBackend = PlayerBackend.mpv})
+    : _currentState = PlayerState(backend: playerBackend);
 
   final List<String> events = <String>[];
   final PlayerBackend playerBackend;
@@ -356,10 +402,7 @@ class _RecordingTestPlayer implements BasePlayer {
   Future<void> stop() async {
     events.add('stop');
     emit(
-      _currentState.copyWith(
-        status: PlaybackStatus.ready,
-        clearSource: true,
-      ),
+      _currentState.copyWith(status: PlaybackStatus.ready, clearSource: true),
     );
   }
 

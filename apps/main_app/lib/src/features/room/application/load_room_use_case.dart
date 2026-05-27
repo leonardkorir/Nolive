@@ -2,14 +2,13 @@ import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
 
-const LivePlayQuality _kUnavailablePlayQuality = LivePlayQuality(
+LivePlayQuality _kUnavailablePlayQuality = LivePlayQuality(
   id: 'unavailable',
   label: '不可用',
   isDefault: true,
 );
 const int _kChaturbateStartupMaxBandwidth = 2400000;
 const int _kChaturbateStartupMaxHeight = 540;
-
 class LoadRoomUseCase {
   const LoadRoomUseCase(
     this.registry, {
@@ -23,7 +22,8 @@ class LoadRoomUseCase {
   final Future<LiveRoomDetail?> Function({
     required ProviderId providerId,
     required String roomId,
-  })? roomDetailOverride;
+  })?
+  roomDetailOverride;
   final Future<bool> Function()? resolveRecordHistoryEnabled;
 
   Future<LoadedRoomSnapshot> call({
@@ -58,20 +58,14 @@ class LoadRoomUseCase {
           message: '${provider.descriptor.displayName} 当前没有返回可用清晰度。',
         );
       }
-      qualities = const [_kUnavailablePlayQuality];
+      qualities = [_kUnavailablePlayQuality];
       selectedQuality = _kUnavailablePlayQuality;
       urls = const [];
     } else {
       qualities = loadedQualities;
       selectedQuality = preferHighestQuality
-          ? _selectStartupQuality(
-              providerId: providerId,
-              qualities: qualities,
-            )
-          : _selectDefaultQuality(
-              providerId: providerId,
-              qualities: qualities,
-            );
+          ? _selectStartupQuality(providerId: providerId, qualities: qualities)
+          : _selectDefaultQuality(providerId: providerId, qualities: qualities);
       urls = await playUrls.fetchPlayUrls(
         detail: detail,
         quality: selectedQuality,
@@ -136,10 +130,7 @@ class LoadRoomUseCase {
     if (overridden != null) {
       return overridden;
     }
-    Error.throwWithStackTrace(
-      providerError,
-      providerStackTrace,
-    );
+    Error.throwWithStackTrace(providerError, providerStackTrace);
   }
 
   LivePlayQuality _selectHighestQuality(List<LivePlayQuality> qualities) {
@@ -217,10 +208,10 @@ class LoadRoomUseCase {
     if (urls.isNotEmpty) {
       return null;
     }
-    final explicitReason = _metadataString(
-      detail.metadata,
-      const ['playbackUnavailableReason', 'unavailableReason'],
-    );
+    final explicitReason = _metadataString(detail.metadata, const [
+      'playbackUnavailableReason',
+      'unavailableReason',
+    ]);
     if (explicitReason != null) {
       return explicitReason;
     }
@@ -239,10 +230,12 @@ class LoadRoomUseCase {
   }
 
   String? _roomStatus(Map<String, Object?>? metadata) {
-    final rawStatus = _metadataString(
-      metadata,
-      const ['roomStatus', 'status', 'liveStatus', 'streamStatus'],
-    );
+    final rawStatus = _metadataString(metadata, const [
+      'roomStatus',
+      'status',
+      'liveStatus',
+      'streamStatus',
+    ]);
     if (rawStatus == null) {
       return null;
     }
@@ -256,10 +249,7 @@ class LoadRoomUseCase {
     return rawStatus;
   }
 
-  String? _metadataString(
-    Map<String, Object?>? metadata,
-    List<String> keys,
-  ) {
+  String? _metadataString(Map<String, Object?>? metadata, List<String> keys) {
     if (metadata == null) {
       return null;
     }

@@ -10,9 +10,7 @@ class RoomChatViewportCoordinator {
   bool _scrollQueued = false;
   bool _pendingForceScroll = false;
 
-  void handleMessagesChanged({
-    required RoomPanel selectedPanel,
-  }) {
+  void handleMessagesChanged({required RoomPanel selectedPanel}) {
     if (selectedPanel != RoomPanel.chat) {
       return;
     }
@@ -32,19 +30,31 @@ class RoomChatViewportCoordinator {
       _scrollQueued = false;
       final shouldForceScroll = _pendingForceScroll;
       _pendingForceScroll = false;
-      if (_disposed || !controller.hasClients) {
-        return;
+      final didJump = _jumpToBottomIfNeeded(force: shouldForceScroll);
+      if (!_disposed && didJump) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _jumpToBottomIfNeeded(force: true);
+        });
       }
-      final position = controller.position;
-      if (!shouldForceScroll &&
-          position.maxScrollExtent - position.pixels > 120) {
-        return;
-      }
-      controller.jumpTo(position.maxScrollExtent);
     });
   }
 
+  bool _jumpToBottomIfNeeded({required bool force}) {
+    if (_disposed || !controller.hasClients) {
+      return false;
+    }
+    final position = controller.position;
+    if (!force && position.maxScrollExtent - position.pixels > 120) {
+      return false;
+    }
+    controller.jumpTo(position.maxScrollExtent);
+    return true;
+  }
+
   void dispose() {
+    if (_disposed) {
+      return;
+    }
     _disposed = true;
     controller.dispose();
   }

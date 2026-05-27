@@ -7,12 +7,12 @@ extension ShellTabIdX on ShellTabId {
   String get value => name;
 
   String get label => switch (this) {
-        ShellTabId.home => '首页',
-        ShellTabId.browse => '发现',
-        ShellTabId.search => '搜索',
-        ShellTabId.library => '关注',
-        ShellTabId.profile => '我的',
-      };
+    ShellTabId.home => '首页',
+    ShellTabId.browse => '发现',
+    ShellTabId.search => '搜索',
+    ShellTabId.library => '关注',
+    ShellTabId.profile => '我的',
+  };
 
   static ShellTabId? fromValue(String raw) {
     for (final value in ShellTabId.values) {
@@ -38,7 +38,11 @@ class LayoutPreferences {
     ShellTabId.profile,
   ];
 
-  static const List<String> defaultProviderOrder = [
+  /// Provider IDs that were defaults before Stripchat was added.
+  /// When loading stored enabled IDs that contain all of these but are missing
+  /// any newer defaults, the missing defaults are automatically added.
+  /// This avoids newly added providers being invisible to existing users.
+  static const List<String> _preStripchatDefaultProviderIds = [
     'bilibili',
     'chaturbate',
     'douyu',
@@ -46,6 +50,11 @@ class LayoutPreferences {
     'douyin',
     'twitch',
     'youtube',
+  ];
+
+  static const List<String> defaultProviderOrder = [
+    ..._preStripchatDefaultProviderIds,
+    'stripchat',
   ];
 
   static const List<String> defaultEnabledProviderIds = defaultProviderOrder;
@@ -133,10 +142,11 @@ class LoadLayoutPreferencesUseCase {
       ShellTabId.home,
       ShellTabId.profile,
     ];
-    final matchesLegacyOrder = ordered.length == legacyBrokenOrder.length &&
+    final matchesLegacyOrder =
+        ordered.length == legacyBrokenOrder.length &&
         ordered.asMap().entries.every(
-              (entry) => legacyBrokenOrder[entry.key] == entry.value,
-            );
+          (entry) => legacyBrokenOrder[entry.key] == entry.value,
+        );
     if (matchesLegacyOrder) {
       return List<ShellTabId>.unmodifiable(
         LayoutPreferences.defaultShellTabOrder,
@@ -184,6 +194,20 @@ class LoadLayoutPreferencesUseCase {
       }
       ordered.add(decoded);
     }
+    final isLegacyUser = LayoutPreferences._preStripchatDefaultProviderIds
+        .every((id) => seen.contains(id));
+    if (isLegacyUser) {
+      for (final fallback in LayoutPreferences.defaultEnabledProviderIds) {
+        if (LayoutPreferences._preStripchatDefaultProviderIds.contains(
+          fallback,
+        )) {
+          continue;
+        }
+        if (seen.add(fallback)) {
+          ordered.add(fallback);
+        }
+      }
+    }
     return List<String>.unmodifiable(ordered);
   }
 }
@@ -200,8 +224,8 @@ class UpdateLayoutPreferencesUseCase {
   Future<void> call(LayoutPreferences preferences) async {
     final normalizedProviderOrder =
         LoadLayoutPreferencesUseCase.normalizeProviderOrder(
-      preferences.providerOrder,
-    );
+          preferences.providerOrder,
+        );
     final normalized = LayoutPreferences(
       shellTabOrder: LoadLayoutPreferencesUseCase.normalizeShellTabOrder(
         preferences.shellTabOrder.map((item) => item.value),
@@ -209,9 +233,9 @@ class UpdateLayoutPreferencesUseCase {
       providerOrder: normalizedProviderOrder,
       enabledProviderIds:
           LoadLayoutPreferencesUseCase.normalizeEnabledProviderIds(
-        preferences.enabledProviderIds,
-        fallbackValues: normalizedProviderOrder,
-      ),
+            preferences.enabledProviderIds,
+            fallbackValues: normalizedProviderOrder,
+          ),
     );
     await settingsRepository.writeValue(
       'layout_shell_tab_order',
@@ -235,6 +259,7 @@ Future<void> syncLayoutPreferencesNotifierFromSettings({
   required SettingsRepository settingsRepository,
   required ValueNotifier<LayoutPreferences> preferencesNotifier,
 }) async {
-  preferencesNotifier.value =
-      await LoadLayoutPreferencesUseCase(settingsRepository).call();
+  preferencesNotifier.value = await LoadLayoutPreferencesUseCase(
+    settingsRepository,
+  ).call();
 }

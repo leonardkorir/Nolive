@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:live_core/live_core.dart';
 import 'package:web_socket_channel/io.dart';
 
+import 'danmaku_activity_watchdog.dart';
 import 'danmaku_web_socket.dart';
 import '../providers/douyu/douyu_sign_service.dart';
 
@@ -25,10 +26,14 @@ typedef DouyuSocketClientConnector = Future<DouyuSocketClient> Function(
 class DouyuDanmakuSession implements DanmakuSession {
   DouyuDanmakuSession({
     required this.roomId,
+    List<String>? socketUrls,
     DouyuSocketClientConnector? socketConnector,
-  }) : _socketConnector = socketConnector ?? _defaultSocketConnector;
+    Duration inactivityTimeout = const Duration(minutes: 2),
+  })  : _candidateSocketUrls = socketUrls ?? _defaultCandidateSocketUrls,
+        _socketConnector = socketConnector ?? _defaultSocketConnector,
+        _inactivityTimeout = inactivityTimeout;
 
-  static const List<String> _candidateSocketUrls = <String>[
+  static const List<String> _defaultCandidateSocketUrls = <String>[
     'wss://danmuproxy.douyu.com:8502/',
     'wss://danmuproxy.douyu.com:8506/',
   ];
@@ -40,7 +45,9 @@ class DouyuDanmakuSession implements DanmakuSession {
   };
 
   final String roomId;
+  final List<String> _candidateSocketUrls;
   final DouyuSocketClientConnector _socketConnector;
+  final Duration _inactivityTimeout;
 
   final StreamController<LiveMessage> _controller =
       StreamController<LiveMessage>.broadcast();
@@ -48,6 +55,7 @@ class DouyuDanmakuSession implements DanmakuSession {
   DouyuSocketClient? _channel;
   StreamSubscription<dynamic>? _subscription;
   Timer? _heartbeatTimer;
+  DanmakuActivityWatchdog? _activityWatchdog;
   bool _connected = false;
 
   @override
@@ -62,30 +70,34 @@ class DouyuDanmakuSession implements DanmakuSession {
     try {
       _channel = channel;
       _connected = true;
-      _subscription = _channel!.stream.listen(
+      _activityWatchdog = DanmakuActivityWatchdog(
+        timeout: _inactivityTimeout,
+        onTimeout: _handleActivityTimeout,
+      )..start();
+      StreamSubscription<dynamic>? subscription;
+      subscription = channel.stream.listen(
         _handleRawMessage,
         onError: (error) {
-          _emit(
-            LiveMessage(
-              type: LiveMessageType.notice,
-              content: '斗鱼弹幕连接异常：$error',
-              timestamp: DateTime.now(),
+          unawaited(
+            _teardownRemoteDisconnect(
+              channel: channel,
+              subscription: subscription,
+              notice: '斗鱼弹幕连接异常：$error',
             ),
           );
         },
         onDone: () {
-          if (_connected) {
-            _emit(
-              LiveMessage(
-                type: LiveMessageType.notice,
-                content: '斗鱼弹幕连接已断开',
-                timestamp: DateTime.now(),
-              ),
-            );
-          }
+          unawaited(
+            _teardownRemoteDisconnect(
+              channel: channel,
+              subscription: subscription,
+              notice: '斗鱼弹幕连接已断开',
+            ),
+          );
         },
         cancelOnError: false,
       );
+      _subscription = subscription;
       _send('type@=loginreq/roomid@=$roomId/');
       _send('type@=joingroup/rid@=$roomId/gid@=-9999/');
       _heartbeatTimer = Timer.periodic(
@@ -101,6 +113,8 @@ class DouyuDanmakuSession implements DanmakuSession {
       );
     } catch (_) {
       _connected = false;
+      _activityWatchdog?.stop();
+      _activityWatchdog = null;
       await _subscription?.cancel();
       _subscription = null;
       await channel.close();
@@ -116,6 +130,8 @@ class DouyuDanmakuSession implements DanmakuSession {
     _connected = false;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
     await _subscription?.cancel();
     _subscription = null;
     await _channel?.close();
@@ -123,6 +139,37 @@ class DouyuDanmakuSession implements DanmakuSession {
     if (!_controller.isClosed) {
       await _controller.close();
     }
+  }
+
+  Future<void> _teardownRemoteDisconnect({
+    required DouyuSocketClient channel,
+    required StreamSubscription<dynamic>? subscription,
+    required String notice,
+  }) async {
+    if (!identical(_channel, channel) ||
+        !identical(_subscription, subscription)) {
+      return;
+    }
+    _connected = false;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    _subscription = null;
+    _channel = null;
+    _emit(
+      LiveMessage(
+        type: LiveMessageType.notice,
+        content: notice,
+        timestamp: DateTime.now(),
+      ),
+    );
+    try {
+      await subscription?.cancel();
+    } catch (_) {}
+    try {
+      await channel.close();
+    } catch (_) {}
   }
 
   void _send(String body) {
@@ -139,6 +186,7 @@ class DouyuDanmakuSession implements DanmakuSession {
     if (bytes.isEmpty) {
       return;
     }
+    _activityWatchdog?.ping();
     final text = _deserialize(bytes);
     if (text == null || text.isEmpty) {
       return;
@@ -184,6 +232,28 @@ class DouyuDanmakuSession implements DanmakuSession {
     if (message != null && message.content.isNotEmpty) {
       _emit(message);
     }
+  }
+
+  Future<void> _handleActivityTimeout() async {
+    if (!_connected) {
+      return;
+    }
+    _connected = false;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    await _subscription?.cancel();
+    _subscription = null;
+    await _channel?.close();
+    _channel = null;
+    _emit(
+      LiveMessage(
+        type: LiveMessageType.notice,
+        content: '斗鱼弹幕连接活动超时',
+        timestamp: DateTime.now(),
+      ),
+    );
   }
 
   Uint8List _serialize(String body) {
@@ -258,6 +328,9 @@ class DouyuDanmakuSession implements DanmakuSession {
   }
 
   Future<DouyuSocketClient> _connectSocket() async {
+    if (_candidateSocketUrls.isEmpty) {
+      throw StateError('DouyuDanmakuSession: socketUrls must not be empty');
+    }
     final completer = Completer<DouyuSocketClient>();
     var remaining = _candidateSocketUrls.length;
     Object? lastError;

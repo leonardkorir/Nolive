@@ -204,7 +204,7 @@ case "$TARGET" in
     scripts/verify_android_release_signing.sh
     scripts/install_main_app_android.sh
     scripts/verify_main_app_android_launch.sh
-    scripts/run_main_app_android_smoke.sh
+    ANDROID_SMOKE_RESTORE_RELEASE=1 scripts/run_main_app_android_smoke.sh
     scripts/install_main_app_android.sh
     scripts/verify_main_app_android_launch.sh
     ;;

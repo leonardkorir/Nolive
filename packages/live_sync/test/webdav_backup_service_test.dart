@@ -66,4 +66,15 @@ void main() {
 
     await server.close(force: true);
   });
+
+  test('http webdav backup service rejects insecure non-local base urls', () {
+    final service = HttpWebDavBackupService(
+      config: const WebDavBackupConfig(
+        baseUrl: 'http://example.com/dav',
+        remotePath: 'nolive/backup.json',
+      ),
+    );
+
+    expect(service.testConnection, throwsFormatException);
+  });
 }

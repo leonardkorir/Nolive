@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_providers/src/providers/bilibili/bilibili_auth_context.dart';
 import 'package:live_providers/src/providers/bilibili/bilibili_live_data_source.dart';
@@ -104,6 +105,75 @@ void main() {
     expect(recommend.items, hasLength(1));
     expect(recommend.items.single.roomId, '32558935');
     expect(recommend.items.single.viewerCount, 54321);
+  });
+
+  test('bilibili play info prefers web candidate for initial playback',
+      () async {
+    final transport = _FakeBilibiliPlayInfoTransport();
+    final authContext = BilibiliAuthContext()
+      ..imgKey = 'imgkey'
+      ..subKey = 'subkey'
+      ..buvid3 = 'mock-buvid3'
+      ..buvid4 = 'mock-buvid4';
+    final provider = BilibiliProvider(
+      dataSource: BilibiliLiveDataSource(
+        transport: transport,
+        signService: BilibiliSignService(
+          transport: transport,
+          authContext: authContext,
+        ),
+        authContext: authContext,
+      ),
+    );
+    const detail = LiveRoomDetail(
+      providerId: 'bilibili',
+      roomId: '4350043',
+      title: 'Bilibili test',
+      streamerName: 'tester',
+      isLive: true,
+    );
+
+    final qualities = await provider.fetchPlayQualities(detail);
+    final urls = await provider.fetchPlayUrls(
+      detail: detail,
+      quality: qualities.first,
+    );
+
+    expect(qualities.first.id, '10000');
+    expect(urls.first.url, contains('expected_qn=10000'));
+    expect(transport.playInfoPlatforms.first, 'web');
+  });
+
+  test('bilibili play info retries next candidate when web payload is empty',
+      () async {
+    final transport = _FakeBilibiliPlayInfoTransport(emptyWebCandidate: true);
+    final authContext = BilibiliAuthContext()
+      ..imgKey = 'imgkey'
+      ..subKey = 'subkey'
+      ..buvid3 = 'mock-buvid3'
+      ..buvid4 = 'mock-buvid4';
+    final provider = BilibiliProvider(
+      dataSource: BilibiliLiveDataSource(
+        transport: transport,
+        signService: BilibiliSignService(
+          transport: transport,
+          authContext: authContext,
+        ),
+        authContext: authContext,
+      ),
+    );
+    const detail = LiveRoomDetail(
+      providerId: 'bilibili',
+      roomId: '4350043',
+      title: 'Bilibili test',
+      streamerName: 'tester',
+      isLive: true,
+    );
+
+    final qualities = await provider.fetchPlayQualities(detail);
+
+    expect(qualities.first.id, '10000');
+    expect(transport.playInfoPlatforms.take(2), ['web', 'html5']);
   });
 
   test(
@@ -408,6 +478,76 @@ class _FakeBilibiliRecommendTransport extends BilibiliTransport {
     }
     fail('Unexpected bilibili recommend request: $uri');
   }
+}
+
+class _FakeBilibiliPlayInfoTransport extends BilibiliTransport {
+  _FakeBilibiliPlayInfoTransport({this.emptyWebCandidate = false});
+
+  final bool emptyWebCandidate;
+  final List<String> playInfoPlatforms = <String>[];
+
+  @override
+  Future<String> getText(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    final uri = Uri.parse(url).replace(
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
+    );
+    if (uri.toString().startsWith(
+          'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
+        )) {
+      final platform = queryParameters['platform'] ?? '';
+      playInfoPlatforms.add(platform);
+      if (emptyWebCandidate && platform == 'web') {
+        return jsonEncode(_bilibiliPlayInfoPayload(empty: true));
+      }
+      return jsonEncode(_bilibiliPlayInfoPayload());
+    }
+    fail('Unexpected bilibili play info request: $uri');
+  }
+}
+
+Map<String, dynamic> _bilibiliPlayInfoPayload({bool empty = false}) {
+  return {
+    'code': 0,
+    'data': {
+      'playurl_info': {
+        'playurl': {
+          'current_qn': 10000,
+          'g_qn_desc': [
+            {'qn': 10000, 'desc': '原画'},
+            {'qn': 400, 'desc': '蓝光'},
+          ],
+          'stream': empty
+              ? const []
+              : [
+                  {
+                    'format': [
+                      {
+                        'codec': [
+                          {
+                            'current_qn': 10000,
+                            'accept_qn': [10000, 400],
+                            'base_url':
+                                '/live-bvc/test.flv?qn=10000&expected_qn=10000',
+                            'url_info': [
+                              {
+                                'host': 'https://d1--bilibili.example.com',
+                                'extra': '&token=ok',
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+        },
+      },
+    },
+  };
 }
 
 class _FakeBilibiliRecommendFallbackTransport extends BilibiliTransport {

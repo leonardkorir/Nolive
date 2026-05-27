@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:http/http.dart' as http;
 
@@ -20,8 +21,10 @@ class HttpDouyinSignService implements DouyinSignService {
   })  : _client = client ?? http.Client(),
         _cookieRequestTimeout = cookieRequestTimeout;
 
-  static const String defaultCookie =
-      'ttwid=1%7CB1qls3GdnZhUov9o2NxOMxxYS2ff6OSvEWbv0ytbES4%7C1680522049%7C280d802d6d478e3e78d0c807f7c487e7ffec0ae4e5fdd6a0fe74c3c6af149511';
+  static String get defaultCookie {
+    final seconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return 'ttwid=local-fallback-$seconds';
+  }
 
   final String cookie;
   final http.Client _client;
@@ -55,11 +58,10 @@ class HttpDouyinSignService implements DouyinSignService {
       {bool forceRefreshCookie = false}) async {
     if (forceRefreshCookie) {
       _cookieCache = '';
-    }
-    if (_cookieCache.contains('ttwid=')) {
+    } else if (_cookieCache.contains('ttwid=')) {
       return _cookieCache;
     }
-    if (cookie.contains('ttwid=')) {
+    if (!forceRefreshCookie && cookie.contains('ttwid=')) {
       _cookieCache = cookie;
       return _cookieCache;
     }
@@ -76,7 +78,7 @@ class HttpDouyinSignService implements DouyinSignService {
       ).timeout(_cookieRequestTimeout);
       final setCookie = response.headers['set-cookie'] ?? '';
       final cookies = <String>[];
-      for (final part in setCookie.split(',')) {
+      for (final part in _splitSetCookieHeader(setCookie)) {
         final cookiePair = part.split(';').first.trim();
         if (cookiePair.startsWith('ttwid=') ||
             cookiePair.startsWith('__ac_nonce=') ||
@@ -88,9 +90,63 @@ class HttpDouyinSignService implements DouyinSignService {
         _cookieCache = cookies.join(';');
         return _cookieCache;
       }
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to refresh Douyin cookies, falling back to generated cookie.',
+        name: 'live_providers.douyin_sign_service',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
 
     _cookieCache = defaultCookie;
     return _cookieCache;
+  }
+
+  List<String> _splitSetCookieHeader(String headerValue) {
+    if (headerValue.trim().isEmpty) {
+      return const <String>[];
+    }
+
+    final parts = <String>[];
+    final buffer = StringBuffer();
+    var inExpiresValue = false;
+    for (var index = 0; index < headerValue.length; index += 1) {
+      final current = headerValue[index];
+      if (!inExpiresValue &&
+          _startsWithIgnoreCase(headerValue, 'expires=', index)) {
+        inExpiresValue = true;
+      }
+      if (current == ',' && !inExpiresValue) {
+        final candidate = buffer.toString().trim();
+        if (candidate.isNotEmpty) {
+          parts.add(candidate);
+        }
+        buffer.clear();
+        continue;
+      }
+      if (inExpiresValue && current == ';') {
+        inExpiresValue = false;
+      }
+      buffer.write(current);
+    }
+
+    final candidate = buffer.toString().trim();
+    if (candidate.isNotEmpty) {
+      parts.add(candidate);
+    }
+    return parts;
+  }
+
+  bool _startsWithIgnoreCase(String value, String pattern, int index) {
+    if (index + pattern.length > value.length) {
+      return false;
+    }
+    return value.substring(index, index + pattern.length).toLowerCase() ==
+        pattern;
+  }
+
+  void close() {
+    _client.close();
   }
 }

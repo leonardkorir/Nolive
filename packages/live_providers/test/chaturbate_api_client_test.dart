@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_api_client.dart';
+import 'package:live_providers/src/providers/provider_runtime_support.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -38,6 +41,25 @@ void main() {
 
     final page = await client.fetchRoomPage('kittengirlxo');
     expect(page, '<html></html>');
+  });
+
+  test('chaturbate room page decoding prefers utf8 bytes over bad charset',
+      () async {
+    final expected = '<html><body>你好😀</body></html>';
+    final client = HttpChaturbateApiClient(
+      client: MockClient((request) async {
+        return http.Response.bytes(
+          utf8.encode(expected),
+          200,
+          headers: {
+            'content-type': 'text/html; charset=latin1',
+          },
+        );
+      }),
+    );
+
+    final page = await client.fetchRoomPage('utf8-room');
+    expect(page, expected);
   });
 
   test('chaturbate api client surfaces cloudflare challenge guidance',
@@ -125,6 +147,60 @@ void main() {
     );
   });
 
+  test('chaturbate room history 403 is typed as non-fatal history absence',
+      () async {
+    final client = HttpChaturbateApiClient(
+      client: MockClient((request) async {
+        expect(request.url.path, '/push_service/room_history/');
+        return http.Response('forbidden', 403);
+      }),
+    );
+
+    await expectLater(
+      () => client.fetchRoomHistory(
+        roomId: 'realcest',
+        csrfToken: 'csrf',
+        topics: const {},
+      ),
+      throwsA(
+        isA<ChaturbateRoomHistoryUnavailableException>()
+            .having((error) => error.statusCode, 'statusCode', 403)
+            .having(
+              (error) => error.message,
+              'message',
+              contains('realtime danmaku can continue'),
+            ),
+      ),
+    );
+  });
+
+  test('chaturbate room history cloudflare 403 remains fatal', () async {
+    final client = HttpChaturbateApiClient(
+      client: MockClient((request) async {
+        return http.Response(
+          '<html><head><title>Just a moment...</title></head></html>',
+          403,
+          headers: {'cf-mitigated': 'challenge'},
+        );
+      }),
+    );
+
+    await expectLater(
+      () => client.fetchRoomHistory(
+        roomId: 'realcest',
+        csrfToken: 'csrf',
+        topics: const {},
+      ),
+      throwsA(
+        isA<ProviderParseException>().having(
+          (error) => error.message,
+          'message',
+          contains('Cloudflare challenge'),
+        ),
+      ),
+    );
+  });
+
   test('chaturbate room context can suppress configured cookie header',
       () async {
     final client = HttpChaturbateApiClient(
@@ -162,5 +238,37 @@ void main() {
       referer: 'https://chaturbate.com/demo/',
       cookie: '',
     );
+  });
+
+  test('chaturbate api client retries transient document failures once',
+      () async {
+    var requestCount = 0;
+    final client = HttpChaturbateApiClient(
+      browserProfile: const ProviderBrowserProfile(
+        userAgent: 'SimpleLive-CB-UA',
+        acceptLanguage: 'de-DE',
+        browserName: 'Chrome',
+        browserVersion: '146.0.0.0',
+        osName: 'Linux',
+        osVersion: '',
+        secChUa: '"Chromium";v="146"',
+        secChUaMobile: '?0',
+        secChUaPlatform: '"Linux"',
+      ),
+      client: MockClient((request) async {
+        requestCount += 1;
+        expect(request.headers['user-agent'], 'SimpleLive-CB-UA');
+        expect(request.headers['accept-language'], 'de-DE');
+        if (requestCount == 1) {
+          return http.Response('busy', 503);
+        }
+        return http.Response('<html>retry-ok</html>', 200);
+      }),
+    );
+
+    final page = await client.fetchRoomPage('retry-room');
+
+    expect(page, '<html>retry-ok</html>');
+    expect(requestCount, 2);
   });
 }

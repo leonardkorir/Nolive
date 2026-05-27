@@ -25,8 +25,8 @@ void main() {
       title: '系统演示直播间',
       streamerName: '系统演示主播',
     );
-    const selectedQuality = LivePlayQuality(id: 'fhd', label: '原画');
-    const effectiveQuality = LivePlayQuality(id: 'hd', label: '高清');
+    final selectedQuality = LivePlayQuality(id: 'fhd', label: '原画');
+    final effectiveQuality = LivePlayQuality(id: 'hd', label: '高清');
     const playUrl = LivePlayUrl(url: 'https://example.com/live.flv');
     final playbackSource = PlaybackSource(
       url: Uri.parse('https://example.com/live.flv'),
@@ -36,18 +36,19 @@ void main() {
       url: Uri.parse('https://example.com/pending.flv'),
     );
 
-    final state = RoomPlaybackSessionState(
-      activeRoomDetail: roomDetail,
-      selectedQuality: selectedQuality,
-      playbackSource: playbackSource,
-      playUrls: const [playUrl],
-      playbackAvailable: true,
-    ).copyWith(
-      effectiveQuality: effectiveQuality,
-      pendingPlaybackSource: pendingPlaybackSource,
-      pendingPlaybackAvailable: true,
-      pendingPlaybackAutoPlay: true,
-    );
+    final state =
+        RoomPlaybackSessionState(
+          activeRoomDetail: roomDetail,
+          selectedQuality: selectedQuality,
+          playbackSource: playbackSource,
+          playUrls: const [playUrl],
+          playbackAvailable: true,
+        ).copyWith(
+          effectiveQuality: effectiveQuality,
+          pendingPlaybackSource: pendingPlaybackSource,
+          pendingPlaybackAvailable: true,
+          pendingPlaybackAutoPlay: true,
+        );
 
     expect(state.activeRoomDetail, same(roomDetail));
     expect(state.selectedQuality, same(selectedQuality));
@@ -61,31 +62,33 @@ void main() {
   });
 
   test('copyWith clear flags drop nullable playback session fields', () {
-    final state = RoomPlaybackSessionState(
-      activeRoomDetail: const LiveRoomDetail(
-        providerId: 'bilibili',
-        roomId: '6',
-        title: '系统演示直播间',
-        streamerName: '系统演示主播',
-      ),
-      selectedQuality: const LivePlayQuality(id: 'fhd', label: '原画'),
-      effectiveQuality: const LivePlayQuality(id: 'hd', label: '高清'),
-      playbackSource:
-          PlaybackSource(url: Uri.parse('https://example.com/live.flv')),
-      pendingPlaybackSource: PlaybackSource(
-        url: Uri.parse('https://example.com/pending.flv'),
-      ),
-      pendingPlaybackAvailable: true,
-      pendingPlaybackAutoPlay: true,
-    ).copyWith(
-      clearActiveRoomDetail: true,
-      clearSelectedQuality: true,
-      clearEffectiveQuality: true,
-      clearPlaybackSource: true,
-      clearPendingPlaybackSource: true,
-      pendingPlaybackAvailable: false,
-      pendingPlaybackAutoPlay: false,
-    );
+    final state =
+        RoomPlaybackSessionState(
+          activeRoomDetail: const LiveRoomDetail(
+            providerId: 'bilibili',
+            roomId: '6',
+            title: '系统演示直播间',
+            streamerName: '系统演示主播',
+          ),
+          selectedQuality: LivePlayQuality(id: 'fhd', label: '原画'),
+          effectiveQuality: LivePlayQuality(id: 'hd', label: '高清'),
+          playbackSource: PlaybackSource(
+            url: Uri.parse('https://example.com/live.flv'),
+          ),
+          pendingPlaybackSource: PlaybackSource(
+            url: Uri.parse('https://example.com/pending.flv'),
+          ),
+          pendingPlaybackAvailable: true,
+          pendingPlaybackAutoPlay: true,
+        ).copyWith(
+          clearActiveRoomDetail: true,
+          clearSelectedQuality: true,
+          clearEffectiveQuality: true,
+          clearPlaybackSource: true,
+          clearPendingPlaybackSource: true,
+          pendingPlaybackAvailable: false,
+          pendingPlaybackAutoPlay: false,
+        );
 
     expect(state.activeRoomDetail, isNull);
     expect(state.selectedQuality, isNull);

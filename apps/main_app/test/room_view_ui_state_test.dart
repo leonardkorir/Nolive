@@ -14,6 +14,7 @@ void main() {
     expect(state.pipSupported, isFalse);
     expect(state.enteringPictureInPicture, isFalse);
     expect(state.danmakuVisibleBeforePip, isTrue);
+    expect(state.fullscreenSessionActive, isFalse);
   });
 
   test('room view ui state copyWith updates selected flags only', () {
@@ -32,5 +33,12 @@ void main() {
     expect(next.enteringPictureInPicture, isTrue);
     expect(next.showFullscreenChrome, isTrue);
     expect(next.lockFullscreenControls, isFalse);
+  });
+
+  test('fullscreen session active stays true during bootstrap pending', () {
+    const state = RoomViewUiState(fullscreenBootstrapPending: true);
+
+    expect(state.isFullscreen, isFalse);
+    expect(state.fullscreenSessionActive, isTrue);
   });
 }

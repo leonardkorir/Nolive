@@ -141,11 +141,11 @@ void main() {
         expect(detail.sourceUrl, 'https://chaturbate.com/kittengirlxo/');
         expect(detail.isLive, isTrue);
         expect(detail.viewerCount, 9627);
-        expect(detail.danmakuToken, isA<Map>());
-        final danmakuToken = detail.danmakuToken as Map;
-        expect(danmakuToken['broadcasterUid'], 'P7746ZL');
-        expect(danmakuToken['csrfToken'], context.csrfToken);
-        expect(danmakuToken['backend'], 'a');
+        final danmakuToken = detail.danmakuToken as ChaturbateDanmakuToken?;
+        expect(danmakuToken, isNotNull);
+        expect(danmakuToken!.broadcasterUid, 'P7746ZL');
+        expect(danmakuToken.csrfToken, context.csrfToken);
+        expect(danmakuToken.backend, 'a');
 
         final qualities = ChaturbateMapper.mapPlayQualities(detail);
         expect(qualities, hasLength(1));
@@ -309,6 +309,24 @@ void main() {
         );
       });
 
+      test('hls parser prefers default audio rendition within a group', () {
+        const parser = ChaturbateHlsMasterPlaylistParser();
+        const playlist = '''
+#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio_main",NAME="fallback",DEFAULT=NO,AUTOSELECT=NO,URI="fallback.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio_main",NAME="default",DEFAULT=YES,AUTOSELECT=YES,URI="default.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=1296000,RESOLUTION=852x480,AUDIO="audio_main"
+video.m3u8
+''';
+
+        final variants = parser.parse(
+          playlistUrl: 'https://edge.example/master.m3u8',
+          source: playlist,
+        );
+
+        expect(variants.single.audioUrl, 'https://edge.example/default.m3u8');
+      });
+
       test('play mapper ignores request cookie for playback headers', () {
         final detail = LiveRoomDetail(
           providerId: ProviderId.chaturbate.value,
@@ -322,7 +340,7 @@ void main() {
             'requestCookie': 'cf_clearance=demo; csrftoken=demo',
           },
         );
-        const quality = LivePlayQuality(
+        final quality = LivePlayQuality(
           id: '720p',
           label: '720p',
           metadata: {
@@ -440,7 +458,7 @@ void main() {
 
         final urls = ChaturbateMapper.mapPlayUrls(
           detail,
-          const LivePlayQuality(
+          LivePlayQuality(
             id: 'auto',
             label: 'Auto',
             isDefault: true,

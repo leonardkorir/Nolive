@@ -40,7 +40,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.widget<Switch>(youtubeToggle).value, isFalse);
-    expect(bootstrap.layoutPreferences.value.isProviderEnabled('youtube'),
-        isFalse);
+    expect(
+      bootstrap.layoutPreferences.value.isProviderEnabled('youtube'),
+      isFalse,
+    );
   });
 }

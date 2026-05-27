@@ -1,5 +1,8 @@
+import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
+import 'package:live_providers/src/providers/provider_runtime_support.dart';
 import 'package:live_providers/src/providers/huya/huya_live_data_source.dart';
+import 'package:live_providers/src/providers/huya/huya_mapper.dart';
 import 'package:live_providers/src/providers/huya/huya_sign_service.dart';
 import 'package:live_providers/src/providers/huya/huya_transport.dart';
 import 'package:test/test.dart';
@@ -57,6 +60,61 @@ void main() {
     expect(detail.streamerName, '虎牙热门主播');
     expect(detail.areaName, '热门游戏');
     expect(detail.description, '虎牙游戏厅');
+  });
+
+  test('huya sign service keeps anti-code unchanged when required fields miss',
+      () {
+    final signService = HttpHuyaSignService();
+    final antiCode = 'fm=dGVzdF9wcmVmaXg=&ctype=huya_pc_exe&t=100';
+    final url = signService.buildUrl(
+      line: {
+        'line': 'https://flv.huya.test/src',
+        'lineType': 'flv',
+        'antiCode': antiCode,
+        'streamName': 'demo',
+        'presenterUid': 123,
+      },
+      bitRate: 0,
+    );
+
+    expect(url, contains(antiCode));
+  });
+
+  test('huya mapper rejects non-map search payloads', () {
+    expect(
+      () => HuyaMapper.mapSearchResponse('[]', page: 1),
+      throwsA(isA<ProviderParseException>()),
+    );
+  });
+
+  test('live huya runtime uses injected browser profile for play headers',
+      () async {
+    final transport = _FakeHuyaTransport();
+    final signService = HttpHuyaSignService(
+      browserProfile: const ProviderBrowserProfile(
+        userAgent: 'SimpleLive-HY-UA',
+        acceptLanguage: 'en-US',
+        browserName: 'Chrome',
+        browserVersion: '146.0.0.0',
+        osName: 'Linux',
+        osVersion: '',
+      ),
+    );
+    final provider = HuyaProvider(
+      dataSource: HuyaLiveDataSource(
+        transport: transport,
+        signService: signService,
+      ),
+    );
+
+    final detail = await provider.fetchRoomDetail('yy/123456');
+    final qualities = await provider.fetchPlayQualities(detail);
+    final urls = await provider.fetchPlayUrls(
+      detail: detail,
+      quality: qualities.firstWhere((item) => item.isDefault),
+    );
+
+    expect(urls.first.headers['user-agent'], 'SimpleLive-HY-UA');
   });
 }
 

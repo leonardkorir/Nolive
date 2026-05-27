@@ -29,7 +29,10 @@ PlayerBackend resolveRoomPlaybackBackend({
 
 bool _prefersMpvOnAndroid(ProviderId providerId) {
   return switch (providerId) {
-    ProviderId.youtube || ProviderId.twitch || ProviderId.chaturbate => true,
+    ProviderId.youtube ||
+    ProviderId.twitch ||
+    ProviderId.chaturbate ||
+    ProviderId.stripchat => true,
     _ => false,
   };
 }

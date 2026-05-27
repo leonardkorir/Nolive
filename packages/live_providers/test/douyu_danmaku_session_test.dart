@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:live_core/live_core.dart';
 import 'package:live_providers/src/danmaku/douyu_danmaku_session.dart';
 import 'package:test/test.dart';
 
@@ -69,6 +70,74 @@ void main() {
 
     await session.disconnect();
   });
+
+  test(
+      'douyu danmaku session clears state on socket error and allows reconnect',
+      () async {
+    var connectCallCount = 0;
+    final firstController = StreamController<dynamic>();
+    final firstClient = _FakeDouyuSocketClientFromController(firstController);
+    final session = DouyuDanmakuSession(
+      roomId: '12345',
+      socketUrls: const ['wss://danmuproxy.douyu.com:8502/'],
+      socketConnector: (uri,
+          {required headers, required connectTimeout}) async {
+        connectCallCount++;
+        return connectCallCount == 1 ? firstClient : _FakeDouyuSocketClient();
+      },
+    );
+
+    final notices = <String>[];
+    session.messages.listen((msg) {
+      if (msg.type == LiveMessageType.notice) notices.add(msg.content);
+    });
+
+    await session.connect();
+    expect(connectCallCount, 1);
+
+    firstController.addError(StateError('network failure'));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(firstClient.closed, isTrue);
+
+    // zombie fix: _connected should be false after error, allowing reconnect.
+    await session.connect();
+    expect(connectCallCount, 2);
+    expect(notices.any((n) => n.contains('斗鱼弹幕连接异常')), isTrue);
+
+    await session.disconnect();
+    if (!firstController.isClosed) {
+      await firstController.close();
+    }
+  });
+
+  test('douyu danmaku session throws on empty socket URLs', () async {
+    final session = DouyuDanmakuSession(
+      roomId: '12345',
+      socketUrls: const [],
+    );
+    await expectLater(session.connect, throwsStateError);
+  });
+}
+
+class _FakeDouyuSocketClientFromController implements DouyuSocketClient {
+  _FakeDouyuSocketClientFromController(this._controller);
+  final StreamController<dynamic> _controller;
+  bool closed = false;
+
+  @override
+  Stream<dynamic> get stream => _controller.stream;
+
+  @override
+  void add(dynamic data) {}
+
+  @override
+  Future<void> close() async {
+    closed = true;
+    if (!_controller.isClosed) {
+      await _controller.close();
+    }
+  }
 }
 
 class _FakeDouyuSocketClient implements DouyuSocketClient {

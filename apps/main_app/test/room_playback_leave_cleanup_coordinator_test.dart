@@ -30,10 +30,7 @@ void main() {
       harness.player.events,
       containsAllInOrder(<String>['stop', 'refreshBackend']),
     );
-    expect(
-      harness.player.events.where((event) => event == 'stop').length,
-      1,
-    );
+    expect(harness.player.events.where((event) => event == 'stop').length, 1);
     expect(harness.refreshRuntime?.refreshCount, 1);
     expect(
       harness.traces,
@@ -45,34 +42,37 @@ void main() {
   });
 
   test(
-      'cleanup stops active MPV sessions without backend refresh on Android leave',
-      () async {
-    final harness = _CleanupHarness(
-      playerBackend: PlayerBackend.mpv,
-      refreshableRuntime: true,
-    );
-    addTearDown(harness.dispose);
-    harness.player.emit(
-      PlayerState(
-        backend: PlayerBackend.mpv,
-        status: PlaybackStatus.playing,
-        source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
-      ),
-    );
+    'cleanup stops active MPV sessions without backend refresh on Android leave',
+    () async {
+      final harness = _CleanupHarness(
+        playerBackend: PlayerBackend.mpv,
+        refreshableRuntime: true,
+      );
+      addTearDown(harness.dispose);
+      harness.player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          source: PlaybackSource(
+            url: Uri.parse('https://example.com/live.m3u8'),
+          ),
+        ),
+      );
 
-    await harness.coordinator.cleanupPlaybackOnLeave();
+      await harness.coordinator.cleanupPlaybackOnLeave();
 
-    expect(harness.player.events, contains('stop'));
-    expect(harness.player.events, isNot(contains('refreshBackend')));
-    expect(harness.refreshRuntime?.refreshCount, 0);
-    expect(
-      harness.traces,
-      containsAll(<String>[
-        'cleanup playback state backend=mpv status=playing hasSource=true refresh=false',
-        'cleanup playback refresh skipped backend=mpv status=playing hasSource=true',
-      ]),
-    );
-  });
+      expect(harness.player.events, contains('stop'));
+      expect(harness.player.events, isNot(contains('refreshBackend')));
+      expect(harness.refreshRuntime?.refreshCount, 0);
+      expect(
+        harness.traces,
+        containsAll(<String>[
+          'cleanup playback state backend=mpv status=playing hasSource=true refresh=false',
+          'cleanup playback refresh skipped backend=mpv status=playing hasSource=true',
+        ]),
+      );
+    },
+  );
 
   test('cleanup skips stop while entering picture-in-picture', () async {
     final harness = _CleanupHarness();

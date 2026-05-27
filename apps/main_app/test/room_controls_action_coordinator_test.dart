@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_async/fake_async.dart';
@@ -20,26 +22,21 @@ import 'package:nolive_app/src/shared/application/player_runtime_controller.dart
 import 'room_fullscreen_test_fakes.dart';
 
 void main() {
-  const autoQuality = LivePlayQuality(
+  final autoQuality = LivePlayQuality(
     id: 'auto',
     label: '自动',
     isDefault: true,
     sortOrder: 100,
   );
-  const highQuality = LivePlayQuality(
-    id: '1080',
-    label: '原画',
-    sortOrder: 1080,
-  );
-  const fallbackQuality = LivePlayQuality(
+  final highQuality = LivePlayQuality(id: '1080', label: '原画', sortOrder: 1080);
+  final fallbackQuality = LivePlayQuality(
     id: '720',
     label: '高清',
     sortOrder: 720,
   );
 
-  PlaybackSource source(String path) => PlaybackSource(
-        url: Uri.parse('https://example.com/$path.m3u8'),
-      );
+  PlaybackSource source(String path) =>
+      PlaybackSource(url: Uri.parse('https://example.com/$path.m3u8'));
 
   LivePlayUrl playUrl(
     String path, {
@@ -56,19 +53,18 @@ void main() {
   LoadedRoomSnapshot snapshot({
     required ProviderId providerId,
     required LiveRoomDetail detail,
-    LivePlayQuality selectedQuality = autoQuality,
+    LivePlayQuality? selectedQuality,
     List<LivePlayUrl> playUrls = const <LivePlayUrl>[],
-    List<LivePlayQuality> qualities = const <LivePlayQuality>[
-      autoQuality,
-      highQuality,
-      fallbackQuality,
-    ],
+    List<LivePlayQuality>? qualities,
   }) {
+    final resolvedQualities =
+        qualities ??
+        <LivePlayQuality>[autoQuality, highQuality, fallbackQuality];
     return LoadedRoomSnapshot(
       providerId: providerId,
       detail: detail,
-      qualities: qualities,
-      selectedQuality: selectedQuality,
+      qualities: resolvedQualities,
+      selectedQuality: selectedQuality ?? autoQuality,
       playUrls: playUrls,
     );
   }
@@ -127,416 +123,604 @@ void main() {
   }
 
   test(
-      'room controls action coordinator switches quality and reschedules twitch recovery',
-      () async {
-    final harness = _CoordinatorHarness(providerId: ProviderId.twitch);
-    final stateSnapshot = snapshot(
-      providerId: ProviderId.twitch,
-      detail: harness.detail,
-      selectedQuality: autoQuality,
-      playUrls: [playUrl('initial', lineLabel: '主线路')],
-    );
-    harness.latestLoadedState = latestState(
-      providerId: ProviderId.twitch,
-      detail: harness.detail,
-      snapshot: stateSnapshot,
-    );
-    harness.selectedQuality = autoQuality;
-    harness.effectiveQuality = autoQuality;
-    harness.activeRoomDetail = harness.detail;
-    harness.nextResolved = ResolvedPlaySource(
-      quality: highQuality,
-      effectiveQuality: fallbackQuality,
-      playUrls: [playUrl('fallback', lineLabel: '降档线路')],
-      playbackSource: source('fallback'),
-    );
-    final coordinator = harness.createCoordinator();
-    addTearDown(coordinator.dispose);
-    addTearDown(harness.dispose);
+    'room controls action coordinator switches quality and reschedules twitch recovery',
+    () async {
+      final harness = _CoordinatorHarness(providerId: ProviderId.twitch);
+      final stateSnapshot = snapshot(
+        providerId: ProviderId.twitch,
+        detail: harness.detail,
+        selectedQuality: autoQuality,
+        playUrls: [playUrl('initial', lineLabel: '主线路')],
+      );
+      harness.latestLoadedState = latestState(
+        providerId: ProviderId.twitch,
+        detail: harness.detail,
+        snapshot: stateSnapshot,
+      );
+      harness.selectedQuality = autoQuality;
+      harness.effectiveQuality = autoQuality;
+      harness.activeRoomDetail = harness.detail;
+      harness.nextResolved = ResolvedPlaySource(
+        quality: highQuality,
+        effectiveQuality: fallbackQuality,
+        playUrls: [playUrl('fallback', lineLabel: '降档线路')],
+        playbackSource: source('fallback'),
+      );
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
 
-    await coordinator.switchQuality(stateSnapshot, highQuality);
+      await coordinator.switchQuality(stateSnapshot, highQuality);
 
-    expect(
-      harness.boundPlaybackSource?.url.toString(),
-      'https://example.com/fallback.m3u8',
-    );
-    expect(harness.replacedSession?.effectiveQuality, fallbackQuality);
-    expect(harness.twitchResolvedPrepares, 1);
-    expect(harness.twitchRecoverySchedules, hasLength(1));
-    expect(harness.messages.last, contains('当前源实际返回 高清'));
-  });
-
-  test(
-      'room controls action coordinator skips equivalent chaturbate proxy rebind',
-      () async {
-    PlaybackSource chaturbateProxy(String token) => PlaybackSource(
-          url: Uri.parse(
-            'http://127.0.0.1:9999/chaturbate-llhls/$token/stream.m3u8',
-          ),
-          bufferProfile: PlaybackBufferProfile.chaturbateLlHlsProxyStable,
-        );
-
-    final harness = _CoordinatorHarness(providerId: ProviderId.chaturbate);
-    final currentSource = chaturbateProxy('current');
-    final nextSource = chaturbateProxy('next');
-    final stateSnapshot = snapshot(
-      providerId: ProviderId.chaturbate,
-      detail: harness.detail,
-      selectedQuality: highQuality,
-      playUrls: [playUrl('current', lineLabel: '主线路')],
-    );
-    harness.latestLoadedState = latestState(
-      providerId: ProviderId.chaturbate,
-      detail: harness.detail,
-      snapshot: stateSnapshot,
-    );
-    harness.selectedQuality = highQuality;
-    harness.effectiveQuality = highQuality;
-    harness.activeRoomDetail = harness.detail;
-    harness.runtime.player.emit(
-      PlayerState(
-        status: PlaybackStatus.playing,
-        source: currentSource,
-        backend: PlayerBackend.mpv,
-      ),
-    );
-    harness.nextResolved = ResolvedPlaySource(
-      quality: highQuality,
-      effectiveQuality: highQuality,
-      playUrls: [playUrl('next', lineLabel: '主线路')],
-      playbackSource: nextSource,
-    );
-    final coordinator = harness.createCoordinator();
-    addTearDown(coordinator.dispose);
-    addTearDown(harness.dispose);
-
-    await coordinator.switchQuality(stateSnapshot, highQuality);
-
-    expect(harness.boundPlaybackSource, isNull);
-    expect(harness.replacedSession?.playbackSource, currentSource);
-    expect(
-      harness.traces,
-      contains(
-          contains('manual apply source skipped equivalent chaturbate proxy')),
-    );
-  });
+      expect(
+        harness.boundPlaybackSource?.url.toString(),
+        'https://example.com/fallback.m3u8',
+      );
+      expect(harness.replacedSession?.effectiveQuality, fallbackQuality);
+      expect(harness.twitchResolvedPrepares, 1);
+      expect(harness.twitchRecoverySchedules, hasLength(1));
+      expect(harness.messages.last, contains('当前源实际返回 高清'));
+    },
+  );
 
   test(
-      'room controls action coordinator switches line with current session semantics',
-      () async {
-    final harness = _CoordinatorHarness(providerId: ProviderId.twitch);
-    final stateSnapshot = snapshot(
-      providerId: ProviderId.twitch,
-      detail: harness.detail,
-      selectedQuality: highQuality,
-      playUrls: [
-        playUrl(
-          'main',
-          lineLabel: '主线路',
-          metadata: const {'playerType': 'web_hls'},
+    'room controls action coordinator prepares stripchat startup promotion on quality switch',
+    () async {
+      final harness = _CoordinatorHarness(providerId: ProviderId.stripchat);
+      final stateSnapshot = snapshot(
+        providerId: ProviderId.stripchat,
+        detail: harness.detail,
+        selectedQuality: autoQuality,
+        playUrls: [playUrl('initial', lineLabel: '主线路')],
+      );
+      harness.latestLoadedState = latestState(
+        providerId: ProviderId.stripchat,
+        detail: harness.detail,
+        snapshot: stateSnapshot,
+      );
+      harness.selectedQuality = autoQuality;
+      harness.effectiveQuality = autoQuality;
+      harness.activeRoomDetail = harness.detail;
+      harness.nextResolved = ResolvedPlaySource(
+        quality: highQuality,
+        effectiveQuality: highQuality,
+        playUrls: [playUrl('1080', lineLabel: '1080p')],
+        playbackSource: source('1080'),
+      );
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
+
+      await coordinator.switchQuality(stateSnapshot, highQuality);
+
+      expect(harness.boundPlaybackSource?.url.toString(), contains('1080'));
+      expect(harness.twitchResolvedPrepares, 1);
+      expect(harness.twitchRecoverySchedules, hasLength(1));
+    },
+  );
+
+  test(
+    'room controls action coordinator skips equivalent chaturbate proxy rebind',
+    () async {
+      PlaybackSource chaturbateProxy(String token) => PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:9999/chaturbate-llhls/$token/stream.m3u8',
         ),
-      ],
-    );
-    harness.latestLoadedState = latestState(
-      providerId: ProviderId.twitch,
-      detail: harness.detail,
-      snapshot: stateSnapshot,
-    );
-    harness.selectedQuality = highQuality;
-    harness.effectiveQuality = highQuality;
-    harness.playbackAvailable = true;
-    final coordinator = harness.createCoordinator();
-    addTearDown(coordinator.dispose);
-    addTearDown(harness.dispose);
+        bufferProfile: PlaybackBufferProfile.chaturbateLlHlsProxyStable,
+      );
 
-    await coordinator.switchLine(
-      playUrl(
-        'backup',
-        lineLabel: '备用线路',
-        metadata: const {'playerType': 'ttvnw'},
-      ),
-    );
+      final harness = _CoordinatorHarness(providerId: ProviderId.chaturbate);
+      final currentSource = chaturbateProxy('current');
+      final nextSource = chaturbateProxy('next');
+      final stateSnapshot = snapshot(
+        providerId: ProviderId.chaturbate,
+        detail: harness.detail,
+        selectedQuality: highQuality,
+        playUrls: [playUrl('current', lineLabel: '主线路')],
+      );
+      harness.latestLoadedState = latestState(
+        providerId: ProviderId.chaturbate,
+        detail: harness.detail,
+        snapshot: stateSnapshot,
+      );
+      harness.selectedQuality = highQuality;
+      harness.effectiveQuality = highQuality;
+      harness.activeRoomDetail = harness.detail;
+      harness.runtime.player.emit(
+        PlayerState(
+          status: PlaybackStatus.playing,
+          source: currentSource,
+          backend: PlayerBackend.mpv,
+        ),
+      );
+      harness.nextResolved = ResolvedPlaySource(
+        quality: highQuality,
+        effectiveQuality: highQuality,
+        playUrls: [playUrl('next', lineLabel: '主线路')],
+        playbackSource: nextSource,
+      );
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
 
-    expect(harness.twitchLinePrepares, 1);
-    expect(harness.lineSwitchUpdate?.hasPlayback, isTrue);
-    expect(
-      harness.lineSwitchUpdate?.playbackSource.url.toString(),
-      'https://example.com/backup.m3u8',
-    );
-    expect(harness.twitchRecoverySchedules, hasLength(1));
-  });
+      await coordinator.switchQuality(stateSnapshot, highQuality);
 
-  test(
-      'room controls action coordinator uses current playback urls when rescheduling line-switch recovery',
-      () async {
-    final harness = _CoordinatorHarness(providerId: ProviderId.twitch);
-    final stateSnapshot = snapshot(
-      providerId: ProviderId.twitch,
-      detail: harness.detail,
-      selectedQuality: highQuality,
-      playUrls: [playUrl('stale', lineLabel: '旧线路')],
-    );
-    harness.latestLoadedState = latestState(
-      providerId: ProviderId.twitch,
-      detail: harness.detail,
-      snapshot: stateSnapshot,
-    );
-    harness.currentPlayUrls = [
-      playUrl('fresh', lineLabel: '新线路'),
-    ];
-    harness.selectedQuality = highQuality;
-    harness.effectiveQuality = highQuality;
-    harness.playbackAvailable = true;
-    final coordinator = harness.createCoordinator();
-    addTearDown(coordinator.dispose);
-    addTearDown(harness.dispose);
-
-    await coordinator.switchLine(
-      playUrl('backup', lineLabel: '备用线路'),
-    );
-
-    expect(
-      harness.twitchRecoverySchedules.single.playUrls.single.url,
-      'https://example.com/fresh.m3u8',
-    );
-  });
+      expect(harness.boundPlaybackSource, isNull);
+      expect(harness.replacedSession?.playbackSource, currentSource);
+      expect(
+        harness.traces,
+        contains(
+          contains('manual apply source skipped equivalent chaturbate proxy'),
+        ),
+      );
+    },
+  );
 
   test(
-      'room controls action coordinator refreshes room when player settings change playback policy',
-      () async {
-    final harness = _CoordinatorHarness();
-    harness.nextPlayerPreferences = playerPreferences(
-      backend: PlayerBackend.mpv,
-      preferHighestQuality: true,
-    );
-    final coordinator = harness.createCoordinator();
-    addTearDown(coordinator.dispose);
-    addTearDown(harness.dispose);
+    'room controls action coordinator switches line with current session semantics',
+    () async {
+      final harness = _CoordinatorHarness(providerId: ProviderId.twitch);
+      final stateSnapshot = snapshot(
+        providerId: ProviderId.twitch,
+        detail: harness.detail,
+        selectedQuality: highQuality,
+        playUrls: [
+          playUrl(
+            'main',
+            lineLabel: '主线路',
+            metadata: const {'playerType': 'web_hls'},
+          ),
+        ],
+      );
+      harness.latestLoadedState = latestState(
+        providerId: ProviderId.twitch,
+        detail: harness.detail,
+        snapshot: stateSnapshot,
+      );
+      harness.selectedQuality = highQuality;
+      harness.effectiveQuality = highQuality;
+      harness.playbackAvailable = true;
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
 
-    await coordinator.handlePlayerSettingsReturn(
-      previousPreferences: playerPreferences(
+      await coordinator.switchLine(
+        playUrl(
+          'backup',
+          lineLabel: '备用线路',
+          metadata: const {'playerType': 'ttvnw'},
+        ),
+      );
+
+      expect(harness.twitchLinePrepares, 1);
+      expect(harness.lineSwitchUpdate?.hasPlayback, isTrue);
+      expect(
+        harness.lineSwitchUpdate?.playbackSource.url.toString(),
+        'https://example.com/backup.m3u8',
+      );
+      expect(harness.twitchRecoverySchedules, hasLength(1));
+    },
+  );
+
+  test(
+    'room controls action coordinator uses current playback urls when rescheduling line-switch recovery',
+    () async {
+      final harness = _CoordinatorHarness(providerId: ProviderId.twitch);
+      final stateSnapshot = snapshot(
+        providerId: ProviderId.twitch,
+        detail: harness.detail,
+        selectedQuality: highQuality,
+        playUrls: [playUrl('stale', lineLabel: '旧线路')],
+      );
+      harness.latestLoadedState = latestState(
+        providerId: ProviderId.twitch,
+        detail: harness.detail,
+        snapshot: stateSnapshot,
+      );
+      harness.currentPlayUrls = [playUrl('fresh', lineLabel: '新线路')];
+      harness.selectedQuality = highQuality;
+      harness.effectiveQuality = highQuality;
+      harness.playbackAvailable = true;
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
+
+      await coordinator.switchLine(playUrl('backup', lineLabel: '备用线路'));
+
+      expect(
+        harness.twitchRecoverySchedules.single.playUrls.single.url,
+        'https://example.com/fresh.m3u8',
+      );
+    },
+  );
+
+  test(
+    'room controls action coordinator refreshes room when player settings change playback policy',
+    () async {
+      final harness = _CoordinatorHarness();
+      harness.nextPlayerPreferences = playerPreferences(
         backend: PlayerBackend.mpv,
-        preferHighestQuality: false,
-      ),
-    );
+        preferHighestQuality: true,
+      );
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
 
-    expect(harness.refreshRoomCalls, 1);
-    expect(harness.scheduledBootstraps, isEmpty);
-  });
+      await coordinator.handlePlayerSettingsReturn(
+        previousPreferences: playerPreferences(
+          backend: PlayerBackend.mpv,
+          preferHighestQuality: false,
+        ),
+      );
 
-  test(
-      'room controls action coordinator enforces backend and schedules same-source bootstrap when room reload is unnecessary',
-      () async {
-    final harness = _CoordinatorHarness(runtimeBackend: PlayerBackend.mpv);
-    harness.currentPlaybackSource = source('same');
-    harness.playbackAvailable = true;
-    harness.nextPlayerPreferences = playerPreferences(
-      backend: PlayerBackend.mdk,
-      autoPlayEnabled: false,
-    );
-    harness.runtime.player.emit(
-      PlayerState(
-        status: PlaybackStatus.error,
-        source: source('same'),
-        errorMessage: 'broken',
-      ),
-    );
-    final coordinator = harness.createCoordinator();
-    addTearDown(coordinator.dispose);
-    addTearDown(harness.dispose);
-
-    await coordinator.handlePlayerSettingsReturn(
-      previousPreferences: playerPreferences(backend: PlayerBackend.mpv),
-    );
-
-    expect(harness.runtime.ensuredBackends, <PlayerBackend>[PlayerBackend.mdk]);
-    expect(harness.appliedPlayerPreferences, harness.nextPlayerPreferences);
-    expect(harness.scheduledBootstraps, hasLength(1));
-    expect(harness.scheduledBootstraps.single.force, isTrue);
-    expect(harness.scheduledBootstraps.single.autoPlay, isFalse);
-  });
+      expect(harness.refreshRoomCalls, 1);
+      expect(harness.scheduledBootstraps, isEmpty);
+    },
+  );
 
   test(
-      'room controls action coordinator stops player-settings return side effects after unmount during backend enforce',
-      () async {
-    final harness = _CoordinatorHarness(runtimeBackend: PlayerBackend.mpv);
-    harness.currentPlaybackSource = source('same');
-    harness.playbackAvailable = true;
-    harness.nextPlayerPreferences = playerPreferences(
-      backend: PlayerBackend.mdk,
-      preferHighestQuality: true,
-    );
-    harness.onEnsureBackendWithoutPlaybackState = () {
-      harness.mounted = false;
-    };
-    final coordinator = harness.createCoordinator();
-    addTearDown(coordinator.dispose);
-    addTearDown(harness.dispose);
+    'room controls action coordinator enforces backend and schedules same-source bootstrap when room reload is unnecessary',
+    () async {
+      final harness = _CoordinatorHarness(runtimeBackend: PlayerBackend.mpv);
+      harness.currentPlaybackSource = source('same');
+      harness.playbackAvailable = true;
+      harness.nextPlayerPreferences = playerPreferences(
+        backend: PlayerBackend.mdk,
+        autoPlayEnabled: false,
+      );
+      harness.runtime.player.emit(
+        PlayerState(
+          status: PlaybackStatus.error,
+          source: source('same'),
+          errorMessage: 'broken',
+        ),
+      );
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
 
-    await coordinator.handlePlayerSettingsReturn(
-      previousPreferences: playerPreferences(backend: PlayerBackend.mpv),
-    );
+      await coordinator.handlePlayerSettingsReturn(
+        previousPreferences: playerPreferences(backend: PlayerBackend.mpv),
+      );
 
-    expect(harness.runtime.ensuredBackends, <PlayerBackend>[PlayerBackend.mdk]);
-    expect(harness.appliedPlayerPreferences, isNull);
-    expect(harness.refreshRoomCalls, 0);
-    expect(harness.scheduledBootstraps, isEmpty);
-  });
-
-  test(
-      'room controls action coordinator reloads danmaku preferences and rebinds danmaku session',
-      () async {
-    final harness = _CoordinatorHarness();
-    final stateSnapshot = snapshot(
-      providerId: ProviderId.bilibili,
-      detail: harness.detail,
-      playUrls: [playUrl('live')],
-    );
-    harness.latestLoadedState = latestState(
-      providerId: ProviderId.bilibili,
-      detail: harness.detail,
-      snapshot: stateSnapshot,
-    );
-    harness.nextBlockedKeywords = const ['剧透', '广告'];
-    harness.nextDanmakuPreferences = DanmakuPreferences.defaults.copyWith(
-      enabledByDefault: false,
-      nativeBatchMaskEnabled: false,
-    );
-    harness.openedDanmakuSession = _TestDanmakuSession();
-    final coordinator = harness.createCoordinator();
-    addTearDown(coordinator.dispose);
-    addTearDown(harness.dispose);
-
-    await coordinator.handleDanmakuSettingsReturn();
-
-    expect(harness.appliedDanmakuPreferences, harness.nextDanmakuPreferences);
-    expect(harness.appliedBlockedKeywords, harness.nextBlockedKeywords);
-    expect(harness.boundDanmakuSession, same(harness.openedDanmakuSession));
-  });
+      expect(harness.runtime.ensuredBackends, <PlayerBackend>[
+        PlayerBackend.mdk,
+      ]);
+      expect(harness.appliedPlayerPreferences, harness.nextPlayerPreferences);
+      expect(harness.scheduledBootstraps, hasLength(1));
+      expect(harness.scheduledBootstraps.single.force, isTrue);
+      expect(harness.scheduledBootstraps.single.autoPlay, isFalse);
+    },
+  );
 
   test(
-      'room controls action coordinator reloads danmaku against the current room future instead of stale latest state',
-      () async {
-    final harness = _CoordinatorHarness();
-    const staleDetail = LiveRoomDetail(
-      providerId: 'bilibili',
-      roomId: 'stale',
-      title: 'Stale Room',
-      streamerName: '旧主播',
-      sourceUrl: 'https://example.com/stale',
-    );
-    const currentDetail = LiveRoomDetail(
-      providerId: 'bilibili',
-      roomId: 'current',
-      title: 'Current Room',
-      streamerName: '新主播',
-      sourceUrl: 'https://example.com/current',
-    );
-    harness.latestLoadedState = latestState(
-      providerId: ProviderId.bilibili,
-      detail: staleDetail,
-      snapshot: snapshot(
+    'room controls action coordinator stops player-settings return side effects after unmount during backend enforce',
+    () async {
+      final harness = _CoordinatorHarness(runtimeBackend: PlayerBackend.mpv);
+      harness.currentPlaybackSource = source('same');
+      harness.playbackAvailable = true;
+      harness.nextPlayerPreferences = playerPreferences(
+        backend: PlayerBackend.mdk,
+        preferHighestQuality: true,
+      );
+      harness.onEnsureBackendWithoutPlaybackState = () {
+        harness.mounted = false;
+      };
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
+
+      await coordinator.handlePlayerSettingsReturn(
+        previousPreferences: playerPreferences(backend: PlayerBackend.mpv),
+      );
+
+      expect(harness.runtime.ensuredBackends, <PlayerBackend>[
+        PlayerBackend.mdk,
+      ]);
+      expect(harness.appliedPlayerPreferences, isNull);
+      expect(harness.refreshRoomCalls, 0);
+      expect(harness.scheduledBootstraps, isEmpty);
+    },
+  );
+
+  test(
+    'room controls action coordinator reloads danmaku preferences and rebinds danmaku session',
+    () async {
+      final harness = _CoordinatorHarness();
+      final stateSnapshot = snapshot(
+        providerId: ProviderId.bilibili,
+        detail: harness.detail,
+        playUrls: [playUrl('live')],
+      );
+      harness.latestLoadedState = latestState(
+        providerId: ProviderId.bilibili,
+        detail: harness.detail,
+        snapshot: stateSnapshot,
+      );
+      harness.nextBlockedKeywords = const ['剧透', '广告'];
+      harness.nextDanmakuPreferences = DanmakuPreferences.defaults.copyWith(
+        enabledByDefault: false,
+        nativeBatchMaskEnabled: false,
+      );
+      harness.openedDanmakuSession = _TestDanmakuSession();
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
+
+      await coordinator.handleDanmakuSettingsReturn();
+
+      expect(harness.appliedDanmakuPreferences, harness.nextDanmakuPreferences);
+      expect(harness.appliedBlockedKeywords, harness.nextBlockedKeywords);
+      expect(harness.boundDanmakuSession, same(harness.openedDanmakuSession));
+    },
+  );
+
+  test(
+    'room controls action coordinator reloads danmaku against the current room future instead of stale latest state',
+    () async {
+      final harness = _CoordinatorHarness();
+      const staleDetail = LiveRoomDetail(
+        providerId: 'bilibili',
+        roomId: 'stale',
+        title: 'Stale Room',
+        streamerName: '旧主播',
+        sourceUrl: 'https://example.com/stale',
+      );
+      const currentDetail = LiveRoomDetail(
+        providerId: 'bilibili',
+        roomId: 'current',
+        title: 'Current Room',
+        streamerName: '新主播',
+        sourceUrl: 'https://example.com/current',
+      );
+      harness.latestLoadedState = latestState(
         providerId: ProviderId.bilibili,
         detail: staleDetail,
-        playUrls: [playUrl('live')],
-      ),
-    );
-    harness.currentRoomDetailForDanmaku = currentDetail;
-    harness.openedDanmakuSession = _TestDanmakuSession();
-    final coordinator = harness.createCoordinator();
-    addTearDown(coordinator.dispose);
-    addTearDown(harness.dispose);
+        snapshot: snapshot(
+          providerId: ProviderId.bilibili,
+          detail: staleDetail,
+          playUrls: [playUrl('live')],
+        ),
+      );
+      harness.currentRoomDetailForDanmaku = currentDetail;
+      harness.openedDanmakuSession = _TestDanmakuSession();
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
 
-    await coordinator.handleDanmakuSettingsReturn();
+      await coordinator.handleDanmakuSettingsReturn();
 
-    expect(harness.openRoomDanmakuCalls.single.roomId, 'current');
-    expect(harness.boundDanmakuSession, same(harness.openedDanmakuSession));
-  });
-
-  test(
-      'room controls action coordinator reschedules auto close and leaves once',
-      () {
-    final harness = _CoordinatorHarness();
-    final coordinator = harness.createCoordinator();
-    addTearDown(coordinator.dispose);
-    addTearDown(harness.dispose);
-
-    fakeAsync((async) {
-      coordinator.setAutoCloseTimer(const Duration(minutes: 15));
-      final firstScheduled = coordinator.scheduledCloseAt;
-      coordinator.setAutoCloseTimer(const Duration(seconds: 3));
-
-      expect(coordinator.scheduledCloseAt, isNotNull);
-      expect(coordinator.scheduledCloseAt, isNot(firstScheduled));
-
-      async.elapse(const Duration(seconds: 4));
-      async.flushMicrotasks();
-
-      expect(coordinator.scheduledCloseAt, isNull);
-    });
-
-    expect(harness.leaveRoomCalls, 1);
-  });
+      expect(harness.openRoomDanmakuCalls.single.roomId, 'current');
+      expect(harness.boundDanmakuSession, same(harness.openedDanmakuSession));
+    },
+  );
 
   test(
-      'room controls action coordinator reports screenshot unsupported, failure, and success',
-      () async {
-    final unsupportedHarness = _CoordinatorHarness(
-      screenshotSupported: false,
-    );
-    final unsupportedCoordinator = unsupportedHarness.createCoordinator();
-    addTearDown(unsupportedCoordinator.dispose);
-    addTearDown(unsupportedHarness.dispose);
+    'room controls action coordinator reschedules auto close and leaves once',
+    () {
+      final harness = _CoordinatorHarness();
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
 
-    await unsupportedCoordinator.captureScreenshot();
-    expect(unsupportedHarness.messages.single, '当前版本暂不支持截图');
+      fakeAsync((async) {
+        coordinator.setAutoCloseTimer(const Duration(minutes: 15));
+        final firstScheduled = coordinator.scheduledCloseAt;
+        coordinator.setAutoCloseTimer(const Duration(seconds: 3));
 
-    final failingHarness = _CoordinatorHarness();
-    failingHarness.runtime.screenshotBytes = null;
-    final failingCoordinator = failingHarness.createCoordinator();
-    addTearDown(failingCoordinator.dispose);
-    addTearDown(failingHarness.dispose);
+        expect(coordinator.scheduledCloseAt, isNotNull);
+        expect(coordinator.scheduledCloseAt, isNot(firstScheduled));
 
-    await failingCoordinator.captureScreenshot();
-    expect(failingHarness.messages.single, startsWith('截图失败：'));
+        async.elapse(const Duration(seconds: 4));
+        async.flushMicrotasks();
 
-    final fallbackHarness = _CoordinatorHarness();
-    fallbackHarness.runtime.screenshotBytes = null;
-    fallbackHarness.renderedSurfaceScreenshotBytes =
-        Uint8List.fromList([4, 5, 6]);
-    final fallbackCoordinator = fallbackHarness.createCoordinator(
-      persistScreenshot: ({
-        required bytes,
-        required fileName,
-      }) async {
-        expect(bytes, orderedEquals(const [4, 5, 6]));
-        return '/tmp/rendered-surface.png';
-      },
-    );
-    addTearDown(fallbackCoordinator.dispose);
-    addTearDown(fallbackHarness.dispose);
+        expect(coordinator.scheduledCloseAt, isNull);
+      });
 
-    await fallbackCoordinator.captureScreenshot();
-    expect(fallbackHarness.messages.single, '已保存截图到 /tmp/rendered-surface.png');
+      expect(harness.leaveRoomCalls, 1);
+    },
+  );
 
-    final successHarness = _CoordinatorHarness();
-    successHarness.runtime.screenshotBytes = Uint8List.fromList([1, 2, 3]);
-    final successCoordinator = successHarness.createCoordinator(
-      persistScreenshot: ({
-        required bytes,
-        required fileName,
-      }) async {
-        expect(bytes, isNotEmpty);
-        expect(fileName, startsWith('nolive-bilibili-6-'));
-        return '/tmp/demo.png';
-      },
-    );
-    addTearDown(successCoordinator.dispose);
-    addTearDown(successHarness.dispose);
+  test(
+    'room controls action coordinator reports screenshot unsupported, failure, and success',
+    () async {
+      final unsupportedHarness = _CoordinatorHarness(
+        screenshotSupported: false,
+      );
+      final unsupportedCoordinator = unsupportedHarness.createCoordinator();
+      addTearDown(unsupportedCoordinator.dispose);
+      addTearDown(unsupportedHarness.dispose);
 
-    await successCoordinator.captureScreenshot();
-    expect(successHarness.messages.single, '已保存截图到 /tmp/demo.png');
-  });
+      await unsupportedCoordinator.captureScreenshot();
+      expect(unsupportedHarness.messages.single, '当前版本暂不支持截图');
+
+      final unavailableHarness = _CoordinatorHarness();
+      unavailableHarness.playbackAvailable = false;
+      final unavailableCoordinator = unavailableHarness.createCoordinator();
+      addTearDown(unavailableCoordinator.dispose);
+      addTearDown(unavailableHarness.dispose);
+
+      await unavailableCoordinator.captureScreenshot();
+      expect(unavailableHarness.runtime.screenshotCaptureCalls, 0);
+      expect(unavailableHarness.messages.single, '当前暂无可截图画面');
+
+      final failingHarness = _CoordinatorHarness();
+      failingHarness.runtime.screenshotBytes = null;
+      final failingCoordinator = failingHarness.createCoordinator();
+      addTearDown(failingCoordinator.dispose);
+      addTearDown(failingHarness.dispose);
+
+      await failingCoordinator.captureScreenshot();
+      expect(failingHarness.messages.single, startsWith('截图失败：'));
+
+      final fallbackHarness = _CoordinatorHarness();
+      fallbackHarness.runtime.screenshotBytes = null;
+      fallbackHarness.renderedSurfaceScreenshotBytes = Uint8List.fromList([
+        4,
+        5,
+        6,
+      ]);
+      final fallbackCoordinator = fallbackHarness.createCoordinator(
+        persistScreenshot: ({required bytes, required fileName}) async {
+          expect(bytes, orderedEquals(const [4, 5, 6]));
+          return '/tmp/rendered-surface.png';
+        },
+      );
+      addTearDown(fallbackCoordinator.dispose);
+      addTearDown(fallbackHarness.dispose);
+
+      await fallbackCoordinator.captureScreenshot();
+      expect(
+        fallbackHarness.messages.single,
+        '已保存截图到 /tmp/rendered-surface.png',
+      );
+
+      final successHarness = _CoordinatorHarness();
+      successHarness.runtime.screenshotBytes = Uint8List.fromList([1, 2, 3]);
+      final successCoordinator = successHarness.createCoordinator(
+        persistScreenshot: ({required bytes, required fileName}) async {
+          expect(bytes, isNotEmpty);
+          expect(fileName, startsWith('nolive-bilibili-6-'));
+          return '/tmp/demo.png';
+        },
+      );
+      addTearDown(successCoordinator.dispose);
+      addTearDown(successHarness.dispose);
+
+      await successCoordinator.captureScreenshot();
+      expect(successHarness.messages.single, '已保存截图到 /tmp/demo.png');
+    },
+  );
+
+  test(
+    'room controls action coordinator saves screenshots with png filter',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'nolive-screenshot-test-',
+      );
+      final outputFile = File('${directory.path}/capture.png');
+      addTearDown(() async {
+        if (await directory.exists()) {
+          await directory.delete(recursive: true);
+        }
+      });
+      String? selectedDialogTitle;
+      String? selectedFileName;
+      FileType? selectedType;
+      List<String>? selectedAllowedExtensions;
+
+      final harness = _CoordinatorHarness();
+      harness.runtime.screenshotBytes = Uint8List.fromList(<int>[1, 2, 3]);
+      final coordinator = harness.createCoordinator(
+        pickScreenshotSavePath:
+            ({
+              required dialogTitle,
+              required fileName,
+              required type,
+              allowedExtensions,
+            }) async {
+              selectedDialogTitle = dialogTitle;
+              selectedFileName = fileName;
+              selectedType = type;
+              selectedAllowedExtensions = allowedExtensions;
+              return outputFile.path;
+            },
+      );
+      addTearDown(coordinator.dispose);
+      addTearDown(harness.dispose);
+
+      await coordinator.captureScreenshot();
+
+      expect(selectedDialogTitle, '保存截图');
+      expect(selectedFileName, startsWith('nolive-bilibili-6-'));
+      expect(selectedType, FileType.custom);
+      expect(selectedAllowedExtensions, const ['png']);
+      expect(await outputFile.readAsBytes(), const [1, 2, 3]);
+      expect(harness.messages.single, '已保存截图到 ${outputFile.path}');
+    },
+  );
+
+  test(
+    'room controls action coordinator persists mobile screenshots through backup and gallery',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'nolive-mobile-screenshot-test-',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) {
+          await directory.delete(recursive: true);
+        }
+      });
+
+      final successHarness = _CoordinatorHarness();
+      successHarness.runtime.screenshotBytes = Uint8List.fromList(<int>[
+        7,
+        8,
+        9,
+      ]);
+      var galleryName = '';
+      var galleryQuality = 0;
+      final successCoordinator = successHarness.createCoordinator(
+        mobileScreenshotPersistence: true,
+        resolveScreenshotDirectory: () async => directory,
+        saveScreenshotToGallery:
+            (bytes, {required name, required quality}) async {
+              expect(bytes, orderedEquals(<int>[7, 8, 9]));
+              galleryName = name;
+              galleryQuality = quality;
+              return const {'isSuccess': true};
+            },
+      );
+      addTearDown(successCoordinator.dispose);
+      addTearDown(successHarness.dispose);
+
+      await successCoordinator.captureScreenshot();
+
+      final screenshotDirectory = Directory('${directory.path}/screenshots');
+      expect(await screenshotDirectory.exists(), isFalse);
+      expect(galleryName, startsWith('nolive-bilibili-6-'));
+      expect(galleryName, isNot(endsWith('.png')));
+      expect(galleryQuality, 100);
+      expect(successHarness.messages.single, '已保存截图到系统相册');
+
+      final galleryFirstHarness = _CoordinatorHarness();
+      galleryFirstHarness.runtime.screenshotBytes = Uint8List.fromList(<int>[
+        3,
+      ]);
+      final galleryFirstCoordinator = galleryFirstHarness.createCoordinator(
+        mobileScreenshotPersistence: true,
+        resolveScreenshotDirectory: () async => null,
+        saveScreenshotToGallery:
+            (bytes, {required name, required quality}) async {
+              expect(bytes, orderedEquals(<int>[3]));
+              return const {'isSuccess': true};
+            },
+      );
+      addTearDown(galleryFirstCoordinator.dispose);
+      addTearDown(galleryFirstHarness.dispose);
+
+      await galleryFirstCoordinator.captureScreenshot();
+      expect(galleryFirstHarness.messages.single, '已保存截图到系统相册');
+
+      final fallbackHarness = _CoordinatorHarness();
+      fallbackHarness.runtime.screenshotBytes = Uint8List.fromList(<int>[1, 2]);
+      final fallbackCoordinator = fallbackHarness.createCoordinator(
+        mobileScreenshotPersistence: true,
+        resolveScreenshotDirectory: () async => directory,
+        saveScreenshotToGallery:
+            (bytes, {required name, required quality}) async {
+              throw StateError('gallery unavailable');
+            },
+      );
+      addTearDown(fallbackCoordinator.dispose);
+      addTearDown(fallbackHarness.dispose);
+
+      await fallbackCoordinator.captureScreenshot();
+
+      expect(fallbackHarness.messages.single, startsWith('系统相册保存失败，已备份截图到 '));
+      expect(fallbackHarness.messages.single, contains('/screenshots/'));
+    },
+  );
 }
 
 class _CoordinatorHarness {
@@ -544,12 +728,12 @@ class _CoordinatorHarness {
     this.providerId = ProviderId.bilibili,
     PlayerBackend runtimeBackend = PlayerBackend.mpv,
     bool screenshotSupported = true,
-  })  : detail = roomDetail(providerId: providerId),
-        runtime = _TestCoordinatorRuntime(
-          TestRecordingPlayer(playerBackend: runtimeBackend),
-          backendOverride: runtimeBackend,
-          screenshotSupported: screenshotSupported,
-        ) {
+  }) : detail = roomDetail(providerId: providerId),
+       runtime = _TestCoordinatorRuntime(
+         TestRecordingPlayer(playerBackend: runtimeBackend),
+         backendOverride: runtimeBackend,
+         screenshotSupported: screenshotSupported,
+       ) {
     currentPlaybackSource = source('current');
     playbackAvailable = true;
     selectedQuality = autoQuality;
@@ -568,16 +752,15 @@ class _CoordinatorHarness {
     nextDanmakuPreferences = DanmakuPreferences.defaults;
   }
 
-  static const autoQuality = LivePlayQuality(
+  static final autoQuality = LivePlayQuality(
     id: 'auto',
     label: '自动',
     isDefault: true,
     sortOrder: 100,
   );
 
-  static PlaybackSource source(String path) => PlaybackSource(
-        url: Uri.parse('https://example.com/$path.m3u8'),
-      );
+  static PlaybackSource source(String path) =>
+      PlaybackSource(url: Uri.parse('https://example.com/$path.m3u8'));
 
   static LivePlayUrl playUrl(
     String path, {
@@ -636,29 +819,39 @@ class _CoordinatorHarness {
   final List<String> messages = <String>[];
   final List<String> traces = <String>[];
   final List<
-      ({
-        PlaybackSource? playbackSource,
-        bool hasPlayback,
-        bool autoPlay,
-        bool force,
-      })> scheduledBootstraps = <({
-    PlaybackSource? playbackSource,
-    bool hasPlayback,
-    bool autoPlay,
-    bool force,
-  })>[];
+    ({
+      PlaybackSource? playbackSource,
+      bool hasPlayback,
+      bool autoPlay,
+      bool force,
+    })
+  >
+  scheduledBootstraps =
+      <
+        ({
+          PlaybackSource? playbackSource,
+          bool hasPlayback,
+          bool autoPlay,
+          bool force,
+        })
+      >[];
   final List<
-      ({
-        LoadedRoomSnapshot snapshot,
-        PlaybackSource? playbackSource,
-        List<LivePlayUrl> playUrls,
-        LivePlayQuality selectedQuality,
-      })> twitchRecoverySchedules = <({
-    LoadedRoomSnapshot snapshot,
-    PlaybackSource? playbackSource,
-    List<LivePlayUrl> playUrls,
-    LivePlayQuality selectedQuality,
-  })>[];
+    ({
+      LoadedRoomSnapshot snapshot,
+      PlaybackSource? playbackSource,
+      List<LivePlayUrl> playUrls,
+      LivePlayQuality selectedQuality,
+    })
+  >
+  twitchRecoverySchedules =
+      <
+        ({
+          LoadedRoomSnapshot snapshot,
+          PlaybackSource? playbackSource,
+          List<LivePlayUrl> playUrls,
+          LivePlayQuality selectedQuality,
+        })
+      >[];
 
   RoomSessionLoadResult? latestLoadedState;
   PlaybackSource? currentPlaybackSource;
@@ -688,7 +881,8 @@ class _CoordinatorHarness {
     LivePlayQuality effectiveQuality,
     PlaybackSource? playbackSource,
     List<LivePlayUrl> playUrls,
-  })? replacedSession;
+  })?
+  replacedSession;
   ({PlaybackSource playbackSource, bool hasPlayback})? lineSwitchUpdate;
   PlaybackSource? boundPlaybackSource;
   DanmakuSession? openedDanmakuSession;
@@ -699,6 +893,10 @@ class _CoordinatorHarness {
 
   RoomControlsActionCoordinator createCoordinator({
     RoomPersistScreenshot? persistScreenshot,
+    RoomPickScreenshotSavePath? pickScreenshotSavePath,
+    bool? mobileScreenshotPersistence,
+    RoomResolveScreenshotDirectory? resolveScreenshotDirectory,
+    RoomSaveScreenshotToGallery? saveScreenshotToGallery,
   }) {
     runtime.onEnsureBackendWithoutPlaybackState =
         onEnsureBackendWithoutPlaybackState;
@@ -727,75 +925,76 @@ class _CoordinatorHarness {
             currentRoomDetailForDanmaku,
         resolvePlaybackRefresh: (_, __) async => nextResolved,
         playbackSourceFromLine: (playUrl, {quality}) => source(
-            Uri.parse(playUrl.url).pathSegments.last.replaceAll('.m3u8', '')),
-        bindPlaybackSourceWithRecovery: ({
-          required playbackSource,
-          required label,
-          bool autoPlay = false,
-          Duration autoPlayDelay = Duration.zero,
-          PlaybackSource? currentPlaybackSource,
-          bool preferFreshBackendBeforeFirstSetSource = false,
-          bool Function()? shouldAbortRetry,
-        }) async {
-          boundPlaybackSource = playbackSource;
-          return bindSucceeds;
-        },
-        replaceResolvedPlaybackSession: ({
-          required activeRoomDetail,
-          required selectedQuality,
-          required effectiveQuality,
-          required playbackSource,
-          required playUrls,
-        }) {
-          replacedSession = (
-            activeRoomDetail: activeRoomDetail,
-            selectedQuality: selectedQuality,
-            effectiveQuality: effectiveQuality,
-            playbackSource: playbackSource,
-            playUrls: playUrls,
-          );
-        },
-        updatePlaybackSourceForLineSwitch: ({
-          required playbackSource,
-          required hasPlayback,
-        }) {
-          lineSwitchUpdate = (
-            playbackSource: playbackSource,
-            hasPlayback: hasPlayback,
-          );
-        },
-        schedulePlaybackBootstrap: ({
-          required playbackSource,
-          required hasPlayback,
-          required autoPlay,
-          bool force = false,
-        }) {
-          scheduledBootstraps.add((
-            playbackSource: playbackSource,
-            hasPlayback: hasPlayback,
-            autoPlay: autoPlay,
-            force: force,
-          ));
-        },
-        scheduleTwitchRecovery: ({
-          required snapshot,
-          required playbackSource,
-          required playUrls,
-          required selectedQuality,
-        }) {
-          twitchRecoverySchedules.add((
-            snapshot: snapshot,
-            playbackSource: playbackSource,
-            playUrls: playUrls,
-            selectedQuality: selectedQuality,
-          ));
-        },
-        prepareTwitchForResolvedPlayback: ({
-          startupPromotionQuality,
-          required resetAttempts,
-        }) {
-          twitchResolvedPrepares += 1;
-        },
+          Uri.parse(playUrl.url).pathSegments.last.replaceAll('.m3u8', ''),
+        ),
+        bindPlaybackSourceWithRecovery:
+            ({
+              required playbackSource,
+              required label,
+              bool autoPlay = false,
+              Duration autoPlayDelay = Duration.zero,
+              PlaybackSource? currentPlaybackSource,
+              bool preferFreshBackendBeforeFirstSetSource = false,
+              bool Function()? shouldAbortRetry,
+            }) async {
+              boundPlaybackSource = playbackSource;
+              return bindSucceeds;
+            },
+        replaceResolvedPlaybackSession:
+            ({
+              required activeRoomDetail,
+              required selectedQuality,
+              required effectiveQuality,
+              required playbackSource,
+              required playUrls,
+            }) {
+              replacedSession = (
+                activeRoomDetail: activeRoomDetail,
+                selectedQuality: selectedQuality,
+                effectiveQuality: effectiveQuality,
+                playbackSource: playbackSource,
+                playUrls: playUrls,
+              );
+            },
+        updatePlaybackSourceForLineSwitch:
+            ({required playbackSource, required hasPlayback}) {
+              lineSwitchUpdate = (
+                playbackSource: playbackSource,
+                hasPlayback: hasPlayback,
+              );
+            },
+        schedulePlaybackBootstrap:
+            ({
+              required playbackSource,
+              required hasPlayback,
+              required autoPlay,
+              bool force = false,
+            }) {
+              scheduledBootstraps.add((
+                playbackSource: playbackSource,
+                hasPlayback: hasPlayback,
+                autoPlay: autoPlay,
+                force: force,
+              ));
+            },
+        scheduleTwitchRecovery:
+            ({
+              required snapshot,
+              required playbackSource,
+              required playUrls,
+              required selectedQuality,
+            }) {
+              twitchRecoverySchedules.add((
+                snapshot: snapshot,
+                playbackSource: playbackSource,
+                playUrls: playUrls,
+                selectedQuality: selectedQuality,
+              ));
+            },
+        prepareTwitchForResolvedPlayback:
+            ({startupPromotionQuality, required resetAttempts}) {
+              twitchResolvedPrepares += 1;
+            },
         prepareTwitchForLineSwitch: ({required resetAttempts}) {
           twitchLinePrepares += 1;
         },
@@ -803,22 +1002,21 @@ class _CoordinatorHarness {
         applyPlayerPreferences: (preferences) {
           appliedPlayerPreferences = preferences;
         },
-        refreshRoom: ({
-          bool showFeedback = false,
-          bool reloadPlayer = false,
-          bool forcePlaybackRebind = true,
-        }) async {
-          refreshRoomCalls += 1;
-        },
+        refreshRoom:
+            ({
+              bool showFeedback = false,
+              bool reloadPlayer = false,
+              bool forcePlaybackRebind = true,
+            }) async {
+              refreshRoomCalls += 1;
+            },
         loadDanmakuPreferences: () async => nextDanmakuPreferences,
         loadBlockedKeywords: () async => nextBlockedKeywords,
-        applyDanmakuPreferences: ({
-          required preferences,
-          required blockedKeywords,
-        }) {
-          appliedDanmakuPreferences = preferences;
-          appliedBlockedKeywords = blockedKeywords;
-        },
+        applyDanmakuPreferences:
+            ({required preferences, required blockedKeywords}) {
+              appliedDanmakuPreferences = preferences;
+              appliedBlockedKeywords = blockedKeywords;
+            },
         openRoomDanmaku: ({required detail}) async {
           openRoomDanmakuCalls.add(detail);
           return openedDanmakuSession;
@@ -834,6 +1032,10 @@ class _CoordinatorHarness {
             : () async => renderedSurfaceScreenshotBytes,
       ),
       persistScreenshot: persistScreenshot,
+      pickScreenshotSavePath: pickScreenshotSavePath,
+      mobileScreenshotPersistence: mobileScreenshotPersistence,
+      resolveScreenshotDirectory: resolveScreenshotDirectory,
+      saveScreenshotToGallery: saveScreenshotToGallery,
     );
   }
 
@@ -851,6 +1053,7 @@ class _TestCoordinatorRuntime extends PlayerRuntimeController {
   final PlayerBackend backendOverride;
   final bool screenshotSupported;
   final List<PlayerBackend> ensuredBackends = <PlayerBackend>[];
+  int screenshotCaptureCalls = 0;
   Uint8List? screenshotBytes = Uint8List.fromList(<int>[1, 2, 3]);
   VoidCallback? onEnsureBackendWithoutPlaybackState;
 
@@ -862,13 +1065,17 @@ class _TestCoordinatorRuntime extends PlayerRuntimeController {
 
   @override
   Future<void> ensureBackendWithoutPlaybackState(
-      PlayerBackend nextBackend) async {
+    PlayerBackend nextBackend,
+  ) async {
     ensuredBackends.add(nextBackend);
     onEnsureBackendWithoutPlaybackState?.call();
   }
 
   @override
-  Future<Uint8List?> captureScreenshot() async => screenshotBytes;
+  Future<Uint8List?> captureScreenshot() async {
+    screenshotCaptureCalls += 1;
+    return screenshotBytes;
+  }
 }
 
 class _TestDanmakuSession implements DanmakuSession {

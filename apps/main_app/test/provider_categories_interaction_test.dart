@@ -6,54 +6,57 @@ import 'package:nolive_app/src/features/category/presentation/provider_categorie
 import 'test_feature_dependencies.dart';
 
 void main() {
-  testWidgets('category page can favorite and unfavorite the selected category',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    bootstrap.providerRegistry.register(
-      ProviderRegistration(
-        descriptor: _kFavoriteCategoryDescriptor,
-        builder: () => _FavoriteCategoryProvider(),
-      ),
-    );
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ProviderCategoriesPage(
-          dependencies: buildCategoryFeatureDependencies(bootstrap),
-          providerId: _kFavoriteCategoryProviderId,
+  testWidgets(
+    'category page can favorite and unfavorite the selected category',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      bootstrap.providerRegistry.register(
+        ProviderRegistration(
+          descriptor: _kFavoriteCategoryDescriptor,
+          builder: () => _FavoriteCategoryProvider(),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
 
-    final favoriteButton =
-        find.byKey(const Key('provider-category-favorite-button'));
-    expect(favoriteButton, findsOneWidget);
-
-    await tester.tap(favoriteButton);
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(
-        const Key(
-          'provider-category-favorite-chip-favorite_categories-featured',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ProviderCategoriesPage(
+            dependencies: buildCategoryFeatureDependencies(bootstrap),
+            providerId: _kFavoriteCategoryProviderId,
+          ),
         ),
-      ),
-      findsOneWidget,
-    );
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(favoriteButton);
-    await tester.pumpAndSettle();
+      final favoriteButton = find.byKey(
+        const Key('provider-category-favorite-button'),
+      );
+      expect(favoriteButton, findsOneWidget);
 
-    expect(
-      find.byKey(
-        const Key(
-          'provider-category-favorite-chip-favorite_categories-featured',
+      await tester.tap(favoriteButton);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const Key(
+            'provider-category-favorite-chip-favorite_categories-featured',
+          ),
         ),
-      ),
-      findsNothing,
-    );
-  });
+        findsOneWidget,
+      );
+
+      await tester.tap(favoriteButton);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const Key(
+            'provider-category-favorite-chip-favorite_categories-featured',
+          ),
+        ),
+        findsNothing,
+      );
+    },
+  );
 }
 
 const _kFavoriteCategoryProviderId = ProviderId('favorite_categories');
@@ -61,9 +64,7 @@ const _kFavoriteCategoryProviderId = ProviderId('favorite_categories');
 const _kFavoriteCategoryDescriptor = ProviderDescriptor(
   id: _kFavoriteCategoryProviderId,
   displayName: 'Favorite Categories',
-  capabilities: {
-    ProviderCapability.categories,
-  },
+  capabilities: {ProviderCapability.categories},
   supportedPlatforms: {ProviderPlatform.android},
 );
 
@@ -74,7 +75,7 @@ class _FavoriteCategoryProvider extends LiveProvider
 
   @override
   Future<List<LiveCategory>> fetchCategories() async {
-    return const [
+    return [
       LiveCategory(
         id: 'games',
         name: '游戏',

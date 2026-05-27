@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,10 +10,13 @@ import 'package:live_storage/live_storage.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:nolive_app/src/app/bootstrap/default_state.dart';
+import 'package:nolive_app/src/app/platform/android_playback_bridge.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/app/platform/douyin_danmaku_signature_service.dart';
 import 'package:nolive_app/src/app/runtime_bridges/app_runtime_bridges.dart';
 import 'package:nolive_app/src/app/runtime_bridges/chaturbate/chaturbate_llhls_proxy.dart';
 import 'package:nolive_app/src/app/runtime_bridges/chaturbate/chaturbate_web_room_detail_loader.dart';
+import 'package:nolive_app/src/app/runtime_bridges/stripchat/stripchat_llhls_proxy.dart';
 import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_ad_guard_proxy.dart';
 import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_web_playback_bridge.dart';
 import 'package:nolive_app/src/features/browse/application/load_provider_highlights_use_case.dart';
@@ -58,6 +62,7 @@ import 'package:nolive_app/src/features/settings/application/manage_room_ui_pref
 import 'package:nolive_app/src/features/settings/application/manage_snapshot_data_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/secure_snapshot_import_coordinator.dart';
 import 'package:nolive_app/src/features/settings/application/sensitive_setting_keys.dart';
+import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 import 'package:nolive_app/src/features/settings/application/credential_migration_bundle.dart';
 import 'package:nolive_app/src/features/sync/application/manage_local_sync_use_case.dart';
 import 'package:nolive_app/src/features/sync/application/manage_remote_sync_use_case.dart';
@@ -65,7 +70,6 @@ import 'package:nolive_app/src/features/sync/application/sync_preferences_use_ca
 import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 import 'package:nolive_app/src/shared/application/provider_catalog_use_cases.dart';
-import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 part 'bootstrap_internals.dart';
 
@@ -75,9 +79,13 @@ AppBootstrap createAppBootstrap({
   AppRuntimeMode mode = AppRuntimeMode.preview,
   BilibiliAccountClient? bilibiliAccountClient,
   DouyinAccountClient? douyinAccountClient,
+  SecureCredentialStore? secureCredentialStore,
+  Future<void> Function()? onDispose,
+  AppPlatformCapabilities? platformCapabilities,
 }) {
   final repositories = _BootstrapRepositories.inMemory();
-  final secureCredentialStore = InMemorySecureCredentialStore();
+  final resolvedSecureCredentialStore =
+      secureCredentialStore ?? InMemorySecureCredentialStore();
   final state = _BootstrapStateBundle();
 
   seedDefaultAppState(
@@ -89,104 +97,8 @@ AppBootstrap createAppBootstrap({
   return _assembleAppBootstrap(
     _BootstrapAssemblyContext(
       mode: mode,
-      state: state,
-      repositories: repositories,
-      settings: _BootstrapSettingReaders.fromSnapshot(
-        repositories.settingsSnapshot,
-        secureSnapshot: secureCredentialStore.snapshot,
-      ),
-      secureCredentialStore: secureCredentialStore,
-      warmUpSecureCredentialStore: secureCredentialStore.ensureReady,
-      accountClients: _BootstrapAccountClients(
-        bilibili: bilibiliAccountClient ?? HttpBilibiliAccountClient(),
-        douyin: douyinAccountClient ?? HttpDouyinAccountClient(),
-      ),
-    ),
-  );
-}
-
-Future<AppBootstrap> createPersistentAppBootstrap({
-  AppRuntimeMode mode = AppRuntimeMode.live,
-  Directory? storageDirectory,
-  BilibiliAccountClient? bilibiliAccountClient,
-  DouyinAccountClient? douyinAccountClient,
-  SecureCredentialStore? secureCredentialStore,
-  Future<SecureCredentialStore> Function()? secureCredentialStoreLoader,
-}) async {
-  final resolvedDirectory =
-      storageDirectory ?? await getApplicationSupportDirectory();
-  AppLog.instance.info(
-    'bootstrap',
-    'createPersistentAppBootstrap mode=${mode.name} '
-        'storageDir=${resolvedDirectory.path}',
-  );
-  final storageFile = await _resolveStorageFile(resolvedDirectory);
-  AppLog.instance.info(
-    'bootstrap',
-    'resolved storage file=${storageFile.path}',
-  );
-  AppLog.instance.info(
-    'bootstrap',
-    'storage file store open start path=${storageFile.path}',
-  );
-  final store = await LocalStorageFileStore.open(file: storageFile);
-  AppLog.instance.info(
-    'bootstrap',
-    'storage file store open done path=${storageFile.path}',
-  );
-  final repositories = _BootstrapRepositories.persistent(store);
-  final state = _BootstrapStateBundle();
-  ProviderRegistry? liveProviderRegistry;
-  final resolvedSecureCredentialStore = secureCredentialStore ??
-      LazySecureCredentialStore(
-        settingsRepository: repositories.settingsRepository,
-        allowedKeys: SensitiveSettingKeys.secureCredentialKeys,
-        initialSettings: repositories.settingsSnapshot(),
-        loader:
-            secureCredentialStoreLoader ?? FlutterSecureCredentialStore.open,
-        onSnapshotChanged: (_) {
-          AppLog.instance.info(
-            'bootstrap',
-            'secure credential snapshot changed; clear live provider cache',
-          );
-          liveProviderRegistry?.clearCache();
-          state.providerCatalogRevision.value += 1;
-        },
-      );
-  AppLog.instance.info(
-    'bootstrap',
-    'secure store bootstrap ready mode='
-        '${secureCredentialStore == null ? 'deferred' : 'provided'} '
-        'separate=${resolvedSecureCredentialStore.storesSecureValuesSeparately} '
-        'keys=${resolvedSecureCredentialStore.snapshot().length}',
-  );
-
-  if (secureCredentialStore != null &&
-      resolvedSecureCredentialStore.storesSecureValuesSeparately) {
-    await MigrateSensitiveSettingsToSecureStoreUseCase(
-      settingsRepository: repositories.settingsRepository,
-      secureCredentialStore: resolvedSecureCredentialStore,
-    )();
-  } else if (secureCredentialStore != null) {
-    AppLog.instance.info(
-      'bootstrap',
-      'secure settings migration skipped mode=legacy-settings-fallback',
-    );
-  }
-
-  await ensureDefaultAppState(
-    settingsRepository: repositories.settingsRepository,
-    tagRepository: repositories.tagRepository,
-    themeModeNotifier: state.themeMode,
-  );
-  await syncLayoutPreferencesNotifierFromSettings(
-    settingsRepository: repositories.settingsRepository,
-    preferencesNotifier: state.layoutPreferences,
-  );
-
-  final bootstrap = _assembleAppBootstrap(
-    _BootstrapAssemblyContext(
-      mode: mode,
+      platformCapabilities:
+          platformCapabilities ?? AppPlatformCapabilities.current(),
       state: state,
       repositories: repositories,
       settings: _BootstrapSettingReaders.fromSnapshot(
@@ -199,10 +111,136 @@ Future<AppBootstrap> createPersistentAppBootstrap({
         bilibili: bilibiliAccountClient ?? HttpBilibiliAccountClient(),
         douyin: douyinAccountClient ?? HttpDouyinAccountClient(),
       ),
+      disposeResources: onDispose ?? () async {},
     ),
   );
-  liveProviderRegistry = bootstrap.providerRegistry;
-  return bootstrap;
+}
+
+Future<AppBootstrap> createPersistentAppBootstrap({
+  AppRuntimeMode mode = AppRuntimeMode.live,
+  Directory? storageDirectory,
+  BilibiliAccountClient? bilibiliAccountClient,
+  DouyinAccountClient? douyinAccountClient,
+  SecureCredentialStore? secureCredentialStore,
+  Future<SecureCredentialStore> Function()? secureCredentialStoreLoader,
+  AppPlatformCapabilities? platformCapabilities,
+}) async {
+  try {
+    final resolvedDirectory =
+        storageDirectory ?? await getApplicationSupportDirectory();
+    AppLog.instance.info(
+      'bootstrap',
+      'createPersistentAppBootstrap mode=${mode.name} '
+          'storageDir=${resolvedDirectory.path}',
+    );
+    final storageFile = await _resolveStorageFile(resolvedDirectory);
+    AppLog.instance.info(
+      'bootstrap',
+      'resolved storage file=${storageFile.path}',
+    );
+    AppLog.instance.info(
+      'bootstrap',
+      'storage file store open start path=${storageFile.path}',
+    );
+    final store = await LocalStorageFileStore.open(
+      file: storageFile,
+      repairCorruptFile: true,
+    );
+    AppLog.instance.info(
+      'bootstrap',
+      'storage file store open done path=${storageFile.path}',
+    );
+    final recoveryInfo = store.lastRecoveryInfo;
+    if (recoveryInfo != null) {
+      AppLog.instance.warn(
+        'bootstrap',
+        'storage snapshot recovered path=${recoveryInfo.corruptedFilePath} '
+            'backup=${recoveryInfo.backupFilePath} '
+            'reason=${recoveryInfo.reason}',
+      );
+    }
+    final repositories = _BootstrapRepositories.persistent(store);
+    final state = _BootstrapStateBundle();
+    ProviderRegistry? liveProviderRegistry;
+    final resolvedSecureCredentialStore =
+        secureCredentialStore ??
+        LazySecureCredentialStore(
+          settingsRepository: repositories.settingsRepository,
+          allowedKeys: SensitiveSettingKeys.secureCredentialKeys,
+          initialSettings: repositories.settingsSnapshot(),
+          loader:
+              secureCredentialStoreLoader ?? FlutterSecureCredentialStore.open,
+          onSnapshotChanged: (_) {
+            AppLog.instance.info(
+              'bootstrap',
+              'secure credential snapshot changed; clear live provider cache',
+            );
+            liveProviderRegistry?.clearCache();
+            state.providerCatalogRevision.value += 1;
+          },
+        );
+    AppLog.instance.info(
+      'bootstrap',
+      'secure store bootstrap ready mode='
+          '${secureCredentialStore == null ? 'deferred' : 'provided'} '
+          'separate=${resolvedSecureCredentialStore.storesSecureValuesSeparately} '
+          'keys=${resolvedSecureCredentialStore.snapshot().length}',
+    );
+
+    if (secureCredentialStore != null &&
+        resolvedSecureCredentialStore.storesSecureValuesSeparately) {
+      await MigrateSensitiveSettingsToSecureStoreUseCase(
+        settingsRepository: repositories.settingsRepository,
+        secureCredentialStore: resolvedSecureCredentialStore,
+      )();
+    } else if (secureCredentialStore != null) {
+      AppLog.instance.info(
+        'bootstrap',
+        'secure settings migration skipped mode=legacy-settings-fallback',
+      );
+    }
+
+    await ensureDefaultAppState(
+      settingsRepository: repositories.settingsRepository,
+      tagRepository: repositories.tagRepository,
+      themeModeNotifier: state.themeMode,
+    );
+    await syncLayoutPreferencesNotifierFromSettings(
+      settingsRepository: repositories.settingsRepository,
+      preferencesNotifier: state.layoutPreferences,
+    );
+
+    final bootstrap = _assembleAppBootstrap(
+      _BootstrapAssemblyContext(
+        mode: mode,
+        platformCapabilities:
+            platformCapabilities ?? AppPlatformCapabilities.current(),
+        state: state,
+        repositories: repositories,
+        settings: _BootstrapSettingReaders.fromSnapshot(
+          repositories.settingsSnapshot,
+          secureSnapshot: resolvedSecureCredentialStore.snapshot,
+        ),
+        secureCredentialStore: resolvedSecureCredentialStore,
+        warmUpSecureCredentialStore: resolvedSecureCredentialStore.ensureReady,
+        accountClients: _BootstrapAccountClients(
+          bilibili: bilibiliAccountClient ?? HttpBilibiliAccountClient(),
+          douyin: douyinAccountClient ?? HttpDouyinAccountClient(),
+        ),
+        disposeResources: () async {},
+      ),
+    );
+    liveProviderRegistry = bootstrap.providerRegistry;
+    return bootstrap;
+  } catch (error, stackTrace) {
+    AppLog.instance.error(
+      'bootstrap',
+      'persistent bootstrap failed: $error',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    Error.throwWithStackTrace(error, stackTrace);
+  }
 }
 
 class AppBootstrap {
@@ -294,7 +332,8 @@ class AppBootstrap {
     required this.applyPlayerPreferencesToRuntime,
     required this.parseRoomInput,
     required this.inspectParsedRoom,
-  });
+    required Future<void> Function() disposeResources,
+  }) : _disposeResources = disposeResources;
 
   final AppRuntimeMode mode;
   final Future<void> Function() warmUpSecureCredentialStore;
@@ -359,9 +398,9 @@ class AppBootstrap {
   final CreateBilibiliQrLoginSessionUseCase createBilibiliQrLoginSession;
   final PollBilibiliQrLoginSessionUseCase pollBilibiliQrLoginSession;
   final ClearProviderAccountUseCase clearProviderAccount;
-  final UdpLocalDiscoveryService localDiscoveryService;
-  final HttpLocalSyncServer localSyncServer;
-  final HttpLocalSyncClient localSyncClient;
+  final LocalDiscoveryService localDiscoveryService;
+  final LocalSyncServer localSyncServer;
+  final LocalSyncClient localSyncClient;
   final ExportLegacyConfigJsonUseCase exportLegacyConfigJson;
   final ExportSyncSnapshotJsonUseCase exportSyncSnapshotJson;
   final ImportSyncSnapshotJsonUseCase importSyncSnapshotJson;
@@ -383,6 +422,9 @@ class AppBootstrap {
   final ApplyPlayerPreferencesToRuntimeUseCase applyPlayerPreferencesToRuntime;
   final ParseRoomInputUseCase parseRoomInput;
   final InspectParsedRoomUseCase inspectParsedRoom;
+  final Future<void> Function() _disposeResources;
 
   bool get isLiveMode => mode == AppRuntimeMode.live;
+
+  Future<void> dispose() => _disposeResources();
 }

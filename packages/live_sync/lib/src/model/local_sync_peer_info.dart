@@ -4,19 +4,23 @@ class LocalSyncPeerInfo {
     required this.deviceId,
     required this.platform,
     this.snapshotPath = '/snapshot',
+    this.accessToken,
   });
 
   final String displayName;
   final String deviceId;
   final String platform;
   final String snapshotPath;
+  final String? accessToken;
 
-  Map<String, Object?> toJson() {
+  Map<String, Object?> toJson({bool includeAccessToken = false}) {
     return {
       'displayName': displayName,
       'deviceId': deviceId,
       'platform': platform,
       'snapshotPath': snapshotPath,
+      if (includeAccessToken && accessToken != null && accessToken!.isNotEmpty)
+        'accessToken': accessToken,
     };
   }
 
@@ -25,6 +29,7 @@ class LocalSyncPeerInfo {
     final deviceId = json['deviceId']?.toString().trim();
     final platform = json['platform']?.toString().trim();
     final snapshotPath = json['snapshotPath']?.toString().trim();
+    final accessToken = json['accessToken']?.toString().trim();
     return LocalSyncPeerInfo(
       displayName:
           (displayName == null || displayName.isEmpty) ? '未知设备' : displayName,
@@ -34,6 +39,8 @@ class LocalSyncPeerInfo {
       snapshotPath: (snapshotPath == null || snapshotPath.isEmpty)
           ? '/snapshot'
           : snapshotPath,
+      accessToken:
+          (accessToken == null || accessToken.isEmpty) ? null : accessToken,
     );
   }
 }

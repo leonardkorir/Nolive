@@ -1,3 +1,4 @@
+import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_providers/src/providers/youtube/youtube_api_client.dart';
 import 'package:test/test.dart';
@@ -30,7 +31,7 @@ void main() {
           detail.streamerAvatarUrl,
           contains('yt3.ggpht.com/jyb36VGQ9_JX8kSFb8lK4axC8UFXHg3m'),
         );
-        expect(detail.danmakuToken, isA<Map>());
+        expect(detail.danmakuToken, isA<YouTubeDanmakuToken>());
         expect(detail.metadata?['playerClientProfile'], 'web_safari');
 
         final qualities = await provider.fetchPlayQualities(detail);
@@ -66,7 +67,7 @@ void main() {
         expect(autoUrls[2].metadata?['audioUrl'], isNull);
       });
 
-      test('falls back to direct playback when hls media probe is forbidden',
+      test('keeps hls playback ahead of direct when media probe is forbidden',
           () async {
         final provider = YouTubeProvider.live(
           apiClient: _FixtureYouTubeApiClient(
@@ -77,15 +78,15 @@ void main() {
         final detail = await provider.fetchRoomDetail('Z3eFGbFcaXs');
         final qualities = await provider.fetchPlayQualities(detail);
         expect(qualities, isNotEmpty);
-        expect(qualities.first.metadata?['playbackMode'], 'direct');
+        expect(qualities.first.metadata?['playbackMode'], isNull);
 
         final urls = await provider.fetchPlayUrls(
           detail: detail,
           quality: qualities.first,
         );
         expect(urls, isNotEmpty);
-        expect(urls.first.lineLabel, 'WEB Direct');
-        expect(urls.first.url, contains('/direct/Z3eFGbFcaXs/1080p.mp4'));
+        expect(urls.first.lineLabel, 'Safari HLS');
+        expect(urls.first.url, contains('/safari/master.m3u8'));
       });
     },
   );
@@ -338,6 +339,7 @@ https://rr.googlevideo.com/audio-segment/Z3eFGbFcaXs/default-audio.aac
     required String visitorData,
     required String referer,
     String clientVersion = YouTubeApiClient.defaultWebClientVersion,
+    Duration timeout = YouTubeApiClient.liveChatRequestTimeout,
   }) async {
     final index = _liveChatIndex < _liveChatResponses.length
         ? _liveChatIndex

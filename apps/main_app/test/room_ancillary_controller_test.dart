@@ -6,35 +6,37 @@ import 'package:nolive_app/src/features/room/application/room_ancillary_controll
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 
 void main() {
-  test('room ancillary controller loads danmaku session and follow state',
-      () async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    await bootstrap.followRepository.upsert(
-      const FollowRecord(
-        providerId: 'bilibili',
+  test(
+    'room ancillary controller loads danmaku session and follow state',
+    () async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      await bootstrap.followRepository.upsert(
+        const FollowRecord(
+          providerId: 'bilibili',
+          roomId: '66666',
+          streamerName: '系统演示主播',
+        ),
+      );
+      final dependencies = RoomPreviewDependencies.fromBootstrap(bootstrap);
+      final snapshot = await bootstrap.loadRoom(
+        providerId: ProviderId.bilibili,
         roomId: '66666',
-        streamerName: '系统演示主播',
-      ),
-    );
-    final dependencies = RoomPreviewDependencies.fromBootstrap(bootstrap);
-    final snapshot = await bootstrap.loadRoom(
-      providerId: ProviderId.bilibili,
-      roomId: '66666',
-    );
-    final controller = RoomAncillaryController(
-      dependencies: RoomAncillaryDependencies.fromPreviewDependencies(
-        dependencies,
-      ),
-      providerId: ProviderId.bilibili,
-    );
+      );
+      final controller = RoomAncillaryController(
+        dependencies: RoomAncillaryDependencies.fromPreviewDependencies(
+          dependencies,
+        ),
+        providerId: ProviderId.bilibili,
+      );
 
-    final result = await controller.load(
-      snapshot: snapshot,
-      fallbackIsFollowed: false,
-    );
-    addTearDown(() => result.danmakuSession?.disconnect() ?? Future.value());
+      final result = await controller.load(
+        snapshot: snapshot,
+        fallbackIsFollowed: false,
+      );
+      addTearDown(() => result.danmakuSession?.disconnect() ?? Future.value());
 
-    expect(result.danmakuSession, isNotNull);
-    expect(result.isFollowed, isTrue);
-  });
+      expect(result.danmakuSession, isNotNull);
+      expect(result.isFollowed, isTrue);
+    },
+  );
 }

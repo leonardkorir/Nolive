@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
+import '../provider_runtime_support.dart';
 import 'chaturbate_api_client.dart';
 import 'chaturbate_data_source.dart';
 import 'chaturbate_hls_master_playlist_parser.dart';
@@ -20,6 +22,8 @@ typedef _ChaturbatePlaybackBootstrap = ({
 });
 
 class ChaturbateLiveDataSource implements ChaturbateDataSource {
+  static const int _maxPlaybackBootstrapCacheEntries = 64;
+
   ChaturbateLiveDataSource({
     required ChaturbateApiClient apiClient,
     ChaturbateRoomPageParser roomPageParser = const ChaturbateRoomPageParser(),
@@ -253,7 +257,14 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
           genders: genders,
         );
         successfulCarouselCount += 1;
-      } catch (error) {
+      } catch (error, stackTrace) {
+        reportProviderDiagnostic(
+          providerId: ProviderId.chaturbate,
+          scope: 'chaturbate discover carousel',
+          message: 'failed for carousel=$carouselId genders=$genders',
+          error: error,
+          stackTrace: stackTrace,
+        );
         lastError = error;
         continue;
       }
@@ -297,7 +308,15 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
           carouselId,
           genders: genders,
         );
-      } catch (error) {
+      } catch (error, stackTrace) {
+        reportProviderDiagnostic(
+          providerId: ProviderId.chaturbate,
+          scope: 'chaturbate discover carousel retry',
+          message:
+              'attempt ${attempt + 1}/2 failed for carousel=$carouselId genders=$genders',
+          error: error,
+          stackTrace: stackTrace,
+        );
         lastError = error;
       }
     }
@@ -310,30 +329,15 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
   }
 
   List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is num) {
-      return value.toInt();
-    }
-    return int.tryParse(value?.toString() ?? '');
+    return ProviderJson.asInt(value, allowNum: true);
   }
 
   Future<_ChaturbateVariantLoadResult?> _loadVariants({
@@ -358,7 +362,14 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
         ),
         masterPlaylistContent: playlistText,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.chaturbate,
+        scope: 'chaturbate HLS variant load',
+        message: 'failed for hlsSource=$hlsSource',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -435,7 +446,7 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
       try {
         final bootstrap = await future;
         if (bootstrap != null) {
-          _roomPlaybackBootstrapCache[roomId] = bootstrap;
+          _rememberPlaybackBootstrap(roomId, bootstrap);
         }
       } finally {
         if (identical(_roomPlaybackBootstrapFutures[roomId], future)) {
@@ -454,6 +465,7 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
     }
     final cached = _roomPlaybackBootstrapCache[roomId];
     if (cached != null) {
+      _rememberPlaybackBootstrap(roomId, cached);
       return cached;
     }
     _primeRoomPlaybackBootstrap(
@@ -466,9 +478,35 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
     }
     final bootstrap = await future;
     if (bootstrap != null) {
-      _roomPlaybackBootstrapCache[roomId] = bootstrap;
+      _rememberPlaybackBootstrap(roomId, bootstrap);
     }
     return bootstrap;
+  }
+
+  void _rememberPlaybackBootstrap(
+    String roomId,
+    _ChaturbatePlaybackBootstrap bootstrap,
+  ) {
+    _roomPlaybackBootstrapCache.remove(roomId);
+    _roomPlaybackBootstrapCache[roomId] = bootstrap;
+    if (_roomPlaybackBootstrapCache.length <=
+        _maxPlaybackBootstrapCacheEntries) {
+      return;
+    }
+    _roomPlaybackBootstrapCache.remove(_roomPlaybackBootstrapCache.keys.first);
+  }
+
+  int get debugPlaybackBootstrapCacheSize => _roomPlaybackBootstrapCache.length;
+
+  void debugRememberPlaybackBootstrap(String roomId) {
+    _rememberPlaybackBootstrap(
+      roomId,
+      (
+        hlsSource: 'https://example.com/$roomId.m3u8',
+        variants: const <ChaturbateHlsVariant>[],
+        masterPlaylistContent: '',
+      ),
+    );
   }
 
   Future<_ChaturbatePlaybackBootstrap?> _loadRoomPlaybackBootstrap({
@@ -495,7 +533,14 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
         variants: variants?.variants ?? const <ChaturbateHlsVariant>[],
         masterPlaylistContent: variants?.masterPlaylistContent ?? '',
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.chaturbate,
+        scope: 'chaturbate playback bootstrap',
+        message: 'failed for roomId=$roomId',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -650,7 +695,14 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
         referer: referer,
         hlsSource: refreshedHlsSource,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.chaturbate,
+        scope: 'chaturbate playback refresh context',
+        message: 'failed for roomId=$roomId',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -685,7 +737,14 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
         hlsSource: refreshedHlsSource,
         extraMetadata: refreshedMetadata,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.chaturbate,
+        scope: 'chaturbate playback refresh room page',
+        message: 'failed for roomId=$roomId',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }

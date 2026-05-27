@@ -31,10 +31,7 @@ void main() {
           body: SizedBox(
             width: 220,
             height: 180,
-            child: LiveRoomGridCard(
-              room: room,
-              descriptor: descriptor,
-            ),
+            child: LiveRoomGridCard(room: room, descriptor: descriptor),
           ),
         ),
       ),
@@ -71,10 +68,7 @@ void main() {
           body: SizedBox(
             width: 220,
             height: 180,
-            child: LiveRoomGridCard(
-              room: room,
-              descriptor: descriptor,
-            ),
+            child: LiveRoomGridCard(room: room, descriptor: descriptor),
           ),
         ),
       ),

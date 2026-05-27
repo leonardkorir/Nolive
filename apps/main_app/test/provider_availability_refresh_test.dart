@@ -7,8 +7,9 @@ import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.
 import 'test_feature_dependencies.dart';
 
 void main() {
-  testWidgets('browse page shows twitch and youtube native category tabs',
-      (tester) async {
+  testWidgets('browse page shows twitch and youtube native category tabs', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
     await tester.pumpWidget(
@@ -22,7 +23,9 @@ void main() {
 
     expect(find.byKey(const Key('browse-provider-tab-twitch')), findsOneWidget);
     expect(
-        find.byKey(const Key('browse-provider-tab-youtube')), findsOneWidget);
+      find.byKey(const Key('browse-provider-tab-youtube')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byKey(const Key('browse-provider-tab-twitch')));
     await tester.pumpAndSettle();
@@ -32,7 +35,9 @@ void main() {
       findsOneWidget,
     );
     expect(
-        find.byKey(const Key('browse-discover-room-twitch-xqc')), findsNothing);
+      find.byKey(const Key('browse-discover-room-twitch-xqc')),
+      findsNothing,
+    );
 
     await tester.tap(find.byKey(const Key('browse-provider-tab-youtube')));
     await tester.pumpAndSettle();
@@ -49,44 +54,47 @@ void main() {
     );
   });
 
-  testWidgets('browse page updates chaturbate availability after account save',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+  testWidgets(
+    'browse page updates chaturbate availability after account save',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: BrowsePage(
-          dependencies: buildBrowseFeatureDependencies(bootstrap),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BrowsePage(
+            dependencies: buildBrowseFeatureDependencies(bootstrap),
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const Key('browse-provider-tab-chaturbate')),
-      findsNothing,
-    );
+      expect(
+        find.byKey(const Key('browse-provider-tab-chaturbate')),
+        findsNothing,
+      );
 
-    await bootstrap.updateProviderAccountSettings(
-      const ProviderAccountSettings(
-        bilibiliCookie: '',
-        bilibiliUserId: 0,
-        chaturbateCookie: 'csrftoken=demo; __cf_bm=demo-bm',
-        douyinCookie: '',
-        twitchCookie: '',
-        youtubeCookie: '',
-      ),
-    );
-    await tester.pumpAndSettle();
+      await bootstrap.updateProviderAccountSettings(
+        const ProviderAccountSettings(
+          bilibiliCookie: '',
+          bilibiliUserId: 0,
+          chaturbateCookie: 'csrftoken=demo; __cf_bm=demo-bm',
+          douyinCookie: '',
+          twitchCookie: '',
+          youtubeCookie: '',
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const Key('browse-provider-tab-chaturbate')),
-      findsOneWidget,
-    );
-  });
+      expect(
+        find.byKey(const Key('browse-provider-tab-chaturbate')),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('browse category tile keeps visual area within adaptive cap',
-      (tester) async {
+  testWidgets('browse category tile keeps visual area within adaptive cap', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     const size = Size(390, 844);
 
@@ -106,8 +114,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final tile = find.byKey(const Key('browse-category-youtube-gaming'));
-    final visual =
-        find.byKey(const Key('browse-category-visual-youtube-gaming'));
+    final visual = find.byKey(
+      const Key('browse-category-visual-youtube-gaming'),
+    );
 
     expect(tile, findsOneWidget);
     expect(visual, findsOneWidget);

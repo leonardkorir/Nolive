@@ -42,7 +42,7 @@ class SyncFeatureDependencies {
   final UploadWebDavSnapshotUseCase uploadWebDavSnapshot;
   final RestoreWebDavSnapshotUseCase restoreWebDavSnapshot;
   final PushLocalSyncSnapshotUseCase pushLocalSyncSnapshot;
-  final UdpLocalDiscoveryService localDiscoveryService;
-  final HttpLocalSyncServer localSyncServer;
-  final HttpLocalSyncClient localSyncClient;
+  final LocalDiscoveryService localDiscoveryService;
+  final LocalSyncServer localSyncServer;
+  final LocalSyncClient localSyncClient;
 }

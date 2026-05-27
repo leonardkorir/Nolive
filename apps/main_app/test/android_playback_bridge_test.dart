@@ -7,9 +7,7 @@ void main() {
 
   group('AndroidPlaybackBridge', () {
     test('short-circuits on non-android platform', () async {
-      final bridge = AndroidPlaybackBridge(
-        isAndroidPlatform: () => false,
-      );
+      final bridge = AndroidPlaybackBridge(isAndroidPlatform: () => false);
 
       expect(await bridge.isPictureInPictureSupported(), isFalse);
       expect(await bridge.isInPictureInPictureMode(), isFalse);
@@ -17,27 +15,25 @@ void main() {
       expect(await bridge.setMediaVolume(0.4), isFalse);
       expect(await bridge.lockLandscape(), isFalse);
       expect(await bridge.prepareForPictureInPicture(), isFalse);
-      expect(
-        await bridge.enterPictureInPicture(width: 16, height: 9),
-        isFalse,
-      );
+      expect(await bridge.enterPictureInPicture(width: 16, height: 9), isFalse);
     });
 
     test('clamps outbound and inbound media values', () async {
-      final channel =
-          MethodChannel('${AndroidPlaybackBridge.channelName}/test');
+      final channel = MethodChannel(
+        '${AndroidPlaybackBridge.channelName}/test',
+      );
       MethodCall? lastCall;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        lastCall = call;
-        switch (call.method) {
-          case 'setMediaVolume':
-            return true;
-          case 'getMediaVolume':
-            return 1.7;
-        }
-        return null;
-      });
+            lastCall = call;
+            switch (call.method) {
+              case 'setMediaVolume':
+                return true;
+              case 'getMediaVolume':
+                return 1.7;
+            }
+            return null;
+          });
       addTearDown(() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, null);
@@ -54,41 +50,46 @@ void main() {
       expect(await bridge.getMediaVolume(), 1.0);
     });
 
-    test('clamps picture-in-picture aspect arguments before channel call',
-        () async {
-      final channel = MethodChannel('${AndroidPlaybackBridge.channelName}/pip');
-      MethodCall? lastCall;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
-        lastCall = call;
-        return true;
-      });
-      addTearDown(() {
+    test(
+      'clamps picture-in-picture aspect arguments before channel call',
+      () async {
+        final channel = MethodChannel(
+          '${AndroidPlaybackBridge.channelName}/pip',
+        );
+        MethodCall? lastCall;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(channel, null);
-      });
+            .setMockMethodCallHandler(channel, (call) async {
+              lastCall = call;
+              return true;
+            });
+        addTearDown(() {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, null);
+        });
 
-      final bridge = AndroidPlaybackBridge(
-        channel: channel,
-        isAndroidPlatform: () => true,
-      );
+        final bridge = AndroidPlaybackBridge(
+          channel: channel,
+          isAndroidPlatform: () => true,
+        );
 
-      expect(
-        await bridge.enterPictureInPicture(width: 0, height: -20),
-        isTrue,
-      );
-      expect(lastCall?.method, 'enterPictureInPicture');
-      expect((lastCall?.arguments as Map)['width'], 1);
-      expect((lastCall?.arguments as Map)['height'], 1);
-    });
+        expect(
+          await bridge.enterPictureInPicture(width: 0, height: -20),
+          isTrue,
+        );
+        expect(lastCall?.method, 'enterPictureInPicture');
+        expect((lastCall?.arguments as Map)['width'], 1);
+        expect((lastCall?.arguments as Map)['height'], 1);
+      },
+    );
 
     test('returns safe fallback when method channel throws', () async {
-      final channel =
-          MethodChannel('${AndroidPlaybackBridge.channelName}/error');
+      final channel = MethodChannel(
+        '${AndroidPlaybackBridge.channelName}/error',
+      );
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        throw PlatformException(code: 'boom');
-      });
+            throw PlatformException(code: 'boom');
+          });
       addTearDown(() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, null);
@@ -107,14 +108,15 @@ void main() {
     });
 
     test('invokes orientation preparation methods over the channel', () async {
-      final channel =
-          MethodChannel('${AndroidPlaybackBridge.channelName}/orientation');
+      final channel = MethodChannel(
+        '${AndroidPlaybackBridge.channelName}/orientation',
+      );
       final calls = <String>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        calls.add(call.method);
-        return true;
-      });
+            calls.add(call.method);
+            return true;
+          });
       addTearDown(() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, null);

@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
+import 'package:nolive_app/src/shared/application/app_log.dart';
 
 class ChaturbateWebRoomDetailLoader {
   ChaturbateWebRoomDetailLoader({
@@ -15,12 +15,17 @@ class ChaturbateWebRoomDetailLoader {
     Duration timeout = const Duration(seconds: 18),
     Duration pollInterval = const Duration(milliseconds: 250),
     Duration realtimeBootstrapGracePeriod = const Duration(seconds: 4),
-  })  : _loadProviderAccountSettings = loadProviderAccountSettings,
-        _cookieManager = cookieManager ?? CookieManager.instance(),
-        _roomPageParser = roomPageParser,
-        _timeout = timeout,
-        _pollInterval = pollInterval,
-        _realtimeBootstrapGracePeriod = realtimeBootstrapGracePeriod;
+    void Function(String message)? diagnostics,
+    AppPlatformCapabilities? platformCapabilities,
+  }) : _loadProviderAccountSettings = loadProviderAccountSettings,
+       _cookieManager = cookieManager ?? CookieManager.instance(),
+       _roomPageParser = roomPageParser,
+       _timeout = timeout,
+       _pollInterval = pollInterval,
+       _realtimeBootstrapGracePeriod = realtimeBootstrapGracePeriod,
+       _diagnostics = diagnostics,
+       _platformCapabilities =
+           platformCapabilities ?? AppPlatformCapabilities.current();
 
   static const String homeUrl = 'https://chaturbate.com/';
   static const String embeddedBrowserUserAgent =
@@ -33,6 +38,8 @@ class ChaturbateWebRoomDetailLoader {
   final Duration _timeout;
   final Duration _pollInterval;
   final Duration _realtimeBootstrapGracePeriod;
+  final void Function(String message)? _diagnostics;
+  final AppPlatformCapabilities _platformCapabilities;
 
   Future<LiveRoomDetail?> call({
     required ProviderId providerId,
@@ -81,7 +88,36 @@ class ChaturbateWebRoomDetailLoader {
         useHybridComposition: true,
       ),
       onWebViewCreated: controllerCompleter.complete,
+      onConsoleMessage: (controller, consoleMessage) {
+        if (consoleMessage.messageLevel != ConsoleMessageLevel.ERROR &&
+            consoleMessage.messageLevel != ConsoleMessageLevel.WARNING) {
+          return;
+        }
+        _logWebViewDiagnostic(
+          roomId: normalizedRoomId,
+          message:
+              'console level=${consoleMessage.messageLevel} message=${consoleMessage.message}',
+        );
+      },
+      onReceivedHttpError: (controller, request, errorResponse) {
+        final statusCode = errorResponse.statusCode;
+        if (statusCode == null || statusCode < 400) {
+          return;
+        }
+        _logWebViewDiagnostic(
+          roomId: normalizedRoomId,
+          message:
+              'http status=$statusCode mainFrame=${request.isForMainFrame ?? false} '
+              'url=${_summarizeWebViewUrl(request.url.toString())}',
+        );
+      },
       onReceivedError: (controller, request, error) {
+        _logWebViewDiagnostic(
+          roomId: normalizedRoomId,
+          message:
+              'load error type=${error.type} description=${error.description} '
+              'url=${_summarizeWebViewUrl(request.url.toString())}',
+        );
         if (controllerCompleter.isCompleted) {
           return;
         }
@@ -96,7 +132,19 @@ class ChaturbateWebRoomDetailLoader {
 
     try {
       await headlessWebView.run();
-      final controller = await controllerCompleter.future.timeout(_timeout);
+      final controller = await controllerCompleter.future.timeout(
+        _timeout,
+        onTimeout: () {
+          final error = TimeoutException(
+            'Timed out waiting for Chaturbate WebView controller.',
+            _timeout,
+          );
+          if (!controllerCompleter.isCompleted) {
+            controllerCompleter.completeError(error);
+          }
+          throw error;
+        },
+      );
       final html = await _waitForRoomHtml(
         controller: controller,
         roomId: normalizedRoomId,
@@ -124,10 +172,7 @@ class ChaturbateWebRoomDetailLoader {
         isLive: detail.isLive,
         viewerCount: detail.viewerCount,
         danmakuToken: detail.danmakuToken,
-        metadata: {
-          ...?detail.metadata,
-          'requestCookie': cookieHeader,
-        },
+        metadata: {...?detail.metadata, 'requestCookie': cookieHeader},
       );
     } on ProviderParseException {
       rethrow;
@@ -172,9 +217,7 @@ class ChaturbateWebRoomDetailLoader {
     }
   }
 
-  Future<String> _collectCookieHeader({
-    required String roomUrl,
-  }) async {
+  Future<String> _collectCookieHeader({required String roomUrl}) async {
     final cookieMap = <String, String>{};
     for (final url in {homeUrl, roomUrl}) {
       final cookies = await _cookieManager.getCookies(url: WebUri(url));
@@ -193,7 +236,8 @@ class ChaturbateWebRoomDetailLoader {
   }
 
   Iterable<MapEntry<String, String>> _parseCookieHeader(
-      String rawCookie) sync* {
+    String rawCookie,
+  ) sync* {
     const ignoredAttributes = <String>{
       'path',
       'domain',
@@ -239,8 +283,9 @@ class ChaturbateWebRoomDetailLoader {
       lastUrl = (await controller.getUrl())?.toString() ?? lastUrl;
       lastHtml = (await controller.getHtml())?.trim() ?? '';
       final hasDossier = lastHtml.contains('window.initialRoomDossier');
-      final hasRealtimeBootstrap =
-          _roomPageParser.hasRealtimeBootstrap(lastHtml);
+      final hasRealtimeBootstrap = _roomPageParser.hasRealtimeBootstrap(
+        lastHtml,
+      );
       if (hasDossier) {
         dossierHtml = lastHtml;
         dossierDetectedAt ??= DateTime.now();
@@ -299,10 +344,29 @@ class ChaturbateWebRoomDetailLoader {
 
   String _buildRoomUrl(String roomId) => 'https://chaturbate.com/$roomId/';
 
-  bool get _supportsPlatform {
-    if (kIsWeb) {
-      return false;
+  void _logWebViewDiagnostic({
+    required String roomId,
+    required String message,
+  }) {
+    final line = 'room=$roomId $message';
+    final diagnostics = _diagnostics;
+    if (diagnostics != null) {
+      diagnostics(line);
+      return;
     }
-    return Platform.isAndroid || Platform.isIOS;
+    AppLog.instance.info('chaturbate/webview', line);
+  }
+
+  String _summarizeWebViewUrl(String rawUrl) {
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null) {
+      return rawUrl;
+    }
+    final path = uri.path.isEmpty ? '/' : uri.path;
+    return '${uri.host}$path';
+  }
+
+  bool get _supportsPlatform {
+    return _platformCapabilities.isMobile;
   }
 }

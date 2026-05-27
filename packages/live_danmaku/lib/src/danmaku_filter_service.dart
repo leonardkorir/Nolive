@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:live_core/live_core.dart';
 
 import 'danmaku_filter_config.dart';
@@ -60,8 +62,13 @@ class DanmakuFilterService {
       }
       try {
         rules.add(RegExp(pattern, caseSensitive: config.caseSensitive));
-      } catch (_) {
-        // Ignore invalid expressions instead of failing the room session.
+      } catch (error, stackTrace) {
+        developer.log(
+          'Invalid danmaku regex rule ignored: $pattern',
+          name: 'live_danmaku.filter',
+          error: error,
+          stackTrace: stackTrace,
+        );
       }
     }
     return List<RegExp>.unmodifiable(rules);

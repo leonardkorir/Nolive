@@ -9,8 +9,9 @@ import 'package:nolive_app/src/features/search/presentation/search_page.dart';
 import 'test_feature_dependencies.dart';
 
 void main() {
-  testWidgets('home and browse pages render at tablet breakpoints',
-      (tester) async {
+  testWidgets('home and browse pages render at tablet breakpoints', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
     for (final size in _tabletBreakpoints) {
@@ -18,13 +19,13 @@ void main() {
         tester,
         size,
         MaterialApp(
-          home: HomePage(
-            dependencies: buildHomeFeatureDependencies(bootstrap),
-          ),
+          home: HomePage(dependencies: buildHomeFeatureDependencies(bootstrap)),
         ),
       );
       expect(
-          find.byKey(const Key('home-appbar-search-button')), findsOneWidget);
+        find.byKey(const Key('home-appbar-search-button')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
 
       await _pumpAtSize(
@@ -44,8 +45,9 @@ void main() {
     }
   });
 
-  testWidgets('search and category pages render at tablet breakpoints',
-      (tester) async {
+  testWidgets('search and category pages render at tablet breakpoints', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
     for (final size in _tabletBreakpoints) {

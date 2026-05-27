@@ -3,6 +3,9 @@ abstract class DeepCopyable {
 }
 
 List<T> listDeepCopy<T>(List list) {
+  if (list.isEmpty) {
+    return <T>[];
+  }
   List<T> newList = List<T>.filled(0, list[0], growable: true);
   for (var value in list) {
     newList.add(value is Map

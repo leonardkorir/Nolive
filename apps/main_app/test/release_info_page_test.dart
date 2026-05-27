@@ -7,11 +7,7 @@ void main() {
   testWidgets('release info page shows current release metadata and checks', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: ReleaseInfoPage(),
-      ),
-    );
+    await tester.pumpWidget(const MaterialApp(home: ReleaseInfoPage()));
     await tester.pumpAndSettle();
 
     expect(find.text('应用信息'), findsOneWidget);

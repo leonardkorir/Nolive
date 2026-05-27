@@ -2,7 +2,7 @@ name: nolive_workspace
 publish_to: none
 
 environment:
-  sdk: ^3.6.0
+  sdk: ">=3.10.0 <4.0.0"
 
 dev_dependencies:
   lints: ^5.1.1

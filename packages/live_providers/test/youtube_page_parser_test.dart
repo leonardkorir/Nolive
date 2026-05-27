@@ -190,4 +190,99 @@ var ytInitialData = {
     expect(candidate.ownerProfileUrl, '/@markets');
     expect(candidate.streamerAvatarUrl, 'https://yt3.ggpht.com/demo=s176');
   });
+
+  test('youtube page parser skips malformed embedded JSON markers', () {
+    const html = '''
+<html><script>
+ytcfg.set({
+  "INNERTUBE_CONTEXT": {broken},
+  'INNERTUBE_CONTEXT': {"client":{"visitorData":"visitor-token"}}
+});
+</script></html>
+''';
+    final parser = YouTubePageParser();
+    final context = parser.tryExtractInnertubeContext(html);
+
+    expect(context, isNotNull);
+    expect((context!['client'] as Map)['visitorData'], 'visitor-token');
+  });
+
+  test('youtube page parser keeps escaped backslashes before quotes intact',
+      () {
+    const html = r'''
+<html><script>
+var ytInitialData = {"metadata":{"json":"\\\\\"quoted\\\\\""},"contents":{"twoColumnBrowseResultsRenderer":{"tabs":[]}}};
+</script></html>
+''';
+    final parser = YouTubePageParser();
+    final initialData = parser.tryExtractInitialData(html);
+
+    expect(initialData, isNotNull);
+    final encoded = (initialData!['metadata'] as Map)['json'] as String;
+    expect(encoded, contains('quoted'));
+    expect(encoded, startsWith(r'\\'));
+  });
+
+  test('youtube page parser finds watch-page renderers without fixed slots',
+      () {
+    const html = '''
+<html><script>
+var ytInitialData = {
+  "contents": {
+    "twoColumnWatchNextResults": {
+      "results": {
+        "results": {
+          "contents": [
+            {"adSlotRenderer": {}},
+            {
+              "videoSecondaryInfoRenderer": {
+                "owner": {
+                  "videoOwnerRenderer": {
+                    "thumbnail": {
+                      "thumbnails": [{"url": "https://yt3.ggpht.com/demo=s176"}]
+                    },
+                    "title": {
+                      "runs": [{
+                        "text": "Bloomberg Television",
+                        "navigationEndpoint": {
+                          "commandMetadata": {"webCommandMetadata": {"url": "/@markets"}}
+                        }
+                      }]
+                    },
+                    "navigationEndpoint": {
+                      "commandMetadata": {"webCommandMetadata": {"url": "/@markets"}}
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "videoPrimaryInfoRenderer": {
+                "title": {"runs": [{"text": "Bloomberg Business News Live"}]},
+                "viewCount": {
+                  "videoViewCountRenderer": {
+                    "viewCount": {"runs": [{"text": "4,615"}, {"text": " watching now"}]},
+                    "originalViewCount": "4615"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+};
+</script></html>
+''';
+    final parser = YouTubePageParser();
+    final candidate = parser.findLiveCandidateByVideoId(
+      initialData: parser.tryExtractInitialData(html),
+      videoId: 'iEpJwprxDdk',
+    );
+
+    expect(candidate, isNotNull);
+    expect(candidate!.streamerName, 'Bloomberg Television');
+    expect(candidate.viewerCount, 4615);
+  });
 }

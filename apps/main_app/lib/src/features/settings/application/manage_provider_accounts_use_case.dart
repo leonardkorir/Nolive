@@ -3,8 +3,10 @@ import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
 
+import '../../../shared/application/app_log.dart';
 import '../../../shared/application/secure_credential_store.dart';
 import 'sensitive_setting_keys.dart';
+import 'stripchat_mouflon_key_store.dart';
 
 class ProviderAccountSettings {
   const ProviderAccountSettings({
@@ -12,6 +14,8 @@ class ProviderAccountSettings {
     required this.bilibiliUserId,
     required this.chaturbateCookie,
     required this.douyinCookie,
+    this.stripchatCookie = '',
+    this.stripchatMouflonKeys = const StripchatMouflonKeyCache(),
     required this.twitchCookie,
     required this.youtubeCookie,
   });
@@ -20,6 +24,8 @@ class ProviderAccountSettings {
   final int bilibiliUserId;
   final String chaturbateCookie;
   final String douyinCookie;
+  final String stripchatCookie;
+  final StripchatMouflonKeyCache stripchatMouflonKeys;
   final String twitchCookie;
   final String youtubeCookie;
 
@@ -28,6 +34,8 @@ class ProviderAccountSettings {
     int? bilibiliUserId,
     String? chaturbateCookie,
     String? douyinCookie,
+    String? stripchatCookie,
+    StripchatMouflonKeyCache? stripchatMouflonKeys,
     String? twitchCookie,
     String? youtubeCookie,
   }) {
@@ -36,6 +44,8 @@ class ProviderAccountSettings {
       bilibiliUserId: bilibiliUserId ?? this.bilibiliUserId,
       chaturbateCookie: chaturbateCookie ?? this.chaturbateCookie,
       douyinCookie: douyinCookie ?? this.douyinCookie,
+      stripchatCookie: stripchatCookie ?? this.stripchatCookie,
+      stripchatMouflonKeys: stripchatMouflonKeys ?? this.stripchatMouflonKeys,
       twitchCookie: twitchCookie ?? this.twitchCookie,
       youtubeCookie: youtubeCookie ?? this.youtubeCookie,
     );
@@ -53,51 +63,138 @@ class LoadProviderAccountSettingsUseCase {
 
   Future<ProviderAccountSettings> call() async {
     await secureCredentialStore.ensureReady();
-    final bilibiliCookie = await secureCredentialStore
-        .read(SensitiveSettingKeys.accountBilibiliCookie);
+    if (!secureCredentialStore.storesSecureValuesSeparately) {
+      AppLog.instance.warn(
+        'settings',
+        'SecureCredentialStore is not available separately. Falling back to plaintext SharedPreferences for all credentials.',
+      );
+    }
+    final bilibiliCookie = await secureCredentialStore.read(
+      SensitiveSettingKeys.accountBilibiliCookie,
+    );
     final chaturbateCookie = await secureCredentialStore.read(
       SensitiveSettingKeys.accountChaturbateCookie,
     );
-    final douyinCookie = await secureCredentialStore
-        .read(SensitiveSettingKeys.accountDouyinCookie);
-    final twitchCookie = await secureCredentialStore
-        .read(SensitiveSettingKeys.accountTwitchCookie);
-    final youtubeCookie = await secureCredentialStore
-        .read(SensitiveSettingKeys.accountYouTubeCookie);
+    final douyinCookie = await secureCredentialStore.read(
+      SensitiveSettingKeys.accountDouyinCookie,
+    );
+    final stripchatCookie = await secureCredentialStore.read(
+      SensitiveSettingKeys.accountStripchatCookie,
+    );
+    final stripchatMouflonKeys = await secureCredentialStore.read(
+      SensitiveSettingKeys.accountStripchatMouflonKeys,
+    );
+    final twitchCookie = await secureCredentialStore.read(
+      SensitiveSettingKeys.accountTwitchCookie,
+    );
+    final youtubeCookie = await secureCredentialStore.read(
+      SensitiveSettingKeys.accountYouTubeCookie,
+    );
+
+    if (bilibiliCookie.isEmpty) {
+      final fallback = await settingsRepository.readValue<String>(
+        SensitiveSettingKeys.accountBilibiliCookie,
+      );
+      if (fallback != null && fallback.isNotEmpty) {
+        AppLog.instance.warn('settings', 'Bilibili cookie loaded from plaintext SharedPreferences fallback.');
+      }
+    }
+    if (chaturbateCookie.isEmpty) {
+      final fallback = await settingsRepository.readValue<String>(
+        SensitiveSettingKeys.accountChaturbateCookie,
+      );
+      if (fallback != null && fallback.isNotEmpty) {
+        AppLog.instance.warn('settings', 'Chaturbate cookie loaded from plaintext SharedPreferences fallback.');
+      }
+    }
+    if (douyinCookie.isEmpty) {
+      final fallback = await settingsRepository.readValue<String>(
+        SensitiveSettingKeys.accountDouyinCookie,
+      );
+      if (fallback != null && fallback.isNotEmpty) {
+        AppLog.instance.warn('settings', 'Douyin cookie loaded from plaintext SharedPreferences fallback.');
+      }
+    }
+    if (stripchatCookie.isEmpty) {
+      final fallback = await settingsRepository.readValue<String>(
+        SensitiveSettingKeys.accountStripchatCookie,
+      );
+      if (fallback != null && fallback.isNotEmpty) {
+        AppLog.instance.warn('settings', 'Stripchat cookie loaded from plaintext SharedPreferences fallback.');
+      }
+    }
+    if (stripchatMouflonKeys.isEmpty) {
+      final fallback = await settingsRepository.readValue<String>(
+        SensitiveSettingKeys.accountStripchatMouflonKeys,
+      );
+      if (fallback != null && fallback.isNotEmpty) {
+        AppLog.instance.warn('settings', 'Stripchat Mouflon keys loaded from plaintext SharedPreferences fallback.');
+      }
+    }
+    if (twitchCookie.isEmpty) {
+      final fallback = await settingsRepository.readValue<String>(
+        SensitiveSettingKeys.accountTwitchCookie,
+      );
+      if (fallback != null && fallback.isNotEmpty) {
+        AppLog.instance.warn('settings', 'Twitch cookie loaded from plaintext SharedPreferences fallback.');
+      }
+    }
+    if (youtubeCookie.isEmpty) {
+      final fallback = await settingsRepository.readValue<String>(
+        SensitiveSettingKeys.accountYouTubeCookie,
+      );
+      if (fallback != null && fallback.isNotEmpty) {
+        AppLog.instance.warn('settings', 'YouTube cookie loaded from plaintext SharedPreferences fallback.');
+      }
+    }
     return ProviderAccountSettings(
       bilibiliCookie: bilibiliCookie.isNotEmpty
           ? bilibiliCookie
           : await settingsRepository.readValue<String>(
-                SensitiveSettingKeys.accountBilibiliCookie,
-              ) ??
-              '',
+                  SensitiveSettingKeys.accountBilibiliCookie,
+                ) ??
+                '',
       bilibiliUserId:
           await settingsRepository.readValue<int>('account_bilibili_user_id') ??
-              0,
+          0,
       chaturbateCookie: chaturbateCookie.isNotEmpty
           ? chaturbateCookie
           : await settingsRepository.readValue<String>(
-                SensitiveSettingKeys.accountChaturbateCookie,
-              ) ??
-              '',
+                  SensitiveSettingKeys.accountChaturbateCookie,
+                ) ??
+                '',
       douyinCookie: douyinCookie.isNotEmpty
           ? douyinCookie
           : await settingsRepository.readValue<String>(
-                SensitiveSettingKeys.accountDouyinCookie,
-              ) ??
-              '',
+                  SensitiveSettingKeys.accountDouyinCookie,
+                ) ??
+                '',
+      stripchatCookie: stripchatCookie.isNotEmpty
+          ? stripchatCookie
+          : await settingsRepository.readValue<String>(
+                  SensitiveSettingKeys.accountStripchatCookie,
+                ) ??
+                '',
+      stripchatMouflonKeys: StripchatMouflonKeyCache.decode(
+        stripchatMouflonKeys.isNotEmpty
+            ? stripchatMouflonKeys
+            : await settingsRepository.readValue<String>(
+                    SensitiveSettingKeys.accountStripchatMouflonKeys,
+                  ) ??
+                  '',
+      ),
       twitchCookie: twitchCookie.isNotEmpty
           ? twitchCookie
           : await settingsRepository.readValue<String>(
-                SensitiveSettingKeys.accountTwitchCookie,
-              ) ??
-              '',
+                  SensitiveSettingKeys.accountTwitchCookie,
+                ) ??
+                '',
       youtubeCookie: youtubeCookie.isNotEmpty
           ? youtubeCookie
           : await settingsRepository.readValue<String>(
-                SensitiveSettingKeys.accountYouTubeCookie,
-              ) ??
-              '',
+                  SensitiveSettingKeys.accountYouTubeCookie,
+                ) ??
+                '',
     );
   }
 }
@@ -134,6 +231,14 @@ class UpdateProviderAccountSettingsUseCase {
       settings.douyinCookie,
     );
     await secureCredentialStore.write(
+      SensitiveSettingKeys.accountStripchatCookie,
+      settings.stripchatCookie,
+    );
+    await secureCredentialStore.write(
+      SensitiveSettingKeys.accountStripchatMouflonKeys,
+      settings.stripchatMouflonKeys.encode(),
+    );
+    await secureCredentialStore.write(
       SensitiveSettingKeys.accountTwitchCookie,
       settings.twitchCookie,
     );
@@ -148,12 +253,14 @@ class UpdateProviderAccountSettingsUseCase {
       await settingsRepository.remove(
         SensitiveSettingKeys.accountChaturbateCookie,
       );
+      await settingsRepository.remove(SensitiveSettingKeys.accountDouyinCookie);
       await settingsRepository.remove(
-        SensitiveSettingKeys.accountDouyinCookie,
+        SensitiveSettingKeys.accountStripchatCookie,
       );
       await settingsRepository.remove(
-        SensitiveSettingKeys.accountTwitchCookie,
+        SensitiveSettingKeys.accountStripchatMouflonKeys,
       );
+      await settingsRepository.remove(SensitiveSettingKeys.accountTwitchCookie);
       await settingsRepository.remove(
         SensitiveSettingKeys.accountYouTubeCookie,
       );
@@ -161,6 +268,7 @@ class UpdateProviderAccountSettingsUseCase {
     providerRegistry?.invalidate(ProviderId.bilibili);
     providerRegistry?.invalidate(ProviderId.chaturbate);
     providerRegistry?.invalidate(ProviderId.douyin);
+    providerRegistry?.invalidate(ProviderId.stripchat);
     providerRegistry?.invalidate(ProviderId.twitch);
     providerRegistry?.invalidate(ProviderId.youtube);
     if (providerCatalogRevision != null) {
@@ -171,7 +279,14 @@ class UpdateProviderAccountSettingsUseCase {
 
 enum ProviderAccountHealth { notConfigured, verified, invalid }
 
-enum ProviderAccountKind { bilibili, chaturbate, douyin, twitch, youtube }
+enum ProviderAccountKind {
+  bilibili,
+  chaturbate,
+  douyin,
+  stripchat,
+  twitch,
+  youtube,
+}
 
 class ProviderAccountView {
   const ProviderAccountView({
@@ -181,6 +296,8 @@ class ProviderAccountView {
     required this.credentialSummary,
     required this.identitySummary,
     required this.supportsQrLogin,
+    this.playbackSummary,
+    this.calibrationStatus,
     this.displayName,
     this.statusLabelOverride,
     this.userId,
@@ -194,6 +311,8 @@ class ProviderAccountView {
   final String credentialSummary;
   final String identitySummary;
   final bool supportsQrLogin;
+  final String? playbackSummary;
+  final StripchatCalibrationStatus? calibrationStatus;
   final String? displayName;
   final String? statusLabelOverride;
   final int? userId;
@@ -209,6 +328,7 @@ class ProviderAccountDashboard {
     required this.bilibili,
     required this.chaturbate,
     required this.douyin,
+    required this.stripchat,
     required this.twitch,
     required this.youtube,
   });
@@ -217,6 +337,7 @@ class ProviderAccountDashboard {
   final ProviderAccountView bilibili;
   final ProviderAccountView chaturbate;
   final ProviderAccountView douyin;
+  final ProviderAccountView stripchat;
   final ProviderAccountView twitch;
   final ProviderAccountView youtube;
 }
@@ -245,6 +366,7 @@ class LoadProviderAccountDashboardUseCase {
     }
     final chaturbate = _loadChaturbate(settings);
     final douyin = await _loadDouyin(settings);
+    final stripchat = _loadStripchat(settings);
     final twitch = _loadTwitch(settings);
     final youtube = _loadYouTube(settings);
     return ProviderAccountDashboard(
@@ -252,6 +374,7 @@ class LoadProviderAccountDashboardUseCase {
       bilibili: bilibili,
       chaturbate: chaturbate,
       douyin: douyin,
+      stripchat: stripchat,
       twitch: twitch,
       youtube: youtube,
     );
@@ -343,9 +466,7 @@ class LoadProviderAccountDashboardUseCase {
     }
   }
 
-  ProviderAccountView _loadChaturbate(
-    ProviderAccountSettings settings,
-  ) {
+  ProviderAccountView _loadChaturbate(ProviderAccountSettings settings) {
     if (settings.chaturbateCookie.isEmpty) {
       return const ProviderAccountView(
         providerId: ProviderId.chaturbate,
@@ -372,9 +493,7 @@ class LoadProviderAccountDashboardUseCase {
     );
   }
 
-  ProviderAccountView _loadTwitch(
-    ProviderAccountSettings settings,
-  ) {
+  ProviderAccountView _loadTwitch(ProviderAccountSettings settings) {
     if (settings.twitchCookie.isEmpty) {
       return const ProviderAccountView(
         providerId: ProviderId.twitch,
@@ -396,15 +515,61 @@ class LoadProviderAccountDashboardUseCase {
       identitySummary: hasAuthToken
           ? '已保存登录会话${hasUniqueId ? '，包含 unique_id' : ''}'
           : hasUniqueId
-              ? '已保存浏览器会话，包含 unique_id'
-              : '已保存浏览器会话',
+          ? '已保存浏览器会话，包含 unique_id'
+          : '已保存浏览器会话',
       supportsQrLogin: false,
     );
   }
 
-  ProviderAccountView _loadYouTube(
-    ProviderAccountSettings settings,
-  ) {
+  ProviderAccountView _loadStripchat(ProviderAccountSettings settings) {
+    final calibrationStatus = settings.stripchatMouflonKeys.effectiveStatus();
+    final cookieStatus = inspectStripchatCookie(settings.stripchatCookie);
+    final playbackSummary = switch (calibrationStatus) {
+      StripchatCalibrationStatus.missing => '未配置手动导入密钥；将使用内置兜底',
+      StripchatCalibrationStatus.ready =>
+        '已导入 ${settings.stripchatMouflonKeys.records.length} 组手动密钥，可作为 MOUFLON 解码兜底',
+      StripchatCalibrationStatus.stale =>
+        '已导入 ${settings.stripchatMouflonKeys.records.length} 组手动密钥，建议检查是否仍有效',
+      StripchatCalibrationStatus.failed =>
+        settings.stripchatMouflonKeys.records.isEmpty
+            ? '当前未检测到可用手动密钥'
+            : '最近一次手动密钥导入数据无效，当前将继续尝试旧缓存',
+    };
+    final hasCookie = settings.stripchatCookie.trim().isNotEmpty;
+    final hasManualKeys = settings.stripchatMouflonKeys.records.isNotEmpty;
+    final credentialParts = <String>[
+      hasCookie
+          ? '已封存 ${settings.stripchatCookie.length} 字符旧 Cookie（${cookieStatus.cookieCount} 个键）'
+          : 'Cookie 已封存',
+      hasManualKeys
+          ? '已导入 ${settings.stripchatMouflonKeys.records.length} 组手动密钥'
+          : '未导入手动密钥',
+    ];
+    final playbackParts = <String>[
+      if (hasCookie) '已保存旧${cookieStatus.cookieKindLabel}，默认播放不会使用',
+      '默认播放使用本地 MOUFLON 解码，不再依赖 WebView Cookie',
+      playbackSummary,
+    ];
+    return ProviderAccountView(
+      providerId: ProviderId.stripchat,
+      providerName: 'Stripchat',
+      health: hasManualKeys
+          ? ProviderAccountHealth.verified
+          : ProviderAccountHealth.notConfigured,
+      credentialSummary: credentialParts.join('；'),
+      identitySummary: hasManualKeys
+          ? '已保存播放兜底密钥；Cookie/WebView 路径已封存'
+          : hasCookie
+          ? '仅保留旧 Cookie 记录；当前主线路不会使用'
+          : '当前未保存手动密钥；将只尝试内置兜底密钥',
+      playbackSummary: playbackParts.join('；'),
+      calibrationStatus: calibrationStatus,
+      supportsQrLogin: false,
+      statusLabelOverride: hasManualKeys ? null : '未配置',
+    );
+  }
+
+  ProviderAccountView _loadYouTube(ProviderAccountSettings settings) {
     if (settings.youtubeCookie.isEmpty) {
       return const ProviderAccountView(
         providerId: ProviderId.youtube,
@@ -419,15 +584,16 @@ class LoadProviderAccountDashboardUseCase {
 
     final hasAuthSession =
         containsCookie(settings.youtubeCookie, '__Secure-1PSID') ||
-            containsCookie(settings.youtubeCookie, 'SID') ||
-            containsCookie(settings.youtubeCookie, 'SAPISID');
+        containsCookie(settings.youtubeCookie, 'SID') ||
+        containsCookie(settings.youtubeCookie, 'SAPISID');
     return ProviderAccountView(
       providerId: ProviderId.youtube,
       providerName: 'YouTube',
       health: ProviderAccountHealth.verified,
       credentialSummary: '已配置 ${settings.youtubeCookie.length} 字符 Cookie',
-      identitySummary:
-          hasAuthSession ? '已保存登录会话；当前播放链路不会直接使用' : '已保存浏览器会话；当前播放链路不会直接使用',
+      identitySummary: hasAuthSession
+          ? '已保存登录会话；当前播放链路不会直接使用'
+          : '已保存浏览器会话；当前播放链路不会直接使用',
       supportsQrLogin: false,
     );
   }
@@ -442,6 +608,99 @@ bool containsCookie(String cookie, String name) {
       .split(';')
       .map((part) => part.trim())
       .any((part) => part.startsWith('$name='));
+}
+
+StripchatCookieStatus inspectStripchatCookie(String cookie) {
+  final names = parseCookieNames(cookie);
+  final hasLoginSignals = names.any((name) {
+    final lower = name.toLowerCase();
+    if (lower == 'stripchat_com_guestid' ||
+        lower == 'stripchat_com_firstvisit') {
+      return false;
+    }
+    return const <String>[
+      'auth',
+      'token',
+      'session',
+      'remember',
+      'login',
+      'user',
+      'member',
+      'account',
+      'jwt',
+      'sid',
+      'sess',
+      'uid',
+    ].any(lower.contains);
+  });
+  final hasVisitorSignals = names.any((name) {
+    final lower = name.toLowerCase();
+    return lower == 'stripchat_com_guestid' ||
+        lower == 'stripchat_com_firstvisit' ||
+        lower == '__cf_bm' ||
+        lower == '_cfuvid' ||
+        lower == 'cf_clearance' ||
+        lower == 'alreadyvisited' ||
+        lower == 'isvisitorsagreementaccepted' ||
+        lower == 'localedomain';
+  });
+  final previewNames = names.take(4).join(', ');
+  final cookieKindLabel = hasLoginSignals
+      ? '疑似登录态 Cookie'
+      : hasVisitorSignals
+      ? '游客/风控 Cookie'
+      : '浏览器 Cookie';
+  final identitySummary = hasLoginSignals
+      ? '已保存疑似登录态 Cookie${previewNames.isEmpty ? '' : '；关键字段：$previewNames'}'
+      : hasVisitorSignals
+      ? '已保存游客/风控 Cookie，可用于页面验证${previewNames.isEmpty ? '' : '；关键字段：$previewNames'}'
+      : names.isEmpty
+      ? '未检测到 Cookie'
+      : '已保存浏览器 Cookie${previewNames.isEmpty ? '' : '；关键字段：$previewNames'}';
+  return StripchatCookieStatus(
+    cookieCount: names.length,
+    hasLoginSignals: hasLoginSignals,
+    hasVisitorSignals: hasVisitorSignals,
+    cookieKindLabel: cookieKindLabel,
+    identitySummary: identitySummary,
+  );
+}
+
+List<String> parseCookieNames(String cookie) {
+  final names = <String>[];
+  final seen = <String>{};
+  for (final part in cookie.split(';')) {
+    final normalized = part.trim();
+    if (normalized.isEmpty) {
+      continue;
+    }
+    final separator = normalized.indexOf('=');
+    if (separator <= 0) {
+      continue;
+    }
+    final name = normalized.substring(0, separator).trim();
+    if (name.isEmpty || !seen.add(name)) {
+      continue;
+    }
+    names.add(name);
+  }
+  return List<String>.unmodifiable(names);
+}
+
+class StripchatCookieStatus {
+  const StripchatCookieStatus({
+    required this.cookieCount,
+    required this.hasLoginSignals,
+    required this.hasVisitorSignals,
+    required this.cookieKindLabel,
+    required this.identitySummary,
+  });
+
+  final int cookieCount;
+  final bool hasLoginSignals;
+  final bool hasVisitorSignals;
+  final String cookieKindLabel;
+  final String identitySummary;
 }
 
 class CreateBilibiliQrLoginSessionUseCase {
@@ -499,22 +758,22 @@ class BilibiliQrLoginProgress {
   });
 
   const BilibiliQrLoginProgress.pending()
-      : this._(status: BilibiliQrLoginStatus.pending);
+    : this._(status: BilibiliQrLoginStatus.pending);
 
   const BilibiliQrLoginProgress.scanned()
-      : this._(status: BilibiliQrLoginStatus.scanned);
+    : this._(status: BilibiliQrLoginStatus.scanned);
 
   const BilibiliQrLoginProgress.expired()
-      : this._(status: BilibiliQrLoginStatus.expired);
+    : this._(status: BilibiliQrLoginStatus.expired);
 
   const BilibiliQrLoginProgress.success({
     required String displayName,
     required int userId,
   }) : this._(
-          status: BilibiliQrLoginStatus.success,
-          displayName: displayName,
-          userId: userId,
-        );
+         status: BilibiliQrLoginStatus.success,
+         displayName: displayName,
+         userId: userId,
+       );
 
   final BilibiliQrLoginStatus status;
   final String? displayName;
@@ -543,6 +802,14 @@ class ClearProviderAccountUseCase {
         return;
       case ProviderAccountKind.douyin:
         await updateSettings(settings.copyWith(douyinCookie: ''));
+        return;
+      case ProviderAccountKind.stripchat:
+        await updateSettings(
+          settings.copyWith(
+            stripchatCookie: '',
+            stripchatMouflonKeys: settings.stripchatMouflonKeys.clear(),
+          ),
+        );
         return;
       case ProviderAccountKind.twitch:
         await updateSettings(settings.copyWith(twitchCookie: ''));

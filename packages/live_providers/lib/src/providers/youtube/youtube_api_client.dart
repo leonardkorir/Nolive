@@ -1,14 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:live_core/live_core.dart';
 
+import '../provider_runtime_support.dart';
+
 abstract interface class YouTubeApiClient {
-  static const String browserUserAgent =
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
+  static const String browserUserAgent = kChromiumDesktopUserAgent;
   static const String defaultWebClientVersion = '2.20260320.01.00';
   static const String webClientNameHeader = '1';
+  static const Duration liveChatRequestTimeout = Duration(seconds: 15);
 
   Future<String> fetchText(
     String url, {
@@ -36,6 +38,7 @@ abstract interface class YouTubeApiClient {
     required String visitorData,
     required String referer,
     String clientVersion = defaultWebClientVersion,
+    Duration timeout = liveChatRequestTimeout,
   });
 }
 
@@ -46,8 +49,7 @@ enum YouTubePlayerClientProfile {
     clientNameHeader: 1,
     clientVersion: YouTubeApiClient.defaultWebClientVersion,
     apiHost: 'www.youtube.com',
-    userAgent:
-        '${YouTubeApiClient.browserUserAgent},gzip(gfe)',
+    userAgent: '${YouTubeApiClient.browserUserAgent},gzip(gfe)',
     platform: 'DESKTOP',
     browserName: 'Chrome',
     browserVersion: '146.0.0.0',
@@ -157,12 +159,27 @@ enum YouTubePlayerClientProfile {
 }
 
 class HttpYouTubeApiClient implements YouTubeApiClient {
-  HttpYouTubeApiClient({http.Client? client})
-      : _client = client ?? http.Client();
+  HttpYouTubeApiClient({
+    http.Client? client,
+    ProviderBrowserProfile browserProfile =
+        ProviderBrowserProfile.chromiumDesktop,
+    ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
+    void Function(String message)? diagnostics,
+  })  : _client = client ?? http.Client(),
+        _browserProfile = browserProfile,
+        _retryPolicy = retryPolicy,
+        _diagnostics = diagnostics;
 
   final http.Client _client;
+  final ProviderBrowserProfile _browserProfile;
+  final ProviderRetryPolicy _retryPolicy;
+  final void Function(String message)? _diagnostics;
   final Map<String, String> _cookies = <String, String>{};
   static const int _maxRedirects = 12;
+
+  void close() {
+    _client.close();
+  }
 
   @override
   Future<String> fetchText(
@@ -180,11 +197,11 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
         headers: {
           'accept':
               'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'accept-language': 'en-US,en;q=0.9',
+          'accept-language': _browserProfile.acceptLanguage,
           'cache-control': 'no-cache',
           'pragma': 'no-cache',
           'upgrade-insecure-requests': '1',
-          'user-agent': YouTubeApiClient.browserUserAgent,
+          'user-agent': _browserProfile.userAgent,
           ...headers,
         },
       );
@@ -230,10 +247,10 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
         uri: currentUri,
         headers: {
           'accept': '*/*',
-          'accept-language': 'en-US,en;q=0.9',
+          'accept-language': _browserProfile.acceptLanguage,
           'cache-control': 'no-cache',
           'pragma': 'no-cache',
-          'user-agent': YouTubeApiClient.browserUserAgent,
+          'user-agent': _browserProfile.userAgent,
           ...headers,
         },
       );
@@ -368,6 +385,7 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
     required String visitorData,
     required String referer,
     String clientVersion = YouTubeApiClient.defaultWebClientVersion,
+    Duration timeout = YouTubeApiClient.liveChatRequestTimeout,
   }) async {
     final response = await _sendRequest(
       method: 'POST',
@@ -380,7 +398,7 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
         'content-type': 'application/json',
         'origin': 'https://www.youtube.com',
         'referer': referer,
-        'user-agent': YouTubeApiClient.browserUserAgent,
+        'user-agent': _browserProfile.userAgent,
         'x-goog-visitor-id': visitorData,
         'x-youtube-client-name': YouTubeApiClient.webClientNameHeader,
         'x-youtube-client-version': clientVersion,
@@ -394,7 +412,7 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
             'hl': 'en',
             'gl': 'US',
             'visitorData': visitorData,
-            'userAgent': YouTubeApiClient.browserUserAgent,
+            'userAgent': _browserProfile.userAgent,
             'originalUrl': referer,
           },
           'user': {
@@ -409,6 +427,7 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
           'isDocumentHidden': false,
         },
       }),
+      timeout: timeout,
     );
     return _decodeJsonResponse(response, context: 'live chat request');
   }
@@ -418,15 +437,63 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
     required Uri uri,
     required Map<String, String> headers,
     String body = '',
+    Duration? timeout,
   }) async {
-    final request = http.Request(method, uri)
-      ..followRedirects = false
-      ..maxRedirects = 0
-      ..headers.addAll(_mergeHeadersWithCookies(headers))
-      ..body = body;
-    final streamed = await _client.send(request);
-    _storeCookies(streamed.headers['set-cookie']);
-    return http.Response.fromStream(streamed);
+    Future<http.Response> send() async {
+      return runProviderRequestWithRetry(
+        providerId: ProviderId.youtube,
+        operation: 'youtube $method ${uri.toString()}',
+        policy: _retryPolicy,
+        diagnostics: _diagnostics,
+        action: (_) async {
+          final request = http.Request(method, uri)
+            ..followRedirects = false
+            ..maxRedirects = 0
+            ..headers.addAll(_mergeHeadersWithCookies(headers))
+            ..body = body;
+          late final http.StreamedResponse streamed;
+          try {
+            streamed = await _client.send(request);
+          } catch (error, stackTrace) {
+            throw ProviderRetryableException(
+              ProviderParseException(
+                providerId: ProviderId.youtube,
+                message:
+                    'YouTube request failed before response: ${uri.toString()}',
+                cause: error,
+                stackTrace: stackTrace,
+              ),
+              stackTrace,
+            );
+          }
+          if (isRetryableHttpStatus(streamed.statusCode)) {
+            throw ProviderRetryableException(
+              ProviderParseException(
+                providerId: ProviderId.youtube,
+                message:
+                    'YouTube transient request failed with status ${streamed.statusCode}: ${uri.toString()}',
+              ),
+            );
+          }
+          _storeCookies(streamed.headers['set-cookie']);
+          return http.Response.fromStream(streamed);
+        },
+      );
+    }
+
+    final future = send();
+    if (timeout == null) {
+      return future;
+    }
+    try {
+      return await future.timeout(timeout);
+    } on TimeoutException {
+      throw ProviderParseException(
+        providerId: ProviderId.youtube,
+        message:
+            'YouTube request timed out after ${timeout.inMilliseconds}ms: ${uri.toString()}',
+      );
+    }
   }
 
   Map<String, String> _mergeHeadersWithCookies(Map<String, String> headers) {

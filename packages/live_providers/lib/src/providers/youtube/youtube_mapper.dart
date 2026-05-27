@@ -1,5 +1,6 @@
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
 import 'youtube_hls_master_playlist_parser.dart';
 import 'youtube_page_parser.dart';
 
@@ -74,13 +75,13 @@ class YouTubeMapper {
       isLive: _isLive(playerResponse),
       viewerCount: viewerCount,
       danmakuToken: liveChatBootstrap != null && _isLive(playerResponse)
-          ? {
-              'apiKey': liveChatBootstrap.apiKey,
-              'clientVersion': liveChatBootstrap.clientVersion,
-              'continuation': liveChatBootstrap.continuation,
-              'liveChatPageUrl': liveChatBootstrap.liveChatPageUrl,
-              'visitorData': liveChatBootstrap.visitorData,
-            }
+          ? YouTubeDanmakuToken(
+              apiKey: liveChatBootstrap.apiKey,
+              clientVersion: liveChatBootstrap.clientVersion,
+              continuation: liveChatBootstrap.continuation,
+              liveChatPageUrl: liveChatBootstrap.liveChatPageUrl,
+              visitorData: liveChatBootstrap.visitorData,
+            )
           : null,
       metadata: {
         'apiKey': apiKey,
@@ -310,29 +311,14 @@ class YouTubeMapper {
   }
 
   static int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is num) {
-      return value.toInt();
-    }
-    return int.tryParse(value?.toString() ?? '');
+    return ProviderJson.asInt(value, allowNum: true);
   }
 
   static Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   static List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 }

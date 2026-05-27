@@ -35,8 +35,30 @@ bool resolveRoomPlayerPosterBackdropVisibility({
   required bool fullscreen,
   required bool hasPlayback,
   required bool embedPlayer,
+  bool hasPlaybackError = false,
 }) {
+  if (hasPlaybackError) {
+    return true;
+  }
   return !(fullscreen && hasPlayback && embedPlayer);
+}
+
+String resolveFriendlyPlayerErrorMessage(String? rawError) {
+  if (rawError == null) {
+    return '播放出错，请尝试刷新。';
+  }
+  final lower = rawError.toLowerCase();
+  if (lower.contains('no video or audio streams') ||
+      lower.contains('403') ||
+      lower.contains('forbidden')) {
+    return '该房间的资源链接已过期，请尝试重新进入。';
+  }
+  if (lower.contains('mediacodec-device-creation-failed') ||
+      lower.contains('could not create device') ||
+      lower.contains('mpv-vd-reinit')) {
+    return '硬件解码器初始化失败，请尝试刷新或切换清晰度。';
+  }
+  return '播放出错 ($rawError)，请尝试刷新。';
 }
 
 @immutable
@@ -58,6 +80,8 @@ class RoomPlayerSurfaceViewData {
     this.statusPresentation,
     this.inlineQualityLabel,
     this.inlineLineLabel,
+    this.playbackStatus,
+    this.playbackError,
   });
 
   final LiveRoomDetail room;
@@ -76,6 +100,8 @@ class RoomPlayerSurfaceViewData {
   final RoomChaturbateStatusPresentation? statusPresentation;
   final String? inlineQualityLabel;
   final String? inlineLineLabel;
+  final PlaybackStatus? playbackStatus;
+  final String? playbackError;
 
   String? get posterUrl => room.keyframeUrl ?? room.coverUrl;
 
@@ -96,6 +122,8 @@ class RoomPlayerSurfaceViewData {
     Object? statusPresentation = _roomPlayerSurfaceViewDataNoChange,
     Object? inlineQualityLabel = _roomPlayerSurfaceViewDataNoChange,
     Object? inlineLineLabel = _roomPlayerSurfaceViewDataNoChange,
+    PlaybackStatus? playbackStatus,
+    String? playbackError,
   }) {
     return RoomPlayerSurfaceViewData(
       room: room ?? this.room,
@@ -125,6 +153,8 @@ class RoomPlayerSurfaceViewData {
       inlineLineLabel: inlineLineLabel == _roomPlayerSurfaceViewDataNoChange
           ? this.inlineLineLabel
           : inlineLineLabel as String?,
+      playbackStatus: playbackStatus ?? this.playbackStatus,
+      playbackError: playbackError ?? this.playbackError,
     );
   }
 }
@@ -224,6 +254,7 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
       fullscreen: data.fullscreen,
       hasPlayback: data.hasPlayback,
       embedPlayer: data.embedPlayer,
+      hasPlaybackError: data.playbackStatus == PlaybackStatus.error,
     );
 
     return AspectRatio(
@@ -419,6 +450,7 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
                     ),
                   ),
                 ),
+
               if (data.fullscreen &&
                   data.showDanmakuOverlay &&
                   danmakuOverlay != null)
@@ -605,6 +637,81 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
                               color: Colors.white,
                               icon: const Icon(Icons.fullscreen),
                             ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              if (data.hasPlayback && data.playbackStatus == PlaybackStatus.error)
+                Positioned.fill(
+                  child: Center(
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 300),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.78),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: Colors.white24,
+                          width: 1,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.error_outline_rounded,
+                            color: Colors.redAccent,
+                            size: 36,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            '播放失败',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            resolveFriendlyPlayerErrorMessage(
+                              data.playbackError,
+                            ),
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.88),
+                                  height: 1.35,
+                                ),
+                          ),
+                          if (onRefresh != null) ...[
+                            const SizedBox(height: 12),
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                backgroundColor: Colors.white12,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                              ),
+                              icon: const Icon(Icons.refresh_rounded, size: 18),
+                              label: const Text('重试'),
+                              onPressed: onRefresh,
+                            ),
+                          ],
                         ],
                       ),
                     ),

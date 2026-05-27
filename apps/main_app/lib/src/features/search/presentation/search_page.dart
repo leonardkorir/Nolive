@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/search/application/search_feature_dependencies.dart';
+import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
@@ -77,13 +78,16 @@ class _SearchPageState extends State<SearchPage> {
       ]),
       builder: (context, _) {
         final preferences = widget.dependencies.layoutPreferences.value;
-        final providers = widget.dependencies
-            .listAvailableProviders()
-            .where((item) => item.supports(ProviderCapability.searchRooms))
-            .toList(growable: false)
-          ..sort((a, b) => preferences
-              .providerSortIndex(a.id.value)
-              .compareTo(preferences.providerSortIndex(b.id.value)));
+        final providers =
+            widget.dependencies
+                .listAvailableProviders()
+                .where((item) => item.supports(ProviderCapability.searchRooms))
+                .toList(growable: false)
+              ..sort(
+                (a, b) => preferences
+                    .providerSortIndex(a.id.value)
+                    .compareTo(preferences.providerSortIndex(b.id.value)),
+              );
 
         if (providers.isEmpty) {
           return const Scaffold(body: Center(child: Text('暂无可搜索平台')));
@@ -202,6 +206,7 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
   bool _loadingMore = false;
   bool _hasMore = false;
   int _currentPage = 0;
+  int _requestGeneration = 0;
   Object? _error;
 
   @override
@@ -221,6 +226,7 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
     }
     if (widget.query.trim().isEmpty) {
       setState(() {
+        _requestGeneration += 1;
         _rooms.clear();
         _error = null;
         _loading = false;
@@ -252,8 +258,12 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
   }
 
   Future<void> _runSearch() async {
+    final requestGeneration = ++_requestGeneration;
+    final requestQuery = widget.query;
+    final requestProviderId = widget.descriptor.id;
     setState(() {
       _loading = true;
+      _loadingMore = false;
       _error = null;
       _currentPage = 0;
       _hasMore = false;
@@ -261,11 +271,11 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
 
     try {
       final response = await widget.dependencies.searchProviderRooms(
-        providerId: widget.descriptor.id,
-        query: widget.query,
+        providerId: requestProviderId,
+        query: requestQuery,
         page: 1,
       );
-      if (!mounted) {
+      if (!_isCurrentRequest(requestGeneration, requestQuery)) {
         return;
       }
       setState(() {
@@ -276,8 +286,14 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
         _hasMore = response.hasMore;
         _loading = false;
       });
-    } catch (error) {
-      if (!mounted) {
+    } catch (error, stackTrace) {
+      AppLog.instance.error(
+        'search',
+        'initial provider search failed provider=${requestProviderId.value}',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!_isCurrentRequest(requestGeneration, requestQuery)) {
         return;
       }
       setState(() {
@@ -292,17 +308,20 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
     if (_loadingMore || !_hasMore || widget.query.trim().isEmpty) {
       return;
     }
+    final requestGeneration = _requestGeneration;
+    final requestQuery = widget.query;
+    final requestProviderId = widget.descriptor.id;
+    final requestedPage = _currentPage + 1;
     setState(() {
       _loadingMore = true;
     });
     try {
-      final requestedPage = _currentPage + 1;
       final response = await widget.dependencies.searchProviderRooms(
-        providerId: widget.descriptor.id,
-        query: widget.query,
+        providerId: requestProviderId,
+        query: requestQuery,
         page: requestedPage,
       );
-      if (!mounted) {
+      if (!_isCurrentRequest(requestGeneration, requestQuery)) {
         return;
       }
       final mergedRooms = _mergeRooms(_rooms, response.items);
@@ -315,15 +334,28 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
         _hasMore = appendedNewRooms && response.hasMore;
         _loadingMore = false;
       });
-    } catch (error) {
-      if (!mounted) {
+    } catch (error, stackTrace) {
+      if (!_isCurrentRequest(requestGeneration, requestQuery)) {
         return;
       }
+      AppLog.instance.error(
+        'search',
+        'load more failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _error = error;
         _loadingMore = false;
       });
     }
+  }
+
+  bool _isCurrentRequest(int generation, String query) {
+    return mounted &&
+        generation == _requestGeneration &&
+        query == widget.query &&
+        widget.query.trim().isNotEmpty;
   }
 
   List<LiveRoom> _dedupeRooms(List<LiveRoom> rooms) {
@@ -416,22 +448,19 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
               20,
             ),
             sliver: SliverGrid(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final room = _rooms[index];
-                  return KeyedSubtree(
-                    key: Key(
-                      'search-room-card-${widget.descriptor.id.value}-${room.roomId}',
-                    ),
-                    child: LiveRoomGridCard(
-                      room: room,
-                      descriptor: widget.descriptor,
-                      onTap: () => widget.onOpenRoom(room),
-                    ),
-                  );
-                },
-                childCount: _rooms.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final room = _rooms[index];
+                return KeyedSubtree(
+                  key: Key(
+                    'search-room-card-${widget.descriptor.id.value}-${room.roomId}',
+                  ),
+                  child: LiveRoomGridCard(
+                    room: room,
+                    descriptor: widget.descriptor,
+                    onTap: () => widget.onOpenRoom(room),
+                  ),
+                );
+              }, childCount: _rooms.length),
               gridDelegate: buildLiveRoomGridDelegate(context),
             ),
           ),
@@ -450,20 +479,17 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
                         child: CircularProgressIndicator.adaptive(),
                       )
                     : _hasMore
-                        ? FilledButton.tonalIcon(
-                            onPressed: _loadMore,
-                            icon: const Icon(Icons.expand_more),
-                            label: const Text('加载更多'),
-                          )
-                        : Text(
-                            '已经到底了',
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                          ),
+                    ? FilledButton.tonalIcon(
+                        onPressed: _loadMore,
+                        icon: const Icon(Icons.expand_more),
+                        label: const Text('加载更多'),
+                      )
+                    : Text(
+                        '已经到底了',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
               ),
             ),
           ),

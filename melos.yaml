@@ -11,18 +11,20 @@ scripts:
   analyze:
     run: |
       flutter analyze apps/main_app && \
-      for pkg in packages/live_core packages/live_providers packages/live_player packages/live_danmaku packages/live_storage packages/live_sync packages/live_shared; do \
+      find packages -mindepth 2 -maxdepth 2 -name pubspec.yaml -print | sort | while IFS= read -r pubspec; do \
+        pkg="$(dirname "$pubspec")"; \
         echo "==> analyzing $pkg"; \
-        (cd "$pkg" && if [ "$pkg" = "packages/live_player" ]; then flutter analyze .; else dart analyze .; fi) || exit 1; \
+        (cd "$pkg" && if grep -q 'sdk:.*flutter' pubspec.yaml 2>/dev/null; then flutter analyze .; else dart analyze .; fi) || exit 1; \
       done
     description: Run static analysis for the app and all packages.
 
   test:
     run: |
       (cd apps/main_app && flutter test) && \
-      for pkg in packages/live_core packages/live_providers packages/live_player packages/live_danmaku packages/live_storage packages/live_sync packages/live_shared; do \
+      find packages -mindepth 2 -maxdepth 2 -name pubspec.yaml -print | sort | while IFS= read -r pubspec; do \
+        pkg="$(dirname "$pubspec")"; \
         echo "==> testing $pkg"; \
-        (cd "$pkg" && if [ "$pkg" = "packages/live_player" ]; then flutter test; else dart test; fi) || exit 1; \
+        (cd "$pkg" && if grep -q 'sdk:.*flutter' pubspec.yaml 2>/dev/null; then flutter test; else dart test; fi) || exit 1; \
       done
     description: Run app and package tests.
 

@@ -62,7 +62,7 @@ class DouyuPreviewDataSource implements DouyuDataSource {
       sourceUrl: 'https://www.douyu.com/3125893',
       isLive: true,
       viewerCount: 12345,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {'playContext': 'preview'},
     ),
     '9123456': LiveRoomDetail(
@@ -78,12 +78,12 @@ class DouyuPreviewDataSource implements DouyuDataSource {
       sourceUrl: 'https://www.douyu.com/9123456',
       isLive: true,
       viewerCount: 45678,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {'playContext': 'preview'},
     ),
   };
 
-  static const List<LivePlayQuality> _qualities = [
+  static final List<LivePlayQuality> _qualities = List.unmodifiable([
     LivePlayQuality(
       id: '0',
       label: '流畅',
@@ -97,7 +97,7 @@ class DouyuPreviewDataSource implements DouyuDataSource {
       sortOrder: 4,
       metadata: {'rate': 4},
     ),
-  ];
+  ]);
 
   @override
   Future<List<LiveCategory>> fetchCategories() async {

@@ -7,7 +7,9 @@ import 'package:brotli/brotli.dart';
 import 'package:live_core/live_core.dart';
 import 'package:web_socket_channel/io.dart';
 
+import 'danmaku_activity_watchdog.dart';
 import 'danmaku_web_socket.dart';
+import '../providers/provider_runtime_support.dart';
 
 typedef BilibiliDanmakuSocketConnector = Future<IOWebSocketChannel> Function(
   Uri uri, {
@@ -18,26 +20,30 @@ typedef BilibiliDanmakuSocketConnector = Future<IOWebSocketChannel> Function(
 
 class BilibiliDanmakuSession implements DanmakuSession {
   BilibiliDanmakuSession({
-    required Map<String, Object?> tokenData,
+    required BilibiliDanmakuToken danmakuToken,
     BilibiliDanmakuSocketConnector? channelConnector,
+    Duration inactivityTimeout = const Duration(minutes: 2),
   })  : _channelConnector = channelConnector ?? connectDanmakuWebSocket,
-        roomId = _toInt(tokenData['roomId']),
+        _inactivityTimeout = inactivityTimeout,
+        roomId = danmakuToken.roomId,
         uid = _resolveUid(
-          rawUid: tokenData['uid'],
-          rawCookie: tokenData['cookie'],
+          rawUid: danmakuToken.uid,
+          rawCookie: danmakuToken.cookie,
         ),
-        token = tokenData['token']?.toString() ?? '',
-        serverHost = tokenData['serverHost']?.toString().isNotEmpty == true
-            ? tokenData['serverHost']!.toString()
+        token = danmakuToken.token,
+        serverHost = danmakuToken.serverHost.trim().isNotEmpty
+            ? danmakuToken.serverHost
             : 'broadcastlv.chat.bilibili.com',
-        buvid = tokenData['buvid']?.toString() ?? '',
-        cookie = tokenData['cookie']?.toString() ?? '';
+        buvid = danmakuToken.buvid,
+        cookie = danmakuToken.cookie;
 
   static const String _origin = 'https://live.bilibili.com';
   static const String _referer = 'https://live.bilibili.com/';
   static const String _userAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0';
+  static const int _maxCompressedBodyBytes = 2 * 1024 * 1024;
+  static const int _maxDecodedBodyBytes = 4 * 1024 * 1024;
 
   final BilibiliDanmakuSocketConnector _channelConnector;
   final int roomId;
@@ -46,6 +52,7 @@ class BilibiliDanmakuSession implements DanmakuSession {
   final String serverHost;
   final String buvid;
   final String cookie;
+  final Duration _inactivityTimeout;
 
   final StreamController<LiveMessage> _controller =
       StreamController<LiveMessage>.broadcast();
@@ -53,8 +60,10 @@ class BilibiliDanmakuSession implements DanmakuSession {
   IOWebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
   Timer? _heartbeatTimer;
+  DanmakuActivityWatchdog? _activityWatchdog;
   bool _connected = false;
   bool _handshakeReady = false;
+  bool _joinAckSucceeded = false;
   Completer<void>? _connectReady;
 
   @override
@@ -74,20 +83,32 @@ class BilibiliDanmakuSession implements DanmakuSession {
       _channel = channel;
       _connected = true;
       _handshakeReady = false;
+      _joinAckSucceeded = false;
       _connectReady = Completer<void>();
-      _subscription = _channel!.stream.listen(
+      _activityWatchdog = DanmakuActivityWatchdog(
+        timeout: _inactivityTimeout,
+        onTimeout: _handleActivityTimeout,
+      )..start();
+      StreamSubscription<dynamic>? subscription;
+      subscription = channel.stream.listen(
         _handleRawMessage,
         onError: (error) {
           if (!_handshakeReady) {
             _failConnectReady(error);
+            unawaited(
+              _teardownRemoteDisconnect(
+                channel: channel,
+                subscription: subscription,
+              ),
+            );
             return;
           }
           if (_connected) {
-            _emit(
-              LiveMessage(
-                type: LiveMessageType.notice,
-                content: 'Bilibili 弹幕连接异常：$error',
-                timestamp: DateTime.now(),
+            unawaited(
+              _teardownRemoteDisconnect(
+                channel: channel,
+                subscription: subscription,
+                notice: 'Bilibili 弹幕连接异常：$error',
               ),
             );
           }
@@ -97,20 +118,27 @@ class BilibiliDanmakuSession implements DanmakuSession {
             _failConnectReady(
               _buildConnectFailure('Bilibili 弹幕连接在握手完成前已断开。'),
             );
+            unawaited(
+              _teardownRemoteDisconnect(
+                channel: channel,
+                subscription: subscription,
+              ),
+            );
             return;
           }
           if (_connected) {
-            _emit(
-              LiveMessage(
-                type: LiveMessageType.notice,
-                content: 'Bilibili 弹幕连接已断开',
-                timestamp: DateTime.now(),
+            unawaited(
+              _teardownRemoteDisconnect(
+                channel: channel,
+                subscription: subscription,
+                notice: 'Bilibili 弹幕连接已断开',
               ),
             );
           }
         },
         cancelOnError: false,
       );
+      _subscription = subscription;
       _sendJoinRoom();
       _heartbeatTimer = Timer.periodic(
         const Duration(seconds: 30),
@@ -130,6 +158,8 @@ class BilibiliDanmakuSession implements DanmakuSession {
       _connectReady = null;
       _heartbeatTimer?.cancel();
       _heartbeatTimer = null;
+      _activityWatchdog?.stop();
+      _activityWatchdog = null;
       await _subscription?.cancel();
       _subscription = null;
       await channel.sink.close();
@@ -147,6 +177,8 @@ class BilibiliDanmakuSession implements DanmakuSession {
     _connectReady = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
     await _subscription?.cancel();
     _subscription = null;
     await _channel?.sink.close();
@@ -196,7 +228,32 @@ class BilibiliDanmakuSession implements DanmakuSession {
     if (bytes.isEmpty) {
       return;
     }
+    _activityWatchdog?.ping();
     _decodePackets(bytes);
+  }
+
+  Future<void> _handleActivityTimeout() async {
+    if (!_connected) {
+      return;
+    }
+    _connected = false;
+    _handshakeReady = false;
+    _connectReady = null;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    await _subscription?.cancel();
+    _subscription = null;
+    await _channel?.sink.close();
+    _channel = null;
+    _emit(
+      LiveMessage(
+        type: LiveMessageType.notice,
+        content: 'Bilibili 弹幕连接活动超时',
+        timestamp: DateTime.now(),
+      ),
+    );
   }
 
   void _decodePackets(Uint8List bytes) {
@@ -222,7 +279,10 @@ class BilibiliDanmakuSession implements DanmakuSession {
     }
 
     if (operation == 3 && body.length >= 4) {
-      _completeConnectReady();
+      if (!_connected) {
+        return;
+      }
+      _completeConnectReadyIfAuthorized();
       _emit(
         LiveMessage(
           type: LiveMessageType.online,
@@ -237,16 +297,22 @@ class BilibiliDanmakuSession implements DanmakuSession {
       return;
     }
 
-    _completeConnectReady();
+    _completeConnectReadyIfAuthorized();
     if (protocolVersion == 2) {
-      body = Uint8List.fromList(zlib.decode(body));
-      _decodePackets(body);
+      final decoded = _decodeCompressedBody(body, zlib.decoder);
+      if (decoded == null) {
+        return;
+      }
+      _decodePackets(decoded);
       return;
     }
 
     if (protocolVersion == 3) {
-      body = Uint8List.fromList(brotli.decode(body));
-      _decodePackets(body);
+      final decoded = _decodeCompressedBody(body, brotli.decoder);
+      if (decoded == null) {
+        return;
+      }
+      _decodePackets(decoded);
       return;
     }
 
@@ -256,6 +322,26 @@ class BilibiliDanmakuSession implements DanmakuSession {
         .where((item) => item.length > 2 && item.trim().startsWith('{'));
     for (final item in groups) {
       _parseJsonMessage(item);
+    }
+  }
+
+  Uint8List? _decodeCompressedBody(
+    Uint8List body,
+    Converter<List<int>, List<int>> decoder,
+  ) {
+    if (body.length > _maxCompressedBodyBytes) {
+      return null;
+    }
+    final output = _BoundedDecodedBytesSink(_maxDecodedBodyBytes);
+    try {
+      final input = decoder.startChunkedConversion(output);
+      input.add(body);
+      input.close();
+      return output.takeBytes();
+    } on _DecodedPayloadTooLargeException {
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -277,6 +363,7 @@ class BilibiliDanmakuSession implements DanmakuSession {
   void _handleJoinAck(Uint8List body) {
     final failureMessage = _parseJoinAckFailure(body);
     if (failureMessage == null) {
+      _joinAckSucceeded = true;
       _completeConnectReady();
       return;
     }
@@ -304,10 +391,47 @@ class BilibiliDanmakuSession implements DanmakuSession {
         // Fall through to the binary status parsing below.
       }
     }
-    if (body.length >= 4 && _readInt(body, 0, 4) == 0) {
+    if (body.length == 4 && _readInt(body, 0, 4) == 0) {
       return null;
     }
     return 'Bilibili 弹幕鉴权失败';
+  }
+
+  Future<void> _teardownRemoteDisconnect({
+    IOWebSocketChannel? channel,
+    StreamSubscription<dynamic>? subscription,
+    String? notice,
+  }) async {
+    if (channel != null && !identical(_channel, channel)) {
+      return;
+    }
+    if (subscription != null && !identical(_subscription, subscription)) {
+      return;
+    }
+    _connected = false;
+    _handshakeReady = false;
+    _connectReady = null;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    _subscription = null;
+    _channel = null;
+    if (notice != null) {
+      _emit(
+        LiveMessage(
+          type: LiveMessageType.notice,
+          content: notice,
+          timestamp: DateTime.now(),
+        ),
+      );
+    }
+    try {
+      await subscription?.cancel();
+    } catch (_) {}
+    try {
+      await channel?.sink.close();
+    } catch (_) {}
   }
 
   void _parseJsonMessage(String text) {
@@ -321,7 +445,7 @@ class BilibiliDanmakuSession implements DanmakuSession {
       if (cmd.contains('DANMU_MSG')) {
         final info = obj['info'];
         if (info is List && info.length > 2) {
-          final content = info[1]?.toString() ?? '';
+          final content = _decodeHtmlEntities(info[1]?.toString() ?? '');
           final userName = (info[2] is List && (info[2] as List).length > 1)
               ? info[2][1]?.toString()
               : null;
@@ -403,7 +527,22 @@ class BilibiliDanmakuSession implements DanmakuSession {
           );
         }
       }
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.bilibili,
+        scope: 'bilibili.danmaku',
+        message: 'failed to parse danmaku json message',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  static String _decodeHtmlEntities(String value) {
+    if (!value.contains('&')) {
+      return value;
+    }
+    return decodeHtmlEntities(value);
   }
 
   void _emit(LiveMessage message) {
@@ -422,6 +561,13 @@ class BilibiliDanmakuSession implements DanmakuSession {
     if (ready != null && !ready.isCompleted) {
       ready.complete();
     }
+  }
+
+  void _completeConnectReadyIfAuthorized() {
+    if (!_joinAckSucceeded) {
+      return;
+    }
+    _completeConnectReady();
   }
 
   void _failConnectReady(Object error, [StackTrace? stackTrace]) {
@@ -479,4 +625,30 @@ class BilibiliDanmakuSession implements DanmakuSession {
     final match = RegExp(r'(?:^|;\s*)DedeUserID=(\d+)').firstMatch(cookie);
     return int.tryParse(match?.group(1) ?? '');
   }
+}
+
+class _DecodedPayloadTooLargeException implements Exception {
+  const _DecodedPayloadTooLargeException();
+}
+
+class _BoundedDecodedBytesSink implements Sink<List<int>> {
+  _BoundedDecodedBytesSink(this.maxBytes);
+
+  final int maxBytes;
+  final BytesBuilder _builder = BytesBuilder();
+  int _length = 0;
+
+  @override
+  void add(List<int> data) {
+    _length += data.length;
+    if (_length > maxBytes) {
+      throw const _DecodedPayloadTooLargeException();
+    }
+    _builder.add(data);
+  }
+
+  @override
+  void close() {}
+
+  Uint8List takeBytes() => _builder.takeBytes();
 }

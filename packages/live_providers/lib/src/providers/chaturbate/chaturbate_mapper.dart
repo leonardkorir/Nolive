@@ -1,5 +1,6 @@
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
 import 'chaturbate_api_client.dart';
 import 'chaturbate_hls_master_playlist_parser.dart';
 import 'chaturbate_room_page_parser.dart';
@@ -595,7 +596,7 @@ class ChaturbateMapper {
     );
   }
 
-  static Map<String, Object?>? _buildDanmakuToken({
+  static ChaturbateDanmakuToken? _buildDanmakuToken({
     required String roomId,
     required String broadcasterUid,
     required String roomUid,
@@ -605,22 +606,22 @@ class ChaturbateMapper {
     if (roomId.isEmpty || broadcasterUid.isEmpty || csrfToken.isEmpty) {
       return null;
     }
-    return {
-      'roomId': roomId,
-      'roomUid': roomUid,
-      'broadcasterUid': broadcasterUid,
-      'csrfToken': csrfToken,
-      'backend': _firstNonEmpty([
+    return ChaturbateDanmakuToken(
+      roomId: roomId,
+      roomUid: roomUid,
+      broadcasterUid: broadcasterUid,
+      csrfToken: csrfToken,
+      backend: _firstNonEmpty([
         pushService['backend']?.toString(),
         'a',
       ]),
-      'host': _nonEmptyString(pushService['host']),
-      'restHost': _nonEmptyString(pushService['rest_host']),
-      'fallbackHosts': _asList(pushService['fallback_hosts'])
+      host: _nonEmptyString(pushService['host']),
+      restHost: _nonEmptyString(pushService['rest_host']),
+      fallbackHosts: _asList(pushService['fallback_hosts'])
           .map((item) => item?.toString() ?? '')
           .where((item) => item.isNotEmpty)
           .toList(growable: false),
-    };
+    );
   }
 
   static String _resolveTopic(Map<String, dynamic> payload) {
@@ -674,30 +675,15 @@ class ChaturbateMapper {
   }
 
   static List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   static Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   static int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is num) {
-      return value.toInt();
-    }
-    return int.tryParse(value?.toString() ?? '');
+    return ProviderJson.asInt(value, allowNum: true);
   }
 
   static DateTime? _asDateTime(Object? value) {

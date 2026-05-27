@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
@@ -10,6 +11,7 @@ import 'package:nolive_app/src/features/room/presentation/room_danmaku_controlle
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_playback_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_playback_session_state.dart';
+import 'package:nolive_app/src/features/room/presentation/room_playback_source_helpers.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_presentation_helpers.dart';
 import 'package:nolive_app/src/features/room/presentation/room_twitch_recovery_controller.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
@@ -19,12 +21,13 @@ import 'package:nolive_app/src/features/settings/application/manage_room_ui_pref
 typedef RoomPageSessionMountCheck = bool Function();
 typedef RoomPageSessionTrace = void Function(String message);
 typedef RoomPageSessionResolveRuntimeSource = PlaybackSource? Function();
-typedef RoomPageSessionScheduleTwitchRecovery = void Function({
-  required LoadedRoomSnapshot snapshot,
-  required PlaybackSource? playbackSource,
-  required List<LivePlayUrl> playUrls,
-  required LivePlayQuality selectedQuality,
-});
+typedef RoomPageSessionScheduleTwitchRecovery =
+    void Function({
+      required LoadedRoomSnapshot snapshot,
+      required PlaybackSource? playbackSource,
+      required List<LivePlayUrl> playUrls,
+      required LivePlayQuality selectedQuality,
+    });
 typedef RoomPageSessionSyncPlayerRuntime = void Function();
 
 const PlayerPreferences _defaultRoomPagePlayerPreferences = PlayerPreferences(
@@ -67,18 +70,18 @@ class RoomPageSessionState {
   });
 
   const RoomPageSessionState.initial()
-      : latestLoadedState = null,
-        playbackSession = const RoomPlaybackSessionState(),
-        playerPreferences = _defaultRoomPagePlayerPreferences,
-        danmakuPreferences = DanmakuPreferences.defaults,
-        roomUiPreferences = RoomUiPreferences.defaults,
-        blockedKeywords = const <String>[],
-        isFollowed = false,
-        ancillaryLoading = false,
-        refreshInFlight = false,
-        isLeavingRoom = false,
-        showDanmakuOverlay = true,
-        volume = 1;
+    : latestLoadedState = null,
+      playbackSession = const RoomPlaybackSessionState(),
+      playerPreferences = _defaultRoomPagePlayerPreferences,
+      danmakuPreferences = DanmakuPreferences.defaults,
+      roomUiPreferences = RoomUiPreferences.defaults,
+      blockedKeywords = const <String>[],
+      isFollowed = false,
+      ancillaryLoading = false,
+      refreshInFlight = false,
+      isLeavingRoom = false,
+      showDanmakuOverlay = true,
+      volume = 1;
 
   final RoomSessionLoadResult? latestLoadedState;
   final RoomPlaybackSessionState playbackSession;
@@ -144,10 +147,12 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     required this.isMounted,
     RoomPageSessionScheduleTwitchRecovery? scheduleTwitchRecovery,
     RoomPageSessionSyncPlayerRuntime? syncPlayerRuntimeState,
-  })  : _scheduleTwitchRecovery =
-            scheduleTwitchRecovery ?? _noopScheduleTwitchRecovery,
-        _syncPlayerRuntimeState =
-            syncPlayerRuntimeState ?? _noopSyncPlayerRuntimeState;
+    AppLifecycleState? initialLifecycleState,
+  }) : _scheduleTwitchRecovery =
+           scheduleTwitchRecovery ?? _noopScheduleTwitchRecovery,
+       _syncPlayerRuntimeState =
+           syncPlayerRuntimeState ?? _noopSyncPlayerRuntimeState,
+       _lifecycleState = initialLifecycleState ?? AppLifecycleState.resumed;
 
   final ProviderId providerId;
   final RoomSessionController sessionController;
@@ -159,9 +164,9 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
   final RoomPageSessionResolveRuntimeSource resolveRuntimeCurrentPlaybackSource;
   final Future<PlayerPreferences> Function() loadPlayerPreferences;
   final Future<void> Function(PlayerPreferences preferences)
-      updatePlayerPreferences;
+  updatePlayerPreferences;
   final Future<void> Function(RoomUiPreferences preferences)
-      persistRoomUiPreferences;
+  persistRoomUiPreferences;
   final RoomPageSessionTrace trace;
   final RoomPageSessionMountCheck isMounted;
   final RoomPageSessionScheduleTwitchRecovery _scheduleTwitchRecovery;
@@ -182,6 +187,8 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
   int _roomFutureToken = 0;
   int _ancillaryLoadToken = 0;
   bool _forcePlaybackRebindOnNextResolvedRoomState = false;
+  AppLifecycleState _lifecycleState;
+  Completer<void>? _foregroundResumeCompleter;
 
   RoomPageSessionState get state => _state;
   Future<RoomSessionLoadResult> get roomFuture => _roomFuture;
@@ -230,6 +237,13 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
       return;
     }
     _replaceState(_state.copyWith(isFollowed: followed));
+  }
+
+  void handleLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+    if (state == AppLifecycleState.resumed) {
+      _completeForegroundResumeWaiter();
+    }
   }
 
   void updateDanmakuOverlayVisible(bool visible) {
@@ -354,9 +368,7 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
         playbackController.pendingPlaybackSource;
   }
 
-  Future<void> waitForPlayerBindingToFinish({
-    required String reason,
-  }) {
+  Future<void> waitForPlayerBindingToFinish({required String reason}) {
     return playbackController.waitForPlaybackRebindToFinish(reason: reason);
   }
 
@@ -386,7 +398,8 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     final future = _trackRoomFuture(
       reloadPlayer
           ? _load(
-              preferredQualityId: _state.playbackSession.selectedQuality?.id)
+              preferredQualityId: _state.playbackSession.selectedQuality?.id,
+            )
           : _refreshRoomData(
               previousFuture: previousFuture,
               preferredQualityId: _state.playbackSession.selectedQuality?.id,
@@ -397,8 +410,14 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     danmakuController.clearFeed();
     try {
       await future;
+    } catch (_) {
+      if (_isActive) {
+        rethrow;
+      }
     } finally {
-      _replaceState(_state.copyWith(refreshInFlight: false));
+      if (_isActive) {
+        _replaceState(_state.copyWith(refreshInFlight: false));
+      }
     }
   }
 
@@ -412,8 +431,8 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     } catch (_) {
       if (_isActive) {
         _replaceState(_state.copyWith(isLeavingRoom: false));
+        rethrow;
       }
-      rethrow;
     }
   }
 
@@ -456,15 +475,19 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _roomFutureToken += 1;
     _ancillaryLoadToken += 1;
+    _completeForegroundResumeWaiter();
     sessionController.clearCurrent();
     super.dispose();
   }
 
-  Future<RoomSessionLoadResult> _load({String? preferredQualityId}) {
-    return sessionController.load(
-      preferredQualityId: preferredQualityId,
-    );
+  Future<RoomSessionLoadResult> _load({String? preferredQualityId}) async {
+    final shouldContinue = await _waitForForegroundBeforeRoomLoad();
+    if (!shouldContinue) {
+      return _cancelledRoomLoadFuture();
+    }
+    return sessionController.load(preferredQualityId: preferredQualityId);
   }
 
   Future<RoomSessionLoadResult> _waitForPendingRoomTeardownAndLoad({
@@ -483,17 +506,21 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     Future<RoomSessionLoadResult> future,
   ) {
     final token = ++_roomFutureToken;
-    return future.then((state) async {
-      if (_isActive && token == _roomFutureToken) {
-        await _handleResolvedRoomState(state);
-      }
-      return state;
-    }, onError: (Object error, StackTrace stackTrace) {
-      if (_isActive && token == _roomFutureToken) {
-        _handleRoomLoadFailure();
-      }
-      throw error;
-    });
+    return future.then(
+      (state) async {
+        if (_isActive && token == _roomFutureToken) {
+          await _handleResolvedRoomState(state);
+        }
+        return state;
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (_isActive && token == _roomFutureToken) {
+          _handleRoomLoadFailure();
+          throw error;
+        }
+        return Future<RoomSessionLoadResult>.error(error, stackTrace);
+      },
+    );
   }
 
   Future<void> _handleResolvedRoomState(RoomSessionLoadResult next) async {
@@ -586,22 +613,15 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     );
     _scheduleAncillaryLoad(snapshot: next.snapshot);
     trace(
-      'room session applied playback=${_summarizePlaybackSource(_state.playbackSession.playbackSource)} '
+      'room session applied playback=${summarizePlaybackSource(_state.playbackSession.playbackSource)} '
       'quality=${next.playbackQuality.id}/${next.playbackQuality.label}',
     );
   }
 
-  void _scheduleAncillaryLoad({
-    required LoadedRoomSnapshot snapshot,
-  }) {
+  void _scheduleAncillaryLoad({required LoadedRoomSnapshot snapshot}) {
     final token = ++_ancillaryLoadToken;
     _replaceState(_state.copyWith(ancillaryLoading: true));
-    unawaited(
-      _loadAncillaryRoomState(
-        token: token,
-        snapshot: snapshot,
-      ),
-    );
+    unawaited(_loadAncillaryRoomState(token: token, snapshot: snapshot));
   }
 
   Future<void> _loadAncillaryRoomState({
@@ -618,10 +638,7 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
       return;
     }
     _replaceState(
-      _state.copyWith(
-        isFollowed: result.isFollowed,
-        ancillaryLoading: false,
-      ),
+      _state.copyWith(isFollowed: result.isFollowed, ancillaryLoading: false),
     );
     if (!_isActive || token != _ancillaryLoadToken) {
       await result.danmakuSession?.disconnect();
@@ -640,6 +657,10 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     required Future<RoomSessionLoadResult> previousFuture,
     String? preferredQualityId,
   }) async {
+    final shouldContinue = await _waitForForegroundBeforeRoomLoad();
+    if (!shouldContinue) {
+      return _cancelledRoomLoadFuture();
+    }
     if (sessionController.current == null) {
       try {
         await previousFuture;
@@ -650,9 +671,38 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     if (sessionController.current == null) {
       return _load(preferredQualityId: preferredQualityId);
     }
-    return sessionController.reload(
-      preferredQualityId: preferredQualityId,
+    return sessionController.reload(preferredQualityId: preferredQualityId);
+  }
+
+  Future<bool> _waitForForegroundBeforeRoomLoad() async {
+    while (_isActive && _lifecycleState != AppLifecycleState.resumed) {
+      final waitingForState = _lifecycleState;
+      trace('load waiting for resumed lifecycle state=${waitingForState.name}');
+      final completer = _foregroundResumeCompleter ??= Completer<void>();
+      await completer.future;
+      if (_isActive) {
+        trace('load resumed lifecycle released');
+      }
+    }
+    return _isActive;
+  }
+
+  Future<RoomSessionLoadResult> _cancelledRoomLoadFuture() {
+    final latest = _state.latestLoadedState;
+    if (latest != null) {
+      return Future<RoomSessionLoadResult>.value(latest);
+    }
+    return Future<RoomSessionLoadResult>.error(
+      const RoomSessionCancelledException(),
     );
+  }
+
+  void _completeForegroundResumeWaiter() {
+    final completer = _foregroundResumeCompleter;
+    _foregroundResumeCompleter = null;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
   }
 
   void _setPlaybackAvailability(bool value) {
@@ -682,17 +732,11 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     _state = next;
     notifyListeners();
   }
+}
 
-  String _summarizePlaybackSource(PlaybackSource? source) {
-    final url = source?.url;
-    if (url == null) {
-      return '-';
-    }
-    final audio = source?.externalAudio?.url;
-    final base = '${url.host}${url.path}';
-    if (audio == null) {
-      return base;
-    }
-    return '$base + audio=${audio.host}${audio.path}';
-  }
+class RoomSessionCancelledException implements Exception {
+  const RoomSessionCancelledException();
+
+  @override
+  String toString() => 'Room session load cancelled.';
 }

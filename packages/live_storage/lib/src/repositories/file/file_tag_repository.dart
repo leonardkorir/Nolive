@@ -48,8 +48,11 @@ class FileTagRepository implements TagRepository {
     final normalized = newTag.trim();
     return store.update((snapshot) {
       final index = snapshot.tags.indexOf(oldTag);
-      if (index < 0 || normalized.isEmpty) {
+      if (normalized.isEmpty) {
         return;
+      }
+      if (index < 0) {
+        throw StateError('Tag not found: $oldTag');
       }
       snapshot.tags[index] = normalized;
       snapshot.tags

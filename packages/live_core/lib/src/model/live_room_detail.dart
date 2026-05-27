@@ -1,35 +1,87 @@
+import '../text/well_formed_string_extension.dart';
+import 'model_equality.dart';
+import 'danmaku_token.dart';
+
 class LiveRoomDetail {
   const LiveRoomDetail({
     required this.providerId,
     required this.roomId,
-    required this.title,
-    required this.streamerName,
+    required String title,
+    required String streamerName,
     this.streamerAvatarUrl,
     this.coverUrl,
     this.keyframeUrl,
-    this.areaName,
-    this.description,
+    String? areaName,
+    String? description,
     this.sourceUrl,
     this.startedAt,
     this.isLive = true,
     this.viewerCount,
     this.danmakuToken,
     this.metadata,
-  });
+  }) : _title = title,
+       _streamerName = streamerName,
+       _areaName = areaName,
+       _description = description;
 
   final String providerId;
   final String roomId;
-  final String title;
-  final String streamerName;
+  final String _title;
+  final String _streamerName;
   final String? streamerAvatarUrl;
   final String? coverUrl;
   final String? keyframeUrl;
-  final String? areaName;
-  final String? description;
+  final String? _areaName;
+  final String? _description;
   final String? sourceUrl;
   final DateTime? startedAt;
   final bool isLive;
   final int? viewerCount;
-  final Object? danmakuToken;
+  final DanmakuToken? danmakuToken;
   final Map<String, Object?>? metadata;
+
+  String get title => _title.toWellFormed();
+  String get streamerName => _streamerName.toWellFormed();
+  String? get areaName => _areaName?.toWellFormed();
+  String? get description => _description?.toWellFormed();
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is LiveRoomDetail &&
+            other.providerId == providerId &&
+            other.roomId == roomId &&
+            other.title == title &&
+            other.streamerName == streamerName &&
+            other.streamerAvatarUrl == streamerAvatarUrl &&
+            other.coverUrl == coverUrl &&
+            other.keyframeUrl == keyframeUrl &&
+            other.areaName == areaName &&
+            other.description == description &&
+            other.sourceUrl == sourceUrl &&
+            other.startedAt == startedAt &&
+            other.isLive == isLive &&
+            other.viewerCount == viewerCount &&
+            modelValueEquals(other.danmakuToken, danmakuToken) &&
+            modelMapEquals(other.metadata, metadata);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        providerId,
+        roomId,
+        title,
+        streamerName,
+        streamerAvatarUrl,
+        coverUrl,
+        keyframeUrl,
+        areaName,
+        description,
+        sourceUrl,
+        startedAt,
+        isLive,
+        viewerCount,
+        modelValueHash(danmakuToken),
+        modelMapHash(metadata),
+      );
 }

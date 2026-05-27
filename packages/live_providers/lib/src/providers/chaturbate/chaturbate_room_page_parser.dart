@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
+
 class ChaturbateRoomPageContext {
   const ChaturbateRoomPageContext({
     required this.dossier,
@@ -165,12 +167,6 @@ class ChaturbateRoomPageParser {
   }
 
   Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 }

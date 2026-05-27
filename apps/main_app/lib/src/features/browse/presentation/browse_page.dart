@@ -9,6 +9,7 @@ import 'package:nolive_app/src/features/category/application/manage_favorite_cat
 import 'package:nolive_app/src/features/category/application/load_provider_categories_use_case.dart';
 import 'package:nolive_app/src/features/category/presentation/category_search_support.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';
+import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
 import 'package:nolive_app/src/shared/presentation/gestures/responsive_tab_swipe_switcher.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
@@ -31,18 +32,21 @@ class BrowsePage extends StatelessWidget {
       ]),
       builder: (context, _) {
         final preferences = dependencies.layoutPreferences.value;
-        final providers = dependencies
-            .listAvailableProviders()
-            .where(
-              (item) =>
-                  item.supports(ProviderCapability.categories) ||
-                  item.supports(ProviderCapability.searchRooms) ||
-                  item.supports(ProviderCapability.recommendRooms),
-            )
-            .toList(growable: false)
-          ..sort((a, b) => preferences
-              .providerSortIndex(a.id.value)
-              .compareTo(preferences.providerSortIndex(b.id.value)));
+        final providers =
+            dependencies
+                .listAvailableProviders()
+                .where(
+                  (item) =>
+                      item.supports(ProviderCapability.categories) ||
+                      item.supports(ProviderCapability.searchRooms) ||
+                      item.supports(ProviderCapability.recommendRooms),
+                )
+                .toList(growable: false)
+              ..sort(
+                (a, b) => preferences
+                    .providerSortIndex(a.id.value)
+                    .compareTo(preferences.providerSortIndex(b.id.value)),
+              );
         final adaptive = AppAdaptiveLayoutSpec.of(context);
 
         return DefaultTabController(
@@ -64,8 +68,9 @@ class BrowsePage extends StatelessWidget {
                     tooltip: '搜索',
                     visualDensity: VisualDensity.compact,
                     onPressed: () {
-                      final controller =
-                          DefaultTabController.maybeOf(tabContext);
+                      final controller = DefaultTabController.maybeOf(
+                        tabContext,
+                      );
                       final selectedIndex = controller?.index ?? 0;
                       final selectedProvider = providers[selectedIndex];
                       Navigator.of(tabContext).push(
@@ -297,7 +302,7 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
   void initState() {
     super.initState();
     _searchController = TextEditingController();
-    _future = widget.dependencies.loadProviderCategories(widget.descriptor.id);
+    _future = _loadCategories();
     _reloadFavoriteTags();
   }
 
@@ -309,13 +314,28 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
 
   Future<void> _refresh() async {
     setState(() {
-      _future = widget.dependencies.loadProviderCategories(
-        widget.descriptor.id,
-      );
+      _future = _loadCategories();
       _expandedCategoryIds.clear();
     });
     await _reloadFavoriteTags();
     await _future;
+  }
+
+  Future<ProviderCategoriesPayload> _loadCategories() async {
+    try {
+      return await widget.dependencies.loadProviderCategories(
+        widget.descriptor.id,
+      );
+    } catch (error, stackTrace) {
+      AppLog.instance.error(
+        'browse_categories',
+        'browse provider categories load failed '
+            'provider=${widget.descriptor.id.value}',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
   }
 
   Future<void> _reloadFavoriteTags() async {
@@ -401,8 +421,9 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
             builder: (context, constraints) {
               final horizontalPadding = adaptive.pageHorizontalPadding;
               final width = constraints.maxWidth - (horizontalPadding * 2);
-              final crossAxisCount =
-                  adaptive.browseCategoryCrossAxisCount(width);
+              final crossAxisCount = adaptive.browseCategoryCrossAxisCount(
+                width,
+              );
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(0, 6, 0, 96),
@@ -511,11 +532,11 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
                       ),
                       child: Text(
                         normalizeDisplayText(category.group.name),
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: adaptive.categoryTileTextSize + 2,
-                                ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontSize: adaptive.categoryTileTextSize + 2,
+                            ),
                       ),
                     ),
                     GridView.builder(
@@ -533,14 +554,16 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
                         mainAxisSpacing: 8,
                         childAspectRatio: adaptive.categoryTileChildAspectRatio,
                       ),
-                      itemCount: (queryActive
+                      itemCount:
+                          (queryActive
                                   ? category.items
                                   : _visibleChildren(category.group))
                               .length +
                           (!queryActive &&
                                   _childrenOf(category.group).length > 15 &&
-                                  !_expandedCategoryIds
-                                      .contains(category.group.id)
+                                  !_expandedCategoryIds.contains(
+                                    category.group.id,
+                                  )
                               ? 1
                               : 0),
                       itemBuilder: (context, index) {
@@ -589,9 +612,7 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
 }
 
 class _DiscoveryIntroCard extends StatelessWidget {
-  const _DiscoveryIntroCard({
-    required this.descriptor,
-  });
+  const _DiscoveryIntroCard({required this.descriptor});
 
   final ProviderDescriptor descriptor;
 
@@ -653,8 +674,10 @@ class _DiscoverySection extends StatelessWidget {
             ),
             if (section.query.isNotEmpty)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(999),
@@ -811,9 +834,7 @@ class _CategoryTile extends StatelessWidget {
 }
 
 class _CategoryTileFallback extends StatelessWidget {
-  const _CategoryTileFallback({
-    required this.label,
-  });
+  const _CategoryTileFallback({required this.label});
 
   final String label;
 

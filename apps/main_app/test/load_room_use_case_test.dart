@@ -9,10 +9,7 @@ void main() {
   test('load room skips history writes when recordHistory is false', () async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
-    await bootstrap.loadRoom(
-      providerId: ProviderId.bilibili,
-      roomId: '6',
-    );
+    await bootstrap.loadRoom(providerId: ProviderId.bilibili, roomId: '6');
     final firstRecord = (await bootstrap.historyRepository.listRecent()).single;
 
     await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -28,48 +25,46 @@ void main() {
   });
 
   test(
-      'load room falls back to injected room detail override on provider failure',
-      () async {
-    _OverrideRoomProvider.fetchRoomDetailCalls = 0;
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: _kOverrideDescriptor,
-          builder: _OverrideRoomProvider.new,
-        ),
-      );
-    final historyRepository = InMemoryHistoryRepository();
-    final useCase = LoadRoomUseCase(
-      registry,
-      historyRepository: historyRepository,
-      roomDetailOverride: ({
-        required providerId,
-        required roomId,
-      }) async {
-        if (providerId != ProviderId.chaturbate) {
-          return null;
-        }
-        return LiveRoomDetail(
-          providerId: providerId.value,
-          roomId: roomId,
-          title: 'override room',
-          streamerName: roomId,
-          isLive: true,
-          metadata: const {'hlsSource': 'https://example.com/live.m3u8'},
+    'load room falls back to injected room detail override on provider failure',
+    () async {
+      _OverrideRoomProvider.fetchRoomDetailCalls = 0;
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kOverrideDescriptor,
+            builder: _OverrideRoomProvider.new,
+          ),
         );
-      },
-    );
+      final historyRepository = InMemoryHistoryRepository();
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: historyRepository,
+        roomDetailOverride: ({required providerId, required roomId}) async {
+          if (providerId != ProviderId.chaturbate) {
+            return null;
+          }
+          return LiveRoomDetail(
+            providerId: providerId.value,
+            roomId: roomId,
+            title: 'override room',
+            streamerName: roomId,
+            isLive: true,
+            metadata: const {'hlsSource': 'https://example.com/live.m3u8'},
+          );
+        },
+      );
 
-    final snapshot = await useCase(
-      providerId: ProviderId.chaturbate,
-      roomId: 'milabunny_',
-    );
+      final snapshot = await useCase(
+        providerId: ProviderId.chaturbate,
+        roomId: 'milabunny_',
+      );
 
-    expect(snapshot.detail.roomId, 'milabunny_');
-    expect(snapshot.detail.title, 'override room');
-    expect(snapshot.playUrls.single.url, 'https://example.com/live.m3u8');
-    expect(_OverrideRoomProvider.fetchRoomDetailCalls, 1);
-  });
+      expect(snapshot.detail.roomId, 'milabunny_');
+      expect(snapshot.detail.title, 'override room');
+      expect(snapshot.playUrls.single.url, 'https://example.com/live.m3u8');
+      expect(_OverrideRoomProvider.fetchRoomDetailCalls, 1);
+    },
+  );
 
   test('load room prefers provider detail before injected override', () async {
     final registry = ProviderRegistry()
@@ -82,10 +77,7 @@ void main() {
     final useCase = LoadRoomUseCase(
       registry,
       historyRepository: InMemoryHistoryRepository(),
-      roomDetailOverride: ({
-        required providerId,
-        required roomId,
-      }) async {
+      roomDetailOverride: ({required providerId, required roomId}) async {
         return LiveRoomDetail(
           providerId: providerId.value,
           roomId: roomId,
@@ -135,56 +127,60 @@ void main() {
     );
   });
 
-  test('load room keeps generic offline rooms openable without qualities',
-      () async {
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: _kOfflineDescriptor,
-          builder: _OfflineProvider.new,
-        ),
+  test(
+    'load room keeps generic offline rooms openable without qualities',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kOfflineDescriptor,
+            builder: _OfflineProvider.new,
+          ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
       );
-    final useCase = LoadRoomUseCase(
-      registry,
-      historyRepository: InMemoryHistoryRepository(),
-    );
 
-    final snapshot = await useCase(
-      providerId: _kOfflineProviderId,
-      roomId: 'offline-room',
-    );
-
-    expect(snapshot.detail.isLive, isFalse);
-    expect(snapshot.hasPlayback, isFalse);
-    expect(snapshot.qualities.single.id, 'unavailable');
-    expect(snapshot.selectedQuality.id, 'unavailable');
-    expect(snapshot.playbackUnavailableReason, contains('暂未开播'));
-  });
-
-  test('load room keeps restricted rooms openable without playback urls',
-      () async {
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: _kRestrictedDescriptor,
-          builder: _RestrictedProvider.new,
-        ),
+      final snapshot = await useCase(
+        providerId: _kOfflineProviderId,
+        roomId: 'offline-room',
       );
-    final useCase = LoadRoomUseCase(
-      registry,
-      historyRepository: InMemoryHistoryRepository(),
-    );
 
-    final snapshot = await useCase(
-      providerId: _kRestrictedProviderId,
-      roomId: 'member-only-room',
-    );
+      expect(snapshot.detail.isLive, isFalse);
+      expect(snapshot.hasPlayback, isFalse);
+      expect(snapshot.qualities.single.id, 'unavailable');
+      expect(snapshot.selectedQuality.id, 'unavailable');
+      expect(snapshot.playbackUnavailableReason, contains('暂未开播'));
+    },
+  );
 
-    expect(snapshot.detail.isLive, isTrue);
-    expect(snapshot.hasPlayback, isFalse);
-    expect(snapshot.selectedQuality.id, 'high');
-    expect(snapshot.playbackUnavailableReason, contains('需要额外权限'));
-  });
+  test(
+    'load room keeps restricted rooms openable without playback urls',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kRestrictedDescriptor,
+            builder: _RestrictedProvider.new,
+          ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
+      );
+
+      final snapshot = await useCase(
+        providerId: _kRestrictedProviderId,
+        roomId: 'member-only-room',
+      );
+
+      expect(snapshot.detail.isLive, isTrue);
+      expect(snapshot.hasPlayback, isFalse);
+      expect(snapshot.selectedQuality.id, 'high');
+      expect(snapshot.playbackUnavailableReason, contains('需要额外权限'));
+    },
+  );
 
   test('load room keeps auto quality as default for twitch startup', () async {
     final registry = ProviderRegistry()
@@ -234,13 +230,41 @@ void main() {
     expect(snapshot.playUrls.single.url, contains('1080p60'));
   });
 
-  test('load room caps chaturbate startup quality to a safer fixed tier',
+  test(
+    'load room caps chaturbate startup quality to a safer fixed tier',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kStableChaturbateDescriptor,
+            builder: _StableChaturbateProvider.new,
+          ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
+      );
+
+      final snapshot = await useCase(
+        providerId: ProviderId.chaturbate,
+        roomId: 'dewdropdoll',
+        preferHighestQuality: true,
+      );
+
+      expect(snapshot.hasPlayback, isTrue);
+      expect(snapshot.selectedQuality.id, '1296000');
+      expect(snapshot.selectedQuality.label, '480p');
+      expect(snapshot.playUrls.single.url, contains('/480p.m3u8'));
+    },
+  );
+
+  test('load room strips stripchat auto quality in favor of highest fixed',
       () async {
     final registry = ProviderRegistry()
       ..register(
         ProviderRegistration(
-          descriptor: _kStableChaturbateDescriptor,
-          builder: _StableChaturbateProvider.new,
+          descriptor: _kStripchatDescriptor,
+          builder: _StripchatStartupQualityProvider.new,
         ),
       );
     final useCase = LoadRoomUseCase(
@@ -249,15 +273,68 @@ void main() {
     );
 
     final snapshot = await useCase(
-      providerId: ProviderId.chaturbate,
-      roomId: 'dewdropdoll',
+      providerId: ProviderId.stripchat,
+      roomId: 'ranran_ch',
       preferHighestQuality: true,
     );
 
     expect(snapshot.hasPlayback, isTrue);
-    expect(snapshot.selectedQuality.id, '1296000');
-    expect(snapshot.selectedQuality.label, '480p');
-    expect(snapshot.playUrls.single.url, contains('/480p.m3u8'));
+    expect(snapshot.selectedQuality.id, '1080p');
+    expect(snapshot.playUrls.single.url, contains('/99999_1080p.m3u8'));
+  });
+
+  test('load room selects highest quality when qualities are unexpectedly sorted', () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: _kTwitchDescriptor,
+          builder: () => _CustomSortQualityProvider(
+            qualities: [
+              LivePlayQuality(id: '720p', label: '720p', sortOrder: 720),
+              LivePlayQuality(id: '1080p', label: '1080p', sortOrder: 1080),
+              LivePlayQuality(id: '360p', label: '360p', sortOrder: 360),
+            ],
+          ),
+        ),
+      );
+    final useCase = LoadRoomUseCase(
+      registry,
+      historyRepository: InMemoryHistoryRepository(),
+    );
+
+    final snapshot = await useCase(
+      providerId: ProviderId.twitch,
+      roomId: 'test_channel',
+      preferHighestQuality: true,
+    );
+
+    expect(snapshot.selectedQuality.id, '1080p');
+  });
+
+  test('load room selects the only available auto quality when only auto is returned', () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: _kTwitchDescriptor,
+          builder: () => _CustomSortQualityProvider(
+            qualities: [
+              LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
+            ],
+          ),
+        ),
+      );
+    final useCase = LoadRoomUseCase(
+      registry,
+      historyRepository: InMemoryHistoryRepository(),
+    );
+
+    final snapshot = await useCase(
+      providerId: ProviderId.twitch,
+      roomId: 'test_channel',
+      preferHighestQuality: true,
+    );
+
+    expect(snapshot.selectedQuality.id, 'auto');
   });
 }
 
@@ -288,14 +365,9 @@ class _OverrideRoomProvider extends LiveProvider
 
   @override
   Future<List<LivePlayQuality>> fetchPlayQualities(
-      LiveRoomDetail detail) async {
-    return const [
-      LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-      ),
-    ];
+    LiveRoomDetail detail,
+  ) async {
+    return [LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true)];
   }
 
   @override
@@ -303,9 +375,7 @@ class _OverrideRoomProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    return [
-      LivePlayUrl(url: detail.metadata?['hlsSource']?.toString() ?? ''),
-    ];
+    return [LivePlayUrl(url: detail.metadata?['hlsSource']?.toString() ?? '')];
   }
 }
 
@@ -341,7 +411,7 @@ class _StableChaturbateProvider extends LiveProvider
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    return const [
+    return [
       LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
       LivePlayQuality(
         id: '1296000',
@@ -369,9 +439,7 @@ class _StableChaturbateProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    return [
-      LivePlayUrl(url: 'https://example.com/${quality.label}.m3u8'),
-    ];
+    return [LivePlayUrl(url: 'https://example.com/${quality.label}.m3u8')];
   }
 }
 
@@ -400,9 +468,7 @@ class _PrivateShowProvider extends LiveProvider
       title: roomId,
       streamerName: roomId,
       isLive: false,
-      metadata: const {
-        'roomStatus': 'private show in progress',
-      },
+      metadata: const {'roomStatus': 'private show in progress'},
     );
   }
 
@@ -410,13 +476,7 @@ class _PrivateShowProvider extends LiveProvider
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    return const [
-      LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-      ),
-    ];
+    return [LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true)];
   }
 
   @override
@@ -424,7 +484,7 @@ class _PrivateShowProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    return const [];
+    return [];
   }
 }
 
@@ -462,7 +522,7 @@ class _OfflineProvider extends LiveProvider
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    return const [];
+    return [];
   }
 
   @override
@@ -470,7 +530,7 @@ class _OfflineProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    return const [];
+    return [];
   }
 }
 
@@ -501,9 +561,7 @@ class _RestrictedProvider extends LiveProvider
       title: 'member-only-room',
       streamerName: 'member-only-room',
       isLive: true,
-      metadata: const {
-        'membersOnly': true,
-      },
+      metadata: const {'membersOnly': true},
     );
   }
 
@@ -511,13 +569,7 @@ class _RestrictedProvider extends LiveProvider
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    return const [
-      LivePlayQuality(
-        id: 'high',
-        label: '高清',
-        isDefault: true,
-      ),
-    ];
+    return [LivePlayQuality(id: 'high', label: '高清', isDefault: true)];
   }
 
   @override
@@ -525,7 +577,7 @@ class _RestrictedProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    return const [];
+    return [];
   }
 }
 
@@ -562,22 +614,10 @@ class _TwitchDefaultQualityProvider extends LiveProvider
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    return const [
-      LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-      ),
-      LivePlayQuality(
-        id: '1080p60',
-        label: '1080p60',
-        sortOrder: 1080,
-      ),
-      LivePlayQuality(
-        id: '720p60',
-        label: '720p60',
-        sortOrder: 720,
-      ),
+    return [
+      LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
+      LivePlayQuality(id: '1080p60', label: '1080p60', sortOrder: 1080),
+      LivePlayQuality(id: '720p60', label: '720p60', sortOrder: 720),
     ];
   }
 
@@ -586,10 +626,89 @@ class _TwitchDefaultQualityProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
+    return [LivePlayUrl(url: 'https://example.com/${quality.id}.m3u8')];
+  }
+}
+
+const _kStripchatDescriptor = ProviderDescriptor(
+  id: ProviderId.stripchat,
+  displayName: 'Stripchat',
+  capabilities: {
+    ProviderCapability.roomDetail,
+    ProviderCapability.playQualities,
+    ProviderCapability.playUrls,
+  },
+  supportedPlatforms: {ProviderPlatform.android},
+  maturity: ProviderMaturity.inMigration,
+);
+
+class _StripchatStartupQualityProvider extends LiveProvider
+    implements SupportsRoomDetail, SupportsPlayQualities, SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => _kStripchatDescriptor;
+
+  @override
+  Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
+    return LiveRoomDetail(
+      providerId: ProviderId.stripchat.value,
+      roomId: roomId,
+      title: roomId,
+      streamerName: roomId,
+      isLive: true,
+      metadata: const {'streamName': '99999'},
+    );
+  }
+
+  @override
+  Future<List<LivePlayQuality>> fetchPlayQualities(
+    LiveRoomDetail detail,
+  ) async {
     return [
-      LivePlayUrl(
-        url: 'https://example.com/${quality.id}.m3u8',
-      ),
+      LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
+      LivePlayQuality(id: '720p', label: '720P', sortOrder: 720),
+      LivePlayQuality(id: '1080p', label: '1080P', sortOrder: 1080),
     ];
+  }
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return [LivePlayUrl(url: 'https://example.com/99999_${quality.id}.m3u8')];
+  }
+}
+
+class _CustomSortQualityProvider extends LiveProvider
+    implements SupportsRoomDetail, SupportsPlayQualities, SupportsPlayUrls {
+  _CustomSortQualityProvider({required this.qualities});
+
+  final List<LivePlayQuality> qualities;
+
+  @override
+  ProviderDescriptor get descriptor => _kTwitchDescriptor;
+
+  @override
+  Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
+    return LiveRoomDetail(
+      providerId: ProviderId.twitch.value,
+      roomId: roomId,
+      title: roomId,
+      streamerName: roomId,
+      isLive: true,
+    );
+  }
+
+  @override
+  Future<List<LivePlayQuality>> fetchPlayQualities(LiveRoomDetail detail) async {
+    return qualities;
+  }
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return [LivePlayUrl(url: 'https://example.com/${quality.id}.m3u8')];
   }
 }

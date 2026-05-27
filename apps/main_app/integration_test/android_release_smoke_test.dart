@@ -7,9 +7,20 @@ import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  Future<void> pumpForUi(
+    WidgetTester tester, {
+    Duration duration = const Duration(milliseconds: 600),
+    Duration step = const Duration(milliseconds: 100),
+  }) async {
+    final ticks = (duration.inMilliseconds / step.inMilliseconds).ceil();
+    for (var tick = 0; tick < ticks; tick++) {
+      await tester.pump(step);
+    }
+  }
+
   Future<void> popRoute(WidgetTester tester) async {
     await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
+    await pumpForUi(tester);
   }
 
   Future<void> pumpUntilVisible(
@@ -28,6 +39,16 @@ void main() {
     expect(finder.evaluate().isNotEmpty, isTrue);
   }
 
+  Finder findScreenshotResultMessage() {
+    return find.byWidgetPredicate((widget) {
+      if (widget is! Text) {
+        return false;
+      }
+      final data = widget.data ?? '';
+      return data == '已保存截图到系统相册' || data.startsWith('系统相册保存失败，已备份截图到 ');
+    });
+  }
+
   Future<void> showInlinePlayerControls(WidgetTester tester) async {
     await tester.tap(
       find.byKey(const Key('room-inline-player-tap-target')),
@@ -35,6 +56,32 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
+  }
+
+  Future<void> completeFullscreenRoundTrip(WidgetTester tester) async {
+    final exitFullscreenButton =
+        find.byKey(const Key('room-exit-fullscreen-button'));
+    final fullscreenOverlay = find.byKey(const Key('room-fullscreen-overlay'));
+    final leaveButton = find.byKey(const Key('room-leave-button'));
+    var sawFullscreen = false;
+
+    for (var attempt = 0; attempt < 16; attempt++) {
+      if (leaveButton.evaluate().isNotEmpty) {
+        expect(sawFullscreen, isTrue);
+        return;
+      }
+      if (exitFullscreenButton.evaluate().isNotEmpty) {
+        sawFullscreen = true;
+        await tester.tap(exitFullscreenButton, warnIfMissed: false);
+      } else if (fullscreenOverlay.evaluate().isNotEmpty) {
+        sawFullscreen = true;
+        await tester.tap(fullscreenOverlay, warnIfMissed: false);
+      }
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+
+    expect(sawFullscreen, isTrue);
+    expect(leaveButton, findsOneWidget);
   }
 
   Future<void> ensureInlineRoomChrome(WidgetTester tester) async {
@@ -56,7 +103,7 @@ void main() {
     }
     if (exitFullscreenButton.evaluate().isNotEmpty) {
       await tester.tap(exitFullscreenButton, warnIfMissed: false);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 250));
     }
     await pumpUntilVisible(tester, leaveButton);
   }
@@ -84,7 +131,7 @@ void main() {
       if (fullscreenOverlay.evaluate().isNotEmpty &&
           exitFullscreenButton.evaluate().isNotEmpty) {
         await tester.tap(exitFullscreenButton, warnIfMissed: false);
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 250));
         continue;
       }
       await popRoute(tester);
@@ -104,7 +151,7 @@ void main() {
     } else {
       await tester.tap(find.text(label).first, warnIfMissed: false);
     }
-    await tester.pumpAndSettle();
+    await pumpForUi(tester);
   }
 
   Future<void> pumpApp(WidgetTester tester) async {
@@ -113,7 +160,7 @@ void main() {
         appBootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
       ),
     );
-    await tester.pumpAndSettle();
+    await pumpUntilVisible(tester, find.byKey(const Key('shell-tab-home')));
     expect(shellVisible(tester), isTrue);
     expect(shellTabVisible('home'), isTrue);
     expect(shellTabVisible('browse'), isTrue);
@@ -130,7 +177,7 @@ void main() {
     expect(find.text('知识区'), findsOneWidget);
 
     await tester.tap(find.text('知识区').first, warnIfMissed: false);
-    await tester.pumpAndSettle();
+    await pumpUntilVisible(tester, find.text('新项目参考直播间'));
 
     await tester.tap(find.text('新项目参考直播间').first);
     await tester.pump();
@@ -143,10 +190,15 @@ void main() {
     );
 
     await tester.tap(find.byKey(const Key('room-appbar-more-button')));
-    await tester.pumpAndSettle();
+    await pumpUntilVisible(
+      tester,
+      find.byKey(const Key('room-quick-refresh-button')),
+    );
     expect(find.byKey(const Key('room-quick-refresh-button')), findsOneWidget);
     expect(find.text('切换清晰度'), findsOneWidget);
-    await popRoute(tester);
+    expect(find.text('截图'), findsOneWidget);
+    await tester.tap(find.text('截图').first, warnIfMissed: false);
+    await pumpUntilVisible(tester, findScreenshotResultMessage());
 
     await showInlinePlayerControls(tester);
     expect(
@@ -157,28 +209,24 @@ void main() {
       find.byKey(const Key('room-inline-fullscreen-button')),
       warnIfMissed: false,
     );
-    await tester.pumpAndSettle();
-    expect(
-        find.byKey(const Key('room-exit-fullscreen-button')), findsOneWidget);
-    await tester.tap(
-      find.byKey(const Key('room-exit-fullscreen-button')),
-      warnIfMissed: false,
-    );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await completeFullscreenRoundTrip(tester);
 
     await leaveRoomToShell(tester);
 
     expect(find.byTooltip('搜索'), findsOneWidget);
     await tester.tap(find.byTooltip('搜索').first, warnIfMissed: false);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('search-submit-button')), findsOneWidget);
+    await pumpUntilVisible(
+      tester,
+      find.byKey(const Key('search-submit-button')),
+    );
 
     await tester.enterText(find.byType(TextField).first, '架构');
     await tester.tap(find.byKey(const Key('search-submit-button')));
-    await tester.pumpAndSettle();
+    await pumpUntilVisible(tester, find.textContaining('迁移样例主播'));
     if (tester.testTextInput.isRegistered && tester.testTextInput.isVisible) {
       tester.testTextInput.hide();
-      await tester.pumpAndSettle();
+      await pumpForUi(tester);
     }
 
     expect(find.textContaining('迁移样例主播'), findsOneWidget);
@@ -191,7 +239,7 @@ void main() {
     expect(shellVisible(tester), isTrue);
 
     await selectShellTab(tester, id: 'library', label: '关注');
-    await tester.pumpAndSettle();
+    await pumpUntilVisible(tester, find.text('关注用户'));
     expect(find.text('关注用户'), findsOneWidget);
     expect(find.text('全部'), findsOneWidget);
     expect(find.text('直播中'), findsOneWidget);
@@ -215,15 +263,13 @@ void main() {
     expect(find.text('其他设置'), findsOneWidget);
 
     await tester.tap(find.text('数据同步').first, warnIfMissed: false);
-    await tester.pumpAndSettle();
-    expect(find.text('WebDAV 同步'), findsOneWidget);
+    await pumpUntilVisible(tester, find.text('WebDAV 同步'));
     expect(find.text('局域网数据同步'), findsOneWidget);
     expect(find.text('导入 / 导出'), findsOneWidget);
     await popRoute(tester);
 
     await tester.tap(find.text('关注设置').first, warnIfMissed: false);
-    await tester.pumpAndSettle();
-    expect(find.text('标签管理'), findsOneWidget);
+    await pumpUntilVisible(tester, find.text('标签管理'));
     expect(find.text('直播状态更新'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('关注导入导出'),
@@ -234,14 +280,12 @@ void main() {
     await popRoute(tester);
 
     await tester.tap(find.text('主页设置').first, warnIfMissed: false);
-    await tester.pumpAndSettle();
-    expect(find.text('导航顺序'), findsOneWidget);
+    await pumpUntilVisible(tester, find.text('导航顺序'));
     expect(find.text('平台顺序'), findsOneWidget);
     await popRoute(tester);
 
     await tester.tap(find.text('外观设置').first, warnIfMissed: false);
-    await tester.pumpAndSettle();
-    expect(find.text('主题模式'), findsOneWidget);
+    await pumpUntilVisible(tester, find.text('主题模式'));
     await popRoute(tester);
   });
 }

@@ -30,11 +30,18 @@ ANDROID_DEVICE_ID=<device-id> scripts/run_main_app_android_smoke.sh
 scripts/verify_android_release_signing.sh
 ```
 
+公开仓导出发布前，再执行：
+
+```bash
+./export_public_repo.sh --force --verify <public-export-dir>
+```
+
 期望结果：
 
 - `scripts/verify_release_metadata.sh` 通过
 - `melos run analyze` 通过
 - `melos run test` 通过
+- `export_public_repo.sh --force --verify <public-export-dir>` 先校验开发仓，再导出，再校验公开快照
 - 如需补充远端在线验证，`scripts/build_main_app.sh provider-live-smoke` 在维护者网络环境下通过
 - split APK 与 AAB 均成功生成
 - APK/AAB 签名与配置的 release keystore 一致
@@ -47,7 +54,9 @@ scripts/verify_android_release_signing.sh
 
 - `verify` 现在只包含 hermetic 校验，不再依赖第三方站点在线状态。
 - 仓库默认不附带私有 provider fixture；对应深度回归测试会在缺少样本时自动跳过。
-- `scripts/run_main_app_android_smoke.sh` 会临时部署 integration test 所需测试壳；如果工作区已有 release APK，脚本结束后会自动恢复 release 并重新做一次启动校验。
+- `scripts/run_main_app_android_smoke.sh` 会临时部署 integration test 所需测试壳；默认会在 smoke 后恢复为普通 debug 构建。
+- 如需在独立 smoke 后恢复 release，显式设置 `ANDROID_SMOKE_RESTORE_RELEASE=1`。
+- `scripts/build_main_app.sh android-release-acceptance` 已内置 `ANDROID_SMOKE_RESTORE_RELEASE=1`，验收流程结束后设备上保留的仍是 release 构建。
 - 完成上述检查后，如需恢复干净工作区，记得执行一次 `scripts/clean_public_repo_workspace.sh`。
 
 ## Manual Android Checks

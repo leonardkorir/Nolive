@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:nolive_app/src/app/app.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:nolive_app/src/shared/presentation/theme/nolive_theme.dart';
 import 'package:nolive_app/src/shared/presentation/theme/zh_text.dart';
 
@@ -26,28 +27,71 @@ class BootstrapHostApp extends StatefulWidget {
 class _BootstrapHostAppState extends State<BootstrapHostApp> {
   late Future<AppBootstrap> _bootstrapFuture;
   AppBootstrap? _warmedBootstrap;
+  int _bootstrapGeneration = 0;
+  Timer? _warmupTimer;
 
   @override
   void initState() {
     super.initState();
-    _bootstrapFuture = widget.bootstrapLoader();
+    _bootstrapFuture = _loadBootstrap();
   }
 
   void _retry() {
     setState(() {
-      _bootstrapFuture = widget.bootstrapLoader();
+      _bootstrapFuture = _loadBootstrap();
       _warmedBootstrap = null;
     });
   }
+
+  Future<AppBootstrap> _loadBootstrap() {
+    final generation = ++_bootstrapGeneration;
+    return widget.bootstrapLoader().then((bootstrap) {
+      if (!mounted || generation != _bootstrapGeneration) {
+        unawaited(_disposeBootstrap(bootstrap));
+      }
+      return bootstrap;
+    });
+  }
+
+  Future<void> _disposeBootstrap(AppBootstrap bootstrap) async {
+     try {
+       await bootstrap.dispose();
+     } catch (error, stackTrace) {
+       // Best-effort cleanup for stale bootstrap results.
+       AppLog.instance.error(
+         'bootstrap',
+         'dispose stale bootstrap failed: $error',
+         error: error,
+         stackTrace: stackTrace,
+       );
+       debugPrint('dispose stale bootstrap failed error=$error');
+     }
+   }
 
   void _scheduleDeferredWarmup(AppBootstrap bootstrap) {
     if (identical(_warmedBootstrap, bootstrap)) {
       return;
     }
     _warmedBootstrap = bootstrap;
+    _warmupTimer?.cancel();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(bootstrap.warmUpSecureCredentialStore());
+      _warmupTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted && identical(_warmedBootstrap, bootstrap)) {
+          unawaited(bootstrap.warmUpSecureCredentialStore());
+        }
+      });
     });
+  }
+
+  @override
+  void dispose() {
+    _warmupTimer?.cancel();
+    final bootstrap = _warmedBootstrap;
+    _warmedBootstrap = null;
+    if (bootstrap != null) {
+      unawaited(_disposeBootstrap(bootstrap));
+    }
+    super.dispose();
   }
 
   @override

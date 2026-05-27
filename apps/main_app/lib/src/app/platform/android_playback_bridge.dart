@@ -67,6 +67,11 @@ class AndroidPlaybackBridge {
     return locked ?? false;
   }
 
+  Future<bool> lockPortraitFullscreen() async {
+    final locked = await _invokeBool('lockPortraitFullscreen');
+    return locked ?? false;
+  }
+
   Future<bool> prepareForPictureInPicture() async {
     final prepared = await _invokeBool('prepareForPictureInPicture');
     return prepared ?? false;

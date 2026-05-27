@@ -4,6 +4,7 @@ import 'package:live_providers/live_providers.dart';
 import 'package:live_providers/src/tooling/provider_smoke.dart';
 
 Future<void> main() async {
+  final strictAuth = providerSmokeStrictAuthEnabled(Platform.environment);
   final cases = <ProviderSmokeCase>[
     ProviderSmokeCase(
       name: 'bilibili',
@@ -65,6 +66,15 @@ Future<void> main() async {
         failures.add(validationError);
       }
     } catch (error) {
+      if (!strictAuth &&
+          isKnownProviderSmokeAuthPreconditionFailure(smokeCase, error)) {
+        print(
+          'skip=auth-precondition '
+          'reason="Bilibili live smoke requires a logged-in account for WBI '
+          'keys; set NOLIVE_PROVIDER_SMOKE_STRICT_AUTH=1 to fail instead."',
+        );
+        continue;
+      }
       failures.add('${smokeCase.name}: $error');
     }
   }

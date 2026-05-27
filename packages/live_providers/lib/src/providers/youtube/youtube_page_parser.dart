@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
 import 'youtube_api_client.dart';
 
 class YouTubePageBootstrap {
@@ -238,12 +239,16 @@ class YouTubePageParser {
       if (jsonText == null) {
         continue;
       }
-      final decoded = jsonDecode(jsonText);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
-      if (decoded is Map) {
-        return decoded.cast<String, dynamic>();
+      try {
+        final decoded = jsonDecode(jsonText);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        if (decoded is Map) {
+          return decoded.cast<String, dynamic>();
+        }
+      } on FormatException {
+        continue;
       }
     }
     return null;
@@ -273,16 +278,11 @@ class YouTubePageParser {
     final end = start == '{' ? '}' : ']';
     var depth = 0;
     var inString = false;
-    var escape = false;
     var quote = '';
     for (var index = startIndex; index < source.length; index += 1) {
       final char = source[index];
       if (inString) {
-        if (escape) {
-          escape = false;
-        } else if (char == '\\') {
-          escape = true;
-        } else if (char == quote) {
+        if (char == quote && !_isEscaped(source, index)) {
           inString = false;
         }
         continue;
@@ -304,6 +304,17 @@ class YouTubePageParser {
       }
     }
     return null;
+  }
+
+  bool _isEscaped(String source, int index) {
+    var backslashCount = 0;
+    for (var cursor = index - 1; cursor >= 0; cursor -= 1) {
+      if (source[cursor] != '\\') {
+        break;
+      }
+      backslashCount += 1;
+    }
+    return backslashCount.isOdd;
   }
 
   List<Map<String, dynamic>> _collectVideoRenderers(Object? node) {
@@ -558,13 +569,20 @@ class YouTubePageParser {
         )['results'],
       )['contents'],
     );
-    if (contents.length < 2) {
-      return null;
+    Map<String, dynamic> primaryRenderer = const <String, dynamic>{};
+    Map<String, dynamic> secondaryRenderer = const <String, dynamic>{};
+    for (final item in contents) {
+      final entry = _asMap(item);
+      if (primaryRenderer.isEmpty) {
+        primaryRenderer = _asMap(entry['videoPrimaryInfoRenderer']);
+      }
+      if (secondaryRenderer.isEmpty) {
+        secondaryRenderer = _asMap(entry['videoSecondaryInfoRenderer']);
+      }
+      if (primaryRenderer.isNotEmpty && secondaryRenderer.isNotEmpty) {
+        break;
+      }
     }
-    final primaryInfo = _asMap(contents[0])['videoPrimaryInfoRenderer'];
-    final secondaryInfo = _asMap(contents[1])['videoSecondaryInfoRenderer'];
-    final primaryRenderer = _asMap(primaryInfo);
-    final secondaryRenderer = _asMap(secondaryInfo);
     if (primaryRenderer.isEmpty || secondaryRenderer.isEmpty) {
       return null;
     }
@@ -602,13 +620,7 @@ class YouTubePageParser {
   }
 
   int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is num) {
-      return value.toInt();
-    }
-    return int.tryParse(value?.toString().trim() ?? '');
+    return ProviderJson.asInt(value, allowNum: true, trim: true);
   }
 
   bool _isWhitespace(int codeUnit) {
@@ -616,20 +628,11 @@ class YouTubePageParser {
   }
 
   Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   String? _firstNonEmpty(List<String?> values) {

@@ -1,23 +1,27 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
+import 'room_playback_source_helpers.dart';
+
 const String _mdkTextureInitializationErrorPrefix =
     'MDK texture initialization ';
 const Duration _mdkTexturePreRefreshRetryDelay = Duration(milliseconds: 320);
 const Duration _mdkTextureRecoveryFirstRetryDelay = Duration(milliseconds: 180);
-const Duration _mdkTextureRecoveryBackendRefreshRetryDelay =
-    Duration(milliseconds: 320);
-const Duration _initialEmbeddedBootstrapSurfaceWait =
-    Duration(milliseconds: 220);
-
-typedef RoomPlaybackPostFrameScheduler = void Function(
-  Future<void> Function() action,
+const Duration _mdkTextureRecoveryBackendRefreshRetryDelay = Duration(
+  milliseconds: 320,
 );
+const Duration _initialEmbeddedBootstrapSurfaceWait = Duration(
+  milliseconds: 220,
+);
+const Duration _defaultPlaybackRebindIdleTimeout = Duration(seconds: 20);
+const int _maxPlaybackRebindInFlightCount = 1024;
+
+typedef RoomPlaybackPostFrameScheduler =
+    void Function(Future<void> Function() action);
 typedef RoomPlaybackDelay = Future<void> Function(Duration duration);
 typedef RoomPlaybackEndOfFrame = Future<void> Function();
 typedef RoomPlaybackResetEmbeddedView = Future<void> Function(String label);
@@ -60,20 +64,10 @@ bool shouldPreRefreshMdkBackendBeforeSameSourceRebind({
     return false;
   }
   return currentSource.url == playbackSource.url &&
-      _samePlaybackExternalMediaForPreRefresh(
+      samePlaybackExternalMediaForPreRefresh(
         currentSource.externalAudio,
         playbackSource.externalAudio,
       );
-}
-
-bool _samePlaybackExternalMediaForPreRefresh(
-  PlaybackExternalMedia? left,
-  PlaybackExternalMedia? right,
-) {
-  if (left == null || right == null) {
-    return left == right;
-  }
-  return left.url == right.url;
 }
 
 class RoomPlaybackController extends ChangeNotifier {
@@ -88,9 +82,12 @@ class RoomPlaybackController extends ChangeNotifier {
     RoomPlaybackPostFrameScheduler? schedulePostFrame,
     RoomPlaybackDelay? delay,
     RoomPlaybackEndOfFrame? waitForEndOfFrame,
-  })  : _schedulePostFrame = schedulePostFrame ?? _defaultSchedulePostFrame,
-        _delay = delay ?? _defaultDelay,
-        _waitForEndOfFrame = waitForEndOfFrame ?? _defaultWaitForEndOfFrame;
+    Duration? playbackRebindIdleTimeout,
+  }) : _schedulePostFrame = schedulePostFrame ?? _defaultSchedulePostFrame,
+       _delay = delay ?? _defaultDelay,
+       _waitForEndOfFrame = waitForEndOfFrame ?? _defaultWaitForEndOfFrame,
+       _playbackRebindIdleTimeout =
+           playbackRebindIdleTimeout ?? _defaultPlaybackRebindIdleTimeout;
 
   final PlayerRuntimeController playerRuntime;
   final ProviderId providerId;
@@ -98,11 +95,12 @@ class RoomPlaybackController extends ChangeNotifier {
   final RoomPlaybackMountCheck isMounted;
   final RoomPlaybackResolveCurrentSource resolveCurrentPlaybackSource;
   final RoomPlaybackResetEmbeddedView
-      resetEmbeddedPlayerViewAfterBackendRefresh;
+  resetEmbeddedPlayerViewAfterBackendRefresh;
   final bool waitForInitialEmbeddedSurfaceBootstrap;
   final RoomPlaybackPostFrameScheduler _schedulePostFrame;
   final RoomPlaybackDelay _delay;
   final RoomPlaybackEndOfFrame _waitForEndOfFrame;
+  final Duration _playbackRebindIdleTimeout;
 
   static void _defaultSchedulePostFrame(Future<void> Function() action) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -120,6 +118,8 @@ class RoomPlaybackController extends ChangeNotifier {
 
   bool _disposed = false;
   bool _playbackBootstrapScheduled = false;
+  bool _playbackBootstrapInFlight = false;
+  bool _playbackBootstrapRerunRequested = false;
   bool _pendingPlaybackAvailable = false;
   bool _pendingPlaybackAutoPlay = false;
   bool _pendingPlaybackForceSourceRebind = false;
@@ -155,7 +155,7 @@ class RoomPlaybackController extends ChangeNotifier {
         !_pendingPlaybackForceSourceRebind &&
         _pendingPlaybackAvailable == hasPlayback &&
         _pendingPlaybackAutoPlay == autoPlay &&
-        _samePlaybackSource(_pendingPlaybackSource, playbackSource)) {
+        samePlaybackSource(_pendingPlaybackSource, playbackSource)) {
       final currentState = playerRuntime.currentState;
       if (hasPlayback &&
           playbackSource != null &&
@@ -167,7 +167,8 @@ class RoomPlaybackController extends ChangeNotifier {
         return;
       }
       final status = currentState.status;
-      final runtimeActive = currentState.source != null ||
+      final runtimeActive =
+          currentState.source != null ||
           status == PlaybackStatus.playing ||
           status == PlaybackStatus.ready ||
           status == PlaybackStatus.buffering ||
@@ -179,17 +180,41 @@ class RoomPlaybackController extends ChangeNotifier {
     _pendingPlaybackSource = playbackSource;
     _pendingPlaybackAvailable = hasPlayback;
     _pendingPlaybackAutoPlay = autoPlay;
+    if (_playbackBootstrapInFlight) {
+      _playbackBootstrapRerunRequested = true;
+      return;
+    }
     if (_playbackBootstrapScheduled) {
       return;
     }
+    _schedulePlaybackBootstrapFlush();
+  }
+
+  void _schedulePlaybackBootstrapFlush() {
     _playbackBootstrapScheduled = true;
     _schedulePostFrame(() async {
       _playbackBootstrapScheduled = false;
       if (!_isActive) {
         return;
       }
-      await _flushPendingPlaybackBootstrap();
+      await _runPendingPlaybackBootstrapLoop();
     });
+  }
+
+  Future<void> _runPendingPlaybackBootstrapLoop() async {
+    if (_playbackBootstrapInFlight) {
+      _playbackBootstrapRerunRequested = true;
+      return;
+    }
+    _playbackBootstrapInFlight = true;
+    try {
+      do {
+        _playbackBootstrapRerunRequested = false;
+        await _flushPendingPlaybackBootstrap();
+      } while (_isActive && _playbackBootstrapRerunRequested);
+    } finally {
+      _playbackBootstrapInFlight = false;
+    }
   }
 
   Future<void> _flushPendingPlaybackBootstrap() async {
@@ -202,7 +227,8 @@ class RoomPlaybackController extends ChangeNotifier {
     final currentState = playerRuntime.currentState;
     final currentSource = currentState.source;
     final isInitialBootstrap = currentSource == null;
-    final shouldWaitForInitialEmbeddedBootstrap = isInitialBootstrap &&
+    final shouldWaitForInitialEmbeddedBootstrap =
+        isInitialBootstrap &&
         waitForInitialEmbeddedSurfaceBootstrap &&
         playerRuntime.supportsEmbeddedView &&
         playerRuntime.backend == PlayerBackend.mpv;
@@ -257,11 +283,12 @@ class RoomPlaybackController extends ChangeNotifier {
     if (targetForceSourceRebind) {
       trace(
         'playback bootstrap force rebind '
-        'source=${_summarizePlaybackSource(targetSource)}',
+        'source=${summarizePlaybackSource(targetSource)}',
       );
     }
-    final shouldSetSource = shouldForceSourceRebind ||
-        !_samePlaybackSource(currentSource, targetSource);
+    final shouldSetSource =
+        shouldForceSourceRebind ||
+        !samePlaybackSource(currentSource, targetSource);
     if (shouldSetSource) {
       final activeBackend = currentState.backend ?? playerRuntime.backend;
       final bound = await bindPlaybackSource(
@@ -320,7 +347,7 @@ class RoomPlaybackController extends ChangeNotifier {
     if (targetAutoPlay &&
         playerRuntime.currentState.status != PlaybackStatus.playing) {
       trace(
-        'playback bootstrap play source=${_summarizePlaybackSource(targetSource)}',
+        'playback bootstrap play source=${summarizePlaybackSource(targetSource)}',
       );
       await playerRuntime.play();
     }
@@ -352,7 +379,8 @@ class RoomPlaybackController extends ChangeNotifier {
     if (_disposed) {
       return false;
     }
-    final shouldPreRefreshBackend = preferFreshBackendBeforeFirstSetSource ||
+    final shouldPreRefreshBackend =
+        preferFreshBackendBeforeFirstSetSource ||
         shouldPreRefreshMdkBackendBeforeSameSourceRebind(
           state: playerRuntime.currentState,
           playbackSource: playbackSource,
@@ -382,14 +410,12 @@ class RoomPlaybackController extends ChangeNotifier {
         )) {
       return true;
     }
-    trace('$label play source=${_summarizePlaybackSource(playbackSource)}');
+    trace('$label play source=${summarizePlaybackSource(playbackSource)}');
     await playerRuntime.play();
     return true;
   }
 
-  Future<void> stopCurrentPlayback({
-    required String label,
-  }) async {
+  Future<void> stopCurrentPlayback({required String label}) async {
     if (_disposed) {
       return;
     }
@@ -434,14 +460,15 @@ class RoomPlaybackController extends ChangeNotifier {
       return;
     }
     trace(
-      '$label restore source=${_summarizePlaybackSource(source)} '
+      '$label restore source=${summarizePlaybackSource(source)} '
       'status=${previousState.status.name}',
     );
     final status = previousState.status;
     final restored = await bindPlaybackSource(
       playbackSource: source,
       label: '$label restore',
-      autoPlay: status == PlaybackStatus.playing ||
+      autoPlay:
+          status == PlaybackStatus.playing ||
           status == PlaybackStatus.buffering,
       currentPlaybackSource: null,
     );
@@ -458,16 +485,14 @@ class RoomPlaybackController extends ChangeNotifier {
     }
   }
 
-  Future<void> waitForPlaybackRebindToFinish({
-    required String reason,
-  }) async {
+  Future<void> waitForPlaybackRebindToFinish({required String reason}) async {
     final completer = _playbackRebindIdleCompleter;
     if (completer == null || completer.isCompleted) {
       return;
     }
     trace('$reason wait playback rebind');
     try {
-      await completer.future.timeout(const Duration(seconds: 8));
+      await completer.future.timeout(_playbackRebindIdleTimeout);
     } on TimeoutException {
       trace('$reason wait playback rebind timed out');
     }
@@ -481,6 +506,9 @@ class RoomPlaybackController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _playbackBootstrapScheduled = false;
+    _playbackBootstrapInFlight = false;
+    _playbackBootstrapRerunRequested = false;
     final completer = _playbackRebindIdleCompleter;
     _playbackRebindIdleCompleter = null;
     if (completer != null && !completer.isCompleted) {
@@ -501,7 +529,7 @@ class RoomPlaybackController extends ChangeNotifier {
       if (refreshBackendBeforeFirstSetSource) {
         trace(
           '$label mdk same-source backend refresh '
-          'source=${_summarizePlaybackSource(playbackSource)}',
+          'source=${summarizePlaybackSource(playbackSource)}',
         );
         await playerRuntime.refreshBackendWithoutPlaybackState();
         await resetEmbeddedPlayerViewAfterBackendRefresh(label);
@@ -525,7 +553,8 @@ class RoomPlaybackController extends ChangeNotifier {
           label: actionLabel,
         );
         if (!shouldAttemptMdkBackendRefreshAfterSetSource(
-            playerRuntime.currentState)) {
+          playerRuntime.currentState,
+        )) {
           resetRecoveryState();
           return true;
         }
@@ -549,7 +578,8 @@ class RoomPlaybackController extends ChangeNotifier {
         if (attemptCount == 1) {
           _mdkTextureRecoveryAttemptCount = 2;
           trace(
-              '$label mdk texture timeout backend refresh retry error=$error');
+            '$label mdk texture timeout backend refresh retry error=$error',
+          );
           await playerRuntime.stop();
           await playerRuntime.refreshBackendWithoutPlaybackState();
           await resetEmbeddedPlayerViewAfterBackendRefresh(label);
@@ -574,6 +604,18 @@ class RoomPlaybackController extends ChangeNotifier {
   }
 
   void _beginPlaybackRebind() {
+    if (_disposed) {
+      return;
+    }
+    if (_playbackRebindInFlightCount >= _maxPlaybackRebindInFlightCount) {
+      trace('playback rebind in-flight counter saturated, resetting');
+      _playbackRebindInFlightCount = 0;
+      final completer = _playbackRebindIdleCompleter;
+      _playbackRebindIdleCompleter = null;
+      if (completer != null && !completer.isCompleted) {
+        completer.complete();
+      }
+    }
     final nextCount = _playbackRebindInFlightCount + 1;
     _playbackRebindInFlightCount = nextCount;
     if (nextCount == 1) {
@@ -583,7 +625,7 @@ class RoomPlaybackController extends ChangeNotifier {
   }
 
   void _endPlaybackRebind() {
-    if (_playbackRebindInFlightCount <= 0) {
+    if (_disposed || _playbackRebindInFlightCount <= 0) {
       return;
     }
     final nextCount = _playbackRebindInFlightCount - 1;
@@ -609,7 +651,7 @@ class RoomPlaybackController extends ChangeNotifier {
     required PlaybackSource playbackSource,
     required String label,
   }) async {
-    trace('$label ${_summarizePlaybackSource(playbackSource)}');
+    trace('$label ${summarizePlaybackSource(playbackSource)}');
     await playerRuntime.setSource(playbackSource);
     trace(
       '$label done '
@@ -625,7 +667,7 @@ class RoomPlaybackController extends ChangeNotifier {
   }) {
     return _pendingPlaybackAvailable != available ||
         _pendingPlaybackAutoPlay != autoPlay ||
-        !_samePlaybackSource(_pendingPlaybackSource, playbackSource);
+        !samePlaybackSource(_pendingPlaybackSource, playbackSource);
   }
 
   bool _isRuntimeStableForTarget({
@@ -633,7 +675,7 @@ class RoomPlaybackController extends ChangeNotifier {
     required PlaybackSource playbackSource,
     required bool autoPlay,
   }) {
-    if (!_samePlaybackSource(state.source, playbackSource)) {
+    if (!samePlaybackSource(state.source, playbackSource)) {
       return false;
     }
     return switch (state.status) {
@@ -663,9 +705,7 @@ class RoomPlaybackController extends ChangeNotifier {
         ? 'mdk same-source refresh settle'
         : 'mdk texture timeout settle';
     final settleSuffix = attemptCount < 0 ? '' : ' attempt=${attemptCount + 1}';
-    trace(
-      '$label $settleReason ${delay.inMilliseconds}ms$settleSuffix',
-    );
+    trace('$label $settleReason ${delay.inMilliseconds}ms$settleSuffix');
     await _waitForEndOfFrame();
     if (!_isActive) {
       return;
@@ -693,11 +733,11 @@ class RoomPlaybackController extends ChangeNotifier {
     required PlaybackSource source,
     required String context,
   }) {
-    if (!_samePlaybackSource(state.source, source)) {
+    if (!samePlaybackSource(state.source, source)) {
       trace(
         '$context skip play '
-        'source=${_summarizePlaybackSource(source)} '
-        'current=${_summarizePlaybackSource(state.source)} '
+        'source=${summarizePlaybackSource(source)} '
+        'current=${summarizePlaybackSource(state.source)} '
         'status=${state.status.name}',
       );
       return true;
@@ -707,7 +747,7 @@ class RoomPlaybackController extends ChangeNotifier {
     }
     trace(
       '$context skip play '
-      'source=${_summarizePlaybackSource(source)} '
+      'source=${summarizePlaybackSource(source)} '
       'error=${state.errorMessage ?? '-'}',
     );
     return true;
@@ -716,8 +756,9 @@ class RoomPlaybackController extends ChangeNotifier {
   String _mdkTextureRecoveryKey(PlaybackSource source) {
     final sortedHeaders = source.headers.entries.toList(growable: false)
       ..sort((left, right) => left.key.compareTo(right.key));
-    final headerSignature =
-        sortedHeaders.map((entry) => '${entry.key}=${entry.value}').join('&');
+    final headerSignature = sortedHeaders
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join('&');
     final audio = source.externalAudio;
     final audioSignature = audio == null
         ? '-'
@@ -728,38 +769,5 @@ class RoomPlaybackController extends ChangeNotifier {
       audioSignature,
       source.bufferProfile.name,
     ].join('|');
-  }
-
-  String _summarizePlaybackSource(PlaybackSource? source) {
-    final url = source?.url;
-    if (url == null) {
-      return '-';
-    }
-    final audio = source?.externalAudio?.url;
-    final base = '${url.host}${url.path}';
-    if (audio == null) {
-      return base;
-    }
-    return '$base + audio=${audio.host}${audio.path}';
-  }
-
-  bool _samePlaybackSource(PlaybackSource? left, PlaybackSource? right) {
-    if (left == null || right == null) {
-      return left == right;
-    }
-    return left.url == right.url &&
-        mapEquals(left.headers, right.headers) &&
-        left.bufferProfile == right.bufferProfile &&
-        _sameExternalMedia(left.externalAudio, right.externalAudio);
-  }
-
-  bool _sameExternalMedia(
-    PlaybackExternalMedia? left,
-    PlaybackExternalMedia? right,
-  ) {
-    if (left == null || right == null) {
-      return left == right;
-    }
-    return left.url == right.url && mapEquals(left.headers, right.headers);
   }
 }

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:live_core/live_core.dart';
 import 'package:http/http.dart' as http;
 
+import '../provider_runtime_support.dart';
+
 abstract class BilibiliTransport {
   Future<String> getText(
     String url, {
@@ -69,10 +71,21 @@ Map<String, dynamic> ensureBilibiliSuccess(
 }
 
 class HttpBilibiliTransport implements BilibiliTransport {
-  HttpBilibiliTransport({http.Client? client})
-      : _client = client ?? http.Client();
+  HttpBilibiliTransport({
+    http.Client? client,
+    ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
+    void Function(String message)? diagnostics,
+  })  : _client = client ?? http.Client(),
+        _retryPolicy = retryPolicy,
+        _diagnostics = diagnostics;
 
   final http.Client _client;
+  final ProviderRetryPolicy _retryPolicy;
+  final void Function(String message)? _diagnostics;
+
+  void close() {
+    _client.close();
+  }
 
   @override
   Future<Map<String, dynamic>> getJson(
@@ -108,14 +121,39 @@ class HttpBilibiliTransport implements BilibiliTransport {
     final uri = Uri.parse(url).replace(
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
-    final response = await _client.get(uri, headers: headers);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ProviderParseException(
-        providerId: ProviderId.bilibili,
-        message:
-            'Bilibili request failed for $uri with status ${response.statusCode}.',
-      );
-    }
-    return utf8.decode(response.bodyBytes);
+    return runProviderRequestWithRetry(
+      providerId: ProviderId.bilibili,
+      operation: 'bilibili transport GET $uri',
+      policy: _retryPolicy,
+      diagnostics: _diagnostics,
+      action: (_) async {
+        late final http.Response response;
+        try {
+          response = await _client.get(uri, headers: headers);
+        } catch (error, stackTrace) {
+          throw ProviderRetryableException(
+            ProviderParseException(
+              providerId: ProviderId.bilibili,
+              message: 'Bilibili request failed before response: $uri',
+              cause: error,
+              stackTrace: stackTrace,
+            ),
+            stackTrace,
+          );
+        }
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          final failure = ProviderParseException(
+            providerId: ProviderId.bilibili,
+            message:
+                'Bilibili request failed for $uri with status ${response.statusCode}.',
+          );
+          if (isRetryableHttpStatus(response.statusCode)) {
+            throw ProviderRetryableException(failure);
+          }
+          throw failure;
+        }
+        return utf8.decode(response.bodyBytes);
+      },
+    );
   }
 }

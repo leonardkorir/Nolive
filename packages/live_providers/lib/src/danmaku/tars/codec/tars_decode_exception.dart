@@ -1,6 +1,8 @@
-class TarsDecodeException extends Error {
-  String message;
+class TarsDecodeException implements Exception {
   TarsDecodeException(this.message);
+
+  final String message;
+
   @override
   String toString() {
     return message;

@@ -10,8 +10,11 @@
 //
  window = {}
  document = {}
+ var noliveDouyinUserAgent = typeof __NOLIVE_DOUYIN_USER_AGENT__ === 'string'
+     ? __NOLIVE_DOUYIN_USER_AGENT__
+     : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
  navigator = {
-     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+     userAgent: noliveDouyinUserAgent
  };
 //
 // _history = {}

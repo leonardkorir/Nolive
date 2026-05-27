@@ -1,9 +1,7 @@
-import 'dart:io';
-
 import 'package:floating/floating.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/app/platform/android_playback_bridge.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
@@ -21,15 +19,20 @@ abstract class RoomAndroidPlaybackBridgeFacade {
 
   Future<bool> lockLandscape();
 
+  Future<bool> lockPortraitFullscreen();
+
   Future<bool> prepareForPictureInPicture();
 }
 
 class DefaultRoomAndroidPlaybackBridgeFacade
     implements RoomAndroidPlaybackBridgeFacade {
-  const DefaultRoomAndroidPlaybackBridgeFacade();
+  DefaultRoomAndroidPlaybackBridgeFacade({AppPlatformCapabilities? platform})
+    : _platform = platform ?? AppPlatformCapabilities.current();
+
+  final AppPlatformCapabilities _platform;
 
   @override
-  bool get isSupported => !kIsWeb && Platform.isAndroid;
+  bool get isSupported => _platform.isAndroid;
 
   @override
   Future<bool> isInPictureInPictureMode() {
@@ -57,6 +60,11 @@ class DefaultRoomAndroidPlaybackBridgeFacade
   }
 
   @override
+  Future<bool> lockPortraitFullscreen() {
+    return AndroidPlaybackBridge.instance.lockPortraitFullscreen();
+  }
+
+  @override
   Future<bool> prepareForPictureInPicture() {
     return AndroidPlaybackBridge.instance.prepareForPictureInPicture();
   }
@@ -67,9 +75,7 @@ abstract class RoomPipHostFacade {
 
   Stream<PiPStatus> get statusStream;
 
-  Future<PiPStatus> enablePip({
-    required Rational aspectRatio,
-  });
+  Future<PiPStatus> enablePip({required Rational aspectRatio});
 
   Widget wrapSwitcher({
     required Widget childWhenDisabled,
@@ -78,10 +84,14 @@ abstract class RoomPipHostFacade {
 }
 
 class FloatingRoomPipHostFacade implements RoomPipHostFacade {
-  FloatingRoomPipHostFacade({Floating? floating})
-      : _floating = floating ?? Floating();
+  FloatingRoomPipHostFacade({
+    Floating? floating,
+    AppPlatformCapabilities? platform,
+  }) : _floating = floating ?? Floating(),
+       _platform = platform ?? AppPlatformCapabilities.current();
 
   final Floating _floating;
+  final AppPlatformCapabilities _platform;
 
   @override
   Future<bool> isPipAvailable() {
@@ -92,9 +102,7 @@ class FloatingRoomPipHostFacade implements RoomPipHostFacade {
   Stream<PiPStatus> get statusStream => _floating.pipStatusStream;
 
   @override
-  Future<PiPStatus> enablePip({
-    required Rational aspectRatio,
-  }) async {
+  Future<PiPStatus> enablePip({required Rational aspectRatio}) async {
     try {
       return await _floating.enable(ImmediatePiP(aspectRatio: aspectRatio));
     } catch (_) {
@@ -107,7 +115,7 @@ class FloatingRoomPipHostFacade implements RoomPipHostFacade {
     required Widget childWhenDisabled,
     required Widget childWhenEnabled,
   }) {
-    if (kIsWeb || !Platform.isAndroid) {
+    if (!_platform.isAndroid) {
       return childWhenDisabled;
     }
     return PiPSwitcher(
@@ -136,11 +144,13 @@ abstract class RoomDesktopWindowFacade {
 }
 
 class WindowManagerRoomDesktopWindowFacade implements RoomDesktopWindowFacade {
-  const WindowManagerRoomDesktopWindowFacade();
+  WindowManagerRoomDesktopWindowFacade({AppPlatformCapabilities? platform})
+    : _platform = platform ?? AppPlatformCapabilities.current();
+
+  final AppPlatformCapabilities _platform;
 
   @override
-  bool get isSupported =>
-      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+  bool get isSupported => _platform.isDesktop;
 
   @override
   Future<Rect> getBounds() => windowManager.getBounds();
@@ -152,7 +162,8 @@ class WindowManagerRoomDesktopWindowFacade implements RoomDesktopWindowFacade {
   Future<bool> isResizable() => windowManager.isResizable();
 
   @override
-  Future<void> setAlwaysOnTop(bool value) => windowManager.setAlwaysOnTop(value);
+  Future<void> setAlwaysOnTop(bool value) =>
+      windowManager.setAlwaysOnTop(value);
 
   @override
   Future<void> setResizable(bool value) => windowManager.setResizable(value);
@@ -179,9 +190,7 @@ class WakelockRoomScreenAwakeFacade implements RoomScreenAwakeFacade {
 abstract class RoomSystemUiFacade {
   Future<void> setEnabledSystemUIMode(SystemUiMode mode);
 
-  Future<void> setPreferredOrientations(
-    List<DeviceOrientation> orientations,
-  );
+  Future<void> setPreferredOrientations(List<DeviceOrientation> orientations);
 
   Future<void> setSystemUIOverlayStyle(SystemUiOverlayStyle style);
 }
@@ -195,9 +204,7 @@ class DefaultRoomSystemUiFacade implements RoomSystemUiFacade {
   }
 
   @override
-  Future<void> setPreferredOrientations(
-    List<DeviceOrientation> orientations,
-  ) {
+  Future<void> setPreferredOrientations(List<DeviceOrientation> orientations) {
     return SystemChrome.setPreferredOrientations(orientations);
   }
 
@@ -217,10 +224,13 @@ class RoomFullscreenSessionPlatforms {
   });
 
   factory RoomFullscreenSessionPlatforms.defaults() {
+    final platform = AppPlatformCapabilities.current();
     return RoomFullscreenSessionPlatforms(
-      androidPlaybackBridge: const DefaultRoomAndroidPlaybackBridgeFacade(),
-      pipHost: FloatingRoomPipHostFacade(),
-      desktopWindow: const WindowManagerRoomDesktopWindowFacade(),
+      androidPlaybackBridge: DefaultRoomAndroidPlaybackBridgeFacade(
+        platform: platform,
+      ),
+      pipHost: FloatingRoomPipHostFacade(platform: platform),
+      desktopWindow: WindowManagerRoomDesktopWindowFacade(platform: platform),
       screenAwake: const WakelockRoomScreenAwakeFacade(),
       systemUi: const DefaultRoomSystemUiFacade(),
     );

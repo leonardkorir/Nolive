@@ -34,7 +34,7 @@ class ParseRoomInputUseCase {
           normalized,
         );
       }
-      if (uri.host.contains('v.douyin.com')) {
+      if (_matchesHost(uri.host.toLowerCase(), 'v.douyin.com')) {
         return const ParseRoomInputResult.failure(
           '暂不支持抖音短链接，请粘贴直播间长链接或直接输入房间号。',
         );
@@ -42,9 +42,7 @@ class ParseRoomInputUseCase {
     }
 
     if (fallbackProvider == null) {
-      return const ParseRoomInputResult.failure(
-        '未能识别平台，请先选择平台后再输入房间号。',
-      );
+      return const ParseRoomInputResult.failure('未能识别平台，请先选择平台后再输入房间号。');
     }
     return _validateAndBuild(
       fallbackProvider,
@@ -68,6 +66,7 @@ class ParseRoomInputUseCase {
       'douyin' => ProviderId.douyin,
       'twitch' || 'ttv' => ProviderId.twitch,
       'youtube' || 'yt' => ProviderId.youtube,
+      'stripchat' => ProviderId.stripchat,
       _ => null,
     };
     if (provider == null || roomId.isEmpty) {
@@ -80,8 +79,8 @@ class ParseRoomInputUseCase {
     final maybeUrl = input.startsWith('http://') || input.startsWith('https://')
         ? input
         : input.contains('.') && input.contains('/')
-            ? 'https://$input'
-            : null;
+        ? 'https://$input'
+        : null;
     if (maybeUrl == null) {
       return null;
     }
@@ -91,10 +90,10 @@ class ParseRoomInputUseCase {
   (ProviderId, String)? _parseFromUri(Uri uri) {
     final host = uri.host.toLowerCase();
     final segments = uri.pathSegments.where((item) => item.isNotEmpty).toList();
-    if (host.contains('live.bilibili.com') && segments.isNotEmpty) {
+    if (_matchesHost(host, 'live.bilibili.com') && segments.isNotEmpty) {
       return (ProviderId.bilibili, segments.first);
     }
-    if (host.contains('douyu.com')) {
+    if (_matchesHost(host, 'douyu.com')) {
       final rid = _firstNonEmpty([
         uri.queryParameters['rid'],
         uri.queryParameters['roomId'],
@@ -107,13 +106,13 @@ class ParseRoomInputUseCase {
         return (ProviderId.douyu, segments.first);
       }
     }
-    if (host.contains('huya.com') && segments.isNotEmpty) {
+    if (_matchesHost(host, 'huya.com') && segments.isNotEmpty) {
       if (segments.length >= 2 && segments.first == 'yy') {
         return (ProviderId.huya, 'yy/${segments[1]}');
       }
       return (ProviderId.huya, segments.first);
     }
-    if ((host == 'chaturbate.com' || host == 'www.chaturbate.com') &&
+    if (_matchesHost(host, 'chaturbate.com') &&
         segments.length == 1 &&
         !_reservedChaturbateSegments.contains(segments.first.toLowerCase())) {
       return (ProviderId.chaturbate, segments.first);
@@ -138,6 +137,11 @@ class ParseRoomInputUseCase {
           !_reservedTwitchSegments.contains(roomId.toLowerCase())) {
         return (ProviderId.twitch, roomId);
       }
+    }
+    if (_matchesHost(host, 'stripchat.com') &&
+        segments.length == 1 &&
+        !_reservedStripchatSegments.contains(segments.first.toLowerCase())) {
+      return (ProviderId.stripchat, segments.first);
     }
     if (host == 'youtu.be' && segments.isNotEmpty) {
       return (ProviderId.youtube, segments.first);
@@ -175,6 +179,10 @@ class ParseRoomInputUseCase {
     return null;
   }
 
+  bool _matchesHost(String host, String expected) {
+    return host == expected || host.endsWith('.$expected');
+  }
+
   static const Set<String> _reservedChaturbateSegments = {
     'api',
     'apps',
@@ -203,11 +211,21 @@ class ParseRoomInputUseCase {
     'wallet',
   };
 
-  static const Set<String> _youtubeChannelRoots = {
-    'channel',
-    'c',
-    'user',
+  static const Set<String> _reservedStripchatSegments = {
+    'api',
+    'apps',
+    'cam',
+    'categories',
+    'login',
+    'models',
+    'privacy',
+    'search',
+    'signup',
+    'support',
+    'terms',
   };
+
+  static const Set<String> _youtubeChannelRoots = {'channel', 'c', 'user'};
 
   String _normalizeRoomId(ProviderId providerId, String roomId) {
     final trimmed = roomId.trim().replaceFirst(RegExp(r'^/+'), '');
@@ -252,7 +270,8 @@ class ParseRoomInputUseCase {
     }
 
     final patterns = descriptor.roomIdPatterns;
-    final matches = patterns.isEmpty ||
+    final matches =
+        patterns.isEmpty ||
         patterns.any((pattern) => RegExp(pattern).hasMatch(trimmedRoomId));
     if (!matches) {
       return ParseRoomInputResult.failure(
@@ -273,12 +292,12 @@ class ParseRoomInputUseCase {
 
 class ParseRoomInputResult {
   const ParseRoomInputResult.success(this.parsedRoom)
-      : errorMessage = null,
-        isSuccess = true;
+    : errorMessage = null,
+      isSuccess = true;
 
   const ParseRoomInputResult.failure(this.errorMessage)
-      : parsedRoom = null,
-        isSuccess = false;
+    : parsedRoom = null,
+      isSuccess = false;
 
   final ParsedRoomInput? parsedRoom;
   final String? errorMessage;

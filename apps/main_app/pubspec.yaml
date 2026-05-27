@@ -2,10 +2,11 @@ name: nolive_app
 description: Main Flutter application for Nolive.
 publish_to: none
 
-version: 0.3.3+6
+version: 0.3.4+7
 
 environment:
-  sdk: ^3.6.0
+  sdk: ">=3.10.0 <4.0.0"
+  flutter: ">=3.38.0"
 
 dependencies:
   flutter:
@@ -29,9 +30,7 @@ dependencies:
   floating: ^6.0.0
   flutter_inappwebview: ^6.1.5
   flutter_qjs:
-    git:
-      url: https://github.com/wgh136/flutter_qjs.git
-      branch: master
+    path: ../../third_party/flutter_qjs
   live_core:
     path: ../../packages/live_core
   live_providers:
@@ -46,6 +45,7 @@ dependencies:
     path: ../../packages/live_sync
   live_shared:
     path: ../../packages/live_shared
+  mobile_scanner: ^7.2.0
 
 dev_dependencies:
   flutter_test:

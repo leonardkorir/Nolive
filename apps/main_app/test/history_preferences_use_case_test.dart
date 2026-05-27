@@ -85,13 +85,7 @@ class _HistoryPreferenceProvider extends LiveProvider
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    return const [
-      LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-      ),
-    ];
+    return [LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true)];
   }
 
   @override
@@ -99,8 +93,6 @@ class _HistoryPreferenceProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    return const [
-      LivePlayUrl(url: 'https://example.com/live.m3u8'),
-    ];
+    return [LivePlayUrl(url: 'https://example.com/live.m3u8')];
   }
 }

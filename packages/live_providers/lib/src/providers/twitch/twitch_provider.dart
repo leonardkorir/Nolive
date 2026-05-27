@@ -19,8 +19,11 @@ class TwitchProvider extends LiveProvider
         SupportsPlayQualities,
         SupportsPlayUrls,
         SupportsDanmaku {
-  TwitchProvider({TwitchDataSource? dataSource})
-      : _dataSource = dataSource ?? const TwitchPreviewDataSource();
+  TwitchProvider({
+    TwitchDataSource? dataSource,
+    void Function()? disposeOwnedResources,
+  })  : _dataSource = dataSource ?? const TwitchPreviewDataSource(),
+        _disposeOwnedResources = disposeOwnedResources;
 
   factory TwitchProvider.preview() => TwitchProvider();
 
@@ -30,12 +33,15 @@ class TwitchProvider extends LiveProvider
     String cookie = '',
     TwitchPlaybackBootstrapResolver? playbackBootstrapResolver,
   }) {
+    final ownedApiClient =
+        apiClient == null ? HttpTwitchApiClient(cookie: cookie) : null;
     return TwitchProvider(
       dataSource: TwitchLiveDataSource(
-        apiClient: apiClient ?? HttpTwitchApiClient(cookie: cookie),
+        apiClient: apiClient ?? ownedApiClient!,
         clientIntegrity: clientIntegrity,
         playbackBootstrapResolver: playbackBootstrapResolver,
       ),
+      disposeOwnedResources: ownedApiClient?.close,
     );
   }
 
@@ -66,9 +72,15 @@ class TwitchProvider extends LiveProvider
   );
 
   final TwitchDataSource _dataSource;
+  final void Function()? _disposeOwnedResources;
 
   @override
   ProviderDescriptor get descriptor => kDescriptor;
+
+  @override
+  void dispose() {
+    _disposeOwnedResources?.call();
+  }
 
   @override
   Future<List<LiveCategory>> fetchCategories() {
@@ -122,15 +134,19 @@ class TwitchProvider extends LiveProvider
   Future<DanmakuSession> createDanmakuSession(LiveRoomDetail detail) async {
     requireCapability(ProviderCapability.danmaku);
     final token = detail.danmakuToken;
-    if (token is Map && token['mode']?.toString() == 'preview') {
+    if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
         providerId: descriptor.id.value,
         detail: detail,
       );
     }
-    final roomId = token is Map ? token['roomId']?.toString() : detail.roomId;
-    if (roomId != null && roomId.trim().isNotEmpty) {
-      return TwitchDanmakuSession(roomId: roomId.trim().toLowerCase());
+    final roomId = token is TwitchDanmakuToken ? token.roomId : detail.roomId;
+    if (roomId.trim().isNotEmpty) {
+      final oauthToken = token is TwitchDanmakuToken ? token.oauthToken : '';
+      return TwitchDanmakuSession(
+        roomId: roomId.trim().toLowerCase(),
+        oauthToken: oauthToken.trim(),
+      );
     }
     return ProviderUnavailableDanmakuSession(
       reason: 'Twitch 当前没有可用弹幕房间参数。',

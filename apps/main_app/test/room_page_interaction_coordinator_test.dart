@@ -17,147 +17,139 @@ import 'package:nolive_app/src/features/settings/application/manage_room_ui_pref
 
 void main() {
   test(
-      'page interaction coordinator exits fullscreen before opening player settings and handles return after pop',
-      () async {
-    final harness = _InteractionHarness();
-    final coordinator = harness.createCoordinator();
+    'page interaction coordinator exits fullscreen before opening player settings and handles return after pop',
+    () async {
+      final harness = _InteractionHarness();
+      final coordinator = harness.createCoordinator();
 
-    await coordinator.openPlayerSettings();
+      await coordinator.openPlayerSettings();
 
-    expect(
-      harness.events,
-      <String>[
+      expect(harness.events, <String>[
         'loadPlayerPreferences',
         'exitFullscreen',
         'pushNamed:${AppRoutes.playerSettings}:false',
         'handlePlayerSettingsReturn',
-      ],
-    );
-    expect(
-      harness.handledPlayerSettingsPreviousPreferences,
-      same(harness.loadedPlayerPreferences),
-    );
-  });
+      ]);
+      expect(
+        harness.handledPlayerSettingsPreviousPreferences,
+        same(harness.loadedPlayerPreferences),
+      );
+    },
+  );
 
   test(
-      'page interaction coordinator aborts danmaku settings return when page unmounts after navigation',
-      () async {
-    final harness = _InteractionHarness();
-    harness.onPushNamed = ({
-      required routeName,
-      required rootNavigator,
-    }) async {
-      harness.mounted = false;
-    };
-    final coordinator = harness.createCoordinator();
+    'page interaction coordinator aborts danmaku settings return when page unmounts after navigation',
+    () async {
+      final harness = _InteractionHarness();
+      harness.onPushNamed =
+          ({required routeName, required rootNavigator}) async {
+            harness.mounted = false;
+          };
+      final coordinator = harness.createCoordinator();
 
-    await coordinator.openDanmakuSettings();
+      await coordinator.openDanmakuSettings();
 
-    expect(
-      harness.events,
-      <String>[
+      expect(harness.events, <String>[
         'exitFullscreen',
         'pushNamed:${AppRoutes.danmakuSettings}:false',
-      ],
-    );
-    expect(harness.handleDanmakuSettingsReturnCalls, 0);
-  });
+      ]);
+      expect(harness.handleDanmakuSettingsReturnCalls, 0);
+    },
+  );
 
   test(
-      'page interaction coordinator shows message when quick actions open before room is ready',
-      () async {
-    final harness = _InteractionHarness()
-      ..roomFuture = Future<RoomSessionLoadResult>.error(
-        StateError('not ready'),
-      );
-    final coordinator = harness.createCoordinator();
+    'page interaction coordinator shows message when quick actions open before room is ready',
+    () async {
+      final harness = _InteractionHarness()
+        ..roomFuture = Future<RoomSessionLoadResult>.error(
+          StateError('not ready'),
+        );
+      final coordinator = harness.createCoordinator();
 
-    await coordinator.showQuickActionsSheet();
+      await coordinator.showQuickActionsSheet();
 
-    expect(harness.messages, <String>['房间尚未准备完成，请稍后再试']);
-    expect(harness.quickActionsPresented, isFalse);
-  });
+      expect(harness.messages, <String>['房间尚未准备完成，请稍后再试']);
+      expect(harness.quickActionsPresented, isFalse);
+    },
+  );
 
   test(
-      'page interaction coordinator refresh keeps success and failure feedback semantics',
-      () async {
-    final successHarness = _InteractionHarness();
-    final successCoordinator = successHarness.createCoordinator();
+    'page interaction coordinator refresh keeps success and failure feedback semantics',
+    () async {
+      final successHarness = _InteractionHarness();
+      final successCoordinator = successHarness.createCoordinator();
 
-    await successCoordinator.refreshRoom(
-      showFeedback: true,
-      reloadPlayer: true,
-      forcePlaybackRebind: false,
-    );
-
-    expect(
-      successHarness.lastRefreshCall,
-      (
+      await successCoordinator.refreshRoom(
         showFeedback: true,
         reloadPlayer: true,
         forcePlaybackRebind: false,
-      ),
-    );
-    expect(successHarness.messages, <String>['房间信息已刷新']);
+      );
 
-    final failureHarness = _InteractionHarness()
-      ..refreshError = StateError('refresh failed');
-    final failureCoordinator = failureHarness.createCoordinator();
+      expect(successHarness.lastRefreshCall, (
+        showFeedback: true,
+        reloadPlayer: true,
+        forcePlaybackRebind: false,
+      ));
+      expect(successHarness.messages, <String>['房间信息已刷新']);
 
-    await failureCoordinator.refreshRoom(showFeedback: true);
+      final failureHarness = _InteractionHarness()
+        ..refreshError = StateError('refresh failed');
+      final failureCoordinator = failureHarness.createCoordinator();
 
-    expect(failureHarness.messages, <String>['房间刷新失败，请稍后重试']);
-  });
+      await failureCoordinator.refreshRoom(showFeedback: true);
+
+      expect(failureHarness.messages, <String>['房间刷新失败，请稍后重试']);
+    },
+  );
 
   test(
-      'page interaction coordinator leaves room by exiting fullscreen then cleanup then popping page',
-      () async {
-    final harness = _InteractionHarness();
-    final coordinator = harness.createCoordinator();
+    'page interaction coordinator leaves room by exiting fullscreen then cleanup then popping page',
+    () async {
+      final harness = _InteractionHarness();
+      final coordinator = harness.createCoordinator();
 
-    await coordinator.leaveRoom();
+      await coordinator.leaveRoom();
 
-    expect(
-      harness.events,
-      <String>[
+      expect(harness.events, <String>[
         'exitFullscreen',
         'leaveRoomCleanup',
         'popPage',
-      ],
-    );
-    expect(harness.popCalls, 1);
-  });
+      ]);
+      expect(harness.popCalls, 1);
+    },
+  );
 
   test(
-      'page interaction coordinator uses replacement room route for follow-room navigation and forwards messages',
-      () async {
-    final harness = _InteractionHarness()
-      ..followTransitionPreserveFullscreen = true
-      ..followTransitionMessage = '已在当前房间';
-    final coordinator = harness.createCoordinator();
-    final entry = FollowWatchEntry(
-      record: const FollowRecord(
-        providerId: 'douyu',
-        roomId: '3125893',
-        streamerName: '斗鱼样例主播',
-      ),
-      detail: const LiveRoomDetail(
-        providerId: 'douyu',
-        roomId: '3125893',
-        title: '斗鱼样例直播间',
-        streamerName: '斗鱼样例主播',
-        isLive: true,
-      ),
-    );
+    'page interaction coordinator uses replacement room route for follow-room navigation and forwards messages',
+    () async {
+      final harness = _InteractionHarness()
+        ..followTransitionPreserveFullscreen = true
+        ..followTransitionMessage = '已在当前房间';
+      final coordinator = harness.createCoordinator();
+      final entry = FollowWatchEntry(
+        record: const FollowRecord(
+          providerId: 'douyu',
+          roomId: '3125893',
+          streamerName: '斗鱼样例主播',
+        ),
+        detail: const LiveRoomDetail(
+          providerId: 'douyu',
+          roomId: '3125893',
+          title: '斗鱼样例直播间',
+          streamerName: '斗鱼样例主播',
+          isLive: true,
+        ),
+      );
 
-    await coordinator.commitFollowRoomNavigation(entry);
+      await coordinator.commitFollowRoomNavigation(entry);
 
-    expect(harness.followTransitionEntry, same(entry));
-    expect(harness.replacedRoomArgs?.providerId, ProviderId.douyu);
-    expect(harness.replacedRoomArgs?.roomId, '3125893');
-    expect(harness.replacedRoomArgs?.startInFullscreen, isTrue);
-    expect(harness.messages, <String>['已在当前房间']);
-  });
+      expect(harness.followTransitionEntry, same(entry));
+      expect(harness.replacedRoomArgs?.providerId, ProviderId.douyu);
+      expect(harness.replacedRoomArgs?.roomId, '3125893');
+      expect(harness.replacedRoomArgs?.startInFullscreen, isTrue);
+      expect(harness.messages, <String>['已在当前房间']);
+    },
+  );
 }
 
 class _InteractionHarness {
@@ -170,7 +162,8 @@ class _InteractionHarness {
   Future<void> Function({
     required String routeName,
     required bool rootNavigator,
-  })? onPushNamed;
+  })?
+  onPushNamed;
 
   RoomRouteArguments? replacedRoomArgs;
   int popCalls = 0;
@@ -188,7 +181,7 @@ class _InteractionHarness {
   bool quickActionsPresented = false;
   DateTime? scheduledCloseAt;
   ({bool showFeedback, bool reloadPlayer, bool forcePlaybackRebind})?
-      lastRefreshCall;
+  lastRefreshCall;
   Object? refreshError;
   FollowWatchEntry? followTransitionEntry;
   bool? followTransitionPreserveFullscreen;
@@ -206,9 +199,10 @@ class _InteractionHarness {
         },
         pushNamed: (routeName, {rootNavigator = false}) async {
           events.add('pushNamed:$routeName:$rootNavigator');
-          pushedRoutes.add(
-            (routeName: routeName, rootNavigator: rootNavigator),
-          );
+          pushedRoutes.add((
+            routeName: routeName,
+            rootNavigator: rootNavigator,
+          ));
           await onPushNamed?.call(
             routeName: routeName,
             rootNavigator: rootNavigator,
@@ -239,63 +233,64 @@ class _InteractionHarness {
         resolveCurrentPlaybackSource: () => currentPlaybackSource,
         resolveCurrentPlayUrls: () => currentPlayUrls,
         resolveRequestedQuality: (state) => state.snapshot.selectedQuality,
-        resolveControlsViewData: ({
-          required state,
-          required playUrls,
-          required playbackSource,
-          required hasPlayback,
-        }) {
-          return controlsViewData;
-        },
-        resolvePlayerDebugViewData: ({
-          required state,
-          required playbackSource,
-        }) {
-          return debugViewData;
-        },
-        cycleScaleModeAndResolveControlsViewData: ({
-          required state,
-          required playUrls,
-          required playbackSource,
-          required hasPlayback,
-        }) async {
-          return controlsViewData;
-        },
-        presentQuickActionsSheet: ({
-          required viewData,
-          required onRefresh,
-          required onShowQuality,
-          required onShowLine,
-          required onCycleScaleMode,
-          required onEnterPictureInPicture,
-          required onToggleDesktopMiniWindow,
-          required onCaptureScreenshot,
-          required onShowAutoCloseSheet,
-          required onShowDebugPanel,
-        }) async {
-          events.add('presentQuickActionsSheet');
-          quickActionsPresented = true;
-        },
-        presentQualitySheet: ({
-          required selectedQuality,
-          required qualities,
-          required onSelected,
-        }) async {
-          events.add('presentQualitySheet');
-        },
-        presentLineSheet: ({
-          required playUrls,
-          required playbackSource,
-          required onSelected,
-        }) async {
-          events.add('presentLineSheet');
-        },
-        presentAutoCloseSheet: ({
-          required scheduledCloseAt,
-          required onSelectDuration,
-        }) async {
-          events.add('presentAutoCloseSheet');
-        },
+        resolveControlsViewData:
+            ({
+              required state,
+              required playUrls,
+              required playbackSource,
+              required hasPlayback,
+            }) {
+              return controlsViewData;
+            },
+        resolvePlayerDebugViewData:
+            ({required state, required playbackSource}) {
+              return debugViewData;
+            },
+        cycleScaleModeAndResolveControlsViewData:
+            ({
+              required state,
+              required playUrls,
+              required playbackSource,
+              required hasPlayback,
+            }) async {
+              return controlsViewData;
+            },
+        presentQuickActionsSheet:
+            ({
+              required viewData,
+              required onRefresh,
+              required onShowQuality,
+              required onShowLine,
+              required onCycleScaleMode,
+              required onEnterPictureInPicture,
+              required onToggleDesktopMiniWindow,
+              required onCaptureScreenshot,
+              required onShowAutoCloseSheet,
+              required onShowDebugPanel,
+            }) async {
+              events.add('presentQuickActionsSheet');
+              quickActionsPresented = true;
+            },
+        presentQualitySheet:
+            ({
+              required selectedQuality,
+              required qualities,
+              required onSelected,
+            }) async {
+              events.add('presentQualitySheet');
+            },
+        presentLineSheet:
+            ({
+              required playUrls,
+              required playbackSource,
+              required onSelected,
+            }) async {
+              events.add('presentLineSheet');
+            },
+        presentAutoCloseSheet:
+            ({required scheduledCloseAt, required onSelectDuration}) async {
+              events.add('presentAutoCloseSheet');
+            },
         presentPlayerDebugSheet: ({required debugViewData}) async {
           events.add('presentPlayerDebugSheet');
         },
@@ -308,22 +303,23 @@ class _InteractionHarness {
         captureScreenshot: () async {
           events.add('captureScreenshot');
         },
-        refreshRoom: ({
-          bool showFeedback = false,
-          bool reloadPlayer = false,
-          bool forcePlaybackRebind = true,
-        }) async {
-          events.add('refreshRoom');
-          lastRefreshCall = (
-            showFeedback: showFeedback,
-            reloadPlayer: reloadPlayer,
-            forcePlaybackRebind: forcePlaybackRebind,
-          );
-          final error = refreshError;
-          if (error != null) {
-            throw error;
-          }
-        },
+        refreshRoom:
+            ({
+              bool showFeedback = false,
+              bool reloadPlayer = false,
+              bool forcePlaybackRebind = true,
+            }) async {
+              events.add('refreshRoom');
+              lastRefreshCall = (
+                showFeedback: showFeedback,
+                reloadPlayer: reloadPlayer,
+                forcePlaybackRebind: forcePlaybackRebind,
+              );
+              final error = refreshError;
+              if (error != null) {
+                throw error;
+              }
+            },
         leaveRoomCleanup: () async {
           events.add('leaveRoomCleanup');
         },
@@ -337,28 +333,25 @@ class _InteractionHarness {
         setAutoCloseTimer: (duration) {
           events.add('setAutoCloseTimer:${duration?.inSeconds ?? 'null'}');
         },
-        openFollowRoomTransition: (
-          entry, {
-          required commitNavigation,
-          required showMessage,
-        }) async {
-          events.add('openFollowRoomTransition');
-          followTransitionEntry = entry;
-          final preserveFullscreen = followTransitionPreserveFullscreen;
-          if (preserveFullscreen != null) {
-            await commitNavigation(preserveFullscreen);
-          }
-          final message = followTransitionMessage;
-          if (message != null) {
-            showMessage(message);
-          }
-        },
+        openFollowRoomTransition:
+            (entry, {required commitNavigation, required showMessage}) async {
+              events.add('openFollowRoomTransition');
+              followTransitionEntry = entry;
+              final preserveFullscreen = followTransitionPreserveFullscreen;
+              if (preserveFullscreen != null) {
+                await commitNavigation(preserveFullscreen);
+              }
+              final message = followTransitionMessage;
+              if (message != null) {
+                showMessage(message);
+              }
+            },
       ),
     );
   }
 }
 
-const LivePlayQuality _defaultQuality = LivePlayQuality(
+LivePlayQuality _defaultQuality = LivePlayQuality(
   id: 'auto',
   label: '自动',
   isDefault: true,
@@ -423,7 +416,7 @@ RoomPlayerDebugViewData _debugViewData() {
 
 RoomSessionLoadResult _roomState() {
   return RoomSessionLoadResult(
-    snapshot: const LoadedRoomSnapshot(
+    snapshot: LoadedRoomSnapshot(
       providerId: ProviderId.bilibili,
       detail: LiveRoomDetail(
         providerId: 'bilibili',
@@ -435,10 +428,7 @@ RoomSessionLoadResult _roomState() {
       qualities: <LivePlayQuality>[_defaultQuality],
       selectedQuality: _defaultQuality,
       playUrls: <LivePlayUrl>[
-        LivePlayUrl(
-          url: 'https://example.com/live.m3u8',
-          lineLabel: '主线路',
-        ),
+        LivePlayUrl(url: 'https://example.com/live.m3u8', lineLabel: '主线路'),
       ],
     ),
     resolved: null,
@@ -447,6 +437,6 @@ RoomSessionLoadResult _roomState() {
     roomUiPreferences: RoomUiPreferences.defaults,
     blockedKeywords: const <String>[],
     playbackQuality: _defaultQuality,
-    startupPlan: const TwitchStartupPlan(startupQuality: _defaultQuality),
+    startupPlan: TwitchStartupPlan(startupQuality: _defaultQuality),
   );
 }

@@ -78,7 +78,7 @@ scripts/run_main_app_android_smoke.sh
 
 - `scripts/run_main_app_android_smoke.sh`
   在已连接 Android 设备或模拟器上执行主链路 smoke。
-  如果工作区里已存在 release APK，脚本会在 smoke 结束后自动把 release 重新装回设备并做一次启动校验。
+  默认在 smoke 后重建 `lib/main.dart` 普通 debug APK 并保留到设备；如需 smoke 后恢复 release，可设置 `ANDROID_SMOKE_RESTORE_RELEASE=1`。
 
 - `scripts/verify_android_release_signing.sh`
   校验 APK 或 AAB 是否由非 debug 的 release keystore 签名。

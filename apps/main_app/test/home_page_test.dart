@@ -53,17 +53,16 @@ void main() {
     expect(tabController.index, 1);
   });
 
-  testWidgets('home page auto loads more provider rooms without button',
-      (tester) async {
+  testWidgets('home page auto loads more provider rooms without button', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     bootstrap.providerRegistry.register(
       ProviderRegistration(
         descriptor: const ProviderDescriptor(
           id: ProviderId.twitch,
           displayName: 'Twitch',
-          capabilities: {
-            ProviderCapability.recommendRooms,
-          },
+          capabilities: {ProviderCapability.recommendRooms},
           supportedPlatforms: {ProviderPlatform.android},
         ),
         builder: () => _PagedTwitchHomeProvider(),
@@ -99,9 +98,7 @@ void main() {
         descriptor: const ProviderDescriptor(
           id: ProviderId.youtube,
           displayName: 'YouTube',
-          capabilities: {
-            ProviderCapability.recommendRooms,
-          },
+          capabilities: {ProviderCapability.recommendRooms},
           supportedPlatforms: {ProviderPlatform.android},
         ),
         builder: () => _AutoPrefetchLimitedHomeProvider(),
@@ -129,47 +126,46 @@ void main() {
   });
 
   testWidgets(
-      'home page automatically reloads provider feed after provider catalog revision changes',
-      (tester) async {
-    _ReloadingHomeProvider.instanceCount = 0;
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    bootstrap.providerRegistry.register(
-      ProviderRegistration(
-        descriptor: const ProviderDescriptor(
-          id: ProviderId.twitch,
-          displayName: 'Twitch',
-          capabilities: {
-            ProviderCapability.recommendRooms,
-          },
-          supportedPlatforms: {ProviderPlatform.android},
+    'home page automatically reloads provider feed after provider catalog revision changes',
+    (tester) async {
+      _ReloadingHomeProvider.instanceCount = 0;
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      bootstrap.providerRegistry.register(
+        ProviderRegistration(
+          descriptor: const ProviderDescriptor(
+            id: ProviderId.twitch,
+            displayName: 'Twitch',
+            capabilities: {ProviderCapability.recommendRooms},
+            supportedPlatforms: {ProviderPlatform.android},
+          ),
+          builder: () => _ReloadingHomeProvider(),
         ),
-        builder: () => _ReloadingHomeProvider(),
-      ),
-    );
+      );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: HomePage(dependencies: buildHomeFeatureDependencies(bootstrap)),
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomePage(dependencies: buildHomeFeatureDependencies(bootstrap)),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    final providerTab = find.byKey(const Key('home-provider-tab-twitch'));
-    await tester.ensureVisible(providerTab);
-    await tester.tap(providerTab);
-    await tester.pumpAndSettle();
+      final providerTab = find.byKey(const Key('home-provider-tab-twitch'));
+      await tester.ensureVisible(providerTab);
+      await tester.tap(providerTab);
+      await tester.pumpAndSettle();
 
-    expect(find.text('Twitch 首页加载失败'), findsOneWidget);
+      expect(find.text('Twitch 首页加载失败'), findsOneWidget);
 
-    bootstrap.providerRegistry.clearCache();
-    bootstrap.providerCatalogRevision.value += 1;
+      bootstrap.providerRegistry.clearCache();
+      bootstrap.providerCatalogRevision.value += 1;
 
-    await tester.pump();
-    await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pumpAndSettle();
 
-    expect(find.text('恢复后的第一页'), findsOneWidget);
-    expect(find.text('Twitch 首页加载失败'), findsNothing);
-  });
+      expect(find.text('恢复后的第一页'), findsOneWidget);
+      expect(find.text('Twitch 首页加载失败'), findsNothing);
+    },
+  );
 }
 
 class _PagedTwitchHomeProvider extends LiveProvider
@@ -177,9 +173,7 @@ class _PagedTwitchHomeProvider extends LiveProvider
   static const ProviderDescriptor _descriptor = ProviderDescriptor(
     id: ProviderId.twitch,
     displayName: 'Twitch',
-    capabilities: {
-      ProviderCapability.recommendRooms,
-    },
+    capabilities: {ProviderCapability.recommendRooms},
     supportedPlatforms: {ProviderPlatform.android},
   );
 
@@ -190,37 +184,37 @@ class _PagedTwitchHomeProvider extends LiveProvider
   Future<PagedResponse<LiveRoom>> fetchRecommendRooms({int page = 1}) async {
     return switch (page) {
       1 => PagedResponse(
-          items: const [
-            LiveRoom(
-              providerId: 'twitch',
-              roomId: 'room-1',
-              title: '第一页',
-              streamerName: '主播一',
-              coverUrl: 'https://example.com/cover-1.png',
-              streamerAvatarUrl: 'https://example.com/avatar-1.png',
-              viewerCount: 100,
-              isLive: true,
-            ),
-          ],
-          hasMore: true,
-          page: 1,
-        ),
+        items: const [
+          LiveRoom(
+            providerId: 'twitch',
+            roomId: 'room-1',
+            title: '第一页',
+            streamerName: '主播一',
+            coverUrl: 'https://example.com/cover-1.png',
+            streamerAvatarUrl: 'https://example.com/avatar-1.png',
+            viewerCount: 100,
+            isLive: true,
+          ),
+        ],
+        hasMore: true,
+        page: 1,
+      ),
       _ => PagedResponse(
-          items: const [
-            LiveRoom(
-              providerId: 'twitch',
-              roomId: 'room-2',
-              title: '第二页',
-              streamerName: '主播二',
-              coverUrl: 'https://example.com/cover-2.png',
-              streamerAvatarUrl: 'https://example.com/avatar-2.png',
-              viewerCount: 90,
-              isLive: true,
-            ),
-          ],
-          hasMore: false,
-          page: page,
-        ),
+        items: const [
+          LiveRoom(
+            providerId: 'twitch',
+            roomId: 'room-2',
+            title: '第二页',
+            streamerName: '主播二',
+            coverUrl: 'https://example.com/cover-2.png',
+            streamerAvatarUrl: 'https://example.com/avatar-2.png',
+            viewerCount: 90,
+            isLive: true,
+          ),
+        ],
+        hasMore: false,
+        page: page,
+      ),
     };
   }
 }
@@ -232,9 +226,7 @@ class _AutoPrefetchLimitedHomeProvider extends LiveProvider
   static const ProviderDescriptor _descriptor = ProviderDescriptor(
     id: ProviderId.youtube,
     displayName: 'YouTube',
-    capabilities: {
-      ProviderCapability.recommendRooms,
-    },
+    capabilities: {ProviderCapability.recommendRooms},
     supportedPlatforms: {ProviderPlatform.android},
   );
 
@@ -276,9 +268,7 @@ class _ReloadingHomeProvider extends LiveProvider
   static const ProviderDescriptor _descriptor = ProviderDescriptor(
     id: ProviderId.twitch,
     displayName: 'Twitch',
-    capabilities: {
-      ProviderCapability.recommendRooms,
-    },
+    capabilities: {ProviderCapability.recommendRooms},
     supportedPlatforms: {ProviderPlatform.android},
   );
 

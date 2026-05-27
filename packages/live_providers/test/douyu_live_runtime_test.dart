@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_providers/src/providers/douyu/douyu_live_data_source.dart';
 import 'package:live_providers/src/providers/douyu/douyu_sign_service.dart';
@@ -81,6 +82,27 @@ void main() {
       1,
     );
   });
+
+  test('live douyu runtime retries transient play request failures once',
+      () async {
+    final transport = _FakeDouyuTransport()..failPlayPostCount = 1;
+    final signService = _FakeDouyuSignService();
+    final provider = DouyuProvider(
+      dataSource: DouyuLiveDataSource(
+        transport: transport,
+        signService: signService,
+      ),
+    );
+
+    final detail = await provider.fetchRoomDetail('312212');
+    final qualities = await provider.fetchPlayQualities(detail);
+
+    expect(qualities, isNotEmpty);
+    expect(
+      transport.postBodies.where((item) => item.contains('rate=-1')).length,
+      2,
+    );
+  });
 }
 
 class _FakeDouyuSignService implements DouyuSignService {
@@ -135,6 +157,7 @@ class _FakeDouyuSignService implements DouyuSignService {
 class _FakeDouyuTransport implements DouyuTransport {
   final List<String> requestedUrls = [];
   final List<String> postBodies = [];
+  int failPlayPostCount = 0;
 
   @override
   Future<Map<String, dynamic>> getJson(
@@ -273,6 +296,13 @@ class _FakeDouyuTransport implements DouyuTransport {
     if (uri.toString().startsWith(
           'https://www.douyu.com/lapi/live/getH5Play/312212',
         )) {
+      if (failPlayPostCount > 0) {
+        failPlayPostCount -= 1;
+        throw ProviderParseException(
+          providerId: ProviderId.douyu,
+          message: 'fixture transient play failure',
+        );
+      }
       if (body.contains('rate=-1')) {
         return jsonEncode({
           'error': 0,

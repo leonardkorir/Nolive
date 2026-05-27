@@ -9,8 +9,9 @@ import 'package:nolive_app/src/features/search/presentation/search_page.dart';
 import 'test_feature_dependencies.dart';
 
 void main() {
-  testWidgets('home page search button inherits the current provider',
-      (tester) async {
+  testWidgets('home page search button inherits the current provider', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
     await tester.pumpWidget(
@@ -34,8 +35,9 @@ void main() {
     );
   });
 
-  testWidgets('browse page search button inherits the current provider',
-      (tester) async {
+  testWidgets('browse page search button inherits the current provider', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
     await tester.pumpWidget(
@@ -61,26 +63,30 @@ void main() {
     );
   });
 
-  testWidgets('provider category page search button inherits the page provider',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+  testWidgets(
+    'provider category page search button inherits the page provider',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ProviderCategoriesPage(
-          dependencies: buildCategoryFeatureDependencies(bootstrap),
-          providerId: ProviderId.douyu,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ProviderCategoriesPage(
+            dependencies: buildCategoryFeatureDependencies(bootstrap),
+            providerId: ProviderId.douyu,
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('provider-category-search-button')));
-    await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('provider-category-search-button')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      tester.widget<SearchPage>(find.byType(SearchPage)).initialProviderId,
-      ProviderId.douyu,
-    );
-  });
+      expect(
+        tester.widget<SearchPage>(find.byType(SearchPage)).initialProviderId,
+        ProviderId.douyu,
+      );
+    },
+  );
 }

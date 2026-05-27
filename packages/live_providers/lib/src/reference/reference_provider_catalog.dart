@@ -11,6 +11,7 @@ import '../providers/huya/huya_provider.dart';
 import '../providers/migration_placeholder_provider.dart';
 import '../providers/twitch/twitch_playback_bootstrap.dart';
 import '../providers/twitch/twitch_provider.dart';
+import '../providers/stripchat/stripchat_provider.dart';
 import '../providers/youtube/youtube_provider.dart';
 
 class ReferenceProviderCatalog {
@@ -75,6 +76,10 @@ class ReferenceProviderCatalog {
       descriptor: YouTubeProvider.kDescriptor,
       builder: YouTubeProvider.preview,
     ),
+    const ProviderRegistration(
+      descriptor: StripchatProvider.kDescriptor,
+      builder: StripchatProvider.preview,
+    ),
   ];
 
   static List<ProviderRegistration> liveRegistrations({
@@ -122,6 +127,12 @@ class ReferenceProviderCatalog {
         ProviderRegistration(
           descriptor: YouTubeProvider.kDescriptor,
           builder: YouTubeProvider.live,
+        ),
+        ProviderRegistration(
+          descriptor: StripchatProvider.kDescriptor,
+          builder: () => StripchatProvider.live(
+            cookie: stringSetting?.call('account_stripchat_cookie') ?? '',
+          ),
         ),
       ];
 

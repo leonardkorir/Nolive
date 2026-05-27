@@ -84,4 +84,23 @@ void main() {
     expect(decoded.blockedKeywords, ['剧透']);
     expect(decoded.tags, ['常看']);
   });
+
+  test('sync snapshot json codec rejects unsupported future format version',
+      () {
+    expect(
+      () => SyncSnapshotJsonCodec.decode(
+        '{"format_version":99,"settings":{},"blocked_keywords":[],"tags":[],"history":[],"follows":[]}',
+      ),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('sync snapshot json codec rejects malformed history timestamps', () {
+    expect(
+      () => SyncSnapshotJsonCodec.decode(
+        '{"settings":{},"blocked_keywords":[],"tags":[],"history":[{"provider_id":"bilibili","room_id":"100","title":"坏记录","streamer_name":"主播","viewed_at":"not-a-date"},{"provider_id":"bilibili","room_id":"101","title":"好记录","streamer_name":"主播","viewed_at":"2026-03-10T20:00:00Z"}],"follows":[]}',
+      ),
+      throwsA(isA<FormatException>()),
+    );
+  });
 }

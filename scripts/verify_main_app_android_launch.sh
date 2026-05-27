@@ -36,6 +36,7 @@ fi
 resolved_component="$(${adb_cmd[@]} shell cmd package resolve-activity --brief "$APP_ID" | tr -d '\r' | tail -n 1)"
 if [[ -n "$resolved_component" ]]; then
   echo "Resolved launcher activity: $resolved_component"
+  component="$resolved_component"
 fi
 
 echo "Launching $component on device $DEVICE_ID..."

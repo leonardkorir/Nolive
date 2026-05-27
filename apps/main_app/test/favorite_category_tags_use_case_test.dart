@@ -13,37 +13,40 @@ void main() {
     expect(await load(), isEmpty);
   });
 
-  test('favorite category tags toggle and persist in newest first order',
-      () async {
-    final settingsRepository = InMemorySettingsRepository();
-    final load = LoadFavoriteCategoryTagsUseCase(settingsRepository);
-    final toggle = ToggleFavoriteCategoryTagUseCase(settingsRepository);
+  test(
+    'favorite category tags toggle and persist in newest first order',
+    () async {
+      final settingsRepository = InMemorySettingsRepository();
+      final load = LoadFavoriteCategoryTagsUseCase(settingsRepository);
+      final toggle = ToggleFavoriteCategoryTagUseCase(settingsRepository);
 
-    const douyuTag = FavoriteCategoryTag(
-      providerId: ProviderId.douyu,
-      categoryId: 'game',
-      groupName: '网游',
-      label: '英雄联盟',
-      imageUrl: 'https://example.com/lol.png',
-    );
-    const bilibiliTag = FavoriteCategoryTag(
-      providerId: ProviderId.bilibili,
-      categoryId: 'mobile',
-      groupName: '手游',
-      label: '原神',
-      imageUrl: 'https://example.com/ys.png',
-    );
+      const douyuTag = FavoriteCategoryTag(
+        providerId: ProviderId.douyu,
+        categoryId: 'game',
+        groupName: '网游',
+        label: '英雄联盟',
+        imageUrl: 'https://example.com/lol.png',
+      );
+      const bilibiliTag = FavoriteCategoryTag(
+        providerId: ProviderId.bilibili,
+        categoryId: 'mobile',
+        groupName: '手游',
+        label: '原神',
+        imageUrl: 'https://example.com/ys.png',
+      );
 
-    expect(await toggle(douyuTag), [douyuTag]);
-    expect(await toggle(bilibiliTag), [bilibiliTag, douyuTag]);
+      expect(await toggle(douyuTag), [douyuTag]);
+      expect(await toggle(bilibiliTag), [bilibiliTag, douyuTag]);
 
-    final rawPayload = await settingsRepository
-        .readValue<String>('browse_favorite_categories_v1');
-    expect(rawPayload, isNotNull);
-    expect(await load(), [bilibiliTag, douyuTag]);
+      final rawPayload = await settingsRepository.readValue<String>(
+        'browse_favorite_categories_v1',
+      );
+      expect(rawPayload, isNotNull);
+      expect(await load(), [bilibiliTag, douyuTag]);
 
-    expect(await toggle(douyuTag), [bilibiliTag]);
-  });
+      expect(await toggle(douyuTag), [bilibiliTag]);
+    },
+  );
 
   test('favorite category tags drop duplicated persisted entries', () async {
     final settingsRepository = InMemorySettingsRepository();

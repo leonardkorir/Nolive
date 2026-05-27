@@ -4,28 +4,25 @@ import 'package:nolive_app/src/app/app.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 
 void main() {
-  testWidgets(
-    'shell navigates browse and library flows',
-    (tester) async {
-      await _pumpApp(tester);
-      expect(find.byKey(const Key('shell-tab-label-home')), findsOneWidget);
-      expect(find.byKey(const Key('shell-tab-label-browse')), findsOneWidget);
-      expect(find.byKey(const Key('shell-tab-label-library')), findsOneWidget);
-      expect(find.byKey(const Key('shell-tab-label-profile')), findsOneWidget);
-      expect(find.text('搜索'), findsNothing);
+  testWidgets('shell navigates browse and library flows', (tester) async {
+    await _pumpApp(tester);
+    expect(find.byKey(const Key('shell-tab-label-home')), findsOneWidget);
+    expect(find.byKey(const Key('shell-tab-label-browse')), findsOneWidget);
+    expect(find.byKey(const Key('shell-tab-label-library')), findsOneWidget);
+    expect(find.byKey(const Key('shell-tab-label-profile')), findsOneWidget);
+    expect(find.text('搜索'), findsNothing);
 
-      await tester.tap(find.byKey(const Key('shell-tab-label-browse')));
-      await tester.pumpAndSettle();
-      expect(find.text('分类加载失败'), findsNothing);
-      expect(find.text('知识区'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('shell-tab-label-browse')));
+    await tester.pumpAndSettle();
+    expect(find.text('分类加载失败'), findsNothing);
+    expect(find.text('知识区'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('shell-tab-label-library')));
-      await tester.pumpAndSettle();
-      expect(find.text('全部'), findsOneWidget);
-      expect(find.text('直播中'), findsWidgets);
-      expect(find.text('未开播'), findsWidgets);
-    },
-  );
+    await tester.tap(find.byKey(const Key('shell-tab-label-library')));
+    await tester.pumpAndSettle();
+    expect(find.text('全部'), findsOneWidget);
+    expect(find.text('直播中'), findsWidgets);
+    expect(find.text('未开播'), findsWidgets);
+  });
 
   testWidgets('profile tools open settings subpages', (tester) async {
     await _pumpApp(tester);
@@ -122,9 +119,7 @@ Future<void> _pumpApp(WidgetTester tester) async {
   });
 
   await tester.pumpWidget(
-    NoliveApp(
-      appBootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
-    ),
+    NoliveApp(appBootstrap: createAppBootstrap(mode: AppRuntimeMode.preview)),
   );
   await tester.pumpAndSettle();
 }

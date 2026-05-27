@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
+
 class DouyinMapper {
   const DouyinMapper._();
 
@@ -11,8 +13,7 @@ class DouyinMapper {
   }) {
     final items = _asList(response['data'])
         .map((item) => _asMap(item))
-        .map((item) =>
-            _asMap(jsonDecode(item['lives']?['rawdata']?.toString() ?? '{}')))
+        .map(_decodeSearchRawdata)
         .where((item) => item.isNotEmpty)
         .map(mapSearchRoom)
         .toList(growable: false);
@@ -73,12 +74,12 @@ class DouyinMapper {
       viewerCount: roomStatus
           ? _asInt(_asMap(roomData['room_view_stats'])['display_value'])
           : 0,
-      danmakuToken: {
-        'webRid': webRid,
-        'roomId': roomData['id_str']?.toString() ?? '',
-        'cookie': cookie,
-        'userUniqueId': _userUniqueIdFromApi(data, roomData),
-      },
+      danmakuToken: DouyinDanmakuToken(
+        webRid: webRid,
+        roomId: roomData['id_str']?.toString() ?? '',
+        cookie: cookie,
+        userUniqueId: _userUniqueIdFromApi(data, roomData),
+      ),
       metadata: {
         'streamUrl': roomStatus
             ? _asMap(roomData['stream_url'])
@@ -143,12 +144,12 @@ class DouyinMapper {
       viewerCount: roomStatus
           ? _asInt(_asMap(room['room_view_stats'])['display_value'])
           : 0,
-      danmakuToken: {
-        'webRid': webRid,
-        'roomId': room['id_str']?.toString() ?? '',
-        'cookie': cookie,
-        'userUniqueId': odin['user_unique_id']?.toString() ?? '',
-      },
+      danmakuToken: DouyinDanmakuToken(
+        webRid: webRid,
+        roomId: room['id_str']?.toString() ?? '',
+        cookie: cookie,
+        userUniqueId: odin['user_unique_id']?.toString() ?? '',
+      ),
       metadata: {
         'streamUrl':
             roomStatus ? _asMap(room['stream_url']) : const <String, Object?>{},
@@ -305,8 +306,57 @@ class DouyinMapper {
         message: 'Douyin HTML did not contain expected room state payload.',
       );
     }
-    final decoded = jsonDecode(normalized) as Map<String, dynamic>;
+    final decoded = _decodeJsonObject(
+      normalized,
+      context: 'room state payload',
+      throwOnFailure: true,
+    );
     return _asMap(decoded['state']);
+  }
+
+  static Map<String, dynamic> _decodeSearchRawdata(Map<String, dynamic> item) {
+    final lives = _asMap(item['lives']);
+    final rawdata = lives['rawdata']?.toString() ?? '';
+    if (rawdata.trim().isEmpty) {
+      return const <String, dynamic>{};
+    }
+    return _decodeJsonObject(
+      rawdata,
+      context: 'search rawdata payload',
+      throwOnFailure: false,
+    );
+  }
+
+  static Map<String, dynamic> _decodeJsonObject(
+    String raw, {
+    required String context,
+    required bool throwOnFailure,
+  }) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return decoded.cast<String, dynamic>();
+      }
+    } on FormatException {
+      if (!throwOnFailure) {
+        return const <String, dynamic>{};
+      }
+    } on TypeError {
+      if (!throwOnFailure) {
+        return const <String, dynamic>{};
+      }
+    }
+
+    if (!throwOnFailure) {
+      return const <String, dynamic>{};
+    }
+    throw ProviderParseException(
+      providerId: ProviderId.douyin,
+      message: 'Douyin $context must decode into an object.',
+    );
   }
 
   static String? _firstUrl(Map<String, dynamic> value) {
@@ -318,50 +368,15 @@ class DouyinMapper {
   }
 
   static Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   static List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   static int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is double) {
-      return value.round();
-    }
-    final raw = value?.toString().trim() ?? '';
-    if (raw.isEmpty) {
-      return null;
-    }
-    final normalized = raw.replaceAll(',', '');
-    final match =
-        RegExp(r'^([0-9]+(?:\.[0-9]+)?)([万亿]?)$').firstMatch(normalized);
-    if (match != null) {
-      final number = double.tryParse(match.group(1) ?? '');
-      if (number == null) {
-        return null;
-      }
-      final unit = match.group(2);
-      final multiplier = switch (unit) {
-        '万' => 10000,
-        '亿' => 100000000,
-        _ => 1,
-      };
-      return (number * multiplier).round();
-    }
-    return int.tryParse(normalized);
+    return ProviderJson.asLocalizedCountInt(value);
   }
 }
 

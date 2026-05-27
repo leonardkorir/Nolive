@@ -68,6 +68,7 @@ class ProviderBadge extends StatelessWidget {
       'douyin' => Icons.music_note_rounded,
       'twitch' => Icons.videogame_asset_rounded,
       'youtube' => Icons.smart_display_rounded,
+      'stripchat' => Icons.camera_alt_rounded,
       _ => Icons.play_circle_outline,
     };
   }
@@ -81,6 +82,7 @@ class ProviderBadge extends StatelessWidget {
       'douyin' => const Color(0xFFFC2B55),
       'twitch' => const Color(0xFF9146FF),
       'youtube' => const Color(0xFFFF0033),
+      'stripchat' => const Color(0xFFE74C3C),
       _ => const Color(0xFFE11D48),
     };
   }
@@ -94,6 +96,7 @@ class ProviderBadge extends StatelessWidget {
       'douyin' => 'assets/branding/douyin.png',
       'twitch' => 'assets/branding/twitch.png',
       'youtube' => 'assets/branding/youtube.png',
+      'stripchat' => 'assets/branding/stripchat.png',
       _ => null,
     };
   }
@@ -107,6 +110,7 @@ class ProviderBadge extends StatelessWidget {
       'douyin' => '抖',
       'twitch' => 'TW',
       'youtube' => 'YT',
+      'stripchat' => 'SC',
       _ => providerId.value.isEmpty
           ? 'L'
           : providerId.value.substring(0, 1).toUpperCase(),

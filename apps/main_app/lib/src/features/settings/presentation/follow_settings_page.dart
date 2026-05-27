@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/features/library/application/load_library_dashboard_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_follow_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
@@ -27,7 +28,8 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
   bool _busy = false;
 
   bool get _supportsInlineSave =>
-      kIsWeb || Platform.isAndroid || Platform.isIOS;
+      AppPlatformCapabilities.current().isWeb ||
+      AppPlatformCapabilities.current().isMobile;
 
   @override
   void initState() {
@@ -59,9 +61,9 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
     await _refresh();
   }
 
@@ -114,8 +116,8 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
   Future<void> _toggleFollowDisplayMode(FollowPreferences preferences) async {
     final nextDisplayMode =
         preferences.displayMode == FollowDisplayModePreference.list
-            ? FollowDisplayModePreference.grid
-            : FollowDisplayModePreference.list;
+        ? FollowDisplayModePreference.grid
+        : FollowDisplayModePreference.list;
     await _updateFollowPreferences(
       preferences.copyWith(displayMode: nextDisplayMode),
       '已更新关注列表默认展示方式',
@@ -217,7 +219,8 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
 
   Future<void> _importFollowText() async {
     final controller = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
           builder: (context) {
             return AlertDialog(
@@ -264,8 +267,9 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
       _busy = true;
     });
     try {
-      final summary =
-          await widget.dependencies.importFollowListJson(controller.text);
+      final summary = await widget.dependencies.importFollowListJson(
+        controller.text,
+      );
       await _refresh();
       _showFollowImportSummary(summary, sourceLabel: '文本');
     } on FormatException catch (error) {
@@ -292,21 +296,19 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _removeTag(String tag) async {
-    await _runAction(
-      () => widget.dependencies.removeTag(tag),
-      '已移除标签 $tag',
-    );
+    await _runAction(() => widget.dependencies.removeTag(tag), '已移除标签 $tag');
   }
 
   Future<void> _showCreateTagDialog() async {
     final controller = TextEditingController();
-    final created = await showDialog<bool>(
+    final created =
+        await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('新建标签'),
@@ -417,9 +419,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                           Expanded(
                             child: Text(
                               '标签管理',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
+                              style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ),
@@ -456,9 +456,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                     children: [
                       Text(
                         '直播状态更新',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
+                        style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
@@ -471,9 +469,9 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                         onChanged: _busy
                             ? null
                             : (value) => _setAutoRefreshEnabled(
-                                  data.preferences,
-                                  value,
-                                ),
+                                data.preferences,
+                                value,
+                              ),
                       ),
                       if (data.preferences.autoRefreshEnabled) ...[
                         const Divider(height: 1),
@@ -487,9 +485,8 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                           trailing: const Icon(Icons.chevron_right_rounded),
                           onTap: _busy
                               ? null
-                              : () => _pickAutoRefreshInterval(
-                                    data.preferences,
-                                  ),
+                              : () =>
+                                    _pickAutoRefreshInterval(data.preferences),
                         ),
                       ],
                     ],
@@ -502,9 +499,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                     children: [
                       Text(
                         '列表显示',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
+                        style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
@@ -526,9 +521,8 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                         trailing: FilledButton.tonal(
                           onPressed: _busy
                               ? null
-                              : () => _toggleFollowDisplayMode(
-                                    data.preferences,
-                                  ),
+                              : () =>
+                                    _toggleFollowDisplayMode(data.preferences),
                           child: Text(
                             data.preferences.displayMode ==
                                     FollowDisplayModePreference.grid
@@ -547,9 +541,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                     children: [
                       Text(
                         '关注导入导出',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
+                        style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 12),
@@ -587,9 +579,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                     children: [
                       Text(
                         '整理动作',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
+                        style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 12),

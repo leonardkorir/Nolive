@@ -29,7 +29,15 @@ updates = {
 for relative, replacements in updates.items():
     path = Path(relative)
     text = path.read_text()
+    expected_new_counts = {
+        new: sum(1 for _, candidate in replacements if candidate == new)
+        for _, new in replacements
+    }
     for old, new in replacements:
+        if text.count(old) == 0:
+            if text.count(new) < expected_new_counts[new]:
+                raise SystemExit(f"replacement target not found in {relative}: {old!r}")
+            continue
         text = text.replace(old, new)
     path.write_text(text)
 old_path = Path('android/app/src/main/kotlin/app/nolive/nolive_app/MainActivity.kt')
@@ -38,6 +46,18 @@ if old_path.exists():
     new_path.parent.mkdir(parents=True, exist_ok=True)
     new_path.write_text(old_path.read_text().replace('package app.nolive.nolive_app', 'package app.nolive.mobile'))
     old_path.unlink()
+required_postconditions = {
+    'android/app/build.gradle.kts': ['namespace = "app.nolive.mobile"'],
+    'android/app/src/main/AndroidManifest.xml': ['android:label="Nolive"'],
+    'ios/Runner/Info.plist': ['<string>Nolive</string>'],
+    'linux/CMakeLists.txt': ['APPLICATION_ID "app.nolive.mobile"', 'BINARY_NAME "nolive"'],
+    'windows/runner/Runner.rc': ['"Nolive"', '"nolive.exe"'],
+}
+for relative, expected_values in required_postconditions.items():
+    text = Path(relative).read_text()
+    for expected in expected_values:
+        if expected not in text:
+            raise SystemExit(f"postcondition failed in {relative}: {expected!r}")
 PY
 
 echo "main_app platform scaffolding refreshed." 

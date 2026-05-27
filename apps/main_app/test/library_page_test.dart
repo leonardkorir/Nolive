@@ -28,9 +28,7 @@ void main() {
       'platform': 'android',
       'version': 1,
       'time': 1773384011720,
-      'config': {
-        'FollowStyleNotGrid': false,
-      },
+      'config': {'FollowStyleNotGrid': false},
       'shield': <String, String>{},
     });
 
@@ -49,85 +47,83 @@ void main() {
   });
 
   testWidgets(
-      'library page renders persisted follow metadata before remote refresh completes',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    const descriptor = ProviderDescriptor(
-      id: ProviderId('fixture'),
-      displayName: 'Fixture',
-      capabilities: {ProviderCapability.roomDetail},
-      supportedPlatforms: {ProviderPlatform.android},
-    );
-    final provider = _ControlledFixtureProvider(descriptor);
-    bootstrap.providerRegistry.register(
-      ProviderRegistration(
-        descriptor: descriptor,
-        builder: () => provider,
-      ),
-    );
+    'library page renders persisted follow metadata before remote refresh completes',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      const descriptor = ProviderDescriptor(
+        id: ProviderId('fixture'),
+        displayName: 'Fixture',
+        capabilities: {ProviderCapability.roomDetail},
+        supportedPlatforms: {ProviderPlatform.android},
+      );
+      final provider = _ControlledFixtureProvider(descriptor);
+      bootstrap.providerRegistry.register(
+        ProviderRegistration(descriptor: descriptor, builder: () => provider),
+      );
 
-    await bootstrap.followRepository.upsert(
-      const FollowRecord(
-        providerId: 'fixture',
-        roomId: 'offline-room',
-        streamerName: '离线主播',
-        lastTitle: '上次标题',
-        lastAreaName: '上次分区',
-        lastCoverUrl: 'https://example.com/local-cover.png',
-        lastKeyframeUrl: 'https://example.com/local-keyframe.png',
-      ),
-    );
-
-    final payload = jsonEncode({
-      'type': 'simple_live',
-      'platform': 'android',
-      'version': 1,
-      'time': 1773384011720,
-      'config': {
-        'FollowStyleNotGrid': false,
-      },
-      'shield': <String, String>{},
-    });
-    await bootstrap.importSyncSnapshotJson(payload);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: LibraryPage(
-          dependencies: buildLibraryFeatureDependencies(bootstrap),
+      await bootstrap.followRepository.upsert(
+        const FollowRecord(
+          providerId: 'fixture',
+          roomId: 'offline-room',
+          streamerName: '离线主播',
+          lastTitle: '上次标题',
+          lastAreaName: '上次分区',
+          lastCoverUrl: 'https://example.com/local-cover.png',
+          lastKeyframeUrl: 'https://example.com/local-keyframe.png',
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 80));
+      );
 
-    final cardFinder =
-        find.byKey(const Key('library-follow-card-fixture-offline-room'));
-    expect(cardFinder, findsOneWidget);
+      final payload = jsonEncode({
+        'type': 'simple_live',
+        'platform': 'android',
+        'version': 1,
+        'time': 1773384011720,
+        'config': {'FollowStyleNotGrid': false},
+        'shield': <String, String>{},
+      });
+      await bootstrap.importSyncSnapshotJson(payload);
 
-    final card = tester.widget<LiveRoomGridCard>(cardFinder);
-    expect(card.room.title, '上次标题');
-    expect(card.room.areaName, '上次分区');
-    expect(card.room.coverUrl, 'https://example.com/local-cover.png');
-    expect(card.room.keyframeUrl, 'https://example.com/local-keyframe.png');
-    expect(card.room.isLive, isFalse);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LibraryPage(
+            dependencies: buildLibraryFeatureDependencies(bootstrap),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
 
-    provider.complete(
-      LiveRoomDetail(
-        providerId: 'fixture',
-        roomId: 'offline-room',
-        title: '远程标题',
-        streamerName: '离线主播',
-        areaName: '远程分区',
-        coverUrl: 'https://example.com/remote-cover.png',
-        keyframeUrl: 'https://example.com/remote-keyframe.png',
-        isLive: true,
-      ),
-    );
-    await tester.pump();
-  });
+      final cardFinder = find.byKey(
+        const Key('library-follow-card-fixture-offline-room'),
+      );
+      expect(cardFinder, findsOneWidget);
 
-  testWidgets('library page keeps unknown providers renderable in grid mode',
-      (tester) async {
+      final card = tester.widget<LiveRoomGridCard>(cardFinder);
+      expect(card.room.title, '上次标题');
+      expect(card.room.areaName, '上次分区');
+      expect(card.room.coverUrl, 'https://example.com/local-cover.png');
+      expect(card.room.keyframeUrl, 'https://example.com/local-keyframe.png');
+      expect(card.room.isLive, isFalse);
+
+      provider.complete(
+        LiveRoomDetail(
+          providerId: 'fixture',
+          roomId: 'offline-room',
+          title: '远程标题',
+          streamerName: '离线主播',
+          areaName: '远程分区',
+          coverUrl: 'https://example.com/remote-cover.png',
+          keyframeUrl: 'https://example.com/remote-keyframe.png',
+          isLive: true,
+        ),
+      );
+      await tester.pump();
+    },
+  );
+
+  testWidgets('library page keeps unknown providers renderable in grid mode', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     await bootstrap.followRepository.upsert(
       const FollowRecord(
@@ -143,9 +139,7 @@ void main() {
       'platform': 'android',
       'version': 1,
       'time': 1773384011720,
-      'config': {
-        'FollowStyleNotGrid': false,
-      },
+      'config': {'FollowStyleNotGrid': false},
       'shield': <String, String>{},
     });
     await bootstrap.importSyncSnapshotJson(payload);
@@ -168,38 +162,40 @@ void main() {
   });
 
   testWidgets(
-      'library page refreshes local follow list on follow data revision',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    'library page refreshes local follow list on follow data revision',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: LibraryPage(
-          dependencies: buildLibraryFeatureDependencies(bootstrap),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LibraryPage(
+            dependencies: buildLibraryFeatureDependencies(bootstrap),
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('暂无关注'), findsOneWidget);
+      expect(find.text('暂无关注'), findsOneWidget);
 
-    await bootstrap.toggleFollowRoom(
-      providerId: 'bilibili',
-      roomId: '6',
-      streamerName: '系统演示主播',
-      title: '系统演示直播间',
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+      await bootstrap.toggleFollowRoom(
+        providerId: 'bilibili',
+        roomId: '6',
+        streamerName: '系统演示主播',
+        title: '系统演示直播间',
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
 
-    expect(
-      find.byKey(const Key('library-follow-card-bilibili-6')),
-      findsOneWidget,
-    );
-  });
+      expect(
+        find.byKey(const Key('library-follow-card-bilibili-6')),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('library page confirms before removing a followed room',
-      (tester) async {
+  testWidgets('library page confirms before removing a followed room', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     const record = FollowRecord(
       providerId: 'bilibili',
@@ -228,9 +224,7 @@ void main() {
       'platform': 'android',
       'version': 1,
       'time': 1773384011720,
-      'config': {
-        'FollowStyleNotGrid': true,
-      },
+      'config': {'FollowStyleNotGrid': true},
       'shield': <String, String>{},
     });
     await bootstrap.importSyncSnapshotJson(payload);
@@ -271,8 +265,9 @@ void main() {
     expect(await bootstrap.followRepository.listAll(), isEmpty);
   });
 
-  testWidgets('library page does not classify error entries as offline',
-      (tester) async {
+  testWidgets('library page does not classify error entries as offline', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     const descriptor = ProviderDescriptor(
       id: ProviderId('failing'),
@@ -319,87 +314,89 @@ void main() {
   });
 
   testWidgets(
-      'library page reuses cached snapshot and skips remote refresh after settings return',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final navigatorKey = GlobalKey<NavigatorState>();
-    var detailCalls = 0;
+    'library page reuses cached snapshot and skips remote refresh after settings return',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final navigatorKey = GlobalKey<NavigatorState>();
+      var detailCalls = 0;
 
-    const record = FollowRecord(
-      providerId: 'cached-follow',
-      roomId: 'room-1',
-      streamerName: '缓存主播',
-      lastTitle: '缓存标题',
-    );
-    await bootstrap.followRepository.upsert(record);
-    bootstrap.providerRegistry.register(
-      ProviderRegistration(
-        descriptor: _kCachedFollowDescriptor,
-        builder: () => _CallbackFixtureProvider(
-          _kCachedFollowDescriptor,
-          onRoomDetail: (roomId) async {
-            detailCalls += 1;
-            return LiveRoomDetail(
-              providerId: _kCachedFollowProviderId.value,
-              roomId: roomId,
-              title: '远程标题',
-              streamerName: '缓存主播',
-              isLive: true,
-            );
-          },
-        ),
-      ),
-    );
-    bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
-      entries: [
-        FollowWatchEntry(
-          record: record,
-          detail: const LiveRoomDetail(
-            providerId: 'cached-follow',
-            roomId: 'room-1',
-            title: '缓存标题',
-            streamerName: '缓存主播',
-            isLive: true,
+      const record = FollowRecord(
+        providerId: 'cached-follow',
+        roomId: 'room-1',
+        streamerName: '缓存主播',
+        lastTitle: '缓存标题',
+      );
+      await bootstrap.followRepository.upsert(record);
+      bootstrap.providerRegistry.register(
+        ProviderRegistration(
+          descriptor: _kCachedFollowDescriptor,
+          builder: () => _CallbackFixtureProvider(
+            _kCachedFollowDescriptor,
+            onRoomDetail: (roomId) async {
+              detailCalls += 1;
+              return LiveRoomDetail(
+                providerId: _kCachedFollowProviderId.value,
+                roomId: roomId,
+                title: '远程标题',
+                streamerName: '缓存主播',
+                isLive: true,
+              );
+            },
           ),
         ),
-      ],
-    );
+      );
+      bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
+        entries: [
+          FollowWatchEntry(
+            record: record,
+            detail: const LiveRoomDetail(
+              providerId: 'cached-follow',
+              roomId: 'room-1',
+              title: '缓存标题',
+              streamerName: '缓存主播',
+              isLive: true,
+            ),
+          ),
+        ],
+      );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        navigatorKey: navigatorKey,
-        routes: {
-          AppRoutes.followSettings: (context) =>
-              const Scaffold(body: Center(child: Text('关注设置页'))),
-        },
-        home: LibraryPage(
-          dependencies: buildLibraryFeatureDependencies(bootstrap),
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigatorKey,
+          routes: {
+            AppRoutes.followSettings: (context) =>
+                const Scaffold(body: Center(child: Text('关注设置页'))),
+          },
+          home: LibraryPage(
+            dependencies: buildLibraryFeatureDependencies(bootstrap),
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(detailCalls, 0);
-    expect(
-      find.byKey(const Key('library-follow-card-cached-follow-room-1')),
-      findsOneWidget,
-    );
+      expect(detailCalls, 0);
+      expect(
+        find.byKey(const Key('library-follow-card-cached-follow-room-1')),
+        findsOneWidget,
+      );
 
-    await tester.tap(find.byKey(const Key('library-menu-button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('关注设置').last);
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('library-menu-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('关注设置').last);
+      await tester.pumpAndSettle();
 
-    expect(find.text('关注设置页'), findsOneWidget);
+      expect(find.text('关注设置页'), findsOneWidget);
 
-    navigatorKey.currentState!.pop();
-    await tester.pumpAndSettle();
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
 
-    expect(detailCalls, 0);
-  });
+      expect(detailCalls, 0);
+    },
+  );
 
-  testWidgets('library page keeps filter bar fixed while content scrolls',
-      (tester) async {
+  testWidgets('library page keeps filter bar fixed while content scrolls', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
     for (var index = 0; index < 20; index += 1) {

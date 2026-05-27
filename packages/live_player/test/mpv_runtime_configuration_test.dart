@@ -64,9 +64,9 @@ void main() {
   });
 
   test(
-      'resolveMpvRuntimeConfiguration keeps Android attach timing on platform default path',
+      'resolveMpvRuntimeConfiguration resolves Android attach timing on platform default path',
       () {
-    final config = resolveMpvRuntimeConfiguration(
+    final configHw = resolveMpvRuntimeConfiguration(
       enableHardwareAcceleration: true,
       compatMode: false,
       doubleBufferingEnabled: false,
@@ -77,10 +77,26 @@ void main() {
     );
 
     expect(
-      config.controllerConfiguration.androidAttachSurfaceAfterVideoParameters,
+      configHw.controllerConfiguration.androidAttachSurfaceAfterVideoParameters,
+      isFalse,
+    );
+    expect(configHw.controllerConfiguration.hwdec, 'auto-safe');
+
+    final configSw = resolveMpvRuntimeConfiguration(
+      enableHardwareAcceleration: false,
+      compatMode: false,
+      doubleBufferingEnabled: false,
+      customOutputEnabled: false,
+      videoOutputDriver: 'gpu-next',
+      hardwareDecoder: 'auto-safe',
+      logEnabled: false,
+    );
+
+    expect(
+      configSw.controllerConfiguration.androidAttachSurfaceAfterVideoParameters,
       isNull,
     );
-    expect(config.controllerConfiguration.hwdec, 'auto-safe');
+    expect(configSw.controllerConfiguration.hwdec, 'no');
   });
 
   test(
@@ -176,6 +192,16 @@ void main() {
         hardwareDecoder: 'auto-safe',
         isAndroid: true,
       ),
+      isTrue,
+    );
+    expect(
+      shouldAwaitAndroidEmbeddedSurfaceBeforeOpen(
+        compatMode: false,
+        customOutputEnabled: false,
+        videoOutputDriver: 'gpu-next',
+        hardwareDecoder: 'mediacodec-copy',
+        isAndroid: true,
+      ),
       isFalse,
     );
     expect(
@@ -191,7 +217,7 @@ void main() {
   });
 
   test(
-      'resolveAndroidEmbeddedSurfaceWarmupPolicy keeps initial and reopen on the same short budget',
+      'resolveAndroidEmbeddedSurfaceWarmupPolicy provides a larger budget for initial open than reopen',
       () {
     final initial = resolveAndroidEmbeddedSurfaceWarmupPolicy(
       isInitialOpen: true,
@@ -201,8 +227,8 @@ void main() {
     );
 
     expect(
-      initial.surfaceReadyBudget,
-      reuse.surfaceReadyBudget,
+      initial.surfaceReadyBudget.inMilliseconds,
+      greaterThan(reuse.surfaceReadyBudget.inMilliseconds),
     );
     expect(
       initial.viewMountTimeout,
@@ -214,7 +240,7 @@ void main() {
     );
     expect(
       initial.surfaceReadyBudget,
-      const Duration(milliseconds: 350),
+      const Duration(milliseconds: 800),
     );
     expect(
       initial.surfaceReadyPollInterval,
@@ -262,7 +288,7 @@ void main() {
     );
   });
 
-  test('usesEmbeddedAndroidMediaCodecOutput only matches embedded output', () {
+  test('usesEmbeddedAndroidMediaCodecOutput matches embedded output and default direct hardware paths', () {
     expect(
       usesEmbeddedAndroidMediaCodecOutput(
         compatMode: true,
@@ -284,6 +310,36 @@ void main() {
         compatMode: false,
         customOutputEnabled: true,
         videoOutputDriver: 'gpu-next',
+      ),
+      isFalse,
+    );
+    expect(
+      usesEmbeddedAndroidMediaCodecOutput(
+        compatMode: false,
+        customOutputEnabled: false,
+        videoOutputDriver: 'gpu-next',
+        enableHardwareAcceleration: true,
+        hardwareDecoder: 'auto-safe',
+      ),
+      isTrue,
+    );
+    expect(
+      usesEmbeddedAndroidMediaCodecOutput(
+        compatMode: false,
+        customOutputEnabled: false,
+        videoOutputDriver: 'gpu-next',
+        enableHardwareAcceleration: false,
+        hardwareDecoder: 'auto-safe',
+      ),
+      isFalse,
+    );
+    expect(
+      usesEmbeddedAndroidMediaCodecOutput(
+        compatMode: false,
+        customOutputEnabled: false,
+        videoOutputDriver: 'gpu-next',
+        enableHardwareAcceleration: true,
+        hardwareDecoder: 'mediacodec-copy',
       ),
       isFalse,
     );
@@ -311,6 +367,14 @@ void main() {
       shouldWarmAndroidMediaCodecOpenPath(
         videoOutputDriver: 'gpu-next',
         hardwareDecoder: 'auto-safe',
+        isAndroid: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldWarmAndroidMediaCodecOpenPath(
+        videoOutputDriver: 'gpu-next',
+        hardwareDecoder: 'auto-copy',
         isAndroid: true,
       ),
       isFalse,
@@ -1271,6 +1335,41 @@ https://edge4-lax.live.mmcdn.com/v1/edge/streams/origin.demo/chunklist_4_video_l
   });
 
   test(
+      'resolveMpvSourcePlatformProperties keeps stripchat localized ll-hls on buffered resolved-master path',
+      () {
+    final source = PlaybackSource(
+      url: Uri.parse(
+        'http://127.0.0.1:9999/stripchat-llhls/session/playlist.m3u8',
+      ),
+      masterPlaylistUrl: Uri.parse(
+        'https://edge-hls.doppiocdn.com/hls/112319207/master/112319207_auto.m3u8?minHeight=240&playlistType=lowLatency',
+      ),
+      bufferProfile: PlaybackBufferProfile.edgeLowLatencyHls,
+    );
+
+    final properties = resolveMpvSourcePlatformProperties(
+      source: source,
+      doubleBufferingEnabled: false,
+    );
+
+    expect(properties['cache'], 'yes');
+    expect(properties['cache-secs'], '3');
+    expect(properties['cache-pause'], 'no');
+    expect(properties['cache-pause-wait'], '1');
+    expect(properties['cache-pause-initial'], 'no');
+    expect(properties['audio-buffer'], '0.2');
+    expect(
+      properties['demuxer-lavf-o'],
+      'protocol_whitelist=[file,crypto,data,http,https,tcp,tls],live_start_index=-2,seg_max_retry=6,http_persistent=1,http_multiple=1',
+    );
+    expect(properties['demuxer-readahead-secs'], '3');
+    expect(properties['demuxer-max-back-bytes'], '25165824');
+    expect(properties['demuxer-max-bytes'], '25165824');
+    expect(properties['load-unsafe-playlists'], 'yes');
+    expect(properties.containsKey('hls-bitrate'), isFalse);
+  });
+
+  test(
       'resolveMpvSourcePlatformProperties clears source-scoped playlist overrides for plain streams',
       () {
     final source = PlaybackSource(
@@ -1618,6 +1717,41 @@ https://edge4-lax.live.mmcdn.com/v1/edge/streams/origin.demo/chunklist_4_video_l
   });
 
   test(
+      'resolveMpvSourcePlatformProperties uses stable buffered profile for stripchat loopback proxy',
+      () {
+    final source = PlaybackSource(
+      url: Uri.parse('http://127.0.0.1:9999/stripchat-llhls/session/playlist.m3u8'),
+      masterPlaylistUrl: Uri.parse(
+        'https://edge-hls.doppiocdn.com/hls/222064808/master/222064808_auto.m3u8?minHeight=240&playlistType=lowLatency',
+      ),
+      masterPlaylistContent: '#EXTM3U',
+      bufferProfile: PlaybackBufferProfile.loopbackStableHls,
+    );
+
+    final properties = resolveMpvSourcePlatformProperties(
+      source: source,
+      doubleBufferingEnabled: false,
+    );
+
+    expect(properties['cache'], 'yes');
+    expect(properties['cache-secs'], '8');
+    expect(properties['cache-pause'], 'yes');
+    expect(properties['cache-pause-wait'], '2');
+    expect(properties['cache-pause-initial'], 'yes');
+    expect(properties['audio-buffer'], '0.4');
+    expect(properties['demuxer-seekable-cache'], 'no');
+    expect(properties['demuxer-donate-buffer'], 'no');
+    expect(properties['demuxer-max-back-bytes'], '67108864');
+    expect(properties['demuxer-max-bytes'], '67108864');
+    expect(properties['demuxer-readahead-secs'], '8');
+    expect(properties['demuxer-lavf-analyzeduration'], '3');
+    expect(properties['demuxer-lavf-probesize'], '500000');
+    expect(properties['video-sync'], 'display-tempo');
+    expect(properties['load-unsafe-playlists'], 'yes');
+    expect(properties['hls-bitrate'], isNull);
+  });
+
+  test(
       'resolveMpvSourcePlatformProperties rewrites hwdec when runtime decoder is provided',
       () {
     final source = PlaybackSource(
@@ -1647,9 +1781,79 @@ https://edge4-lax.live.mmcdn.com/v1/edge/streams/origin.demo/chunklist_4_video_l
 
     expect(properties['cache'], 'yes');
     expect(properties['cache-secs'], '10');
+    expect(properties['demuxer-seekable-cache'], 'no');
     expect(properties['demuxer-max-back-bytes'], '67108864');
     expect(properties['demuxer-max-bytes'], '67108864');
     expect(properties['demuxer-readahead-secs'], '10');
+  });
+
+  test(
+      'resolveMpvSourcePlatformProperties uses seekable cache for non-flv heavy stable streams',
+      () {
+    final source = PlaybackSource(
+      url: Uri.parse('https://example.com/live.m3u8'),
+      bufferProfile: PlaybackBufferProfile.heavyStreamStable,
+    );
+
+    final properties = resolveMpvSourcePlatformProperties(
+      source: source,
+      doubleBufferingEnabled: false,
+    );
+
+    expect(properties['cache'], 'yes');
+    expect(properties['cache-secs'], '10');
+    expect(properties['demuxer-seekable-cache'], 'yes');
+    expect(properties['demuxer-max-back-bytes'], '67108864');
+    expect(properties['demuxer-max-bytes'], '67108864');
+    expect(properties['demuxer-readahead-secs'], '10');
+  });
+
+  test(
+      'resolveMpvSourcePlatformProperties default profile with FLV stream and double buffering disables seekable cache',
+      () {
+    final source = PlaybackSource(
+      url: Uri.parse('https://example.com/live.flv'),
+      bufferProfile: PlaybackBufferProfile.defaultLowLatency,
+    );
+
+    final properties = resolveMpvSourcePlatformProperties(
+      source: source,
+      doubleBufferingEnabled: true,
+    );
+
+    expect(properties['demuxer-seekable-cache'], 'no');
+  });
+
+  test(
+      'resolveMpvSourcePlatformProperties default profile with non-FLV stream and double buffering enables seekable cache',
+      () {
+    final source = PlaybackSource(
+      url: Uri.parse('https://example.com/live.m3u8'),
+      bufferProfile: PlaybackBufferProfile.defaultLowLatency,
+    );
+
+    final properties = resolveMpvSourcePlatformProperties(
+      source: source,
+      doubleBufferingEnabled: true,
+    );
+
+    expect(properties['demuxer-seekable-cache'], 'yes');
+  });
+
+  test(
+      'resolveMpvSourcePlatformProperties default profile without double buffering disables seekable cache',
+      () {
+    final source = PlaybackSource(
+      url: Uri.parse('https://example.com/live.m3u8'),
+      bufferProfile: PlaybackBufferProfile.defaultLowLatency,
+    );
+
+    final properties = resolveMpvSourcePlatformProperties(
+      source: source,
+      doubleBufferingEnabled: false,
+    );
+
+    expect(properties['demuxer-seekable-cache'], 'no');
   });
 
   test(
@@ -1818,5 +2022,100 @@ segment_00001.ts
         'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.demo/segment_00001.ts',
       ),
     );
+  });
+
+  test('shouldRewriteSingleSourceHlsManifest enables doppiocdn low-latency hls',
+      () {
+    final source = PlaybackSource(
+      url: Uri.parse(
+        'https://media-hls.doppiocdn.com/b-hls-12/112319207/112319207_1080p60.m3u8?minHeight=240&playlistType=lowLatency&psch=v2&pkey=test',
+      ),
+    );
+
+    expect(shouldRewriteSingleSourceHlsManifest(source), isTrue);
+    expect(shouldAlwaysLocalizeSingleSourceHlsManifest(source), isTrue);
+  });
+
+  test(
+      'rewriteHlsManifestWithAbsoluteUris rewrites stripchat mouflon placeholders',
+      () {
+    final manifest = rewriteHlsManifestWithAbsoluteUris(
+      playlistUri: Uri.parse(
+        'https://media-hls.doppiocdn.com/b-hls-12/112319207/112319207_1080p60.m3u8?minHeight=240&playlistType=lowLatency&psch=v2&pkey=test',
+      ),
+      manifest: '''
+#EXTM3U
+#EXT-X-MAP:URI="https://media-hls.doppiocdn.com/b-hls-12/112319207/init.mp4"
+#EXT-X-MOUFLON:URI:https://media-hls.doppiocdn.com/b-hls-12/112319207/part0.mp4
+#EXT-X-PART:DURATION=0.500,URI="https://media-hls.doppiocdn.com/b-hls-12/media.mp4",INDEPENDENT=YES
+#EXTINF:2.000
+#EXT-X-MOUFLON:URI:https://media-hls.doppiocdn.com/b-hls-12/112319207/segment0.mp4
+https://media-hls.doppiocdn.com/b-hls-12/media.mp4
+''',
+    );
+
+    expect(manifest, isNot(contains('#EXT-X-MOUFLON:URI:')));
+    expect(
+      manifest,
+      contains(
+        '#EXT-X-PART:DURATION=0.500,URI="https://media-hls.doppiocdn.com/b-hls-12/112319207/part0.mp4",INDEPENDENT=YES',
+      ),
+    );
+    expect(
+      manifest,
+      contains(
+        'https://media-hls.doppiocdn.com/b-hls-12/112319207/segment0.mp4',
+      ),
+    );
+    expect(manifest, isNot(contains('/b-hls-12/media.mp4')));
+  });
+
+  test(
+      'resolveMpvSourcePlatformProperties identifies FLV streams by host, path, query parameters',
+      () {
+    final sources = [
+      PlaybackSource(
+        url: Uri.parse('https://tx.flv.huya.com/huyalive/opaque-path'),
+        bufferProfile: PlaybackBufferProfile.defaultLowLatency,
+      ),
+      PlaybackSource(
+        url: Uri.parse('https://tx-flv.huya.com/huyalive/opaque-path'),
+        bufferProfile: PlaybackBufferProfile.defaultLowLatency,
+      ),
+      PlaybackSource(
+        url: Uri.parse('https://flv.huya.com/huyalive/opaque-path'),
+        bufferProfile: PlaybackBufferProfile.defaultLowLatency,
+      ),
+      PlaybackSource(
+        url: Uri.parse('https://example.com/live-bvc/opaque-path'),
+        bufferProfile: PlaybackBufferProfile.defaultLowLatency,
+      ),
+      PlaybackSource(
+        url: Uri.parse('https://example.com/live?file=stream.flv'),
+        bufferProfile: PlaybackBufferProfile.defaultLowLatency,
+      ),
+    ];
+
+    for (final source in sources) {
+      final properties = resolveMpvSourcePlatformProperties(
+        source: source,
+        doubleBufferingEnabled: true,
+      );
+      expect(
+        properties['demuxer-seekable-cache'],
+        'no',
+        reason: 'Should detect FLV for ${source.url}',
+      );
+    }
+
+    final nonFlvSource = PlaybackSource(
+      url: Uri.parse('https://tx.cdn.huya.com/huyalive/opaque-path'),
+      bufferProfile: PlaybackBufferProfile.defaultLowLatency,
+    );
+    final properties = resolveMpvSourcePlatformProperties(
+      source: nonFlvSource,
+      doubleBufferingEnabled: true,
+    );
+    expect(properties['demuxer-seekable-cache'], 'yes');
   });
 }

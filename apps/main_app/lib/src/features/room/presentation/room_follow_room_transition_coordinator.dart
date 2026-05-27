@@ -12,7 +12,7 @@ import 'room_runtime_helper_contexts.dart';
 typedef RoomFollowRoomTransitionMountCheck = bool Function();
 typedef RoomFollowRoomTransitionTrace = void Function(String message);
 typedef RoomFollowRoomTransitionEndOfFrame = Future<void> Function();
-typedef RoomFollowRoomTransitionNavigation = void Function(
+typedef RoomFollowRoomTransitionNavigation = FutureOr<void> Function(
   bool preserveFullscreen,
 );
 typedef RoomFollowRoomTransitionShowMessage = void Function(String message);
@@ -91,7 +91,7 @@ class RoomFollowRoomTransitionCoordinator extends ChangeNotifier {
           return;
         }
       }
-      commitNavigation(preserveFullscreen);
+      await commitNavigation(preserveFullscreen);
       navigationCommitted = true;
     } catch (error, stackTrace) {
       if (restorePlaybackOnFailure) {

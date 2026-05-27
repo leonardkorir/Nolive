@@ -1,7 +1,8 @@
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:live_storage/live_storage.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
@@ -10,7 +11,7 @@ void main() {
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('simplelive-storage-test');
-    storageFile = File('${tempDir.path}${Platform.pathSeparator}storage.json');
+    storageFile = File(p.join(tempDir.path, 'storage.json'));
   });
 
   tearDown(() async {
@@ -192,6 +193,7 @@ void main() {
     );
     expect(follows.last.streamerAvatarUrl, 'https://example.com/avatar-1.png');
     expect(follows.last.lastCoverUrl, 'https://example.com/cover-1.png');
+    expect(() => follows.add(follows.first), throwsUnsupportedError);
   });
 
   test('file-backed follow repository batches upserts in one logical update',
@@ -240,4 +242,308 @@ void main() {
     expect(await settings.readValue<String>('theme_mode'), 'dark');
     expect(await tags.listAll(), ['常看']);
   });
+
+  test('file-backed settings preserve empty strings inside string lists',
+      () async {
+    final store = await LocalStorageFileStore.open(file: storageFile);
+    final settings = FileSettingsRepository(store);
+
+    await settings.writeValue('blocked_keywords', ['剧透', '', '广告']);
+
+    expect(
+      await settings.readValue<List<String>>('blocked_keywords'),
+      ['剧透', '', '广告'],
+    );
+  });
+
+  test('file-backed tag rename throws when the source tag is missing',
+      () async {
+    final store = await LocalStorageFileStore.open(file: storageFile);
+    final tags = FileTagRepository(store);
+
+    await expectLater(
+      () => tags.rename('不存在', '最爱'),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('file-backed store recovers after a failed logical update', () async {
+    final store = await LocalStorageFileStore.open(file: storageFile);
+
+    await expectLater(
+      store.update<void>((_) {
+        throw StateError('boom');
+      }),
+      throwsA(isA<StateError>()),
+    );
+
+    await store.update<void>((snapshot) {
+      snapshot.settings['theme_mode'] = 'dark';
+    });
+
+    final restoredTheme = await store.read<String?>(
+      (snapshot) => snapshot.settings['theme_mode']?.toString(),
+    );
+    expect(restoredTheme, 'dark');
+  });
+
+  test('file-backed store keeps the previous snapshot when persist fails',
+      () async {
+    final fileSystem = _TestLocalStorageFileSystem();
+    final store = await LocalStorageFileStore.open(
+      file: storageFile,
+      fileSystem: fileSystem,
+    );
+
+    await store.update<void>((snapshot) {
+      snapshot.settings['theme_mode'] = 'light';
+    });
+
+    fileSystem.onRename = (source, newPath) {
+      if (source.path.endsWith('.tmp') && newPath == storageFile.path) {
+        throw FileSystemException('rename failed', source.path);
+      }
+    };
+    fileSystem.onCopy = (source, newPath) {
+      if (source.path.endsWith('.tmp') && newPath == storageFile.path) {
+        throw FileSystemException('copy failed', source.path);
+      }
+    };
+
+    await expectLater(
+      store.update<void>((snapshot) {
+        snapshot.settings['theme_mode'] = 'dark';
+      }),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    final inMemoryTheme = await store.read<String?>(
+      (snapshot) => snapshot.settings['theme_mode']?.toString(),
+    );
+    expect(inMemoryTheme, 'light');
+
+    final persisted =
+        jsonDecode(await storageFile.readAsString()) as Map<String, dynamic>;
+    expect(
+        (persisted['settings'] as Map<String, dynamic>)['theme_mode'], 'light');
+    expect(await File('${storageFile.path}.bak').exists(), isFalse);
+    expect(await File('${storageFile.path}.tmp').exists(), isFalse);
+  });
+
+  test('file-backed store falls back to copy when rename cannot replace file',
+      () async {
+    final fileSystem = _TestLocalStorageFileSystem();
+    final store = await LocalStorageFileStore.open(
+      file: storageFile,
+      fileSystem: fileSystem,
+    );
+
+    await store.update<void>((snapshot) {
+      snapshot.settings['theme_mode'] = 'light';
+    });
+
+    fileSystem.onRename = (source, newPath) {
+      if (source.path.endsWith('.tmp') && newPath == storageFile.path) {
+        throw FileSystemException('cross-device rename', source.path);
+      }
+    };
+
+    await store.update<void>((snapshot) {
+      snapshot.settings['theme_mode'] = 'dark';
+    });
+
+    final persisted =
+        jsonDecode(await storageFile.readAsString()) as Map<String, dynamic>;
+    expect(
+        (persisted['settings'] as Map<String, dynamic>)['theme_mode'], 'dark');
+    expect(await File('${storageFile.path}.bak').exists(), isFalse);
+    expect(await File('${storageFile.path}.tmp').exists(), isFalse);
+  });
+
+  test(
+      'file-backed store keeps new snapshot when temp cleanup fails after copy fallback',
+      () async {
+    final fileSystem = _TestLocalStorageFileSystem();
+    final store = await LocalStorageFileStore.open(
+      file: storageFile,
+      fileSystem: fileSystem,
+    );
+
+    await store.update<void>((snapshot) {
+      snapshot.settings['theme_mode'] = 'light';
+    });
+
+    fileSystem.onRename = (source, newPath) {
+      if (source.path.endsWith('.tmp') && newPath == storageFile.path) {
+        throw FileSystemException('cross-device rename', source.path);
+      }
+    };
+    var deleteFailureInjected = false;
+    fileSystem.onDelete = (file) {
+      if (!deleteFailureInjected && file.path.endsWith('.tmp')) {
+        deleteFailureInjected = true;
+        throw FileSystemException('temp cleanup failed', file.path);
+      }
+    };
+
+    await store.update<void>((snapshot) {
+      snapshot.settings['theme_mode'] = 'dark';
+    });
+
+    final inMemoryTheme = await store.read<String?>(
+      (snapshot) => snapshot.settings['theme_mode']?.toString(),
+    );
+    final persisted =
+        jsonDecode(await storageFile.readAsString()) as Map<String, dynamic>;
+
+    expect(inMemoryTheme, 'dark');
+    expect(
+      (persisted['settings'] as Map<String, dynamic>)['theme_mode'],
+      'dark',
+    );
+  });
+
+  test('file-backed store restores replacement backup on next open', () async {
+    final backupFile = File('${storageFile.path}.bak');
+    await backupFile.writeAsString(
+      '{"format_version":2,"settings":{"theme_mode":"light"},"history":[],"follows":[],"tags":[]}',
+      flush: true,
+    );
+
+    final store = await LocalStorageFileStore.open(file: storageFile);
+    final restoredTheme = await store.read<String?>(
+      (snapshot) => snapshot.settings['theme_mode']?.toString(),
+    );
+
+    expect(restoredTheme, 'light');
+    expect(await storageFile.exists(), isTrue);
+    expect(await backupFile.exists(), isFalse);
+  });
+
+  test('file-backed store restores valid temp snapshot on next open', () async {
+    final tempFile = File('${storageFile.path}.tmp');
+    await tempFile.writeAsString(
+      '{"format_version":2,"settings":{"theme_mode":"dark"},"history":[],"follows":[],"tags":[]}',
+      flush: true,
+    );
+
+    final store = await LocalStorageFileStore.open(file: storageFile);
+    final restoredTheme = await store.read<String?>(
+      (snapshot) => snapshot.settings['theme_mode']?.toString(),
+    );
+
+    expect(restoredTheme, 'dark');
+    expect(await storageFile.exists(), isTrue);
+    expect(await tempFile.exists(), isFalse);
+  });
+
+  test('file-backed store restores backup when target is invalid on next open',
+      () async {
+    final backupFile = File('${storageFile.path}.bak');
+    await storageFile.writeAsString('{"settings":', flush: true);
+    await backupFile.writeAsString(
+      '{"format_version":2,"settings":{"theme_mode":"light"},"history":[],"follows":[],"tags":[]}',
+      flush: true,
+    );
+
+    final store = await LocalStorageFileStore.open(file: storageFile);
+    final restoredTheme = await store.read<String?>(
+      (snapshot) => snapshot.settings['theme_mode']?.toString(),
+    );
+
+    expect(restoredTheme, 'light');
+    expect(await backupFile.exists(), isFalse);
+  });
+
+  test('file-backed store removes directory-shaped target before first write',
+      () async {
+    await Directory(storageFile.path).create();
+
+    final store = await LocalStorageFileStore.open(file: storageFile);
+    final restoredTheme = await store.read<String?>(
+      (snapshot) => snapshot.settings['theme_mode']?.toString(),
+    );
+
+    expect(restoredTheme, isNull);
+    expect(await storageFile.exists(), isTrue);
+    expect(await Directory(storageFile.path).exists(), isFalse);
+  });
+
+  test('file-backed store backs up corrupt snapshots before repairing',
+      () async {
+    await storageFile.writeAsString('{"settings":');
+
+    await expectLater(
+      LocalStorageFileStore.open(file: storageFile),
+      throwsA(isA<LocalStorageCorruptionException>()),
+    );
+
+    final repairedStore = await LocalStorageFileStore.open(
+      file: storageFile,
+      repairCorruptFile: true,
+    );
+    final recoveryInfo = repairedStore.lastRecoveryInfo;
+    expect(recoveryInfo, isNotNull);
+
+    final backupFile = File(recoveryInfo!.backupFilePath);
+    expect(await backupFile.exists(), isTrue);
+    expect(await backupFile.readAsString(), '{"settings":');
+
+    final repairedPayload =
+        jsonDecode(await storageFile.readAsString()) as Map<String, dynamic>;
+    expect(
+      repairedPayload['format_version'],
+      FileStorageSnapshot.currentFormatVersion,
+    );
+    expect(repairedPayload['settings'], isEmpty);
+  });
+
+  test(
+      'file-backed store partially recovers complete sections from corrupt JSON',
+      () async {
+    await storageFile.writeAsString(
+      '{"settings":{"theme_mode":"dark","blocked_keywords":["剧透"]},"history":',
+      flush: true,
+    );
+
+    final repairedStore = await LocalStorageFileStore.open(
+      file: storageFile,
+      repairCorruptFile: true,
+    );
+    final recoveryInfo = repairedStore.lastRecoveryInfo;
+    final settings = FileSettingsRepository(repairedStore);
+
+    expect(recoveryInfo?.recoveredSections, contains('settings'));
+    expect(await settings.readValue<String>('theme_mode'), 'dark');
+    expect(
+      await settings.readValue<List<String>>('blocked_keywords'),
+      ['剧透'],
+    );
+  });
+}
+
+class _TestLocalStorageFileSystem extends LocalStorageFileSystem {
+  _TestLocalStorageFileSystem();
+
+  void Function(File source, String newPath)? onRename;
+  void Function(File source, String newPath)? onCopy;
+  void Function(File file)? onDelete;
+
+  @override
+  Future<File> rename(File file, String newPath) async {
+    onRename?.call(file, newPath);
+    return super.rename(file, newPath);
+  }
+
+  @override
+  Future<File> copy(File file, String newPath) async {
+    onCopy?.call(file, newPath);
+    return super.copy(file, newPath);
+  }
+
+  @override
+  Future<void> delete(File file) async {
+    onDelete?.call(file);
+    return super.delete(file);
+  }
 }

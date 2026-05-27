@@ -7,11 +7,48 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'base_player.dart';
 import 'player_backend.dart';
 import 'player_diagnostics.dart';
 import 'player_state.dart';
+
+const String _mediaKitNativeReferenceHolderPrefix =
+    'com.alexmercerind.media_kit.NativeReferenceHolder.';
+
+Future<void>? _pendingAndroidDebugMediaKitReferenceCleanup;
+
+@visibleForTesting
+bool isMediaKitNativeReferenceHolderPath(String filePath) {
+  final name = filePath.split(Platform.pathSeparator).last;
+  return name.startsWith(_mediaKitNativeReferenceHolderPrefix);
+}
+
+@visibleForTesting
+Future<int> deleteMediaKitNativeReferenceHolderFilesInDirectory(
+  Directory directory,
+) async {
+  if (!await directory.exists()) {
+    return 0;
+  }
+  var deleted = 0;
+  await for (final entity in directory.list(followLinks: false)) {
+    if (entity is! File ||
+        !isMediaKitNativeReferenceHolderPath(entity.path)) {
+      continue;
+    }
+    try {
+      if (await entity.exists()) {
+        await entity.delete();
+        deleted += 1;
+      }
+    } catch (_) {
+      // Best-effort cleanup for debug-only media_kit reference holder files.
+    }
+  }
+  return deleted;
+}
 
 class MpvPlayer implements BasePlayer {
   MpvPlayer({
@@ -23,7 +60,8 @@ class MpvPlayer implements BasePlayer {
     this.hardwareDecoder = 'auto-safe',
     this.logEnabled = false,
     this.eventLogger,
-  });
+    bool? isAndroid,
+  }) : isAndroid = isAndroid ?? defaultTargetPlatform == TargetPlatform.android;
 
   static const Duration _progressBroadcastStep = Duration(seconds: 1);
   static const Duration _bufferBroadcastStep = Duration(seconds: 1);
@@ -37,7 +75,7 @@ class MpvPlayer implements BasePlayer {
   static const Duration _androidInitialEmbeddedPlatformReadyTimeout =
       Duration(milliseconds: 250);
   static const Duration _androidInitialEmbeddedSurfaceReadyBudget =
-      Duration(milliseconds: 350);
+      Duration(milliseconds: 800);
   static const Duration _androidInitialEmbeddedSurfaceReadyPollInterval =
       Duration(milliseconds: 150);
   static const Duration _androidInitialEmbeddedSurfaceAttachStabilizeTimeout =
@@ -55,9 +93,9 @@ class MpvPlayer implements BasePlayer {
   static const Duration _androidReopenFreshSurfaceWaitBudget =
       Duration(milliseconds: 800);
   static const Duration _androidInitialEmbeddedPlaySurfaceReadyTimeout =
-      Duration(milliseconds: 2200);
+      Duration(milliseconds: 80);
   static const Duration _androidInitialEmbeddedPlaySurfaceFallbackTimeout =
-      Duration(milliseconds: 1000);
+      Duration(milliseconds: 50);
   static const Duration _androidEmbeddedHardwareDecoderReadyTimeout =
       Duration(milliseconds: 900);
   static const Duration _androidMediaCodecReinitClassificationThreshold =
@@ -75,6 +113,7 @@ class MpvPlayer implements BasePlayer {
   final String hardwareDecoder;
   final bool logEnabled;
   final void Function(String message)? eventLogger;
+  final bool isAndroid;
   final StreamController<PlayerState> _stateController =
       StreamController<PlayerState>.broadcast();
   final StreamController<PlayerDiagnostics> _diagnosticsController =
@@ -146,7 +185,7 @@ class MpvPlayer implements BasePlayer {
       final previousState = _currentState;
       final openPreparation = resolveMpvOpenPreparation(
         previousState: previousState,
-        isAndroid: Platform.isAndroid,
+        isAndroid: isAndroid,
       );
       final previousSyntheticPlaylistFile = _activeSyntheticPlaylistFile;
       final openPlan = await _resolveOpenPlan(source);
@@ -182,6 +221,11 @@ class MpvPlayer implements BasePlayer {
         player,
         source,
       );
+      if (androidOpenPreparation.deferPlayUntilSurfaceReady) {
+        await _waitForAndroidSurfaceBeforeInitialOpen(
+          previousSurface: androidOpenPreparation.previousSurface,
+        );
+      }
       await player.open(
         mk.Media(
           openPlan.mediaUri.toString(),
@@ -189,13 +233,6 @@ class MpvPlayer implements BasePlayer {
         ),
         play: false,
       );
-      if (androidOpenPreparation.deferPlayUntilSurfaceReady) {
-        _pendingAndroidEmbeddedPlayGate = (
-          generation: _androidEmbeddedPlayGateGeneration,
-          previousSurface: androidOpenPreparation.previousSurface,
-          isInitialOpen: !openPreparation.shouldStopBeforeOpen,
-        );
-      }
       if (openPlan.loadsAudioInsideMedia || preloadedExternalAudioConfigured) {
         await player.setAudioTrack(mk.AudioTrack.auto());
       } else if (source.externalAudio != null) {
@@ -321,8 +358,75 @@ class MpvPlayer implements BasePlayer {
     });
   }
 
+  Future<void> _waitForAndroidSurfaceBeforeInitialOpen({
+    required AndroidSurfaceSnapshot previousSurface,
+  }) async {
+    if (!isAndroid) {
+      return;
+    }
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    final platform = controller.notifier.value;
+    if (platform == null) {
+      return;
+    }
+    final refresh = await waitForFreshAndroidSurfacePublication(
+      platform: platform,
+      textureId: controller.id,
+      previousSurface: previousSurface,
+      timeout: _androidInitialEmbeddedPlaySurfaceReadyTimeout,
+      requireSurfaceHandle: true,
+    );
+    if (_isClosedForOperations) {
+      return;
+    }
+    if (refresh.ready) {
+      await waitForAndroidSurfaceAttachStabilization(
+        platform,
+        timeout: _androidEmbeddedSurfaceAttachStabilizeTimeout,
+      );
+      await _awaitAndroidEmbeddedSurfaceFrames();
+      _logEvent(
+        'setSource surface-ready before-open '
+        'wid=${refresh.currentSurface.wid} '
+        'texture=${refresh.currentSurface.textureId}',
+      );
+      return;
+    }
+    final lateRefresh = await waitForFreshAndroidSurfacePublication(
+      platform: platform,
+      textureId: controller.id,
+      previousSurface: refresh.currentSurface,
+      timeout: _androidInitialEmbeddedPlaySurfaceFallbackTimeout,
+      requireSurfaceHandle: true,
+    );
+    if (_isClosedForOperations) {
+      return;
+    }
+    if (lateRefresh.ready) {
+      await waitForAndroidSurfaceAttachStabilization(
+        platform,
+        timeout: _androidEmbeddedSurfaceAttachStabilizeTimeout,
+      );
+      await _awaitAndroidEmbeddedSurfaceFrames();
+      _logEvent(
+        'setSource surface-ready before-open late=true '
+        'wid=${lateRefresh.currentSurface.wid} '
+        'texture=${lateRefresh.currentSurface.textureId}',
+      );
+      return;
+    }
+    _logEvent(
+      'setSource surface still pending before open '
+      'wid=${lateRefresh.currentSurface.wid} '
+      'texture=${lateRefresh.currentSurface.textureId}',
+    );
+  }
+
   Future<void> _awaitAndroidEmbeddedPlayGateIfNeeded() async {
-    if (!Platform.isAndroid) {
+    if (!isAndroid) {
       return;
     }
     final gate = _pendingAndroidEmbeddedPlayGate;
@@ -421,7 +525,7 @@ class MpvPlayer implements BasePlayer {
   Future<void> _awaitAndroidEmbeddedHardwareDecoderReadyIfNeeded({
     required DateTime surfaceReadyAt,
   }) async {
-    if (!Platform.isAndroid) {
+    if (!isAndroid) {
       return;
     }
     final controllerConfiguration =
@@ -562,7 +666,7 @@ class MpvPlayer implements BasePlayer {
         customOutputEnabled: controllerConfiguration?.vo != null,
         videoOutputDriver: controllerConfiguration?.vo ?? videoOutputDriver,
         hardwareDecoder: controllerConfiguration?.hwdec ?? hardwareDecoder,
-        isAndroid: Platform.isAndroid,
+        isAndroid: isAndroid,
       )) {
         _logEvent(
           'captureScreenshot skip-native reason=android-surface-output',
@@ -816,7 +920,7 @@ class MpvPlayer implements BasePlayer {
       _awaitAndroidEmbeddedSurfaceRefreshForReopen(
     AndroidSurfaceSnapshot previousSurface,
   ) async {
-    if (!Platform.isAndroid) {
+    if (!isAndroid) {
       return null;
     }
     final controller = _controller;
@@ -897,7 +1001,7 @@ class MpvPlayer implements BasePlayer {
     AndroidEmbeddedSurfaceWarmupPolicy? warmupPolicy,
     String phase = 'warmup',
   }) async {
-    if (!Platform.isAndroid) {
+    if (!isAndroid) {
       return null;
     }
     final controller = _controller;
@@ -1046,6 +1150,7 @@ class MpvPlayer implements BasePlayer {
     }
     _emit(_currentState.copyWith(status: PlaybackStatus.initializing));
     if (!_mediaKitInitialized) {
+      await _sanitizeAndroidDebugMediaKitReferenceHolderFiles();
       mk.MediaKit.ensureInitialized();
       _mediaKitInitialized = true;
     }
@@ -1228,6 +1333,7 @@ class MpvPlayer implements BasePlayer {
             if (completer != null && !completer.isCompleted) {
               completer.complete(readyAt);
             }
+            _logEvent('player diagnostics decoder=hardware');
           }
           if (!_emittedMediaCodecDeviceFailureForSource &&
               normalizedMessage.contains('could not create device')) {
@@ -1353,6 +1459,34 @@ class MpvPlayer implements BasePlayer {
 
   void _logEvent(String message) {
     eventLogger?.call(message);
+  }
+
+  Future<void> _sanitizeAndroidDebugMediaKitReferenceHolderFiles() async {
+    if (!kDebugMode || !isAndroid) {
+      return;
+    }
+    final existing = _pendingAndroidDebugMediaKitReferenceCleanup;
+    if (existing != null) {
+      await existing;
+      return;
+    }
+    final cleanup = () async {
+      try {
+        final supportDirectory = await getApplicationSupportDirectory();
+        final deleted =
+            await deleteMediaKitNativeReferenceHolderFilesInDirectory(
+          supportDirectory,
+        );
+        _logEvent(
+          'debug native-reference-holder cleanup deleted=$deleted '
+          'dir=${supportDirectory.path}',
+        );
+      } catch (error) {
+        _logEvent('debug native-reference-holder cleanup failed error=$error');
+      }
+    }();
+    _pendingAndroidDebugMediaKitReferenceCleanup = cleanup;
+    await cleanup;
   }
 
   bool _shouldIgnoreRuntimeMessage(String message) {
@@ -1614,7 +1748,20 @@ bool shouldRewriteSingleSourceHlsManifest(PlaybackSource source) {
   }
   final manifestUri = source.masterPlaylistUrl ?? source.url;
   return _looksLikeMmcdnEdgeLowLatencyMasterUri(source.url) ||
-      _looksLikeMmcdnEdgeLowLatencyMasterUri(manifestUri);
+      _looksLikeMmcdnEdgeLowLatencyMasterUri(manifestUri) ||
+      _looksLikeDoppioLowLatencyHlsUri(source.url) ||
+      _looksLikeDoppioLowLatencyHlsUri(manifestUri);
+}
+
+bool _isSingleSourceLocalizedLowLatencyMaster(PlaybackSource source) {
+  if (source.externalAudio != null) {
+    return false;
+  }
+  final manifestUri = source.masterPlaylistUrl ?? source.url;
+  return _looksLikeMmcdnEdgeLowLatencyMasterUri(source.url) ||
+      _looksLikeMmcdnEdgeLowLatencyMasterUri(manifestUri) ||
+      _looksLikeDoppioLowLatencyHlsUri(source.url) ||
+      _looksLikeDoppioLowLatencyHlsUri(manifestUri);
 }
 
 @visibleForTesting
@@ -1622,13 +1769,29 @@ String rewriteHlsManifestWithAbsoluteUris({
   required Uri playlistUri,
   required String manifest,
 }) {
-  return manifest
-      .split('\n')
-      .map((line) => _rewriteHlsManifestLine(
-            playlistUri: playlistUri,
-            line: line,
-          ))
-      .join('\n');
+  final lines = manifest.split('\n');
+  final rewritten = <String>[];
+  String? pendingMouflonUri;
+
+  for (final originalLine in lines) {
+    final trimmed = originalLine.trim();
+    if (trimmed.startsWith('#EXT-X-MOUFLON:URI:')) {
+      pendingMouflonUri = trimmed.substring('#EXT-X-MOUFLON:URI:'.length);
+      continue;
+    }
+    final line = _rewriteHlsManifestLine(
+      playlistUri: playlistUri,
+      line: originalLine,
+      pendingMouflonUri: pendingMouflonUri,
+    );
+    if (pendingMouflonUri != null &&
+        _consumedPendingMouflonUri(originalLine.trim())) {
+      pendingMouflonUri = null;
+    }
+    rewritten.add(line);
+  }
+
+  return rewritten.join('\n');
 }
 
 @visibleForTesting
@@ -1735,10 +1898,13 @@ Future<File?> maybeWriteResolvedSingleSourceHlsPlaylistFile(
   }
   final manifestUri = source.masterPlaylistUrl ?? source.url;
   try {
-    final manifest = await _fetchHlsManifest(
-      manifestUri,
-      headers: source.headers,
-    );
+    final embeddedManifest = source.masterPlaylistContent?.trim() ?? '';
+    final manifest = embeddedManifest.isNotEmpty
+        ? embeddedManifest
+        : await _fetchHlsManifest(
+            manifestUri,
+            headers: source.headers,
+          );
     final rewritten = rewriteHlsManifestWithAbsoluteUris(
       playlistUri: manifestUri,
       manifest: manifest,
@@ -1761,7 +1927,9 @@ Future<File?> maybeWriteResolvedSingleSourceHlsPlaylistFile(
 bool shouldAlwaysLocalizeSingleSourceHlsManifest(PlaybackSource source) {
   final manifestUri = source.masterPlaylistUrl ?? source.url;
   return _looksLikeMmcdnEdgeLowLatencyMasterUri(source.url) ||
-      _looksLikeMmcdnEdgeLowLatencyMasterUri(manifestUri);
+      _looksLikeMmcdnEdgeLowLatencyMasterUri(manifestUri) ||
+      _looksLikeDoppioLowLatencyHlsUri(source.url) ||
+      _looksLikeDoppioLowLatencyHlsUri(manifestUri);
 }
 
 Future<String> _fetchHlsManifest(
@@ -1860,7 +2028,21 @@ String _hlsUriLeafName(String raw) {
 String _rewriteHlsManifestLine({
   required Uri playlistUri,
   required String line,
+  String? pendingMouflonUri,
 }) {
+  if (pendingMouflonUri != null && line.trim().startsWith('#EXT-X-PART:')) {
+    final replacedPartLine = line.replaceAllMapped(
+      RegExp(_hlsUriAttributePattern),
+      (match) {
+        final resolved = playlistUri.resolve(pendingMouflonUri).toString();
+        if (match.group(2) != null) {
+          return 'URI="${_escapeHlsQuotedString(resolved)}"';
+        }
+        return 'URI=$resolved';
+      },
+    );
+    return replacedPartLine;
+  }
   final replacedAttributes = line.replaceAllMapped(
     RegExp(_hlsUriAttributePattern),
     (match) {
@@ -1879,7 +2061,20 @@ String _rewriteHlsManifestLine({
   if (trimmed.isEmpty || trimmed.startsWith('#')) {
     return replacedAttributes;
   }
+  if (pendingMouflonUri != null) {
+    return playlistUri.resolve(pendingMouflonUri).toString();
+  }
   return playlistUri.resolve(trimmed).toString();
+}
+
+bool _consumedPendingMouflonUri(String trimmedLine) {
+  if (trimmedLine.isEmpty) {
+    return false;
+  }
+  if (trimmedLine.startsWith('#EXT-X-PART:')) {
+    return true;
+  }
+  return !trimmedLine.startsWith('#');
 }
 
 @visibleForTesting
@@ -2026,10 +2221,21 @@ bool usesEmbeddedAndroidMediaCodecOutput({
   required bool compatMode,
   required bool customOutputEnabled,
   required String videoOutputDriver,
+  bool enableHardwareAcceleration = true,
+  String hardwareDecoder = 'auto-safe',
 }) {
   final normalizedVideoOutput = videoOutputDriver.trim().toLowerCase();
+  final normalizedHardwareDecoder = hardwareDecoder.trim().toLowerCase();
+
+  final isDirectMediaCodec = enableHardwareAcceleration &&
+      ((normalizedHardwareDecoder.startsWith('mediacodec') &&
+              !normalizedHardwareDecoder.endsWith('-copy')) ||
+          normalizedHardwareDecoder == 'auto' ||
+          normalizedHardwareDecoder == 'auto-safe');
+
   return compatMode ||
-      (customOutputEnabled && normalizedVideoOutput == 'mediacodec_embed');
+      (customOutputEnabled && normalizedVideoOutput == 'mediacodec_embed') ||
+      (!customOutputEnabled && isDirectMediaCodec);
 }
 
 @visibleForTesting
@@ -2043,8 +2249,13 @@ bool shouldWarmAndroidMediaCodecOpenPath({
   }
   final normalizedVideoOutput = videoOutputDriver.trim().toLowerCase();
   final normalizedHardwareDecoder = hardwareDecoder.trim().toLowerCase();
-  return normalizedHardwareDecoder.startsWith('mediacodec') ||
-      normalizedVideoOutput == 'mediacodec_embed';
+
+  final isDirectMediaCodec = (normalizedHardwareDecoder.startsWith('mediacodec') &&
+          !normalizedHardwareDecoder.endsWith('-copy')) ||
+      normalizedHardwareDecoder == 'auto' ||
+      normalizedHardwareDecoder == 'auto-safe';
+
+  return isDirectMediaCodec || normalizedVideoOutput == 'mediacodec_embed';
 }
 
 typedef AndroidEmbeddedSurfaceWarmupPolicy = ({
@@ -2546,6 +2757,8 @@ Map<String, String> resolveMpvSourcePlatformProperties({
 }) {
   final prefersChaturbateProxyStableBuffer =
       source.bufferProfile == PlaybackBufferProfile.chaturbateLlHlsProxyStable;
+  final prefersLoopbackStableBuffer =
+      source.bufferProfile == PlaybackBufferProfile.loopbackStableHls;
   final prefersChaturbateDirectStableFallback =
       prefersChaturbateProxyStableBuffer &&
           !_looksLikeChaturbateLoopbackProxySource(source);
@@ -2558,8 +2771,9 @@ Map<String, String> resolveMpvSourcePlatformProperties({
       (source.masterPlaylistUrl != null ||
           (source.masterPlaylistContent?.trim().isNotEmpty ?? false));
   final prefersStableMasterEdgeHls = prefersEdgeLowLatencyHls &&
-      source.externalAudio == null &&
-      _looksLikeMmcdnEdgeLowLatencyMasterUri(source.url);
+      _isSingleSourceLocalizedLowLatencyMaster(source);
+  final prefersStripchatLoopbackStableMaster = prefersEdgeLowLatencyHls &&
+      _looksLikeStripchatLoopbackProxySource(source);
   final inlinesStableSplitEdgeHls =
       prefersStableSplitEdgeHls && shouldInlineSplitHlsAudioIntoSource(source);
   final prefersStableBuffer =
@@ -2621,7 +2835,31 @@ Map<String, String> resolveMpvSourcePlatformProperties({
     }
     properties['video-sync'] = 'audio';
   } else if (prefersEdgeLowLatencyHls) {
-    if (prefersStableSplitEdgeHls || prefersStableMasterEdgeHls) {
+    if (prefersStripchatLoopbackStableMaster) {
+      properties.addAll(const <String, String>{
+        'cache': 'yes',
+        'cache-secs': '3',
+        'demuxer-seekable-cache': 'no',
+        'demuxer-donate-buffer': 'no',
+        'demuxer-max-back-bytes': '25165824',
+        'demuxer-max-bytes': '25165824',
+        'demuxer-readahead-secs': '3',
+        'cache-pause': 'no',
+        'cache-pause-wait': '1',
+        'cache-pause-initial': 'no',
+        'audio-buffer': '0.2',
+      });
+      properties['demuxer-lavf-o'] = _buildLavfOptionString(const {
+        'protocol_whitelist': 'file,crypto,data,http,https,tcp,tls',
+        'live_start_index': '-2',
+        'seg_max_retry': '6',
+        'http_persistent': '1',
+        'http_multiple': '1',
+      });
+      properties['demuxer-lavf-analyzeduration'] = '2';
+      properties['demuxer-lavf-probesize'] = '500000';
+      properties['video-sync'] = 'audio';
+    } else if (prefersStableSplitEdgeHls || prefersStableMasterEdgeHls) {
       // Split LL-HLS on mmcdn becomes unstable when mpv hugs the live edge
       // too tightly. When we can localize a real master for the split stream,
       // reuse the buffered edge-master startup profile instead of the tighter
@@ -2641,7 +2879,8 @@ Map<String, String> resolveMpvSourcePlatformProperties({
                 'cache-pause-initial': 'yes',
                 'audio-buffer': '0.4',
               }
-            : prefersStableMasterEdgeHls
+            : (prefersStableMasterEdgeHls ||
+                    prefersStripchatLoopbackStableMaster)
                 ? const <String, String>{
                     'cache': 'yes',
                     'cache-secs': '8',
@@ -2670,11 +2909,9 @@ Map<String, String> resolveMpvSourcePlatformProperties({
                   },
       );
       properties['demuxer-lavf-o'] = _buildLavfOptionString({
-        if (inlinesStableSplitEdgeHls || prefersStableMasterEdgeHls)
+        if (inlinesStableSplitEdgeHls ||
+            prefersStableMasterEdgeHls)
           'protocol_whitelist': 'file,crypto,data,http,https,tcp,tls',
-        // Start from the very last segment (live_start_index=-1) to avoid
-        // starting too far behind the live edge, which causes a cascade of
-        // `expired from playlists` skips and PTS discontinuities.
         'live_start_index': '-1',
         'seg_max_retry': '3',
         'http_persistent': '1',
@@ -2708,21 +2945,55 @@ Map<String, String> resolveMpvSourcePlatformProperties({
       properties['demuxer-lavf-o'] =
           'live_start_index=-1,seg_max_retry=6,http_persistent=1,http_multiple=1';
     }
-  } else if (prefersStableBuffer) {
+  } else if (prefersLoopbackStableBuffer) {
     properties.addAll(const <String, String>{
       'cache': 'yes',
+      'cache-secs': '8',
+      'demuxer-seekable-cache': 'no',
+      'demuxer-donate-buffer': 'no',
+      'demuxer-max-back-bytes': '67108864',
+      'demuxer-max-bytes': '67108864',
+      'demuxer-readahead-secs': '8',
+      'cache-pause': 'yes',
+      'cache-pause-wait': '2',
+      'cache-pause-initial': 'yes',
+      'audio-buffer': '0.4',
+    });
+    properties['demuxer-lavf-analyzeduration'] = '3';
+    properties['demuxer-lavf-probesize'] = '500000';
+    properties['video-sync'] = 'display-tempo';
+  } else if (prefersStableBuffer) {
+    final isFlv = _looksLikeLiveFlv(source.url);
+    properties.addAll(<String, String>{
+      'cache': 'yes',
       'cache-secs': '10',
-      'demuxer-seekable-cache': 'yes',
+      'demuxer-seekable-cache': isFlv ? 'no' : 'yes',
       'demuxer-donate-buffer': 'yes',
       'demuxer-max-back-bytes': '67108864',
       'demuxer-max-bytes': '67108864',
       'demuxer-readahead-secs': '10',
     });
+  } else if (prefersLoopbackStableBuffer) {
+    properties.addAll(const <String, String>{
+      'cache': 'yes',
+      'cache-secs': '8',
+      'demuxer-seekable-cache': 'no',
+      'demuxer-donate-buffer': 'no',
+      'demuxer-max-back-bytes': '67108864',
+      'demuxer-max-bytes': '67108864',
+      'demuxer-readahead-secs': '8',
+      'cache-pause': 'yes',
+      'cache-pause-wait': '2',
+      'cache-pause-initial': 'yes',
+      'audio-buffer': '0.4',
+    });
   } else {
+    final isFlv = _looksLikeLiveFlv(source.url);
     properties.addAll(<String, String>{
       'cache': 'yes',
       'cache-secs': doubleBufferingEnabled ? '3' : '2',
-      'demuxer-seekable-cache': doubleBufferingEnabled ? 'yes' : 'no',
+      'demuxer-seekable-cache':
+          (doubleBufferingEnabled && !isFlv) ? 'yes' : 'no',
       'demuxer-donate-buffer': doubleBufferingEnabled ? 'yes' : 'no',
       'demuxer-max-back-bytes':
           doubleBufferingEnabled ? '33554432' : '16777216',
@@ -2736,7 +3007,11 @@ Map<String, String> resolveMpvSourcePlatformProperties({
   properties['load-unsafe-playlists'] =
       shouldAllowUnsafePlaylistsForSource(source) ? 'yes' : 'no';
   final normalizedHlsBitrate = source.hlsBitrate?.trim() ?? '';
-  if (prefersChaturbateProxyStableBuffer || prefersLocalizedSplitEdgeMaster) {
+  if (prefersChaturbateProxyStableBuffer ||
+      prefersLocalizedSplitEdgeMaster ||
+      prefersStableMasterEdgeHls ||
+      prefersStripchatLoopbackStableMaster ||
+      prefersLoopbackStableBuffer) {
     properties.remove('hls-bitrate');
   } else if (normalizedHlsBitrate.isNotEmpty) {
     properties['hls-bitrate'] = normalizedHlsBitrate;
@@ -2782,6 +3057,8 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
     compatMode: compatMode,
     customOutputEnabled: customOutputEnabled,
     videoOutputDriver: sanitizedVideoOutputDriver,
+    enableHardwareAcceleration: enableHardwareAcceleration,
+    hardwareDecoder: sanitizedHardwareDecoder,
   );
   final controllerConfiguration = customOutputEnabled
       ? VideoControllerConfiguration(
@@ -2800,6 +3077,8 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
               enableHardwareAcceleration: enableHardwareAcceleration,
               hwdec:
                   enableHardwareAcceleration ? sanitizedHardwareDecoder : 'no',
+              androidAttachSurfaceAfterVideoParameters:
+                  attachAfterVideoParameters,
             );
   final platformProperties = <String, String>{
     'cache': 'yes',
@@ -2839,6 +3118,8 @@ bool? _resolveAndroidAttachSurfaceTiming({
   required bool compatMode,
   required bool customOutputEnabled,
   required String videoOutputDriver,
+  required bool enableHardwareAcceleration,
+  required String hardwareDecoder,
 }) {
   if (shouldFallbackToSafeAndroidVideoOutput(
     compatMode: compatMode,
@@ -2851,6 +3132,8 @@ bool? _resolveAndroidAttachSurfaceTiming({
     compatMode: compatMode,
     customOutputEnabled: customOutputEnabled,
     videoOutputDriver: videoOutputDriver,
+    enableHardwareAcceleration: enableHardwareAcceleration,
+    hardwareDecoder: hardwareDecoder,
   )) {
     return null;
   }
@@ -2978,12 +3261,34 @@ bool _looksLikeChaturbateLoopbackProxySource(PlaybackSource source) {
   return isLoopback && uri.path.contains('/chaturbate-llhls/');
 }
 
+bool _looksLikeStripchatLoopbackProxySource(PlaybackSource source) {
+  final uri = source.url;
+  final host = uri.host.toLowerCase();
+  final isLoopback = host == '127.0.0.1' ||
+      host == 'localhost' ||
+      host == '::1' ||
+      host == '[::1]';
+  return isLoopback && uri.path.contains('/stripchat-llhls/');
+}
+
 bool _looksLikeMmcdnEdgeLowLatencyMasterUri(Uri uri) {
   if (!_isMmcdnHlsUri(uri)) {
     return false;
   }
   final path = uri.path.toLowerCase();
   return path.contains('/v1/edge/streams/') && path.endsWith('/llhls.m3u8');
+}
+
+bool _looksLikeDoppioLowLatencyHlsUri(Uri uri) {
+  final host = uri.host.toLowerCase();
+  if (!(host.startsWith('media-hls.') || host.startsWith('edge-hls.'))) {
+    return false;
+  }
+  final path = uri.path.toLowerCase();
+  if (!path.endsWith('.m3u8')) {
+    return false;
+  }
+  return uri.queryParameters['playlistType']?.toLowerCase() == 'lowlatency';
 }
 
 bool _looksLikeMmcdnSplitLowLatencyHlsSource(PlaybackSource source) {
@@ -2999,14 +3304,28 @@ bool _looksLikeMmcdnSplitLowLatencyHlsSource(PlaybackSource source) {
 
 @visibleForTesting
 bool shouldAllowUnsafePlaylistsForSource(PlaybackSource source) {
-  if (_isMmcdnHlsUri(source.url)) {
+  if (_isMmcdnHlsUri(source.url) ||
+      _looksLikeDoppioLowLatencyHlsUri(source.url) ||
+      _looksLikeStripchatLoopbackProxySource(source)) {
+    return true;
+  }
+  final masterPlaylistUrl = source.masterPlaylistUrl;
+  if (masterPlaylistUrl != null &&
+      (_isMmcdnHlsUri(masterPlaylistUrl) ||
+          _looksLikeDoppioLowLatencyHlsUri(masterPlaylistUrl))) {
     return true;
   }
   final externalAudio = source.externalAudio;
-  return externalAudio != null && _isMmcdnHlsUri(externalAudio.url);
+  return externalAudio != null &&
+      (_isMmcdnHlsUri(externalAudio.url) ||
+          _looksLikeDoppioLowLatencyHlsUri(externalAudio.url));
 }
 
 bool _looksLikeLiveFlv(Uri uri) {
+  final host = uri.host.toLowerCase();
+  if (host.split(RegExp(r'[\.\-]')).contains('flv')) {
+    return true;
+  }
   final path = uri.path.toLowerCase();
   if (path.endsWith('.flv') || path.contains('/live-bvc/')) {
     return true;

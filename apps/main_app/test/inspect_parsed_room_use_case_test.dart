@@ -8,86 +8,90 @@ import 'package:nolive_app/src/features/settings/application/manage_provider_acc
 import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 void main() {
-  test('inspect parsed room fails fast for chaturbate without browser cookie',
-      () async {
-    var created = 0;
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: ChaturbateProvider.kDescriptor,
-          builder: () {
-            created += 1;
-            return _FakeChaturbateRoomDetailProvider();
-          },
+  test(
+    'inspect parsed room fails fast for chaturbate without browser cookie',
+    () async {
+      var created = 0;
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: ChaturbateProvider.kDescriptor,
+            builder: () {
+              created += 1;
+              return _FakeChaturbateRoomDetailProvider();
+            },
+          ),
+        );
+      final settingsRepository = InMemorySettingsRepository();
+      final secureCredentialStore = InMemorySecureCredentialStore();
+      final useCase = InspectParsedRoomUseCase(
+        registry,
+        loadProviderAccountSettings: LoadProviderAccountSettingsUseCase(
+          settingsRepository,
+          secureCredentialStore,
+        ),
+        requireChaturbateCookiePreflight: true,
+      );
+
+      await expectLater(
+        () => useCase(
+          const ParsedRoomInput(
+            providerId: ProviderId.chaturbate,
+            providerName: 'Chaturbate',
+            roomId: 'kittengirlxo',
+            normalizedInput: 'https://chaturbate.com/kittengirlxo/',
+          ),
+        ),
+        throwsA(
+          isA<ProviderParseException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('浏览器 Cookie'), contains('账号管理')),
+          ),
         ),
       );
-    final settingsRepository = InMemorySettingsRepository();
-    final secureCredentialStore = InMemorySecureCredentialStore();
-    final useCase = InspectParsedRoomUseCase(
-      registry,
-      loadProviderAccountSettings: LoadProviderAccountSettingsUseCase(
-        settingsRepository,
-        secureCredentialStore,
-      ),
-      requireChaturbateCookiePreflight: true,
-    );
+      expect(created, 0);
+    },
+  );
 
-    await expectLater(
-      () => useCase(
+  test(
+    'inspect parsed room allows chaturbate after cookie preflight',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: ChaturbateProvider.kDescriptor,
+            builder: _FakeChaturbateRoomDetailProvider.new,
+          ),
+        );
+      final settingsRepository = InMemorySettingsRepository();
+      final secureCredentialStore = InMemorySecureCredentialStore(
+        initialValues: const {
+          'account_chaturbate_cookie': 'csrftoken=demo; __cf_bm=demo-bm',
+        },
+      );
+      final useCase = InspectParsedRoomUseCase(
+        registry,
+        loadProviderAccountSettings: LoadProviderAccountSettingsUseCase(
+          settingsRepository,
+          secureCredentialStore,
+        ),
+        requireChaturbateCookiePreflight: true,
+      );
+
+      final inspection = await useCase(
         const ParsedRoomInput(
           providerId: ProviderId.chaturbate,
           providerName: 'Chaturbate',
           roomId: 'kittengirlxo',
-          normalizedInput: 'https://chaturbate.com/kittengirlxo/',
-        ),
-      ),
-      throwsA(
-        isA<ProviderParseException>().having(
-          (error) => error.message,
-          'message',
-          allOf(contains('浏览器 Cookie'), contains('账号管理')),
-        ),
-      ),
-    );
-    expect(created, 0);
-  });
-
-  test('inspect parsed room allows chaturbate after cookie preflight',
-      () async {
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: ChaturbateProvider.kDescriptor,
-          builder: _FakeChaturbateRoomDetailProvider.new,
+          normalizedInput: 'chaturbate:kittengirlxo',
         ),
       );
-    final settingsRepository = InMemorySettingsRepository();
-    final secureCredentialStore = InMemorySecureCredentialStore(
-      initialValues: const {
-        'account_chaturbate_cookie': 'csrftoken=demo; __cf_bm=demo-bm',
-      },
-    );
-    final useCase = InspectParsedRoomUseCase(
-      registry,
-      loadProviderAccountSettings: LoadProviderAccountSettingsUseCase(
-        settingsRepository,
-        secureCredentialStore,
-      ),
-      requireChaturbateCookiePreflight: true,
-    );
 
-    final inspection = await useCase(
-      const ParsedRoomInput(
-        providerId: ProviderId.chaturbate,
-        providerName: 'Chaturbate',
-        roomId: 'kittengirlxo',
-        normalizedInput: 'chaturbate:kittengirlxo',
-      ),
-    );
-
-    expect(inspection.detail.roomId, 'kittengirlxo');
-    expect(inspection.detail.streamerName, 'kittengirlxo');
-  });
+      expect(inspection.detail.roomId, 'kittengirlxo');
+      expect(inspection.detail.streamerName, 'kittengirlxo');
+    },
+  );
 
   test('inspect parsed room prefers injected room detail override', () async {
     var fetchRoomDetailCalls = 0;
@@ -115,10 +119,7 @@ void main() {
         secureCredentialStore,
       ),
       requireChaturbateCookiePreflight: true,
-      roomDetailOverride: ({
-        required providerId,
-        required roomId,
-      }) async {
+      roomDetailOverride: ({required providerId, required roomId}) async {
         if (providerId != ProviderId.chaturbate) {
           return null;
         }
@@ -168,7 +169,7 @@ class _FakeChaturbateRoomDetailProvider extends LiveProvider
       coverUrl: null,
       keyframeUrl: null,
       sourceUrl: 'https://chaturbate.com/$roomId/',
-      danmakuToken: const <String, dynamic>{},
+      danmakuToken: null,
       metadata: const <String, Object?>{},
     );
   }

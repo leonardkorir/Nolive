@@ -22,6 +22,7 @@ class MemoryPlayer implements BasePlayer {
     backend: PlayerBackend.memory,
   );
   bool _initialized = false;
+  bool _disposed = false;
 
   @override
   PlayerBackend get backend => PlayerBackend.memory;
@@ -89,7 +90,9 @@ class MemoryPlayer implements BasePlayer {
 
   @override
   Future<void> stop() async {
-    _emit(_currentState.copyWith(status: PlaybackStatus.ready));
+    _currentSource = null;
+    _emit(_currentState.copyWith(
+        status: PlaybackStatus.ready, clearSource: true));
   }
 
   @override
@@ -113,6 +116,10 @@ class MemoryPlayer implements BasePlayer {
 
   @override
   Future<void> dispose() async {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
     await _stateController.close();
     await _diagnosticsController.close();
   }

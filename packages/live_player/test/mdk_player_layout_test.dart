@@ -100,6 +100,56 @@ void main() {
     expect(status, isNull);
   });
 
+  test('resolveMdkRuntimeEventErrorMessage ignores empty errors', () {
+    expect(
+      resolveMdkRuntimeEventErrorMessage(
+        category: null,
+        detail: null,
+        rawError: null,
+      ),
+      isNull,
+    );
+    expect(
+      resolveMdkRuntimeEventErrorMessage(
+        category: 'render.video',
+        detail: '1st_frame',
+        rawError: '   ',
+      ),
+      isNull,
+    );
+  });
+
+  test('resolveMdkRuntimeEventErrorMessage ignores non-fatal event payloads',
+      () {
+    expect(
+      resolveMdkRuntimeEventErrorMessage(
+        category: 'render.video',
+        detail: '1st_frame',
+        rawError: 'decoder failed',
+      ),
+      isNull,
+    );
+    expect(
+      resolveMdkRuntimeEventErrorMessage(
+        category: 'buffering',
+        detail: 'progress',
+        rawError: 'network jitter',
+      ),
+      isNull,
+    );
+  });
+
+  test('resolveMdkRuntimeEventErrorMessage keeps fatal runtime errors', () {
+    expect(
+      resolveMdkRuntimeEventErrorMessage(
+        category: 'decoder.error',
+        detail: 'open_failed',
+        rawError: 'decoder failed',
+      ),
+      'decoder failed',
+    );
+  });
+
   test('shouldPrimeMdkPlaybackBeforeTexture follows tunnel mode', () {
     expect(
       shouldPrimeMdkPlaybackBeforeTexture(androidTunnel: true),

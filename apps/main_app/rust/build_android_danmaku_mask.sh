@@ -5,6 +5,11 @@ warn() {
   echo "[nolive-rust] $*" >&2
 }
 
+fail_enabled_build() {
+  warn "$*"
+  exit 1
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CRATE_DIR="$SCRIPT_DIR/danmaku_mask"
 OUT_DIR="${1:?output dir required}"
@@ -17,13 +22,11 @@ if [[ ! "$ENABLE_NATIVE_BUILD" =~ ^([Tt][Rr][Uu][Ee]|1|[Yy][Ee][Ss])$ ]]; then
 fi
 
 if ! command -v cargo >/dev/null 2>&1; then
-  warn "cargo not found, skip native danmaku mask build."
-  exit 0
+  fail_enabled_build "cargo not found, cannot build native danmaku mask."
 fi
 
 if ! command -v rustup >/dev/null 2>&1; then
-  warn "rustup not found, skip native danmaku mask build."
-  exit 0
+  fail_enabled_build "rustup not found, cannot build native danmaku mask."
 fi
 
 if [[ -n "$SDK_DIR_INPUT" ]]; then
@@ -33,26 +36,39 @@ elif [[ -n "${ANDROID_SDK_ROOT:-}" ]]; then
 elif [[ -n "${ANDROID_HOME:-}" ]]; then
   SDK_DIR="$ANDROID_HOME"
 else
-  warn "Android SDK not found, skip native danmaku mask build."
-  exit 0
+  fail_enabled_build "Android SDK not found, cannot build native danmaku mask."
 fi
 
 if [[ ! -d "$SDK_DIR" ]]; then
-  warn "Android SDK directory does not exist: $SDK_DIR"
-  exit 0
+  fail_enabled_build "Android SDK directory does not exist: $SDK_DIR"
 fi
 
 NDK_ROOT="$(find "$SDK_DIR/ndk" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -1)"
 if [[ -z "$NDK_ROOT" || ! -d "$NDK_ROOT" ]]; then
-  warn "Android NDK not found under $SDK_DIR/ndk, skip native danmaku mask build."
-  exit 0
+  fail_enabled_build "Android NDK not found under $SDK_DIR/ndk, cannot build native danmaku mask."
 fi
 
-HOST_TAG="linux-x86_64"
+case "$(uname -s)" in
+  Linux)
+    HOST_TAG="linux-x86_64"
+    ;;
+  Darwin)
+    HOST_TAG="darwin-x86_64"
+    if [[ ! -d "$NDK_ROOT/toolchains/llvm/prebuilt/$HOST_TAG" &&
+      -d "$NDK_ROOT/toolchains/llvm/prebuilt/darwin-aarch64" ]]; then
+      HOST_TAG="darwin-aarch64"
+    fi
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    HOST_TAG="windows-x86_64"
+    ;;
+  *)
+    fail_enabled_build "Unsupported host for Android NDK prebuilt toolchain: $(uname -s)"
+    ;;
+esac
 TOOLCHAIN_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/$HOST_TAG/bin"
 if [[ ! -d "$TOOLCHAIN_BIN" ]]; then
-  warn "Android NDK llvm toolchain not found: $TOOLCHAIN_BIN"
-  exit 0
+  fail_enabled_build "Android NDK llvm toolchain not found: $TOOLCHAIN_BIN"
 fi
 
 mkdir -p "$OUT_DIR"
@@ -94,5 +110,5 @@ for spec in "${targets[@]}"; do
 done
 
 if [[ "$built_any" -eq 0 ]]; then
-  warn "No native danmaku mask artifacts were built; Android runtime will fall back to Dart."
+  fail_enabled_build "No native danmaku mask artifacts were built."
 fi

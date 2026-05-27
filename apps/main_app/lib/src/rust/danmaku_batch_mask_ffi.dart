@@ -1,16 +1,18 @@
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_danmaku/live_danmaku.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 
 DanmakuBatchMask? tryCreateRustDanmakuBatchMask({
   Duration window = const Duration(seconds: 8),
   int burstLimit = 2,
+  AppPlatformCapabilities? platformCapabilities,
 }) {
-  if (!Platform.isAndroid) {
+  final platform = platformCapabilities ?? AppPlatformCapabilities.current();
+  if (!platform.isAndroid) {
     return null;
   }
   final library = _openRustMaskLibrary();
@@ -48,23 +50,22 @@ final class _RustDanmakuBatchMask implements DanmakuBatchMask {
     required DynamicLibrary library,
     required Duration window,
     required int burstLimit,
-  })  : _fallback = WindowedDanmakuBatchMask(
-          window: window,
-          burstLimit: burstLimit,
-        ),
-        _create = library.lookupFunction<_CreateNative, _CreateDart>(
-          'nolive_danmaku_mask_create',
-        ),
-        _filter = library.lookupFunction<_FilterNative, _FilterDart>(
-          'nolive_danmaku_mask_filter',
-        ),
-        _freeString =
-            library.lookupFunction<_FreeStringNative, _FreeStringDart>(
-          'nolive_danmaku_mask_free_string',
-        ),
-        _destroy = library.lookupFunction<_DestroyNative, _DestroyDart>(
-          'nolive_danmaku_mask_destroy',
-        ) {
+  }) : _fallback = WindowedDanmakuBatchMask(
+         window: window,
+         burstLimit: burstLimit,
+       ),
+       _create = library.lookupFunction<_CreateNative, _CreateDart>(
+         'nolive_danmaku_mask_create',
+       ),
+       _filter = library.lookupFunction<_FilterNative, _FilterDart>(
+         'nolive_danmaku_mask_filter',
+       ),
+       _freeString = library.lookupFunction<_FreeStringNative, _FreeStringDart>(
+         'nolive_danmaku_mask_free_string',
+       ),
+       _destroy = library.lookupFunction<_DestroyNative, _DestroyDart>(
+         'nolive_danmaku_mask_destroy',
+       ) {
     _handle = _create(window.inMilliseconds, burstLimit.clamp(1, 32));
     if (_handle == nullptr) {
       throw StateError('Failed to create native danmaku mask.');
@@ -91,16 +92,18 @@ final class _RustDanmakuBatchMask implements DanmakuBatchMask {
     }
 
     final payload = jsonEncode(
-      source.map<String?>((message) {
-        return switch (message.type) {
-          LiveMessageType.chat => message.content,
-          LiveMessageType.notice => message.content,
-          LiveMessageType.gift => message.content,
-          LiveMessageType.member => message.content,
-          LiveMessageType.superChat => null,
-          LiveMessageType.online => null,
-        };
-      }).toList(growable: false),
+      source
+          .map<String?>((message) {
+            return switch (message.type) {
+              LiveMessageType.chat => message.content,
+              LiveMessageType.notice => message.content,
+              LiveMessageType.gift => message.content,
+              LiveMessageType.member => message.content,
+              LiveMessageType.superChat => null,
+              LiveMessageType.online => null,
+            };
+          })
+          .toList(growable: false),
     );
     final payloadPtr = payload.toNativeUtf8();
     Pointer<Utf8>? resultPtr;
@@ -146,20 +149,22 @@ final class _RustDanmakuBatchMask implements DanmakuBatchMask {
   }
 }
 
-typedef _CreateNative = Pointer<Void> Function(
-    Uint64 windowMs, Uint32 burstLimit);
+typedef _CreateNative =
+    Pointer<Void> Function(Uint64 windowMs, Uint32 burstLimit);
 typedef _CreateDart = Pointer<Void> Function(int windowMs, int burstLimit);
 
-typedef _FilterNative = Pointer<Utf8> Function(
-  Pointer<Void> mask,
-  Uint64 nowMs,
-  Pointer<Utf8> payload,
-);
-typedef _FilterDart = Pointer<Utf8> Function(
-  Pointer<Void> mask,
-  int nowMs,
-  Pointer<Utf8> payload,
-);
+typedef _FilterNative =
+    Pointer<Utf8> Function(
+      Pointer<Void> mask,
+      Uint64 nowMs,
+      Pointer<Utf8> payload,
+    );
+typedef _FilterDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> mask,
+      int nowMs,
+      Pointer<Utf8> payload,
+    );
 
 typedef _FreeStringNative = Void Function(Pointer<Utf8> value);
 typedef _FreeStringDart = void Function(Pointer<Utf8> value);

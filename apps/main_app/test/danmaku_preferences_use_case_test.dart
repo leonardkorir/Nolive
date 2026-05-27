@@ -6,33 +6,37 @@ import 'package:nolive_app/src/features/settings/application/manage_danmaku_pref
 import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 void main() {
-  test('preview and persistent bootstrap share the same danmaku speed default',
-      () async {
-    final preview = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final directory = await Directory.systemTemp.createTemp(
-      'nolive-danmaku-defaults-',
-    );
-    addTearDown(() async {
-      if (await directory.exists()) {
-        await directory.delete(recursive: true);
-      }
-    });
+  test(
+    'preview and persistent bootstrap share the same danmaku speed default',
+    () async {
+      final preview = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final directory = await Directory.systemTemp.createTemp(
+        'nolive-danmaku-defaults-',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) {
+          await directory.delete(recursive: true);
+        }
+      });
 
-    final persistent = await createPersistentAppBootstrap(
-      storageDirectory: directory,
-      secureCredentialStore: InMemorySecureCredentialStore(),
-    );
+      final persistent = await createPersistentAppBootstrap(
+        storageDirectory: directory,
+        secureCredentialStore: InMemorySecureCredentialStore(),
+      );
 
-    expect(DanmakuPreferences.defaults.speed, 12);
-    expect(await preview.settingsRepository.readValue<double>('danmaku_speed'),
-        12);
-    expect(
-      await persistent.settingsRepository.readValue<double>('danmaku_speed'),
-      12,
-    );
-    expect((await preview.loadDanmakuPreferences()).speed, 12);
-    expect((await persistent.loadDanmakuPreferences()).speed, 12);
-  });
+      expect(DanmakuPreferences.defaults.speed, 12);
+      expect(
+        await preview.settingsRepository.readValue<double>('danmaku_speed'),
+        12,
+      );
+      expect(
+        await persistent.settingsRepository.readValue<double>('danmaku_speed'),
+        12,
+      );
+      expect((await preview.loadDanmakuPreferences()).speed, 12);
+      expect((await persistent.loadDanmakuPreferences()).speed, 12);
+    },
+  );
 
   test('danmaku preferences persist and clamp values', () async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);

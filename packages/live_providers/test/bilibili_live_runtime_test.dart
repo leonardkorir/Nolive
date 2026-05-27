@@ -37,7 +37,7 @@ void main() {
     expect(detail.sourceUrl, 'https://live.bilibili.com/32558935');
     expect(detail.startedAt, isNotNull);
     expect(
-      (detail.danmakuToken! as Map<String, Object?>)['serverHost'],
+      (detail.danmakuToken! as BilibiliDanmakuToken).serverHost,
       'broadcastlv.chat.bilibili.com',
     );
 
@@ -54,7 +54,16 @@ void main() {
     expect(urls.first.headers['referer'], 'https://live.bilibili.com');
     expect(
       transport.requestedUrls.where((item) => item.contains('w_rid=')).length,
-      greaterThanOrEqualTo(2),
+      greaterThanOrEqualTo(3),
+    );
+    expect(
+      transport.requestedUrls
+          .where((item) =>
+              item.startsWith(
+                  'https://api.bilibili.com/x/web-interface/search/type') &&
+              item.contains('w_rid='))
+          .length,
+      1,
     );
   });
 
@@ -75,10 +84,10 @@ void main() {
     );
 
     final detail = await provider.fetchRoomDetail('32558935');
-    final token = detail.danmakuToken! as Map<String, Object?>;
+    final token = detail.danmakuToken! as UnavailableDanmakuToken;
 
     expect(detail.roomId, '32558935');
-    expect(token['mode'], 'unavailable');
+    expect(token.reason, isNotEmpty);
 
     final session = await provider.createDanmakuSession(detail);
     expect(session, isA<ProviderUnavailableDanmakuSession>());
@@ -106,6 +115,29 @@ void main() {
     );
   });
 
+  test('live bilibili runtime retries room detail without WBI on -352',
+      () async {
+    final transport = _FakeBilibiliRoomInfoRiskControlTransport();
+    final authContext =
+        BilibiliAuthContext(cookie: 'SESSDATA=test', userId: 42);
+    final provider = BilibiliProvider(
+      dataSource: BilibiliLiveDataSource(
+        transport: transport,
+        signService: BilibiliSignService(
+          transport: transport,
+          authContext: authContext,
+        ),
+        authContext: authContext,
+      ),
+    );
+
+    final detail = await provider.fetchRoomDetail('32558935');
+
+    expect(detail.roomId, '32558935');
+    expect(transport.signedRoomInfoRequests, 1);
+    expect(transport.statelessRoomInfoRequests, 1);
+  });
+
   test(
       'live bilibili runtime falls back to anonymous public API when cookie is expired',
       () async {
@@ -129,10 +161,10 @@ void main() {
     expect(recommend.items, hasLength(1));
 
     final detail = await provider.fetchRoomDetail('32558935');
-    final token = detail.danmakuToken! as Map<String, Object?>;
+    final token = detail.danmakuToken! as BilibiliDanmakuToken;
 
     expect(detail.roomId, '32558935');
-    expect(token['roomId'], 32558935);
+    expect(token.roomId, 32558935);
     expect(transport.unauthorizedAuthedRequests, 2);
     expect(transport.navAnonymousRequests, 1);
     expect(transport.publicApiRequestsWithExpiredCookie, isEmpty);
@@ -230,16 +262,16 @@ void main() {
       detail: detail,
       quality: qualities.first,
     );
-    final token = detail.danmakuToken! as Map<String, Object?>;
+    final token = detail.danmakuToken! as BilibiliDanmakuToken;
 
     expect(recommend.items, hasLength(1));
     expect(transport.authedNavRequests, 1);
     expect(transport.authedOtherPublicRequests, isEmpty);
     expect(transport.authedDanmakuInfoRequests, hasLength(1));
     expect(transport.authedPlayInfoRequests, hasLength(2));
-    expect(token['cookie'], contains('SESSDATA=test-session'));
-    expect(token['cookie'], contains('DedeUserID=42'));
-    expect(token['uid'], 42);
+    expect(token.cookie, contains('SESSDATA=test-session'));
+    expect(token.cookie, contains('DedeUserID=42'));
+    expect(token.uid, 42);
   });
 
   test(
@@ -487,6 +519,71 @@ class _FakeBilibiliRoomInfoFailureTransport extends _FakeBilibiliTransport {
       return jsonEncode({
         'code': -400,
         'message': 'room detail blocked',
+      });
+    }
+    return super.getText(
+      url,
+      queryParameters: queryParameters,
+      headers: headers,
+    );
+  }
+}
+
+class _FakeBilibiliRoomInfoRiskControlTransport extends _FakeBilibiliTransport {
+  int signedRoomInfoRequests = 0;
+  int statelessRoomInfoRequests = 0;
+
+  @override
+  Future<String> getText(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    final uri = Uri.parse(url).replace(
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
+    );
+    if (uri.toString().startsWith(
+          'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
+        )) {
+      if (queryParameters.containsKey('w_rid')) {
+        signedRoomInfoRequests += 1;
+        expect(headers['user-agent'], BilibiliSignService.defaultUserAgent);
+        expect(headers.keys, isNot(contains('accept-language')));
+        return jsonEncode({
+          'code': -352,
+          'message': '-352',
+        });
+      }
+      statelessRoomInfoRequests += 1;
+      expect(
+        headers.keys.map((key) => key.toLowerCase()),
+        isNot(contains('cookie')),
+      );
+      expect(headers['user-agent'], BilibiliSignService.defaultUserAgent);
+      expect(headers.keys, isNot(contains('accept-language')));
+      expect(queryParameters, {'room_id': '32558935'});
+      return jsonEncode({
+        'code': 0,
+        'data': {
+          'room_info': {
+            'room_id': 32558935,
+            'short_id': 0,
+            'title': '直播测试',
+            'cover': 'https://i0.hdslb.com/bfs/live/demo-cover.jpg',
+            'keyframe': 'https://i0.hdslb.com/bfs/live/demo-keyframe.webp',
+            'area_name': '测试区',
+            'description': '测试简介',
+            'online': 153,
+            'live_status': 1,
+            'live_start_time': 1773085886,
+          },
+          'anchor_info': {
+            'base_info': {
+              'uname': '凌霄sama_ow',
+              'face': '//i1.hdslb.com/bfs/face/demo.jpg',
+            },
+          },
+        },
       });
     }
     return super.getText(

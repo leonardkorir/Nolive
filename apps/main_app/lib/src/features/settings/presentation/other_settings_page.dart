@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:live_sync/live_sync.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/features/settings/application/settings_feature_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
@@ -24,7 +24,8 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
   bool _busy = false;
 
   bool get _supportsInlineSave =>
-      kIsWeb || Platform.isAndroid || Platform.isIOS;
+      AppPlatformCapabilities.current().isWeb ||
+      AppPlatformCapabilities.current().isMobile;
 
   Future<void> _copySnapshotJson() async {
     setState(() {
@@ -144,8 +145,9 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
       final file = result.files.single;
       final payload = await _readPickedFileText(file);
       final legacyConfigOnly = _looksLikeLegacyConfigPayload(payload);
-      final snapshot =
-          await widget.dependencies.importSyncSnapshotJson(payload);
+      final snapshot = await widget.dependencies.importSyncSnapshotJson(
+        payload,
+      );
       _showImportSummary(
         snapshot,
         sourceLabel: file.name,
@@ -192,9 +194,7 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
         payload,
         password: password,
       );
-      _showSnack(
-        '受控迁移包已导入：恢复 ${bundle.credentials.length} 项敏感凭证',
-      );
+      _showSnack('受控迁移包已导入：恢复 ${bundle.credentials.length} 项敏感凭证');
     } on FormatException catch (error) {
       _showSnack('导入失败：${error.message}');
     } catch (error) {
@@ -311,7 +311,8 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
       if (!(decoded.containsKey('config') || decoded.containsKey('shield'))) {
         return false;
       }
-      final isFullSnapshot = decoded.containsKey('settings') ||
+      final isFullSnapshot =
+          decoded.containsKey('settings') ||
           decoded.containsKey('blocked_keywords') ||
           decoded.containsKey('tags') ||
           decoded.containsKey('history') ||
@@ -429,9 +430,9 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _resetAppData() async {
@@ -481,9 +482,7 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
       builder: (context) {
         return AlertDialog(
           title: const Text('清除安全凭证'),
-          content: const Text(
-            '这会清除账号 Cookie 和 WebDAV 密码，但不会删除关注、历史、标签和普通设置。',
-          ),
+          content: const Text('这会清除账号 Cookie 和 WebDAV 密码，但不会删除关注、历史、标签和普通设置。'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -529,10 +528,7 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '数据维护',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text('数据维护', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 SettingsActionGrid(
                   actions: [
@@ -566,10 +562,7 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '受控迁移',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text('受控迁移', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Text(
                   '常规快照不会携带账号 Cookie 和 WebDAV 密码。跨设备迁移这些敏感凭证时，请单独使用受控迁移包。',
@@ -581,14 +574,16 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
                     SettingsAction(
                       label: '导出迁移包',
                       icon: Icons.shield_outlined,
-                      onPressed:
-                          _busy ? null : _exportCredentialMigrationBundle,
+                      onPressed: _busy
+                          ? null
+                          : _exportCredentialMigrationBundle,
                     ),
                     SettingsAction(
                       label: '导入迁移包',
                       icon: Icons.security_update_good_outlined,
-                      onPressed:
-                          _busy ? null : _importCredentialMigrationBundle,
+                      onPressed: _busy
+                          ? null
+                          : _importCredentialMigrationBundle,
                     ),
                   ],
                 ),
@@ -600,10 +595,7 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '重置与清理',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text('重置与清理', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 SettingsActionButton(
                   expanded: true,

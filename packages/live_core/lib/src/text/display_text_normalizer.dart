@@ -1,3 +1,5 @@
+import 'html_entity_decoder.dart';
+
 class DisplayTextNormalizer {
   const DisplayTextNormalizer._();
 
@@ -17,7 +19,6 @@ class DisplayTextNormalizer {
     MapEntry('書', '书'),
     MapEntry('亂', '乱'),
     MapEntry('乾', '干'),
-    MapEntry('了', '了'),
     MapEntry('亞', '亚'),
     MapEntry('產', '产'),
     MapEntry('親', '亲'),
@@ -30,12 +31,10 @@ class DisplayTextNormalizer {
     MapEntry('倫', '伦'),
     MapEntry('來', '来'),
     MapEntry('係', '系'),
-    MapEntry('個', '个'),
     MapEntry('們', '们'),
     MapEntry('價', '价'),
     MapEntry('兒', '儿'),
     MapEntry('內', '内'),
-    MapEntry('兩', '两'),
     MapEntry('關', '关'),
     MapEntry('興', '兴'),
     MapEntry('冊', '册'),
@@ -64,7 +63,6 @@ class DisplayTextNormalizer {
     MapEntry('葉', '叶'),
     MapEntry('號', '号'),
     MapEntry('後', '后'),
-    MapEntry('嗎', '吗'),
     MapEntry('員', '员'),
     MapEntry('問', '问'),
     MapEntry('啟', '启'),
@@ -90,9 +88,7 @@ class DisplayTextNormalizer {
     MapEntry('對', '对'),
     MapEntry('導', '导'),
     MapEntry('將', '将'),
-    MapEntry('專', '专'),
     MapEntry('尋', '寻'),
-    MapEntry('對', '对'),
     MapEntry('屆', '届'),
     MapEntry('屍', '尸'),
     MapEntry('屜', '屉'),
@@ -116,14 +112,12 @@ class DisplayTextNormalizer {
     MapEntry('從', '从'),
     MapEntry('復', '复'),
     MapEntry('徵', '征'),
-    MapEntry('後', '后'),
     MapEntry('徹', '彻'),
     MapEntry('恆', '恒'),
     MapEntry('恥', '耻'),
     MapEntry('愛', '爱'),
     MapEntry('慶', '庆'),
     MapEntry('憂', '忧'),
-    MapEntry('應', '应'),
     MapEntry('戲', '戏'),
     MapEntry('戶', '户'),
     MapEntry('拋', '抛'),
@@ -138,7 +132,6 @@ class DisplayTextNormalizer {
     MapEntry('攝', '摄'),
     MapEntry('攤', '摊'),
     MapEntry('數', '数'),
-    MapEntry('整', '整'),
     MapEntry('斂', '敛'),
     MapEntry('斷', '断'),
     MapEntry('於', '于'),
@@ -148,10 +141,7 @@ class DisplayTextNormalizer {
     MapEntry('暈', '晕'),
     MapEntry('暢', '畅'),
     MapEntry('曆', '历'),
-    MapEntry('會', '会'),
-    MapEntry('東', '东'),
     MapEntry('條', '条'),
-    MapEntry('來', '来'),
     MapEntry('極', '极'),
     MapEntry('樣', '样'),
     MapEntry('歡', '欢'),
@@ -166,14 +156,12 @@ class DisplayTextNormalizer {
     MapEntry('潔', '洁'),
     MapEntry('測', '测'),
     MapEntry('灣', '湾'),
-    MapEntry('無', '无'),
     MapEntry('煩', '烦'),
     MapEntry('熱', '热'),
     MapEntry('燈', '灯'),
     MapEntry('營', '营'),
     MapEntry('爐', '炉'),
     MapEntry('爭', '争'),
-    MapEntry('為', '为'),
     MapEntry('爾', '尔'),
     MapEntry('牆', '墙'),
     MapEntry('獎', '奖'),
@@ -181,8 +169,6 @@ class DisplayTextNormalizer {
     MapEntry('獸', '兽'),
     MapEntry('現', '现'),
     MapEntry('畫', '画'),
-    MapEntry('當', '当'),
-    MapEntry('發', '发'),
     MapEntry('盜', '盗'),
     MapEntry('盡', '尽'),
     MapEntry('監', '监'),
@@ -203,7 +189,6 @@ class DisplayTextNormalizer {
     MapEntry('築', '筑'),
     MapEntry('簡', '简'),
     MapEntry('簽', '签'),
-    MapEntry('級', '级'),
     MapEntry('紅', '红'),
     MapEntry('約', '约'),
     MapEntry('紀', '纪'),
@@ -224,26 +209,19 @@ class DisplayTextNormalizer {
     MapEntry('聖', '圣'),
     MapEntry('聞', '闻'),
     MapEntry('聯', '联'),
-    MapEntry('聲', '声'),
     MapEntry('聰', '聪'),
     MapEntry('肅', '肃'),
     MapEntry('脅', '胁'),
     MapEntry('腦', '脑'),
     MapEntry('臉', '脸'),
     MapEntry('臺', '台'),
-    MapEntry('與', '与'),
-    MapEntry('興', '兴'),
     MapEntry('舉', '举'),
     MapEntry('艦', '舰'),
     MapEntry('艱', '艰'),
     MapEntry('藝', '艺'),
-    MapEntry('萬', '万'),
-    MapEntry('葉', '叶'),
-    MapEntry('著', '着'),
     MapEntry('蒼', '苍'),
     MapEntry('蔥', '葱'),
     MapEntry('蕭', '萧'),
-    MapEntry('號', '号'),
     MapEntry('虧', '亏'),
     MapEntry('補', '补'),
     MapEntry('裝', '装'),
@@ -286,7 +264,6 @@ class DisplayTextNormalizer {
     MapEntry('連', '连'),
     MapEntry('進', '进'),
     MapEntry('遊', '游'),
-    MapEntry('過', '过'),
     MapEntry('還', '还'),
     MapEntry('週', '周'),
     MapEntry('運', '运'),
@@ -300,9 +277,6 @@ class DisplayTextNormalizer {
     MapEntry('醫', '医'),
     MapEntry('醬', '酱'),
     MapEntry('釋', '释'),
-    MapEntry('重', '重'),
-    MapEntry('野', '野'),
-    MapEntry('錄', '录'),
     MapEntry('鐘', '钟'),
     MapEntry('鐵', '铁'),
     MapEntry('長', '长'),
@@ -311,7 +285,6 @@ class DisplayTextNormalizer {
     MapEntry('閉', '闭'),
     MapEntry('開', '开'),
     MapEntry('間', '间'),
-    MapEntry('關', '关'),
     MapEntry('隊', '队'),
     MapEntry('階', '阶'),
     MapEntry('際', '际'),
@@ -330,7 +303,6 @@ class DisplayTextNormalizer {
     MapEntry('頓', '顿'),
     MapEntry('預', '预'),
     MapEntry('領', '领'),
-    MapEntry('頭', '头'),
     MapEntry('頻', '频'),
     MapEntry('顯', '显'),
     MapEntry('類', '类'),
@@ -355,24 +327,15 @@ class DisplayTextNormalizer {
       return '';
     }
     var text = _stripMalformedUtf16(raw);
-    for (var index = 0; index < 2; index += 1) {
-      text = text
-          .replaceAll('&amp;nbsp;', ' ')
-          .replaceAll('&nbsp;', ' ')
-          .replaceAll('&#160;', ' ')
-          .replaceAll('&amp;', '&')
-          .replaceAll('&lt;', '<')
-          .replaceAll('&gt;', '>')
-          .replaceAll('&quot;', '"')
-          .replaceAll('&#39;', "'");
-    }
+    text = decodeHtmlEntities(text);
     text = text
         .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), ' ')
         .replaceAll(RegExp(r'</p\s*>', caseSensitive: false), ' ')
         .replaceAll(RegExp(r'<[^>]+>'), ' ')
         .replaceAll(' ', ' ')
         .replaceAll('​', '')
-        .replaceAll('﻿', '');
+        .replaceAll('﻿', '')
+        .replaceAll('\uFFFD', '');
     final buffer = StringBuffer();
     for (final rune in text.runes) {
       final character = String.fromCharCode(rune);

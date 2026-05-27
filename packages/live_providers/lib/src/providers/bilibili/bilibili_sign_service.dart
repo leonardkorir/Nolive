@@ -5,17 +5,21 @@ import 'package:live_core/live_core.dart';
 
 import 'bilibili_auth_context.dart';
 import 'bilibili_transport.dart';
+import '../provider_runtime_support.dart';
 
 class BilibiliSignService {
   BilibiliSignService({
     required BilibiliTransport transport,
     required BilibiliAuthContext authContext,
+    ProviderBrowserProfile browserProfile =
+        ProviderBrowserProfile.bilibiliLegacyDesktop,
+    void Function(String message)? diagnostics,
   })  : _transport = transport,
-        _authContext = authContext;
+        _authContext = authContext,
+        _browserProfile = browserProfile,
+        _diagnostics = diagnostics;
 
-  static const String defaultUserAgent =
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0';
+  static const String defaultUserAgent = kBilibiliLegacyDesktopUserAgent;
   static const String defaultReferer = 'https://live.bilibili.com/';
 
   static const List<int> _mixinKeyEncTable = [
@@ -87,6 +91,9 @@ class BilibiliSignService {
 
   final BilibiliTransport _transport;
   final BilibiliAuthContext _authContext;
+  final ProviderBrowserProfile _browserProfile;
+  final void Function(String message)? _diagnostics;
+  Future<void>? _buvidLoadFuture;
 
   String get cookie => _authContext.cookie;
   int get userId => _authContext.userId;
@@ -99,6 +106,15 @@ class BilibiliSignService {
 
   int get publicUserId =>
       isPublicAuthCookieSuppressed ? 0 : _authContext.userId;
+
+  String get browserFingerprintDiagnostics {
+    final profileName =
+        _browserProfile.userAgent == kBilibiliLegacyDesktopUserAgent
+            ? 'bilibili_legacy_desktop'
+            : 'custom';
+    return 'ua_profile=$profileName '
+        'has_accept_language=${_browserProfile.acceptLanguage.trim().isNotEmpty}';
+  }
 
   // Keep public catalog/detail/play requests anonymous. The reference rust-srec
   // extractor signs Bilibili public APIs without account cookies and only uses
@@ -144,20 +160,36 @@ class BilibiliSignService {
   }
 
   Future<void> _loadBuvid() async {
-    final response = ensureBilibiliSuccess(
-      await _transport.getJson(
-        'https://api.bilibili.com/x/frontend/finger/spi',
-        headers: {
-          'user-agent': defaultUserAgent,
-          'referer': defaultReferer,
-        },
-      ),
-      operation: 'load buvid',
-    );
-    final data =
-        (response['data'] as Map?)?.cast<String, dynamic>() ?? const {};
-    _authContext.buvid3 = data['b_3']?.toString() ?? '';
-    _authContext.buvid4 = data['b_4']?.toString() ?? '';
+    try {
+      final response = ensureBilibiliSuccess(
+        await _transport.getJson(
+          'https://api.bilibili.com/x/frontend/finger/spi',
+          headers: {
+            'user-agent': _browserProfile.userAgent,
+            'referer': defaultReferer,
+          },
+        ),
+        operation: 'load buvid',
+      );
+      final data =
+          (response['data'] as Map?)?.cast<String, dynamic>() ?? const {};
+      _authContext.buvid3 = data['b_3']?.toString() ?? '';
+      _authContext.buvid4 = data['b_4']?.toString() ?? '';
+    } on ProviderParseException catch (error, stackTrace) {
+      if (!_shouldIgnoreBuvidBootstrapFailure(error)) {
+        rethrow;
+      }
+      reportProviderDiagnostic(
+        providerId: ProviderId.bilibili,
+        scope: 'bilibili buvid bootstrap',
+        message: 'spi bootstrap failed, continuing without buvid cookies',
+        error: error,
+        stackTrace: stackTrace,
+        diagnostics: _diagnostics,
+      );
+      _authContext.buvid3 = '';
+      _authContext.buvid4 = '';
+    }
   }
 
   Future<String> getAccessId() async {
@@ -175,7 +207,15 @@ class BilibiliSignService {
           ?.group(1)
           ?.replaceAll('\\', '');
       _authContext.accessId = id ?? '';
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.bilibili,
+        scope: 'bilibili access-id bootstrap',
+        message: 'failed, falling back to empty access id',
+        error: error,
+        stackTrace: stackTrace,
+        diagnostics: _diagnostics,
+      );
       _authContext.accessId = '';
     }
 
@@ -203,15 +243,29 @@ class BilibiliSignService {
   Future<(String, String)> _loadWbiKeys({
     required bool includeAuthCookie,
   }) async {
-    final response = ensureBilibiliSuccess(
-      await _transport.getJson(
-        'https://api.bilibili.com/x/web-interface/nav',
-        headers: includeAuthCookie
-            ? await buildAccountHeaders()
-            : await buildHeaders(),
-      ),
-      operation: 'load WBI keys',
-    );
+    late final Map<String, dynamic> response;
+    try {
+      response = ensureBilibiliSuccess(
+        await _transport.getJson(
+          'https://api.bilibili.com/x/web-interface/nav',
+          headers: includeAuthCookie
+              ? await buildAccountHeaders()
+              : await buildHeaders(),
+        ),
+        operation: 'load WBI keys',
+      );
+    } on ProviderParseException catch (error) {
+      final message = error.message;
+      if (message.toLowerCase().contains('load wbi keys failed')) {
+        rethrow;
+      }
+      throw ProviderParseException(
+        providerId: ProviderId.bilibili,
+        message: 'Bilibili load WBI keys failed: $message',
+        cause: error,
+        stackTrace: error.stackTrace,
+      );
+    }
     final data =
         (response['data'] as Map?)?.cast<String, dynamic>() ?? const {};
     final wbiImg =
@@ -233,6 +287,13 @@ class BilibiliSignService {
         message.contains('not login');
   }
 
+  bool _shouldIgnoreBuvidBootstrapFailure(ProviderParseException error) {
+    final message = error.message.toLowerCase();
+    return message.contains('request failed before response') ||
+        message.contains('/x/frontend/finger/spi') ||
+        message.contains('load buvid failed');
+  }
+
   String _getMixinKey(String origin) {
     return _mixinKeyEncTable
         .fold<String>(
@@ -247,14 +308,16 @@ class BilibiliSignService {
     required bool respectPublicSuppression,
   }) async {
     if (_authContext.buvid3.isEmpty) {
-      await _loadBuvid();
+      await _ensureBuvidLoaded();
     }
     final cookie = _buildCookieHeader(
       includeAuthCookie: includeAuthCookie,
       respectPublicSuppression: respectPublicSuppression,
     );
     return {
-      'user-agent': defaultUserAgent,
+      'user-agent': _browserProfile.userAgent,
+      if (_browserProfile.acceptLanguage.trim().isNotEmpty)
+        'accept-language': _browserProfile.acceptLanguage,
       'referer': defaultReferer,
       if (cookie.isNotEmpty) 'cookie': cookie,
     };
@@ -288,5 +351,23 @@ class BilibiliSignService {
       return false;
     }
     return RegExp('(?:^|;\\s*)$name=').hasMatch(cookie);
+  }
+
+  Future<void> _ensureBuvidLoaded() {
+    if (_authContext.buvid3.isNotEmpty) {
+      return Future<void>.value();
+    }
+    final inFlight = _buvidLoadFuture;
+    if (inFlight != null) {
+      return inFlight;
+    }
+    late final Future<void> future;
+    future = _loadBuvid().whenComplete(() {
+      if (identical(_buvidLoadFuture, future)) {
+        _buvidLoadFuture = null;
+      }
+    });
+    _buvidLoadFuture = future;
+    return future;
   }
 }

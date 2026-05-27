@@ -109,7 +109,19 @@ class WindowedDanmakuBatchMask extends DanmakuBatchMask {
     }
     for (final key in emptyKeys) {
       _seenAtByKey.remove(key);
-      _trackedKeys.remove(key);
     }
+    if (emptyKeys.isEmpty) {
+      return;
+    }
+    final emptyKeySet = emptyKeys.toSet();
+    final retainedKeys = ListQueue<String>();
+    for (final key in _trackedKeys) {
+      if (!emptyKeySet.contains(key)) {
+        retainedKeys.addLast(key);
+      }
+    }
+    _trackedKeys
+      ..clear()
+      ..addAll(retainedKeys);
   }
 }

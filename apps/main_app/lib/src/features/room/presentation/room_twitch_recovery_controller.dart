@@ -5,28 +5,32 @@ import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/twitch_playback_recovery.dart';
+import 'package:nolive_app/src/features/room/presentation/room_playback_source_helpers.dart';
 import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
 
-typedef RoomTwitchSwitchQuality = Future<void> Function(
-  LoadedRoomSnapshot snapshot,
-  LivePlayQuality quality, {
-  bool resetTwitchRecoveryAttempts,
-  LivePlayQuality? twitchStartupPromotionQuality,
-});
+typedef RoomTwitchSwitchQuality =
+    Future<void> Function(
+      LoadedRoomSnapshot snapshot,
+      LivePlayQuality quality, {
+      bool resetTwitchRecoveryAttempts,
+      LivePlayQuality? twitchStartupPromotionQuality,
+    });
 
-typedef RoomTwitchRefreshPlayback = Future<void> Function(
-  LoadedRoomSnapshot snapshot,
-  LivePlayQuality quality, {
-  LivePlayQuality? twitchStartupPromotionQuality,
-  bool resetTwitchRecoveryAttempts,
-  PlaybackSource? preferredPlaybackSource,
-  List<LivePlayUrl>? currentPlayUrls,
-});
+typedef RoomTwitchRefreshPlayback =
+    Future<void> Function(
+      LoadedRoomSnapshot snapshot,
+      LivePlayQuality quality, {
+      LivePlayQuality? twitchStartupPromotionQuality,
+      bool resetTwitchRecoveryAttempts,
+      PlaybackSource? preferredPlaybackSource,
+      List<LivePlayUrl>? currentPlayUrls,
+    });
 
-typedef RoomTwitchSwitchLine = Future<void> Function(
-  LivePlayUrl playUrl, {
-  bool resetTwitchRecoveryAttempts,
-});
+typedef RoomTwitchSwitchLine =
+    Future<void> Function(
+      LivePlayUrl playUrl, {
+      bool resetTwitchRecoveryAttempts,
+    });
 
 @immutable
 class RoomTwitchRecoveryState {
@@ -63,6 +67,13 @@ class RoomTwitchRecoveryState {
   }
 }
 
+/// A playback recovery controller designed for Twitch.
+///
+/// NOTE ON STRIPCHAT RECOVERY:
+/// This class is also shared with Stripchat. Since both Twitch and Stripchat streams
+/// start in 'auto' quality and need a resolution promotion to the user's preferred resolution
+/// once playback progresses/establishes, this controller is reused for Stripchat streams
+/// to prevent duplicate recovery state machine code.
 class RoomTwitchRecoveryController {
   RoomTwitchRecoveryController({
     required this.runtime,
@@ -142,9 +153,16 @@ class RoomTwitchRecoveryController {
     required RoomTwitchRefreshPlayback refreshPlaybackSource,
     required RoomTwitchSwitchLine switchLine,
   }) async {
-    if (_disposed ||
-        providerId != ProviderId.twitch ||
-        playbackSource == null) {
+    if (_disposed || playbackSource == null) {
+      return;
+    }
+    final providerTraceName = switch (providerId) {
+      ProviderId.stripchat => 'stripchat',
+      _ => 'twitch',
+    };
+    final supportsStartupPromotion =
+        providerId == ProviderId.twitch || providerId == ProviderId.stripchat;
+    if (!supportsStartupPromotion) {
       return;
     }
     final sourceKey = playbackSource.url.toString();
@@ -168,15 +186,79 @@ class RoomTwitchRecoveryController {
       return;
     }
     final currentState = runtime.readCurrentState();
-    if (!_samePlaybackSource(currentState.source, playbackSource)) {
+    if (!samePlaybackSource(currentState.source, playbackSource)) {
       return;
     }
     final currentQuality = resolveCurrentQuality();
     final promotionQuality = _current.startupPromotionQuality;
     if (promotionQuality != null && currentQuality.id == 'auto') {
+      if (providerId == ProviderId.stripchat) {
+        final stripchatHasPlaybackProgress =
+            currentState.position > Duration.zero ||
+            currentState.buffered > Duration.zero;
+        final stripchatReadyForPromotion =
+            currentState.status == PlaybackStatus.playing &&
+            stripchatHasPlaybackProgress;
+        if (stripchatReadyForPromotion) {
+          _trace(
+            '$providerTraceName startup promotion '
+            'status=${currentState.status.name} '
+            'pos=${currentState.position.inMilliseconds}ms '
+            'buffer=${currentState.buffered.inMilliseconds}ms '
+            'switch-quality=${promotionQuality.id}/${promotionQuality.label}',
+          );
+          _replaceState(
+            _current.copyWith(
+              recoveryAttempts: 0,
+              clearStartupPromotionQuality: true,
+            ),
+          );
+          await switchQuality(
+            snapshot,
+            promotionQuality,
+            resetTwitchRecoveryAttempts: false,
+          );
+          return;
+        }
+        if (_current.recoveryAttempts >= 2) {
+          _replaceState(_current.copyWith(clearRecoverySourceKey: true));
+          _trace(
+            '$providerTraceName startup promotion deferred '
+            'status=${currentState.status.name} '
+            'pos=${currentState.position.inMilliseconds}ms '
+            'buffer=${currentState.buffered.inMilliseconds}ms '
+            'target=${promotionQuality.id}/${promotionQuality.label}',
+          );
+          return;
+        }
+        _replaceState(
+          _current.copyWith(recoveryAttempts: _current.recoveryAttempts + 1),
+        );
+        _trace(
+          '$providerTraceName startup promotion wait '
+          'status=${currentState.status.name} '
+          'pos=${currentState.position.inMilliseconds}ms '
+          'buffer=${currentState.buffered.inMilliseconds}ms '
+          'target=${promotionQuality.id}/${promotionQuality.label}',
+        );
+        _replaceState(_current.copyWith(clearRecoverySourceKey: true));
+        await scheduleRecovery(
+          providerId: providerId,
+          snapshot: snapshot,
+          playbackSource: playbackSource,
+          playUrls: playUrls,
+          selectedQuality: selectedQuality,
+          resolveCurrentQuality: resolveCurrentQuality,
+          isMounted: isMounted,
+          switchQuality: switchQuality,
+          refreshPlaybackSource: refreshPlaybackSource,
+          switchLine: switchLine,
+        );
+        return;
+      }
       if (shouldPromoteTwitchPlaybackQuality(currentState)) {
         _trace(
-          'twitch startup promotion '
+          '$providerTraceName startup promotion '
           'pos=${currentState.position.inMilliseconds}ms '
           'buffer=${currentState.buffered.inMilliseconds}ms '
           'switch-quality=${promotionQuality.id}/${promotionQuality.label}',
@@ -198,7 +280,7 @@ class RoomTwitchRecoveryController {
           _current.recoveryAttempts == 1) {
         _replaceState(_current.copyWith(recoveryAttempts: 2));
         _trace(
-          'twitch startup promotion refresh '
+          '$providerTraceName startup promotion refresh '
           'pos=${currentState.position.inMilliseconds}ms '
           'buffer=${currentState.buffered.inMilliseconds}ms '
           'quality=${currentQuality.id}/${currentQuality.label}',
@@ -214,7 +296,7 @@ class RoomTwitchRecoveryController {
       if (shouldAttemptTwitchPlaybackRecovery(currentState) &&
           _current.recoveryAttempts >= 2) {
         _trace(
-          'twitch startup promotion recovery '
+          '$providerTraceName startup promotion recovery '
           'pos=${currentState.position.inMilliseconds}ms '
           'buffer=${currentState.buffered.inMilliseconds}ms '
           'switch-quality=${promotionQuality.id}/${promotionQuality.label}',
@@ -234,27 +316,27 @@ class RoomTwitchRecoveryController {
       }
       if (_current.recoveryAttempts == 0) {
         _replaceState(_current.copyWith(recoveryAttempts: 1));
+      } else {
+        return;
       }
       _trace(
-        'twitch startup promotion wait '
+        '$providerTraceName startup promotion wait '
         'pos=${currentState.position.inMilliseconds}ms '
         'buffer=${currentState.buffered.inMilliseconds}ms '
         'target=${promotionQuality.id}/${promotionQuality.label}',
       );
       _replaceState(_current.copyWith(clearRecoverySourceKey: true));
-      unawaited(
-        scheduleRecovery(
-          providerId: providerId,
-          snapshot: snapshot,
-          playbackSource: playbackSource,
-          playUrls: playUrls,
-          selectedQuality: selectedQuality,
-          resolveCurrentQuality: resolveCurrentQuality,
-          isMounted: isMounted,
-          switchQuality: switchQuality,
-          refreshPlaybackSource: refreshPlaybackSource,
-          switchLine: switchLine,
-        ),
+      await scheduleRecovery(
+        providerId: providerId,
+        snapshot: snapshot,
+        playbackSource: playbackSource,
+        playUrls: playUrls,
+        selectedQuality: selectedQuality,
+        resolveCurrentQuality: resolveCurrentQuality,
+        isMounted: isMounted,
+        switchQuality: switchQuality,
+        refreshPlaybackSource: refreshPlaybackSource,
+        switchLine: switchLine,
       );
       return;
     }
@@ -265,12 +347,21 @@ class RoomTwitchRecoveryController {
       playbackSource: playbackSource,
       playUrls: playUrls,
     );
+    if (providerId != ProviderId.twitch) {
+      return;
+    }
     switch (fixedRecovery.action) {
       case TwitchFixedRecoveryAction.none:
         return;
       case TwitchFixedRecoveryAction.switchLine:
         final recoveryLine = fixedRecovery.recoveryLine;
         if (recoveryLine == null) {
+          _replaceState(_current.copyWith(recoveryAttempts: 1));
+          _trace(
+            'twitch startup recovery skipped missing recovery line '
+            'pos=${currentState.position.inMilliseconds}ms '
+            'buffer=${currentState.buffered.inMilliseconds}ms',
+          );
           return;
         }
         _replaceState(_current.copyWith(recoveryAttempts: 1));
@@ -281,10 +372,7 @@ class RoomTwitchRecoveryController {
           'switch-line=${recoveryLine.lineLabel ?? '-'} '
           "playerType=${recoveryLine.metadata?['playerType'] ?? '-'}",
         );
-        await switchLine(
-          recoveryLine,
-          resetTwitchRecoveryAttempts: false,
-        );
+        await switchLine(recoveryLine, resetTwitchRecoveryAttempts: false);
         return;
       case TwitchFixedRecoveryAction.refreshCurrentLine:
         _replaceState(_current.copyWith(recoveryAttempts: 2));
@@ -335,25 +423,5 @@ class RoomTwitchRecoveryController {
 
   void _trace(String message) {
     trace?.call(message);
-  }
-
-  bool _samePlaybackSource(PlaybackSource? left, PlaybackSource? right) {
-    if (left == null || right == null) {
-      return left == right;
-    }
-    return left.url == right.url &&
-        mapEquals(left.headers, right.headers) &&
-        left.bufferProfile == right.bufferProfile &&
-        _sameExternalMedia(left.externalAudio, right.externalAudio);
-  }
-
-  bool _sameExternalMedia(
-    PlaybackExternalMedia? left,
-    PlaybackExternalMedia? right,
-  ) {
-    if (left == null || right == null) {
-      return left == right;
-    }
-    return left.url == right.url && mapEquals(left.headers, right.headers);
   }
 }

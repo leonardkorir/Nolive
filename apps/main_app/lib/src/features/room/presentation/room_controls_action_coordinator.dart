@@ -13,11 +13,20 @@ export 'room_controls_action_context.dart'
         RoomControlsActionContext,
         RoomPersistScreenshot,
         shouldRefreshRoomAfterPlayerSettingsReturn;
+export 'room_controls_utility_actions.dart'
+    show
+        RoomPickScreenshotSavePath,
+        RoomResolveScreenshotDirectory,
+        RoomSaveScreenshotToGallery;
 
 class RoomControlsActionCoordinator extends ChangeNotifier {
   RoomControlsActionCoordinator({
     required this.context,
     RoomPersistScreenshot? persistScreenshot,
+    RoomPickScreenshotSavePath? pickScreenshotSavePath,
+    bool? mobileScreenshotPersistence,
+    RoomResolveScreenshotDirectory? resolveScreenshotDirectory,
+    RoomSaveScreenshotToGallery? saveScreenshotToGallery,
   })  : _playbackActions = RoomControlsPlaybackActions(context: context),
         _settingsReturnActions =
             RoomControlsSettingsReturnActions(context: context),
@@ -25,6 +34,10 @@ class RoomControlsActionCoordinator extends ChangeNotifier {
           context: context,
           notifyChanged: _noopNotifyChanged,
           persistScreenshot: persistScreenshot,
+          pickScreenshotSavePath: pickScreenshotSavePath,
+          mobileScreenshotPersistence: mobileScreenshotPersistence,
+          resolveScreenshotDirectory: resolveScreenshotDirectory,
+          saveScreenshotToGallery: saveScreenshotToGallery,
         ) {
     _utilityActions.notifyChanged = notifyListeners;
   }

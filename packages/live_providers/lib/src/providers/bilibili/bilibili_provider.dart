@@ -20,8 +20,11 @@ class BilibiliProvider extends LiveProvider
         SupportsPlayQualities,
         SupportsPlayUrls,
         SupportsDanmaku {
-  BilibiliProvider({BilibiliDataSource? dataSource})
-      : _dataSource = dataSource ?? const BilibiliPreviewDataSource();
+  BilibiliProvider({
+    BilibiliDataSource? dataSource,
+    void Function()? disposeOwnedResources,
+  })  : _dataSource = dataSource ?? const BilibiliPreviewDataSource(),
+        _disposeOwnedResources = disposeOwnedResources;
 
   factory BilibiliProvider.preview() => BilibiliProvider();
 
@@ -38,6 +41,7 @@ class BilibiliProvider extends LiveProvider
         signService: signService,
         authContext: authContext,
       ),
+      disposeOwnedResources: transport.close,
     );
   }
 
@@ -66,9 +70,15 @@ class BilibiliProvider extends LiveProvider
   );
 
   final BilibiliDataSource _dataSource;
+  final void Function()? _disposeOwnedResources;
 
   @override
   ProviderDescriptor get descriptor => kDescriptor;
+
+  @override
+  void dispose() {
+    _disposeOwnedResources?.call();
+  }
 
   @override
   Future<List<LiveCategory>> fetchCategories() {
@@ -122,33 +132,24 @@ class BilibiliProvider extends LiveProvider
   Future<DanmakuSession> createDanmakuSession(LiveRoomDetail detail) async {
     requireCapability(ProviderCapability.danmaku);
     final token = detail.danmakuToken;
-    final mode = token is Map ? token['mode']?.toString() ?? '' : '';
-    if (mode == 'preview') {
+    if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
         providerId: descriptor.id.value,
         detail: detail,
       );
     }
-    if (mode == 'unavailable') {
-      final reason =
-          token is Map ? token['reason']?.toString().trim() ?? '' : '';
+    if (token is UnavailableDanmakuToken) {
+      final reason = token.reason.trim();
       return ProviderUnavailableDanmakuSession(
         reason: reason.isNotEmpty ? reason : '哔哩哔哩当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',
       );
     }
-    final roomId =
-        token is Map ? int.tryParse(token['roomId']?.toString() ?? '') ?? 0 : 0;
-    final authToken =
-        token is Map ? token['token']?.toString().trim() ?? '' : '';
-    if (token is Map<String, Object?>) {
-      if (roomId > 0 && authToken.isNotEmpty) {
-        return BilibiliDanmakuSession(tokenData: token);
-      }
-    }
-    if (token is Map) {
-      if (roomId > 0 && authToken.isNotEmpty) {
-        return BilibiliDanmakuSession(tokenData: token.cast<String, Object?>());
-      }
+    if (token is BilibiliDanmakuToken &&
+        token.roomId > 0 &&
+        token.token.trim().isNotEmpty) {
+      return BilibiliDanmakuSession(
+        danmakuToken: token,
+      );
     }
     return ProviderUnavailableDanmakuSession(
       reason: '哔哩哔哩当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',

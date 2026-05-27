@@ -8,58 +8,52 @@ import 'package:nolive_app/src/shared/application/player_runtime_controller.dart
 import 'room_fullscreen_test_fakes.dart';
 
 void main() {
-  test('room runtime observation context forwards streams and current state',
-      () async {
-    final player = TestRecordingPlayer();
-    addTearDown(player.dispose);
-    final runtime = PlayerRuntimeController(player);
-    final context = RoomRuntimeObservationContext.fromPlayerRuntime(runtime);
-    final source = PlaybackSource(
-      url: Uri.parse('https://example.com/live.m3u8'),
-    );
+  test(
+    'room runtime observation context forwards streams and current state',
+    () async {
+      final player = TestRecordingPlayer();
+      addTearDown(player.dispose);
+      final runtime = PlayerRuntimeController(player);
+      final context = RoomRuntimeObservationContext.fromPlayerRuntime(runtime);
+      final source = PlaybackSource(
+        url: Uri.parse('https://example.com/live.m3u8'),
+      );
 
-    final stateFuture = context.states.first;
-    player.emit(
-      PlayerState(
-        status: PlaybackStatus.playing,
-        source: source,
-      ),
-    );
+      final stateFuture = context.states.first;
+      player.emit(PlayerState(status: PlaybackStatus.playing, source: source));
 
-    final diagnosticsFuture = context.diagnostics.first;
-    player.emitDiagnostics(
-      PlayerDiagnostics(
-        backend: player.backend,
-        width: 1920,
-        height: 1080,
-      ),
-    );
+      final diagnosticsFuture = context.diagnostics.first;
+      player.emitDiagnostics(
+        PlayerDiagnostics(backend: player.backend, width: 1920, height: 1080),
+      );
 
-    expect(context.readCurrentState().source, source);
-    expect((await stateFuture).source, source);
-    expect((await diagnosticsFuture).width, 1920);
-  });
+      expect(context.readCurrentState().source, source);
+      expect((await stateFuture).source, source);
+      expect((await diagnosticsFuture).width, 1920);
+    },
+  );
 
   test(
-      'room runtime control context keeps screenshot capability live across backend changes',
-      () async {
-    final player = TestRecordingPlayer(playerBackend: PlayerBackend.mpv);
-    addTearDown(player.dispose);
-    final runtime = _RuntimeControlTestRuntime(player);
-    final context = RoomRuntimeControlContext.fromPlayerRuntime(runtime);
+    'room runtime control context keeps screenshot capability live across backend changes',
+    () async {
+      final player = TestRecordingPlayer(playerBackend: PlayerBackend.mpv);
+      addTearDown(player.dispose);
+      final runtime = _RuntimeControlTestRuntime(player);
+      final context = RoomRuntimeControlContext.fromPlayerRuntime(runtime);
 
-    expect(context.supportsScreenshot, isTrue);
+      expect(context.supportsScreenshot, isTrue);
 
-    runtime.supportsScreenshotOverride = false;
-    expect(context.supportsScreenshot, isFalse);
+      runtime.supportsScreenshotOverride = false;
+      expect(context.supportsScreenshot, isFalse);
 
-    await context.ensureBackendWithoutPlaybackState(PlayerBackend.mdk);
-    final screenshot = await context.captureScreenshot();
+      await context.ensureBackendWithoutPlaybackState(PlayerBackend.mdk);
+      final screenshot = await context.captureScreenshot();
 
-    expect(runtime.ensuredBackends, <PlayerBackend>[PlayerBackend.mdk]);
-    expect(screenshot, isNotNull);
-    expect(context.resolveBackend(), PlayerBackend.mdk);
-  });
+      expect(runtime.ensuredBackends, <PlayerBackend>[PlayerBackend.mdk]);
+      expect(screenshot, isNotNull);
+      expect(context.resolveBackend(), PlayerBackend.mdk);
+    },
+  );
 
   test('room runtime inspection context reflects live state and backend', () {
     final player = TestRecordingPlayer(playerBackend: PlayerBackend.mpv);
@@ -101,7 +95,9 @@ class _RuntimeControlTestRuntime extends PlayerRuntimeController {
   bool get supportsScreenshot => supportsScreenshotOverride;
 
   @override
-  Future<void> ensureBackendWithoutPlaybackState(PlayerBackend nextBackend) async {
+  Future<void> ensureBackendWithoutPlaybackState(
+    PlayerBackend nextBackend,
+  ) async {
     ensuredBackends.add(nextBackend);
     _backendOverride = nextBackend;
   }

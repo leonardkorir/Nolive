@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:nolive_app/src/features/home/application/list_available_providers_use_case.dart';
+import 'package:nolive_app/src/shared/application/app_log.dart';
 
 class LoadProviderHighlightsUseCase {
   const LoadProviderHighlightsUseCase({
@@ -26,13 +27,14 @@ class LoadProviderHighlightsUseCase {
   Future<List<ProviderHighlightSection>> call({ProviderId? providerId}) async {
     final descriptors = listAvailableProviders()
         .where(
-            (descriptor) => providerId == null || descriptor.id == providerId)
+          (descriptor) => providerId == null || descriptor.id == providerId,
+        )
         .toList(growable: false);
     final futures = descriptors.map(_loadForDescriptor);
     final sections = await Future.wait(futures);
-    return sections
-        .whereType<ProviderHighlightSection>()
-        .toList(growable: false);
+    return sections.whereType<ProviderHighlightSection>().toList(
+      growable: false,
+    );
   }
 
   Future<ProviderHighlightSection?> _loadForDescriptor(
@@ -46,7 +48,19 @@ class LoadProviderHighlightsUseCase {
         );
         final queries = _queries[descriptor.id.value] ?? const ['架构'];
         for (final query in [...queries, '']) {
-          final response = await search.searchRooms(query);
+          final PagedResponse<LiveRoom> response;
+          try {
+            response = await search.searchRooms(query);
+          } catch (error, stackTrace) {
+            AppLog.instance.error(
+              'browse',
+              'provider highlights search failed '
+                  'provider=${descriptor.id.value} query=$query',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            continue;
+          }
           if (response.items.isNotEmpty) {
             return ProviderHighlightSection(
               descriptor: descriptor,
@@ -69,7 +83,14 @@ class LoadProviderHighlightsUseCase {
           );
         }
       }
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      AppLog.instance.error(
+        'browse',
+        'provider highlights load failed provider=${descriptor.id.value}',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
     return null;
   }
 }

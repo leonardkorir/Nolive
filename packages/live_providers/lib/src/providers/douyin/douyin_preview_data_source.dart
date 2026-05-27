@@ -63,7 +63,7 @@ class DouyinPreviewDataSource implements DouyinDataSource {
       sourceUrl: 'https://live.douyin.com/416144012050',
       isLive: true,
       viewerCount: 32100,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'streamUrl': {
           'flv_pull_url': {
@@ -88,7 +88,7 @@ class DouyinPreviewDataSource implements DouyinDataSource {
       sourceUrl: 'https://live.douyin.com/512300998877',
       isLive: true,
       viewerCount: 45600,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'streamUrl': {
           'flv_pull_url': {
@@ -102,7 +102,7 @@ class DouyinPreviewDataSource implements DouyinDataSource {
     ),
   };
 
-  static const List<LivePlayQuality> _qualities = [
+  static final List<LivePlayQuality> _qualities = List.unmodifiable([
     LivePlayQuality(
       id: '0',
       label: '流畅',
@@ -128,7 +128,7 @@ class DouyinPreviewDataSource implements DouyinDataSource {
         ],
       },
     ),
-  ];
+  ]);
 
   @override
   Future<List<LiveCategory>> fetchCategories() async {

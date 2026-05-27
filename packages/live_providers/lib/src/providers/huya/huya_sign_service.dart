@@ -3,7 +3,12 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
+import '../provider_json.dart';
+import '../provider_runtime_support.dart';
+
 abstract class HuyaSignService {
+  String get playerUserAgent;
+
   String buildUrl({
     required Map<String, Object?> line,
     required int bitRate,
@@ -11,12 +16,20 @@ abstract class HuyaSignService {
 }
 
 class HttpHuyaSignService implements HuyaSignService {
-  static const String playerUserAgent =
-      'HYSDK(Windows,30000002)_APP(pc_exe&7070000&official)_SDK(trans&2.33.0.5678)';
+  static const String defaultPlayerUserAgent = kChromiumDesktopUserAgent;
 
   final Random _random;
+  final ProviderBrowserProfile _browserProfile;
 
-  HttpHuyaSignService({Random? random}) : _random = random ?? Random();
+  HttpHuyaSignService({
+    Random? random,
+    ProviderBrowserProfile browserProfile =
+        ProviderBrowserProfile.chromiumDesktop,
+  })  : _random = random ?? Random(),
+        _browserProfile = browserProfile;
+
+  @override
+  String get playerUserAgent => _browserProfile.userAgent;
 
   @override
   String buildUrl({
@@ -63,15 +76,23 @@ class HttpHuyaSignService implements HuyaSignService {
         md5.convert(utf8.encode('$seqId|$ctype|$platformId')).toString();
 
     final convertedUid = _rotl64(presenterUid);
-    final calcUid = isWap ? presenterUid : convertedUid;
-    final fm = Uri.decodeComponent(mapAnti['fm']!.first);
+    final calcUid = isWap ? presenterUid.toString() : convertedUid;
+    final fmValue = mapAnti['fm']?.first;
+    final wsTime = mapAnti['wsTime']?.first;
+    final fs = mapAnti['fs']?.first;
+    if (fmValue == null || wsTime == null || fs == null) {
+      return antiCode;
+    }
+    final fm = Uri.decodeComponent(fmValue);
     final secretPrefix = utf8.decode(base64.decode(fm)).split('_').first;
-    final wsTime = mapAnti['wsTime']!.first;
     final secret = '${secretPrefix}_${calcUid}_${stream}_${secretHash}_$wsTime';
     final wsSecret = md5.convert(utf8.encode(secret)).toString();
 
-    final ct =
-        ((int.parse(wsTime, radix: 16) + _random.nextDouble()) * 1000).toInt();
+    final wsTimeValue = int.tryParse(wsTime, radix: 16);
+    if (wsTimeValue == null) {
+      return antiCode;
+    }
+    final ct = ((wsTimeValue + _random.nextDouble()) * 1000).toInt();
     final uuid = (((ct % 1e10) + _random.nextDouble()) * 1e3 % 0xffffffff)
         .toInt()
         .toString();
@@ -81,7 +102,7 @@ class HttpHuyaSignService implements HuyaSignService {
       'seqid': seqId,
       'ctype': ctype,
       'ver': '1',
-      'fs': mapAnti['fs']!.first,
+      'fs': fs,
       'fm': fm,
       't': platformId,
     };
@@ -97,17 +118,16 @@ class HttpHuyaSignService implements HuyaSignService {
     return antiCodeResult.entries.map((e) => '${e.key}=${e.value}').join('&');
   }
 
-  int _rotl64(int value) {
-    final low = value & 0xFFFFFFFF;
-    final rotatedLow = ((low << 8) | (low >> 24)) & 0xFFFFFFFF;
-    final high = value & ~0xFFFFFFFF;
-    return high | rotatedLow;
+  String _rotl64(int value) {
+    const mask32 = 0xFFFFFFFF;
+    final unsigned = BigInt.from(value);
+    final low = unsigned & BigInt.from(mask32);
+    final rotatedLow = ((low << 8) | (low >> 24)) & BigInt.from(mask32);
+    final high = unsigned & ~BigInt.from(mask32);
+    return (high | rotatedLow).toString();
   }
 
   int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    return int.tryParse(value?.toString() ?? '');
+    return ProviderJson.asInt(value);
   }
 }

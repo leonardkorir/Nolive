@@ -10,10 +10,14 @@ class InMemoryTagRepository implements TagRepository {
 
   @override
   Future<void> create(String tag) async {
-    if (_tags.contains(tag)) {
+    final normalized = tag.trim();
+    if (normalized.isEmpty) {
       return;
     }
-    _tags.add(tag);
+    if (_tags.contains(normalized)) {
+      return;
+    }
+    _tags.add(normalized);
   }
 
   @override
@@ -24,15 +28,26 @@ class InMemoryTagRepository implements TagRepository {
 
   @override
   Future<void> remove(String tag) async {
-    _tags.remove(tag);
+    _tags.remove(tag.trim());
   }
 
   @override
   Future<void> rename(String oldTag, String newTag) async {
-    final index = _tags.indexOf(oldTag);
-    if (index < 0) {
+    final normalized = newTag.trim();
+    if (normalized.isEmpty) {
       return;
     }
-    _tags[index] = newTag;
+    final index = _tags.indexOf(oldTag);
+    if (index < 0) {
+      throw StateError('Tag not found: $oldTag');
+    }
+    _tags[index] = normalized;
+    _tags
+      ..removeWhere((item) => item.trim().isEmpty)
+      ..sort();
+    final deduped = _tags.toSet().toList(growable: false)..sort();
+    _tags
+      ..clear()
+      ..addAll(deduped);
   }
 }

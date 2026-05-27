@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
@@ -14,9 +15,11 @@ import 'package:nolive_app/src/features/room/application/open_room_danmaku_use_c
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_platforms.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page.dart';
+import 'package:nolive_app/src/features/room/presentation/room_preview_page_fullscreen.dart';
+import 'package:nolive_app/src/features/room/presentation/widgets/room_fullscreen_overlay.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
-import 'package:nolive_app/src/shared/presentation/gestures/responsive_page_swipe_physics.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
+import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
 
 import 'room_fullscreen_test_fakes.dart';
 
@@ -46,41 +49,52 @@ void main() {
       ),
       isTrue,
     );
+    expect(
+      resolveRoomPlayerPosterBackdropVisibility(
+        fullscreen: true,
+        hasPlayback: true,
+        embedPlayer: true,
+        hasPlaybackError: true,
+      ),
+      isTrue,
+    );
   });
 
-  test('embedded player lifecycle view flags defer Android lifecycle control',
-      () {
-    expect(
-      resolveEmbeddedPlayerLifecycleViewFlags(
-        androidPlaybackBridgeSupported: true,
-        backgroundAutoPauseEnabled: true,
-      ),
-      (
-        pauseUponEnteringBackgroundMode: false,
-        resumeUponEnteringForegroundMode: false,
-      ),
-    );
-    expect(
-      resolveEmbeddedPlayerLifecycleViewFlags(
-        androidPlaybackBridgeSupported: false,
-        backgroundAutoPauseEnabled: true,
-      ),
-      (
-        pauseUponEnteringBackgroundMode: true,
-        resumeUponEnteringForegroundMode: true,
-      ),
-    );
-    expect(
-      resolveEmbeddedPlayerLifecycleViewFlags(
-        androidPlaybackBridgeSupported: false,
-        backgroundAutoPauseEnabled: false,
-      ),
-      (
-        pauseUponEnteringBackgroundMode: false,
-        resumeUponEnteringForegroundMode: false,
-      ),
-    );
-  });
+  test(
+    'embedded player lifecycle view flags defer Android lifecycle control',
+    () {
+      expect(
+        resolveEmbeddedPlayerLifecycleViewFlags(
+          androidPlaybackBridgeSupported: true,
+          backgroundAutoPauseEnabled: true,
+        ),
+        (
+          pauseUponEnteringBackgroundMode: false,
+          resumeUponEnteringForegroundMode: false,
+        ),
+      );
+      expect(
+        resolveEmbeddedPlayerLifecycleViewFlags(
+          androidPlaybackBridgeSupported: false,
+          backgroundAutoPauseEnabled: true,
+        ),
+        (
+          pauseUponEnteringBackgroundMode: true,
+          resumeUponEnteringForegroundMode: true,
+        ),
+      );
+      expect(
+        resolveEmbeddedPlayerLifecycleViewFlags(
+          androidPlaybackBridgeSupported: false,
+          backgroundAutoPauseEnabled: false,
+        ),
+        (
+          pauseUponEnteringBackgroundMode: false,
+          resumeUponEnteringForegroundMode: false,
+        ),
+      );
+    },
+  );
 
   test('room panel sync detects fullscreen return desync', () {
     expect(
@@ -130,6 +144,22 @@ void main() {
         leavingRoom: false,
       ),
       isFalse,
+    );
+  });
+
+  test('rendered player surface paint guard is release-safe', () {
+    final boundary = RenderRepaintBoundary();
+    expect(
+      shouldWaitForRenderedPlayerSurfacePaint(boundary, debugMode: false),
+      isFalse,
+    );
+  });
+
+  test('rendered player surface paint guard mirrors debug paint state', () {
+    final boundary = RenderRepaintBoundary();
+    expect(
+      shouldWaitForRenderedPlayerSurfacePaint(boundary, debugMode: true),
+      isTrue,
     );
   });
 
@@ -224,7 +254,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     expect(find.byKey(const Key('room-appbar-more-button')), findsOneWidget);
     expect(find.byKey(const Key('room-danmaku-overlay')), findsNothing);
@@ -234,7 +264,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(
-        find.byKey(const Key('room-inline-fullscreen-button')), findsOneWidget);
+      find.byKey(const Key('room-inline-fullscreen-button')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byKey(const Key('room-appbar-more-button')));
     await tester.pump();
@@ -242,7 +274,7 @@ void main() {
 
     expect(find.text('切换清晰度'), findsOneWidget);
     expect(find.text('切换线路'), findsOneWidget);
-    expect(find.text('截图'), findsNothing);
+    expect(find.text('截图'), findsOneWidget);
     expect(find.text('调试面板'), findsOneWidget);
     expect(
       find.byKey(const Key('room-quick-force-https-switch')),
@@ -268,283 +300,292 @@ void main() {
 
     expect(find.text('关注列表'), findsOneWidget);
     expect(
-        find.byKey(const Key('room-follow-entry-bilibili-6')), findsOneWidget);
-    expect(find.byKey(const Key('room-follow-entry-douyu-3125893')),
-        findsOneWidget);
-    expect(find.byKey(const Key('room-follow-entry-huya-offline-demo')),
-        findsNothing);
+      find.byKey(const Key('room-follow-entry-bilibili-6')),
+      findsOneWidget,
+    );
     expect(
-        find.byKey(const Key('room-follow-settings-button')), findsOneWidget);
+      find.byKey(const Key('room-follow-entry-douyu-3125893')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('room-follow-entry-huya-offline-demo')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('room-follow-settings-button')),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('room-follow-refresh-button')), findsOneWidget);
-    expect(
-      tester
-          .widget<PageView>(find.byKey(const Key('room-panel-page-view')))
-          .physics,
-      isA<ResponsivePageSwipePhysics>(),
-    );
+    final panelPhysics = tester
+        .widget<PageView>(find.byKey(const Key('room-panel-page-view')))
+        .physics;
+    expect(panelPhysics, isA<NeverScrollableScrollPhysics>());
   });
 
   testWidgets(
-      'returning from player settings without changes does not reload playback',
-      (tester) async {
-    final base = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _RecordingPlayer();
-    addTearDown(player.dispose);
+    'returning from player settings without changes does not reload playback',
+    (tester) async {
+      final base = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _RecordingPlayer();
+      addTearDown(player.dispose);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        routes: {
-          AppRoutes.playerSettings: (context) => Scaffold(
-                body: Center(
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('dummy-player-settings'),
-                  ),
+      await tester.pumpWidget(
+        MaterialApp(
+          routes: {
+            AppRoutes.playerSettings: (context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('dummy-player-settings'),
                 ),
               ),
-        },
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(base, player: player),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
+            ),
+          },
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(base, player: player),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-    await _pumpUntilPlayerEventCount(tester, player, 'setSource', 1);
-    await _pumpUntilPlayerEventCount(tester, player, 'play', 1);
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await _pumpUntilPlayerEventCount(tester, player, 'setSource', 1);
+      await _pumpUntilPlayerEventCount(tester, player, 'play', 1);
 
-    final initializeCount =
-        player.events.where((event) => event == 'initialize').length;
-    final setSourceCount =
-        player.events.where((event) => event == 'setSource').length;
-    final playCount = player.events.where((event) => event == 'play').length;
+      final initializeCount = player.events
+          .where((event) => event == 'initialize')
+          .length;
+      final setSourceCount = player.events
+          .where((event) => event == 'setSource')
+          .length;
+      final playCount = player.events.where((event) => event == 'play').length;
 
-    await tester.tap(find.byKey(const Key('room-panel-tab-settings')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('播放器设置'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('room-panel-tab-settings')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('播放器设置'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('dummy-player-settings'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('dummy-player-settings'));
+      await tester.pumpAndSettle();
 
-    expect(
-      player.events.where((event) => event == 'initialize').length,
-      initializeCount,
-    );
-    expect(
-      player.events.where((event) => event == 'setSource').length,
-      setSourceCount,
-    );
-    expect(
-      player.events.where((event) => event == 'play').length,
-      playCount,
-    );
-  });
+      expect(
+        player.events.where((event) => event == 'initialize').length,
+        initializeCount,
+      );
+      expect(
+        player.events.where((event) => event == 'setSource').length,
+        setSourceCount,
+      );
+      expect(player.events.where((event) => event == 'play').length, playCount);
+    },
+  );
 
   testWidgets(
-      'returning from player settings rebinds same source when playback is errored',
-      (tester) async {
-    final base = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final preferences = await base.loadPlayerPreferences();
-    await base.updatePlayerPreferences(
-      preferences.copyWith(backend: PlayerBackend.mdk),
-    );
-    final player = _FailOnceMdkPlayer(failFirstSetSource: false);
-    final runtime = _RefreshTrackingMdkPlayerRuntime(player);
-    addTearDown(player.dispose);
+    'returning from player settings rebinds same source when playback is errored',
+    (tester) async {
+      final base = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final preferences = await base.loadPlayerPreferences();
+      await base.updatePlayerPreferences(
+        preferences.copyWith(backend: PlayerBackend.mdk),
+      );
+      final player = _FailOnceMdkPlayer(failFirstSetSource: false);
+      final runtime = _RefreshTrackingMdkPlayerRuntime(player);
+      addTearDown(player.dispose);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        routes: {
-          AppRoutes.playerSettings: (context) => Scaffold(
-                body: Center(
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('dummy-player-settings'),
-                  ),
+      await tester.pumpWidget(
+        MaterialApp(
+          routes: {
+            AppRoutes.playerSettings: (context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('dummy-player-settings'),
                 ),
               ),
-        },
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(base, playerRuntime: runtime),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
+            ),
+          },
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(base, playerRuntime: runtime),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-    await _pumpUntilPlayerEventCount(tester, player, 'setSource', 1);
-    await _pumpUntilPlayerEventCount(tester, player, 'play', 1);
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await _pumpUntilPlayerEventCount(tester, player, 'setSource', 1);
+      await _pumpUntilPlayerEventCount(tester, player, 'play', 1);
 
-    player.emitStickySourceError();
-    player.armNextSetSourceFailure(retainSource: true);
-    await tester.pump();
+      player.emitStickySourceError();
+      player.armNextSetSourceFailure(retainSource: true);
+      await tester.pump();
 
-    final initialEventCount = player.events.length;
+      final initialEventCount = player.events.length;
 
-    await tester.tap(find.byKey(const Key('room-panel-tab-settings')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('播放器设置'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('dummy-player-settings'));
-    await tester.pumpAndSettle();
-    await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.byKey(const Key('room-panel-tab-settings')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('播放器设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('dummy-player-settings'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
-    final replayEvents = player.events.sublist(initialEventCount);
-    expect(
-      replayEvents,
-      containsAllInOrder(<String>[
-        'refreshBackend',
-        'setSource',
-        'stop',
-        'setSource',
-        'play',
-      ]),
-    );
-    expect(runtime.refreshCount, 1);
-    expect(runtime.currentState.status, PlaybackStatus.playing);
-  });
+      final replayEvents = player.events.sublist(initialEventCount);
+      expect(
+        replayEvents,
+        containsAllInOrder(<String>[
+          'refreshBackend',
+          'setSource',
+          'stop',
+          'setSource',
+          'play',
+        ]),
+      );
+      expect(runtime.refreshCount, 1);
+      expect(runtime.currentState.status, PlaybackStatus.playing);
+    },
+  );
 
   testWidgets(
-      'manual room refresh rebinds same playback source while already playing',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _FailOnceMdkPlayer(failFirstSetSource: false);
-    final runtime = _RefreshTrackingMdkPlayerRuntime(player);
-    final openRoomDanmaku = _NullDanmakuUseCase(bootstrap.providerRegistry);
-    addTearDown(player.dispose);
+    'manual room refresh rebinds same playback source while already playing',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _FailOnceMdkPlayer(failFirstSetSource: false);
+      final runtime = _RefreshTrackingMdkPlayerRuntime(player);
+      final openRoomDanmaku = _NullDanmakuUseCase(bootstrap.providerRegistry);
+      addTearDown(player.dispose);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(
-            bootstrap,
-            playerRuntime: runtime,
-            openRoomDanmaku: openRoomDanmaku,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(
+              bootstrap,
+              playerRuntime: runtime,
+              openRoomDanmaku: openRoomDanmaku,
+            ),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
           ),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
 
-    await tester.tap(find.byKey(const Key('room-appbar-more-button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.byKey(const Key('room-appbar-more-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    player.events.clear();
+      player.events.clear();
 
-    await tester.tap(find.byKey(const Key('room-quick-refresh-button')));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 3));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('room-quick-refresh-button')));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
 
-    expect(
-      player.events,
-      containsAllInOrder(<String>[
-        'refreshBackend',
-        'buildView',
-        'setSource',
-        'play',
-      ]),
-    );
-    expect(runtime.refreshCount, 1);
-    expect(runtime.currentState.status, PlaybackStatus.playing);
+      expect(
+        player.events,
+        containsAllInOrder(<String>[
+          'refreshBackend',
+          'buildView',
+          'setSource',
+          'play',
+        ]),
+      );
+      expect(runtime.refreshCount, 1);
+      expect(runtime.currentState.status, PlaybackStatus.playing);
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
-  });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
 
   testWidgets(
-      'manual fullscreen refresh rebinds same playback source while already playing',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _FailOnceMdkPlayer(failFirstSetSource: false);
-    final runtime = _RefreshTrackingMdkPlayerRuntime(player);
-    final openRoomDanmaku = _NullDanmakuUseCase(bootstrap.providerRegistry);
-    addTearDown(player.dispose);
+    'manual fullscreen refresh rebinds same playback source while already playing',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _FailOnceMdkPlayer(failFirstSetSource: false);
+      final runtime = _RefreshTrackingMdkPlayerRuntime(player);
+      final openRoomDanmaku = _NullDanmakuUseCase(bootstrap.providerRegistry);
+      addTearDown(player.dispose);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(
-            bootstrap,
-            playerRuntime: runtime,
-            openRoomDanmaku: openRoomDanmaku,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(
+              bootstrap,
+              playerRuntime: runtime,
+              openRoomDanmaku: openRoomDanmaku,
+            ),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
           ),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
 
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump(const Duration(milliseconds: 40));
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    player.events.clear();
+      player.events.clear();
 
-    await tester.tap(find.byKey(const Key('room-fullscreen-refresh-button')));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 3));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('room-fullscreen-refresh-button')));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
 
-    expect(
-      player.events,
-      containsAllInOrder(<String>[
-        'refreshBackend',
-        'buildView',
-        'setSource',
-        'play',
-      ]),
-    );
-    expect(runtime.refreshCount, 1);
-    expect(runtime.currentState.status, PlaybackStatus.playing);
+      expect(
+        player.events,
+        containsAllInOrder(<String>[
+          'refreshBackend',
+          'buildView',
+          'setSource',
+          'play',
+        ]),
+      );
+      expect(runtime.refreshCount, 1);
+      expect(runtime.currentState.status, PlaybackStatus.playing);
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(milliseconds: 50));
-  });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 50));
+    },
+  );
 
   testWidgets('fullscreen danmaku toggle updates immediately', (tester) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -570,7 +611,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
     await tester.pump(const Duration(milliseconds: 40));
@@ -578,8 +619,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    final fullscreenDanmakuToggle =
-        find.byKey(const Key('room-fullscreen-danmaku-toggle-button'));
+    final fullscreenDanmakuToggle = find.byKey(
+      const Key('room-fullscreen-danmaku-toggle-button'),
+    );
     expect(
       find.descendant(
         of: fullscreenDanmakuToggle,
@@ -614,7 +656,7 @@ void main() {
     );
   });
 
-  testWidgets('fullscreen exit waits for in-flight playback rebind', (
+  testWidgets('fullscreen exit is not blocked by in-flight playback rebind', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -644,7 +686,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
     await _pumpUntilPlayerEventCount(tester, player, 'setSource', 1);
     await _pumpUntilPlayerEventCount(tester, player, 'play', 1);
 
@@ -668,7 +710,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
+    expect(find.byKey(const Key('room-fullscreen-overlay')), findsNothing);
+    expect(find.byKey(const Key('room-leave-button')), findsOneWidget);
     expect(player.events.where((event) => event == 'stop'), isEmpty);
 
     player.completeBlockedSetSource();
@@ -704,7 +747,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
     await tester.pump(
       resolveMdkTextureRecoveryRetryDelay(0) + const Duration(milliseconds: 40),
     );
@@ -775,9 +818,7 @@ void main() {
     expect(resolveMdkTextureRecoveryRetryDelay(2), Duration.zero);
     expect(
       shouldPreRefreshMdkBackendBeforeSameSourceRebind(
-        state: PlayerState(
-          backend: PlayerBackend.mdk,
-        ),
+        state: PlayerState(backend: PlayerBackend.mdk),
         playbackSource: PlaybackSource(
           url: Uri.parse('https://example.com/live.m3u8'),
           headers: const {'referer': 'https://new.example.com/'},
@@ -841,6 +882,33 @@ void main() {
       ),
       isFalse,
     );
+    expect(
+      shouldPreRefreshMdkBackendBeforeSameSourceRebind(
+        state: PlayerState(
+          backend: PlayerBackend.mdk,
+          source: PlaybackSource(
+            url: Uri.parse('https://example.com/live.m3u8'),
+            externalAudio: PlaybackExternalMedia(
+              url: Uri.parse('https://example.com/audio-a.m3u8'),
+              headers: const {'authorization': 'Bearer old'},
+              label: 'English',
+              mimeType: 'application/x-mpegURL',
+            ),
+          ),
+        ),
+        playbackSource: PlaybackSource(
+          url: Uri.parse('https://example.com/live.m3u8'),
+          externalAudio: PlaybackExternalMedia(
+            url: Uri.parse('https://example.com/audio-a.m3u8'),
+            headers: const {'authorization': 'Bearer new'},
+            label: 'Japanese',
+            mimeType: 'audio/mp4',
+          ),
+        ),
+        runtimeBackend: PlayerBackend.mdk,
+      ),
+      isTrue,
+    );
   });
 
   test('fullscreen follow-room switch resets MDK route transition only', () {
@@ -879,34 +947,36 @@ void main() {
     );
   });
 
-  test('player diagnostics summary includes buffer profile and rebuffer data',
-      () {
-    final summary = formatPlayerDiagnosticsSummary(
-      diagnostics: const PlayerDiagnostics(
-        backend: PlayerBackend.mdk,
-        width: 2560,
-        height: 1440,
-        rebufferCount: 2,
-        lastRebufferDuration: Duration(milliseconds: 480),
-        videoParams: <String, String>{
-          'codec': 'AMediaCodec',
-          'frame_rate': '60.0',
-        },
-      ),
-      source: PlaybackSource(
-        url: Uri.parse('https://example.com/live.m3u8'),
-        bufferProfile: PlaybackBufferProfile.heavyStreamStable,
-      ),
-    );
+  test(
+    'player diagnostics summary includes buffer profile and rebuffer data',
+    () {
+      final summary = formatPlayerDiagnosticsSummary(
+        diagnostics: const PlayerDiagnostics(
+          backend: PlayerBackend.mdk,
+          width: 2560,
+          height: 1440,
+          rebufferCount: 2,
+          lastRebufferDuration: Duration(milliseconds: 480),
+          videoParams: <String, String>{
+            'codec': 'AMediaCodec',
+            'frame_rate': '60.0',
+          },
+        ),
+        source: PlaybackSource(
+          url: Uri.parse('https://example.com/live.m3u8'),
+          bufferProfile: PlaybackBufferProfile.heavyStreamStable,
+        ),
+      );
 
-    expect(summary, contains('backend=mdk'));
-    expect(summary, contains('decoder=AMediaCodec'));
-    expect(summary, contains('size=2560x1440'));
-    expect(summary, contains('frameRate=60.0'));
-    expect(summary, contains('bufferProfile=heavyStreamStable'));
-    expect(summary, contains('rebufferCount=2'));
-    expect(summary, contains('lastRebufferMs=480'));
-  });
+      expect(summary, contains('backend=mdk'));
+      expect(summary, contains('decoder=AMediaCodec'));
+      expect(summary, contains('size=2560x1440'));
+      expect(summary, contains('frameRate=60.0'));
+      expect(summary, contains('bufferProfile=heavyStreamStable'));
+      expect(summary, contains('rebufferCount=2'));
+      expect(summary, contains('lastRebufferMs=480'));
+    },
+  );
 
   test('player diagnostics source signature tracks active media identity', () {
     expect(resolvePlayerDiagnosticsSourceSignature(null), isNull);
@@ -933,274 +1003,288 @@ void main() {
     );
   });
 
-  testWidgets('room preview retries source once before refreshing MDK backend',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _FailOnceMdkPlayer();
-    final runtime = _RefreshTrackingMdkPlayerRuntime(player);
-    addTearDown(player.dispose);
+  testWidgets(
+    'room preview retries source once before refreshing MDK backend',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _FailOnceMdkPlayer();
+      final runtime = _RefreshTrackingMdkPlayerRuntime(player);
+      addTearDown(player.dispose);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pump(
-      resolveMdkTextureRecoveryRetryDelay(0) + const Duration(milliseconds: 40),
-    );
-    await tester.pump();
-    await tester.pump(
-      resolveMdkTextureRecoveryRetryDelay(1) + const Duration(milliseconds: 40),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await tester.pump(
+        resolveMdkTextureRecoveryRetryDelay(0) +
+            const Duration(milliseconds: 40),
+      );
+      await tester.pump();
+      await tester.pump(
+        resolveMdkTextureRecoveryRetryDelay(1) +
+            const Duration(milliseconds: 40),
+      );
+      await tester.pump();
 
-    expect(
-      player.events,
-      containsAllInOrder(<String>[
-        'buildView',
-        'setSource',
-        'stop',
-        'setSource',
-        'play',
-      ]),
-    );
-    expect(runtime.refreshCount, 0);
-    expect(runtime.currentState.status, PlaybackStatus.playing);
-  });
+      expect(
+        player.events,
+        containsAllInOrder(<String>[
+          'buildView',
+          'setSource',
+          'stop',
+          'setSource',
+          'play',
+        ]),
+      );
+      expect(runtime.refreshCount, 0);
+      expect(runtime.currentState.status, PlaybackStatus.playing);
+    },
+  );
 
   testWidgets(
-      'room preview refreshes MDK backend after second texture init failure',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _FailOnceMdkPlayer(initialSetSourceFailures: 2);
-    final runtime = _RefreshTrackingMdkPlayerRuntime(player);
-    addTearDown(player.dispose);
+    'room preview refreshes MDK backend after second texture init failure',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _FailOnceMdkPlayer(initialSetSourceFailures: 2);
+      final runtime = _RefreshTrackingMdkPlayerRuntime(player);
+      addTearDown(player.dispose);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pump(
-      resolveMdkTextureRecoveryRetryDelay(0) + const Duration(milliseconds: 40),
-    );
-    await tester.pump();
-    await tester.pump(
-      resolveMdkTextureRecoveryRetryDelay(1) + const Duration(milliseconds: 40),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await tester.pump(
+        resolveMdkTextureRecoveryRetryDelay(0) +
+            const Duration(milliseconds: 40),
+      );
+      await tester.pump();
+      await tester.pump(
+        resolveMdkTextureRecoveryRetryDelay(1) +
+            const Duration(milliseconds: 40),
+      );
+      await tester.pump();
 
-    expect(
-      player.events,
-      containsAllInOrder(<String>[
-        'buildView',
-        'setSource',
-        'stop',
-        'setSource',
-        'stop',
-        'refreshBackend',
-        'buildView',
-        'setSource',
-        'play',
-      ]),
-    );
-    expect(runtime.refreshCount, 1);
-    expect(runtime.currentState.status, PlaybackStatus.playing);
-  });
+      expect(
+        player.events,
+        containsAllInOrder(<String>[
+          'buildView',
+          'setSource',
+          'stop',
+          'setSource',
+          'stop',
+          'refreshBackend',
+          'buildView',
+          'setSource',
+          'play',
+        ]),
+      );
+      expect(runtime.refreshCount, 1);
+      expect(runtime.currentState.status, PlaybackStatus.playing);
+    },
+  );
 
   testWidgets(
-      'manual quality switch refreshes MDK backend and retries source after second texture init failure',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _FailOnceMdkPlayer(failFirstSetSource: false);
-    final runtime = _RefreshTrackingMdkPlayerRuntime(player);
-    addTearDown(player.dispose);
+    'manual quality switch refreshes MDK backend and retries source after second texture init failure',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _FailOnceMdkPlayer(failFirstSetSource: false);
+      final runtime = _RefreshTrackingMdkPlayerRuntime(player);
+      addTearDown(player.dispose);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
 
-    player.armNextSetSourceFailure(times: 2);
-    final initialEventCount = player.events.length;
+      player.armNextSetSourceFailure(times: 2);
+      final initialEventCount = player.events.length;
 
-    await tester.tap(find.byKey(const Key('room-appbar-more-button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.text('切换清晰度'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('高清'));
-    await tester.pumpAndSettle();
-    await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.byKey(const Key('room-appbar-more-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.text('切换清晰度'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('高清'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
-    final switchEvents = player.events.sublist(initialEventCount);
-    expect(
-      switchEvents,
-      containsAllInOrder(<String>[
-        'setSource',
-        'stop',
-        'setSource',
-        'stop',
-        'refreshBackend',
-        'setSource',
-        'play',
-      ]),
-    );
-    expect(runtime.refreshCount, 1);
-    expect(runtime.currentState.status, PlaybackStatus.playing);
-    expect(
-      runtime.currentState.source?.url.toString(),
-      contains('/150.m3u8'),
-    );
-  });
+      final switchEvents = player.events.sublist(initialEventCount);
+      expect(
+        switchEvents,
+        containsAllInOrder(<String>[
+          'setSource',
+          'stop',
+          'setSource',
+          'stop',
+          'refreshBackend',
+          'setSource',
+          'play',
+        ]),
+      );
+      expect(runtime.refreshCount, 1);
+      expect(runtime.currentState.status, PlaybackStatus.playing);
+      expect(
+        runtime.currentState.source?.url.toString(),
+        contains('/150.m3u8'),
+      );
+    },
+  );
 
   testWidgets(
-      'room preview stops retries after backend refresh retry is exhausted',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _FailOnceMdkPlayer(initialSetSourceFailures: 3);
-    final runtime = _RefreshTrackingMdkPlayerRuntime(player);
-    addTearDown(player.dispose);
+    'room preview stops retries after backend refresh retry is exhausted',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _FailOnceMdkPlayer(initialSetSourceFailures: 3);
+      final runtime = _RefreshTrackingMdkPlayerRuntime(player);
+      addTearDown(player.dispose);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pump(
-      resolveMdkTextureRecoveryRetryDelay(0) + const Duration(milliseconds: 40),
-    );
-    await tester.pump();
-    await tester.pump(
-      resolveMdkTextureRecoveryRetryDelay(1) + const Duration(milliseconds: 40),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await tester.pump(
+        resolveMdkTextureRecoveryRetryDelay(0) +
+            const Duration(milliseconds: 40),
+      );
+      await tester.pump();
+      await tester.pump(
+        resolveMdkTextureRecoveryRetryDelay(1) +
+            const Duration(milliseconds: 40),
+      );
+      await tester.pump();
 
-    expect(
-      player.events,
-      containsAllInOrder(<String>[
-        'buildView',
-        'setSource',
-        'stop',
-        'setSource',
-        'stop',
-        'refreshBackend',
-        'buildView',
-        'setSource',
-      ]),
-    );
-    expect(player.events.where((event) => event == 'refreshBackend'),
-        hasLength(1));
-    expect(player.events.where((event) => event == 'play'), isEmpty);
-    expect(runtime.refreshCount, 1);
-    expect(runtime.currentState.status, PlaybackStatus.error);
-  });
+      expect(
+        player.events,
+        containsAllInOrder(<String>[
+          'buildView',
+          'setSource',
+          'stop',
+          'setSource',
+          'stop',
+          'refreshBackend',
+          'buildView',
+          'setSource',
+        ]),
+      );
+      expect(
+        player.events.where((event) => event == 'refreshBackend'),
+        hasLength(1),
+      );
+      expect(player.events.where((event) => event == 'play'), isEmpty);
+      expect(runtime.refreshCount, 1);
+      expect(runtime.currentState.status, PlaybackStatus.error);
+    },
+  );
 
   testWidgets(
-      'room preview debug sheet renders current diagnostics immediately',
-      (tester) async {
-    final base = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _RecordingPlayer(
-      currentDiagnostics: const PlayerDiagnostics(
-        backend: PlayerBackend.mpv,
-        width: 1920,
-        height: 1080,
-        buffered: Duration(milliseconds: 2048),
-        lowLatencyMode: true,
-        rebufferCount: 2,
-        lastRebufferDuration: Duration(milliseconds: 333),
-      ),
-    );
-    addTearDown(player.dispose);
-    final dependencies = _roomDependencies(base, player: player);
-
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: dependencies,
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
+    'room preview debug sheet renders current diagnostics immediately',
+    (tester) async {
+      final base = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _RecordingPlayer(
+        currentDiagnostics: const PlayerDiagnostics(
+          backend: PlayerBackend.mpv,
+          width: 1920,
+          height: 1080,
+          buffered: Duration(milliseconds: 2048),
+          lowLatencyMode: true,
+          rebufferCount: 2,
+          lastRebufferDuration: Duration(milliseconds: 333),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+      );
+      addTearDown(player.dispose);
+      final dependencies = _roomDependencies(base, player: player);
 
-    await tester.tap(find.byKey(const Key('room-appbar-more-button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.tap(find.text('调试面板'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: dependencies,
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
+        ),
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
 
-    expect(find.text('1920 x 1080'), findsOneWidget);
-    expect(find.text('2048 ms'), findsOneWidget);
-    expect(find.text('低延迟模式'), findsOneWidget);
-    expect(find.text('重缓冲次数'), findsOneWidget);
-    expect(find.text('最近卡顿'), findsOneWidget);
-    expect(find.text('333 ms'), findsOneWidget);
-  });
+      await tester.tap(find.byKey(const Key('room-appbar-more-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      await tester.tap(find.text('调试面板'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('1920 x 1080'), findsOneWidget);
+      expect(find.text('2048 ms'), findsOneWidget);
+      expect(find.text('低延迟模式'), findsOneWidget);
+      expect(find.text('重缓冲次数'), findsOneWidget);
+      expect(find.text('最近卡顿'), findsOneWidget);
+      expect(find.text('333 ms'), findsOneWidget);
+    },
+  );
 
   testWidgets('room preview panels can switch by horizontal swipe', (
     tester,
@@ -1249,7 +1333,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     await tester.fling(
       find.byType(PageView).first,
@@ -1330,7 +1414,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
     await tester.pump(const Duration(milliseconds: 40));
@@ -1362,366 +1446,538 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(tester.getTopLeft(drawerFinder).dx,
-        greaterThanOrEqualTo(hiddenDrawerDx));
-  });
-
-  testWidgets('fullscreen follow drawer keeps fullscreen when switching room',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _RecordingPlayer();
-    final runtime = PlayerRuntimeController(player);
-    addTearDown(player.dispose);
-    bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
-      entries: const [
-        FollowWatchEntry(
-          record: FollowRecord(
-            providerId: 'bilibili',
-            roomId: '6',
-            streamerName: '系统演示主播',
-          ),
-          detail: LiveRoomDetail(
-            providerId: 'bilibili',
-            roomId: '6',
-            title: '系统演示直播间',
-            streamerName: '系统演示主播',
-            isLive: true,
-          ),
-        ),
-      ],
-    );
-    RouteSettings? pushedSettings;
-
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
-        ),
-        onGenerateRoute: (settings) {
-          if (settings.name != AppRoutes.room) {
-            return null;
-          }
-          pushedSettings = settings;
-          final arguments = settings.arguments as RoomRouteArguments;
-          return MaterialPageRoute<void>(
-            settings: settings,
-            builder: (_) => RoomPreviewPage(
-              dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
-              providerId: arguments.providerId,
-              roomId: arguments.roomId,
-              startInFullscreen: arguments.startInFullscreen,
-            ),
-          );
-        },
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump(const Duration(milliseconds: 40));
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.longPressAt(const Offset(1040, 960));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    await tester.tap(
-      find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump(const Duration(seconds: 2));
-    await _pumpUntilFinder(
-      tester,
-      find.byKey(const Key('room-fullscreen-overlay')),
-    );
-
-    expect(pushedSettings?.name, AppRoutes.room);
-    final arguments = pushedSettings?.arguments as RoomRouteArguments?;
-    expect(arguments, isNotNull);
-    expect(arguments!.providerId, ProviderId.bilibili);
-    expect(arguments.roomId, '6');
-    expect(arguments.startInFullscreen, isTrue);
-    expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
-    expect(find.byKey(const Key('room-leave-button')), findsNothing);
-  });
-
-  testWidgets(
-      'fullscreen follow drawer pre-cleans MDK runtime before switching room',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _FailOnceMdkPlayer(failFirstSetSource: false);
-    final runtime = _RefreshTrackingMdkPlayerRuntime(player);
-    addTearDown(player.dispose);
-    bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
-      entries: const [
-        FollowWatchEntry(
-          record: FollowRecord(
-            providerId: 'bilibili',
-            roomId: '6',
-            streamerName: '系统演示主播',
-          ),
-          detail: LiveRoomDetail(
-            providerId: 'bilibili',
-            roomId: '6',
-            title: '系统演示直播间',
-            streamerName: '系统演示主播',
-            isLive: true,
-          ),
-        ),
-      ],
-    );
-
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
-        ),
-        onGenerateRoute: (settings) {
-          if (settings.name != AppRoutes.room) {
-            return null;
-          }
-          final arguments = settings.arguments as RoomRouteArguments;
-          return MaterialPageRoute<void>(
-            settings: settings,
-            builder: (_) => RoomPreviewPage(
-              dependencies: _roomDependencies(
-                bootstrap,
-                playerRuntime: runtime,
-              ),
-              providerId: arguments.providerId,
-              roomId: arguments.roomId,
-              startInFullscreen: arguments.startInFullscreen,
-            ),
-          );
-        },
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump(const Duration(milliseconds: 40));
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    player.events.clear();
-
-    await tester.longPressAt(const Offset(1040, 960));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    await tester.tap(
-      find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6')),
-    );
-    await tester.pump();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump(const Duration(seconds: 2));
-
     expect(
-      player.events,
-      containsAllInOrder(<String>[
-        'stop',
-        'refreshBackend',
-        'setSource',
-        'play',
-      ]),
+      tester.getTopLeft(drawerFinder).dx,
+      greaterThanOrEqualTo(hiddenDrawerDx),
     );
-    expect(runtime.refreshCount, 1);
-    expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
-    expect(find.byKey(const Key('room-leave-button')), findsNothing);
   });
 
   testWidgets(
-      'fullscreen follow drawer shows message and stays in room when MDK cleanup fails',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _FailOnceMdkPlayer(failFirstSetSource: false);
-    final runtime = _ThrowingRefreshMdkPlayerRuntime(player);
-    addTearDown(player.dispose);
-    bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
-      entries: const [
-        FollowWatchEntry(
-          record: FollowRecord(
-            providerId: 'bilibili',
-            roomId: '6',
-            streamerName: '系统演示主播',
-          ),
-          detail: LiveRoomDetail(
-            providerId: 'bilibili',
-            roomId: '6',
-            title: '系统演示直播间',
-            streamerName: '系统演示主播',
-            isLive: true,
-          ),
-        ),
-      ],
-    );
-
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump(const Duration(milliseconds: 40));
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.longPressAt(const Offset(1040, 960));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    await tester.tap(
-      find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('切换直播间失败，请稍后重试'), findsOneWidget);
-    expect(runtime.refreshCount, 1);
-    expect(
-      player.events,
-      containsAllInOrder(<String>[
-        'stop',
-        'refreshBackend',
-        'setSource',
-        'play',
-      ]),
-    );
-    expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
-  });
-
-  testWidgets(
-      'fullscreen follow drawer ignores repeated taps while transition is active',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _FailOnceMdkPlayer(failFirstSetSource: false);
-    final runtime = _DelayedRefreshMdkPlayerRuntime(player);
-    addTearDown(player.dispose);
-    bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
-      entries: const [
-        FollowWatchEntry(
-          record: FollowRecord(
-            providerId: 'bilibili',
-            roomId: '6',
-            streamerName: '系统演示主播',
-          ),
-          detail: LiveRoomDetail(
-            providerId: 'bilibili',
-            roomId: '6',
-            title: '系统演示直播间',
-            streamerName: '系统演示主播',
-            isLive: true,
-          ),
-        ),
-      ],
-    );
-
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
-        ),
-        onGenerateRoute: (settings) {
-          if (settings.name != AppRoutes.room) {
-            return null;
-          }
-          final arguments = settings.arguments as RoomRouteArguments;
-          return MaterialPageRoute<void>(
-            settings: settings,
-            builder: (_) => RoomPreviewPage(
-              dependencies: _roomDependencies(
-                bootstrap,
-                playerRuntime: runtime,
-              ),
-              providerId: arguments.providerId,
-              roomId: arguments.roomId,
-              startInFullscreen: arguments.startInFullscreen,
+    'fullscreen follow drawer switches room and can exit fullscreen',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _RecordingPlayer();
+      final runtime = PlayerRuntimeController(player);
+      addTearDown(player.dispose);
+      bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
+        entries: const [
+          FollowWatchEntry(
+            record: FollowRecord(
+              providerId: 'bilibili',
+              roomId: '6',
+              streamerName: '系统演示主播',
             ),
-          );
-        },
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+            detail: LiveRoomDetail(
+              providerId: 'bilibili',
+              roomId: '6',
+              title: '系统演示直播间',
+              streamerName: '系统演示主播',
+              isLive: true,
+            ),
+          ),
+        ],
+      );
+      RouteSettings? pushedSettings;
 
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump(const Duration(milliseconds: 40));
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.longPressAt(const Offset(1040, 960));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
+          onGenerateRoute: (settings) {
+            if (settings.name != AppRoutes.room) {
+              return null;
+            }
+            pushedSettings = settings;
+            final arguments = settings.arguments as RoomRouteArguments;
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder: (_) => RoomPreviewPage(
+                dependencies: _roomDependencies(
+                  bootstrap,
+                  playerRuntime: runtime,
+                ),
+                providerId: arguments.providerId,
+                roomId: arguments.roomId,
+                startInFullscreen: arguments.startInFullscreen,
+              ),
+            );
+          },
+        ),
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
 
-    final followEntry =
-        find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6'));
-    await tester.tap(followEntry);
-    await tester.tap(followEntry);
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(player.events.where((event) => event == 'stop').length, 1);
-    expect(runtime.refreshCount, 1);
+      await tester.longPressAt(const Offset(1040, 960));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
-    runtime.completeRefresh();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump(const Duration(seconds: 2));
+      await tester.tap(
+        find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await _pumpRoomPreviewAsyncWork(tester);
+      await _pumpUntilFinder(
+        tester,
+        find.byKey(const Key('room-fullscreen-overlay')),
+      );
 
-    expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
-  });
+      expect(pushedSettings?.name, AppRoutes.room);
+      final arguments = pushedSettings?.arguments as RoomRouteArguments?;
+      expect(arguments, isNotNull);
+      expect(arguments!.providerId, ProviderId.bilibili);
+      expect(arguments.roomId, '6');
+      expect(arguments.startInFullscreen, isTrue);
+      expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
+      expect(find.byKey(const Key('room-leave-button')), findsNothing);
 
-  testWidgets('room follow watchlist loads lazily after opening follow tab',
-      (tester) async {
+      final exitFullscreenButton = find.byKey(
+        const Key('room-exit-fullscreen-button'),
+      );
+      if (exitFullscreenButton.evaluate().isEmpty) {
+        final overlay = tester.widget<RoomFullscreenOverlay>(
+          find.byType(RoomFullscreenOverlay),
+        );
+        overlay.onToggleChrome();
+        await tester.pump();
+        expect(exitFullscreenButton, findsOneWidget);
+      }
+
+      await tester.tap(exitFullscreenButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.byKey(const Key('room-fullscreen-overlay')), findsNothing);
+      expect(find.byKey(const Key('room-leave-button')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'fullscreen follow drawer pre-cleans MDK runtime before switching room',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _FailOnceMdkPlayer(failFirstSetSource: false);
+      final runtime = _RefreshTrackingMdkPlayerRuntime(player);
+      addTearDown(player.dispose);
+      bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
+        entries: const [
+          FollowWatchEntry(
+            record: FollowRecord(
+              providerId: 'bilibili',
+              roomId: '6',
+              streamerName: '系统演示主播',
+            ),
+            detail: LiveRoomDetail(
+              providerId: 'bilibili',
+              roomId: '6',
+              title: '系统演示直播间',
+              streamerName: '系统演示主播',
+              isLive: true,
+            ),
+          ),
+        ],
+      );
+
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
+          onGenerateRoute: (settings) {
+            if (settings.name != AppRoutes.room) {
+              return null;
+            }
+            final arguments = settings.arguments as RoomRouteArguments;
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder: (_) => RoomPreviewPage(
+                dependencies: _roomDependencies(
+                  bootstrap,
+                  playerRuntime: runtime,
+                ),
+                providerId: arguments.providerId,
+                roomId: arguments.roomId,
+                startInFullscreen: arguments.startInFullscreen,
+              ),
+            );
+          },
+        ),
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      player.events.clear();
+
+      await tester.longPressAt(const Offset(1040, 960));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      await tester.tap(
+        find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6')),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await _pumpRoomPreviewAsyncWork(tester);
+
+      expect(
+        player.events,
+        containsAllInOrder(<String>[
+          'stop',
+          'refreshBackend',
+          'setSource',
+          'play',
+        ]),
+      );
+      expect(runtime.refreshCount, 1);
+      expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
+      expect(find.byKey(const Key('room-leave-button')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'fullscreen follow-room switch keeps gesture controls and chrome auto-hide working',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = TestRecordingPlayer();
+      final android = TestRoomAndroidPlaybackBridgeFacade();
+      final pipHost = TestRoomPipHostFacade()..pipAvailable = false;
+      final platforms = RoomFullscreenSessionPlatforms(
+        androidPlaybackBridge: android,
+        pipHost: pipHost,
+        desktopWindow: TestRoomDesktopWindowFacade(),
+        screenAwake: TestRoomScreenAwakeFacade(),
+        systemUi: TestRoomSystemUiFacade(),
+      );
+      addTearDown(() async {
+        await pipHost.dispose();
+        await player.dispose();
+      });
+      bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
+        entries: const [
+          FollowWatchEntry(
+            record: FollowRecord(
+              providerId: 'bilibili',
+              roomId: '6',
+              streamerName: '系统演示主播',
+            ),
+            detail: LiveRoomDetail(
+              providerId: 'bilibili',
+              roomId: '6',
+              title: '系统演示直播间',
+              streamerName: '系统演示主播',
+              isLive: true,
+            ),
+          ),
+        ],
+      );
+
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(
+              bootstrap,
+              player: player,
+              platforms: platforms,
+            ),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
+          onGenerateRoute: (settings) {
+            if (settings.name != AppRoutes.room) {
+              return null;
+            }
+            final arguments = settings.arguments as RoomRouteArguments;
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder: (_) => RoomPreviewPage(
+                dependencies: _roomDependencies(
+                  bootstrap,
+                  player: player,
+                  platforms: platforms,
+                ),
+                providerId: arguments.providerId,
+                roomId: arguments.roomId,
+                startInFullscreen: arguments.startInFullscreen,
+              ),
+            );
+          },
+        ),
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await _pumpUntilFinder(
+        tester,
+        find.byKey(const Key('room-fullscreen-overlay')),
+      );
+
+      await tester.longPressAt(const Offset(1040, 960));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      await tester.tap(
+        find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await _pumpRoomPreviewAsyncWork(tester);
+      await _pumpUntilFinder(
+        tester,
+        find.byKey(const Key('room-fullscreen-overlay')),
+      );
+
+      final fullscreenRefreshButton = find.byKey(
+        const Key('room-fullscreen-refresh-button'),
+      );
+      RoomFullscreenOverlay overlayWidget() => tester
+          .widget<RoomFullscreenOverlay>(find.byType(RoomFullscreenOverlay));
+      if (fullscreenRefreshButton.evaluate().isNotEmpty) {
+        await _pumpRoomPreviewAsyncWork(tester);
+      }
+      expect(fullscreenRefreshButton, findsNothing);
+
+      overlayWidget().onToggleChrome();
+      await tester.pump();
+      expect(fullscreenRefreshButton, findsOneWidget);
+
+      await _pumpRoomPreviewAsyncWork(tester);
+      expect(fullscreenRefreshButton, findsNothing);
+
+      overlayWidget().onToggleChrome();
+      await tester.pump();
+      expect(fullscreenRefreshButton, findsOneWidget);
+
+      await _pumpRoomPreviewAsyncWork(tester);
+      expect(fullscreenRefreshButton, findsNothing);
+
+      android.events.clear();
+      overlayWidget().onVerticalDragStart(
+        DragStartDetails(globalPosition: const Offset(900, 1500)),
+      );
+      await tester.pump();
+      overlayWidget().onVerticalDragUpdate(
+        DragUpdateDetails(globalPosition: const Offset(900, 1080)),
+      );
+      await tester.pump();
+
+      expect(android.events, contains('getMediaVolume'));
+      expect(android.events, contains('setMediaVolume'));
+      expect(find.textContaining('音量'), findsOneWidget);
+
+      overlayWidget().onVerticalDragEnd(DragEndDetails());
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'fullscreen follow drawer shows message and stays in room when MDK cleanup fails',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _FailOnceMdkPlayer(failFirstSetSource: false);
+      final runtime = _ThrowingRefreshMdkPlayerRuntime(player);
+      addTearDown(player.dispose);
+      bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
+        entries: const [
+          FollowWatchEntry(
+            record: FollowRecord(
+              providerId: 'bilibili',
+              roomId: '6',
+              streamerName: '系统演示主播',
+            ),
+            detail: LiveRoomDetail(
+              providerId: 'bilibili',
+              roomId: '6',
+              title: '系统演示直播间',
+              streamerName: '系统演示主播',
+              isLive: true,
+            ),
+          ),
+        ],
+      );
+
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
+        ),
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      await tester.longPressAt(const Offset(1040, 960));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      await tester.tap(
+        find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('切换直播间失败，请稍后重试'), findsOneWidget);
+      expect(runtime.refreshCount, 1);
+      expect(
+        player.events,
+        containsAllInOrder(<String>[
+          'stop',
+          'refreshBackend',
+          'setSource',
+          'play',
+        ]),
+      );
+      expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'fullscreen follow drawer ignores repeated taps while transition is active',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _FailOnceMdkPlayer(failFirstSetSource: false);
+      final runtime = _DelayedRefreshMdkPlayerRuntime(player);
+      addTearDown(player.dispose);
+      bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
+        entries: const [
+          FollowWatchEntry(
+            record: FollowRecord(
+              providerId: 'bilibili',
+              roomId: '6',
+              streamerName: '系统演示主播',
+            ),
+            detail: LiveRoomDetail(
+              providerId: 'bilibili',
+              roomId: '6',
+              title: '系统演示直播间',
+              streamerName: '系统演示主播',
+              isLive: true,
+            ),
+          ),
+        ],
+      );
+
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap, playerRuntime: runtime),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
+          onGenerateRoute: (settings) {
+            if (settings.name != AppRoutes.room) {
+              return null;
+            }
+            final arguments = settings.arguments as RoomRouteArguments;
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder: (_) => RoomPreviewPage(
+                dependencies: _roomDependencies(
+                  bootstrap,
+                  playerRuntime: runtime,
+                ),
+                providerId: arguments.providerId,
+                roomId: arguments.roomId,
+                startInFullscreen: arguments.startInFullscreen,
+              ),
+            );
+          },
+        ),
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      await tester.longPressAt(const Offset(1040, 960));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final followEntry = find.byKey(
+        const Key('room-fullscreen-follow-entry-bilibili-6'),
+      );
+      await tester.tap(followEntry);
+      await tester.tap(followEntry);
+      await tester.pump();
+
+      expect(player.events.where((event) => event == 'stop').length, 1);
+      expect(runtime.refreshCount, 1);
+
+      runtime.completeRefresh();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await _pumpRoomPreviewAsyncWork(tester);
+
+      expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
+    },
+  );
+
+  testWidgets('room follow watchlist loads lazily after opening follow tab', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     var detailCalls = 0;
 
@@ -1770,7 +2026,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     expect(detailCalls, 1);
 
@@ -1785,8 +2041,9 @@ void main() {
     );
   });
 
-  testWidgets('following current room updates follow panel snapshot',
-      (tester) async {
+  testWidgets('following current room updates follow panel snapshot', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     bootstrap.providerRegistry.register(
       ProviderRegistration(
@@ -1832,7 +2089,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     await tester.tap(find.byKey(const Key('room-panel-tab-follow')));
     await tester.pump();
@@ -1851,8 +2108,9 @@ void main() {
     );
   });
 
-  testWidgets('room page confirms before removing current room follow state',
-      (tester) async {
+  testWidgets('room page confirms before removing current room follow state', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     bootstrap.providerRegistry.register(
       ProviderRegistration(
@@ -1898,7 +2156,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     expect(find.text('取消关注'), findsOneWidget);
 
@@ -1959,7 +2217,7 @@ void main() {
 
     await tester.tap(find.text('open room'));
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
 
@@ -1974,8 +2232,9 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('picture-in-picture failure restores fullscreen UI',
-      (tester) async {
+  testWidgets('picture-in-picture failure restores fullscreen UI', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     final preferences = await bootstrap.loadPlayerPreferences();
     await bootstrap.updatePlayerPreferences(
@@ -2019,7 +2278,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
     await tester.pump(const Duration(milliseconds: 40));
@@ -2035,8 +2294,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('进入画中画失败，请稍后重试'), findsOneWidget);
-    expect(find.byKey(const Key('room-fullscreen-refresh-button')),
-        findsOneWidget);
+    expect(
+      find.byKey(const Key('room-fullscreen-refresh-button')),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
   });
 
@@ -2074,7 +2335,7 @@ void main() {
 
     await tester.pumpWidget(buildPage());
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     player.viewKeys.clear();
     pipHost.switcherEnabled = true;
@@ -2082,10 +2343,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('room-player-pip')), findsNothing);
-    expect(
-      player.viewKeys.whereType<GlobalKey>().isNotEmpty,
-      isTrue,
-    );
+    expect(player.viewKeys.whereType<GlobalKey>().isNotEmpty, isTrue);
     expect(
       player.viewKeys.where((key) => key == const ValueKey('room-player-pip')),
       isEmpty,
@@ -2123,7 +2381,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
     player.events.clear();
 
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
@@ -2144,82 +2402,83 @@ void main() {
     expect(player.events, contains('play'));
   });
 
-  testWidgets('leaving room while already in picture-in-picture keeps playback',
-      (
-    tester,
-  ) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = TestRecordingPlayer();
-    final android = TestRoomAndroidPlaybackBridgeFacade()
-      ..inPictureInPictureMode = true;
-    final pipHost = TestRoomPipHostFacade();
-    final platforms = RoomFullscreenSessionPlatforms(
-      androidPlaybackBridge: android,
-      pipHost: pipHost,
-      desktopWindow: TestRoomDesktopWindowFacade(),
-      screenAwake: TestRoomScreenAwakeFacade(),
-      systemUi: TestRoomSystemUiFacade(),
-    );
-    addTearDown(() async {
-      await pipHost.dispose();
-      await player.dispose();
-    });
+  testWidgets(
+    'leaving room while already in picture-in-picture keeps playback',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = TestRecordingPlayer();
+      final android = TestRoomAndroidPlaybackBridgeFacade()
+        ..inPictureInPictureMode = true;
+      final pipHost = TestRoomPipHostFacade();
+      final platforms = RoomFullscreenSessionPlatforms(
+        androidPlaybackBridge: android,
+        pipHost: pipHost,
+        desktopWindow: TestRoomDesktopWindowFacade(),
+        screenAwake: TestRoomScreenAwakeFacade(),
+        systemUi: TestRoomSystemUiFacade(),
+      );
+      addTearDown(() async {
+        await pipHost.dispose();
+        await player.dispose();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: Center(
-              child: FilledButton(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (context) => RoomPreviewPage(
-                        dependencies: _roomDependencies(
-                          bootstrap,
-                          player: player,
-                          platforms: platforms,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (context) => RoomPreviewPage(
+                          dependencies: _roomDependencies(
+                            bootstrap,
+                            player: player,
+                            platforms: platforms,
+                          ),
+                          providerId: ProviderId.bilibili,
+                          roomId: '66666',
                         ),
-                        providerId: ProviderId.bilibili,
-                        roomId: '66666',
                       ),
-                    ),
-                  );
-                },
-                child: const Text('open room'),
+                    );
+                  },
+                  child: const Text('open room'),
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('open room'));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-    player.events.clear();
-
-    if (find
-        .byKey(const Key('room-fullscreen-overlay'))
-        .evaluate()
-        .isNotEmpty) {
-      await tester.tap(find.byKey(const Key('room-exit-fullscreen-button')));
+      await tester.tap(find.text('open room'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await _pumpRoomPreviewAsyncWork(tester);
       player.events.clear();
-    }
 
-    await tester.tap(find.byKey(const Key('room-leave-button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      if (find
+          .byKey(const Key('room-fullscreen-overlay'))
+          .evaluate()
+          .isNotEmpty) {
+        await tester.tap(find.byKey(const Key('room-exit-fullscreen-button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        player.events.clear();
+      }
 
-    expect(player.events, isNot(contains('stop')));
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
-  });
+      await tester.tap(find.byKey(const Key('room-leave-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-  testWidgets('chaturbate private show room opens with status marker',
-      (tester) async {
+      expect(player.events, isNot(contains('stop')));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
+  testWidgets('chaturbate private show room opens with status marker', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     bootstrap.providerRegistry.register(
       ProviderRegistration(
@@ -2239,7 +2498,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     expect(find.text('私密表演中'), findsWidgets);
     expect(find.textContaining('Private Show'), findsWidgets);
@@ -2247,8 +2506,9 @@ void main() {
     expect(find.text('暂时打不开这个直播间'), findsNothing);
   });
 
-  testWidgets('super chat empty state is plain text without surface card',
-      (tester) async {
+  testWidgets('super chat empty state is plain text without surface card', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     bootstrap.providerRegistry.register(
       ProviderRegistration(
@@ -2279,16 +2539,13 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
 
     await tester.tap(find.byKey(const Key('room-panel-tab-super-chat')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(
-      find.byType(AppSurfaceCard),
-      findsNothing,
-    );
+    expect(find.byType(AppSurfaceCard), findsNothing);
   });
 
   testWidgets('player super chat overlay expires after configured duration', (
@@ -2346,14 +2603,18 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.byKey(const Key('room-player-super-chat-overlay')),
-        findsOneWidget);
+    expect(
+      find.byKey(const Key('room-player-super-chat-overlay')),
+      findsOneWidget,
+    );
 
     await tester.pump(const Duration(seconds: 4));
     await tester.pump();
 
     expect(
-        find.byKey(const Key('room-player-super-chat-overlay')), findsNothing);
+      find.byKey(const Key('room-player-super-chat-overlay')),
+      findsNothing,
+    );
   });
 
   testWidgets('danmaku reconnects automatically after disconnect notice', (
@@ -2410,94 +2671,223 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(seconds: 4));
-    await tester.pump(const Duration(seconds: 2));
+    await _pumpRoomPreviewAsyncWork(tester);
     await tester.pump();
 
     expect(sessionCreateCount, 2);
   });
 
   testWidgets(
-      'disposed room ignores stale danmaku reconnect completion after replacement',
-      (tester) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final staleReconnectSessionCompleter = Completer<DanmakuSession>();
-    var sessionCreateCount = 0;
+    'disposed room ignores stale danmaku reconnect completion after replacement',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final staleReconnectSessionCompleter = Completer<DanmakuSession>();
+      var sessionCreateCount = 0;
 
-    bootstrap.providerRegistry.register(
-      ProviderRegistration(
-        descriptor: _kWidgetTestDanmakuDescriptor,
-        builder: () => _WidgetTestDanmakuProvider(
-          createSession: () {
-            sessionCreateCount += 1;
-            if (sessionCreateCount == 1) {
+      bootstrap.providerRegistry.register(
+        ProviderRegistration(
+          descriptor: _kWidgetTestDanmakuDescriptor,
+          builder: () => _WidgetTestDanmakuProvider(
+            createSession: () {
+              sessionCreateCount += 1;
+              if (sessionCreateCount == 1) {
+                return _ScriptedDanmakuSession(
+                  onConnect: (controller) async {
+                    controller.add(
+                      LiveMessage(
+                        type: LiveMessageType.notice,
+                        content: '测试弹幕连接已断开',
+                        timestamp: DateTime.now(),
+                      ),
+                    );
+                  },
+                );
+              }
+              if (sessionCreateCount == 2) {
+                return staleReconnectSessionCompleter.future;
+              }
               return _ScriptedDanmakuSession(
                 onConnect: (controller) async {
                   controller.add(
                     LiveMessage(
-                      type: LiveMessageType.notice,
-                      content: '测试弹幕连接已断开',
+                      type: LiveMessageType.chat,
+                      content: 'room-2-message',
+                      userName: '测试用户',
                       timestamp: DateTime.now(),
                     ),
                   );
                 },
               );
-            }
-            if (sessionCreateCount == 2) {
-              return staleReconnectSessionCompleter.future;
-            }
-            return _ScriptedDanmakuSession(
-              onConnect: (controller) async {
-                controller.add(
-                  LiveMessage(
-                    type: LiveMessageType.chat,
-                    content: 'room-2-message',
-                    userName: '测试用户',
-                    timestamp: DateTime.now(),
-                  ),
-                );
-              },
-            );
-          },
+            },
+          ),
         ),
-      ),
-    );
-    bootstrap.providerRegistry.clearCache();
+      );
+      bootstrap.providerRegistry.clearCache();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap),
-          providerId: _kWidgetTestDanmakuProviderId,
-          roomId: 'room-1',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap),
+            providerId: _kWidgetTestDanmakuProviderId,
+            roomId: 'room-1',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pump();
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await tester.pump();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap),
-          providerId: _kWidgetTestDanmakuProviderId,
-          roomId: 'room-2',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap),
+            providerId: _kWidgetTestDanmakuProviderId,
+            roomId: 'room-2',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 600));
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
 
-    staleReconnectSessionCompleter.complete(
-      _ScriptedDanmakuSession(onConnect: (_) async {}),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 600));
+      staleReconnectSessionCompleter.complete(
+        _ScriptedDanmakuSession(onConnect: (_) async {}),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
 
-    expect(sessionCreateCount, 2);
-    expect(find.byType(RoomPreviewPage), findsOneWidget);
-    expect(tester.takeException(), isNull);
+      expect(sessionCreateCount, 2);
+      expect(find.byType(RoomPreviewPage), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  test('resolveFriendlyPlayerErrorMessage maps messages correctly', () {
+    expect(
+      resolveFriendlyPlayerErrorMessage(null),
+      '播放出错，请尝试刷新。',
+    );
+    expect(
+      resolveFriendlyPlayerErrorMessage('No video or audio streams selected'),
+      '该房间的资源链接已过期，请尝试重新进入。',
+    );
+    expect(
+      resolveFriendlyPlayerErrorMessage('HTTP 403 Forbidden'),
+      '该房间的资源链接已过期，请尝试重新进入。',
+    );
+    expect(
+      resolveFriendlyPlayerErrorMessage('forbidden'),
+      '该房间的资源链接已过期，请尝试重新进入。',
+    );
+    expect(
+      resolveFriendlyPlayerErrorMessage('mediacodec-device-creation-failed: could not create device'),
+      '硬件解码器初始化失败，请尝试刷新或切换清晰度。',
+    );
+    expect(
+      resolveFriendlyPlayerErrorMessage('could not create device'),
+      '硬件解码器初始化失败，请尝试刷新或切换清晰度。',
+    );
+    expect(
+      resolveFriendlyPlayerErrorMessage('mpv-vd-reinit'),
+      '硬件解码器初始化失败，请尝试刷新或切换清晰度。',
+    );
+    expect(
+      resolveFriendlyPlayerErrorMessage('some random error'),
+      '播放出错 (some random error)，请尝试刷新。',
+    );
   });
+
+  testWidgets(
+    'renders friendly error overlay and retry button when playback has error status',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _FailOnceMdkPlayer(failFirstSetSource: true, initialSetSourceFailures: 3);
+      final runtime = _RefreshTrackingMdkPlayerRuntime(player);
+      final openRoomDanmaku = _NullDanmakuUseCase(bootstrap.providerRegistry);
+      addTearDown(player.dispose);
+
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(
+              bootstrap,
+              playerRuntime: runtime,
+              openRoomDanmaku: openRoomDanmaku,
+            ),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+            startInFullscreen: true,
+          ),
+        ),
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
+
+      // Check that the error overlay is displayed
+      expect(
+        find.descendant(
+          of: find.byType(RoomFullscreenOverlaySection),
+          matching: find.text('播放失败'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(RoomFullscreenOverlaySection),
+          matching: find.text('播放出错 (MDK texture initialization timed out after 3000ms)，请尝试刷新。'),
+        ),
+        findsOneWidget,
+      );
+
+      // Verify that the poster backdrop is displayed under error state in fullscreen
+      expect(
+        find.descendant(
+          of: find.byType(RoomFullscreenOverlaySection),
+          matching: find.byType(PersistedNetworkImage),
+        ),
+        findsOneWidget,
+      );
+
+      // Tap the Retry button
+      final retryBtn = find.descendant(
+        of: find.byType(RoomFullscreenOverlaySection),
+        matching: find.widgetWithText(TextButton, '重试'),
+      );
+      expect(retryBtn, findsOneWidget);
+      await tester.tap(retryBtn);
+      await tester.pump();
+      for (int i = 0; i < 15; i++) {
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      // The error overlay should be gone once it is playing
+      expect(
+        find.descendant(
+          of: find.byType(RoomFullscreenOverlaySection),
+          matching: find.text('播放失败'),
+        ),
+        findsNothing,
+      );
+
+      // The poster backdrop should hide once playing successfully in fullscreen
+      expect(
+        find.descendant(
+          of: find.byType(RoomFullscreenOverlaySection),
+          matching: find.byType(PersistedNetworkImage),
+        ),
+        findsNothing,
+      );
+    },
+  );
 }
 
 const _kChaturbatePrivateShowDescriptor = ProviderDescriptor(
@@ -2526,9 +2916,7 @@ class _ChaturbatePrivateShowProvider extends LiveProvider
       streamerName: roomId,
       sourceUrl: 'https://chaturbate.com/$roomId/',
       isLive: false,
-      metadata: const {
-        'roomStatus': 'private show in progress',
-      },
+      metadata: const {'roomStatus': 'private show in progress'},
     );
   }
 
@@ -2536,13 +2924,7 @@ class _ChaturbatePrivateShowProvider extends LiveProvider
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    return const [
-      LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-      ),
-    ];
+    return [LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true)];
   }
 
   @override
@@ -2550,7 +2932,7 @@ class _ChaturbatePrivateShowProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    return const [];
+    return [];
   }
 }
 
@@ -2584,13 +2966,7 @@ class _WidgetTestFollowProvider extends LiveProvider
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    return const [
-      LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-      ),
-    ];
+    return [LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true)];
   }
 
   @override
@@ -2598,11 +2974,7 @@ class _WidgetTestFollowProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    return const [
-      LivePlayUrl(
-        url: 'https://example.com/live.m3u8',
-      ),
-    ];
+    return [LivePlayUrl(url: 'https://example.com/live.m3u8')];
   }
 }
 
@@ -2650,13 +3022,7 @@ class _WidgetTestDanmakuProvider extends LiveProvider
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    return const [
-      LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-      ),
-    ];
+    return [LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true)];
   }
 
   @override
@@ -2664,11 +3030,7 @@ class _WidgetTestDanmakuProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    return const [
-      LivePlayUrl(
-        url: 'https://example.com/live.m3u8',
-      ),
-    ];
+    return [LivePlayUrl(url: 'https://example.com/live.m3u8')];
   }
 
   @override
@@ -2678,12 +3040,10 @@ class _WidgetTestDanmakuProvider extends LiveProvider
 }
 
 class _ScriptedDanmakuSession implements DanmakuSession {
-  _ScriptedDanmakuSession({
-    required this.onConnect,
-  });
+  _ScriptedDanmakuSession({required this.onConnect});
 
   final Future<void> Function(StreamController<LiveMessage> controller)
-      onConnect;
+  onConnect;
   final StreamController<LiveMessage> _controller =
       StreamController<LiveMessage>.broadcast();
 
@@ -2710,7 +3070,8 @@ RoomPreviewDependencies _roomDependencies(
 }) {
   return RoomPreviewDependencies(
     followWatchlistSnapshot: bootstrap.followWatchlistSnapshot,
-    playerRuntime: playerRuntime ??
+    playerRuntime:
+        playerRuntime ??
         (player == null
             ? bootstrap.playerRuntime
             : PlayerRuntimeController(player)),
@@ -2756,7 +3117,6 @@ RoomFullscreenSessionPlatforms _defaultTestPlatforms() {
   );
 }
 
-
 Future<void> _pumpUntilPlayerEventCount(
   WidgetTester tester,
   _RecordingPlayer player,
@@ -2771,11 +3131,7 @@ Future<void> _pumpUntilPlayerEventCount(
   }
 }
 
-
-Future<void> _pumpUntilFinder(
-  WidgetTester tester,
-  Finder finder,
-) async {
+Future<void> _pumpUntilFinder(WidgetTester tester, Finder finder) async {
   for (var attempt = 0; attempt < 40; attempt += 1) {
     if (finder.evaluate().isNotEmpty) {
       return;
@@ -2784,11 +3140,17 @@ Future<void> _pumpUntilFinder(
   }
 }
 
+Future<void> _pumpRoomPreviewAsyncWork(WidgetTester tester) async {
+  for (var attempt = 0; attempt < 20; attempt += 1) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
 class _RecordingPlayer implements BasePlayer {
-  _RecordingPlayer({
-    PlayerDiagnostics? currentDiagnostics,
-  }) : _currentDiagnostics = currentDiagnostics ??
-            const PlayerDiagnostics(backend: PlayerBackend.mpv);
+  _RecordingPlayer({PlayerDiagnostics? currentDiagnostics})
+    : _currentDiagnostics =
+          currentDiagnostics ??
+          const PlayerDiagnostics(backend: PlayerBackend.mpv);
 
   final List<String> events = <String>[];
   final StreamController<PlayerState> _states =
@@ -2854,10 +3216,7 @@ class _RecordingPlayer implements BasePlayer {
   Future<void> stop() async {
     events.add('stop');
     _emit(
-      _currentState.copyWith(
-        status: PlaybackStatus.ready,
-        clearSource: true,
-      ),
+      _currentState.copyWith(status: PlaybackStatus.ready, clearSource: true),
     );
   }
 
@@ -2901,13 +3260,14 @@ class _FailOnceMdkPlayer extends _RecordingPlayer {
   _FailOnceMdkPlayer({
     bool failFirstSetSource = true,
     int initialSetSourceFailures = 1,
-  })  : _pendingSetSourceFailures =
-            failFirstSetSource ? initialSetSourceFailures : 0,
-        super(
-          currentDiagnostics: const PlayerDiagnostics(
-            backend: PlayerBackend.mdk,
-          ),
-        );
+  }) : _pendingSetSourceFailures = failFirstSetSource
+           ? initialSetSourceFailures
+           : 0,
+       super(
+         currentDiagnostics: const PlayerDiagnostics(
+           backend: PlayerBackend.mdk,
+         ),
+       );
 
   int _pendingSetSourceFailures;
   bool _retainSourceOnFailure = false;
@@ -2915,10 +3275,7 @@ class _FailOnceMdkPlayer extends _RecordingPlayer {
   @override
   PlayerBackend get backend => PlayerBackend.mdk;
 
-  void armNextSetSourceFailure({
-    bool retainSource = false,
-    int times = 1,
-  }) {
+  void armNextSetSourceFailure({bool retainSource = false, int times = 1}) {
     _pendingSetSourceFailures = times;
     _retainSourceOnFailure = retainSource;
   }

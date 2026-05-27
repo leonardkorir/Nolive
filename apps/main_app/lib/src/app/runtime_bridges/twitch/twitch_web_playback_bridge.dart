@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
 import 'package:nolive_app/src/shared/application/app_log.dart';
 
@@ -20,13 +20,17 @@ class TwitchWebPlaybackBridge {
     Duration bootstrapScriptTimeout = const Duration(seconds: 4),
     Duration idleDisposeDelay = const Duration(minutes: 2),
     TwitchWebPlaybackLifecycle? lifecycle,
-  })  : _loadProviderAccountSettings = loadProviderAccountSettings,
-        _cookieManager = cookieManager ?? CookieManager.instance(),
-        _timeout = timeout,
-        _pollInterval = pollInterval,
-        _bootstrapScriptTimeout = bootstrapScriptTimeout,
-        _idleDisposeDelay = idleDisposeDelay {
-    _lifecycle = lifecycle ??
+    AppPlatformCapabilities? platformCapabilities,
+  }) : _loadProviderAccountSettings = loadProviderAccountSettings,
+       _cookieManager = cookieManager ?? CookieManager.instance(),
+       _timeout = timeout,
+       _pollInterval = pollInterval,
+       _bootstrapScriptTimeout = bootstrapScriptTimeout,
+       _idleDisposeDelay = idleDisposeDelay,
+       _platformCapabilities =
+           platformCapabilities ?? AppPlatformCapabilities.current() {
+    _lifecycle =
+        lifecycle ??
         TwitchWebPlaybackLifecycle(
           idleDisposeDelay: idleDisposeDelay,
           onIdleDispose: _handleIdleDispose,
@@ -280,6 +284,7 @@ return await (async () => {
   final Duration _pollInterval;
   final Duration _bootstrapScriptTimeout;
   final Duration _idleDisposeDelay;
+  final AppPlatformCapabilities _platformCapabilities;
   late final TwitchWebPlaybackLifecycle _lifecycle;
   HeadlessInAppWebView? _headlessWebView;
   Future<InAppWebViewController>? _controllerFuture;
@@ -348,8 +353,9 @@ return await (async () => {
         deviceId: bootstrap.deviceId,
         clientSessionId: bootstrap.clientSessionId,
         clientIntegrity: bootstrap.clientIntegrity,
-        sourceUrl:
-            bootstrap.sourceUrl.isNotEmpty ? bootstrap.sourceUrl : sourceUrl,
+        sourceUrl: bootstrap.sourceUrl.isNotEmpty
+            ? bootstrap.sourceUrl
+            : sourceUrl,
         cookie: cookieHeader,
         userAgent: bootstrap.userAgent.isNotEmpty
             ? bootstrap.userAgent
@@ -367,10 +373,7 @@ return await (async () => {
       await _disposeHeadlessWebView();
       return null;
     } finally {
-      _lifecycle.endUse(
-        leaseEpoch,
-        idleReason: 'bootstrap request settled',
-      );
+      _lifecycle.endUse(leaseEpoch, idleReason: 'bootstrap request settled');
     }
   }
 
@@ -382,9 +385,7 @@ return await (async () => {
 
     final controllerCompleter = Completer<InAppWebViewController>();
     final headlessWebView = HeadlessInAppWebView(
-      initialUrlRequest: URLRequest(
-        url: WebUri(homeUrl),
-      ),
+      initialUrlRequest: URLRequest(url: WebUri(homeUrl)),
       initialSettings: InAppWebViewSettings(
         userAgent: embeddedBrowserUserAgent,
         mediaPlaybackRequiresUserGesture: true,
@@ -426,7 +427,8 @@ return await (async () => {
   }
 
   Future<void> _waitUntilDocumentReady(
-      InAppWebViewController controller) async {
+    InAppWebViewController controller,
+  ) async {
     final deadline = DateTime.now().add(_timeout);
     while (DateTime.now().isBefore(deadline)) {
       if (await _isDocumentReady(controller)) {
@@ -435,7 +437,8 @@ return await (async () => {
       await Future<void>.delayed(_pollInterval);
     }
     throw TimeoutException(
-        'Twitch web playback bridge document readiness timed out.');
+      'Twitch web playback bridge document readiness timed out.',
+    );
   }
 
   Future<void> _disposeHeadlessWebView() async {
@@ -509,17 +512,18 @@ return await (async () => {
         await Future<void>.delayed(_pollInterval);
         continue;
       }
-      final bootstrap = await _resolveBootstrap(
-        controller: controller,
-        roomId: roomId,
-        sourceUrl: sourceUrl,
-      ).timeout(
-        _bootstrapScriptTimeout,
-        onTimeout: () {
-          debugPrint('Twitch web playback bootstrap script timed out.');
-          return null;
-        },
-      );
+      final bootstrap =
+          await _resolveBootstrap(
+            controller: controller,
+            roomId: roomId,
+            sourceUrl: sourceUrl,
+          ).timeout(
+            _bootstrapScriptTimeout,
+            onTimeout: () {
+              debugPrint('Twitch web playback bootstrap script timed out.');
+              return null;
+            },
+          );
       if (bootstrap?.isUsable == true) {
         return bootstrap;
       }
@@ -573,9 +577,7 @@ return await (async () => {
     );
   }
 
-  Future<String> _collectCookieHeader({
-    required String roomUrl,
-  }) async {
+  Future<String> _collectCookieHeader({required String roomUrl}) async {
     final cookieMap = <String, String>{};
     for (final url in {homeUrl, mobileHomeUrl, roomUrl}) {
       final cookies = await _cookieManager.getCookies(url: WebUri(url));
@@ -666,9 +668,6 @@ return await (async () => {
   String _buildRoomUrl(String roomId) => 'https://www.twitch.tv/$roomId';
 
   bool get _supportsPlatform {
-    if (kIsWeb) {
-      return false;
-    }
-    return Platform.isAndroid || Platform.isIOS;
+    return _platformCapabilities.isMobile;
   }
 }

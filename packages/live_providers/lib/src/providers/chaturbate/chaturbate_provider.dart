@@ -22,8 +22,10 @@ class ChaturbateProvider extends LiveProvider
   ChaturbateProvider({
     ChaturbateDataSource? dataSource,
     ChaturbateApiClient? danmakuApiClient,
+    void Function()? disposeOwnedResources,
   })  : _dataSource = dataSource ?? const ChaturbatePreviewDataSource(),
-        _danmakuApiClient = danmakuApiClient;
+        _danmakuApiClient = danmakuApiClient,
+        _disposeOwnedResources = disposeOwnedResources;
 
   factory ChaturbateProvider.preview() => ChaturbateProvider();
 
@@ -33,8 +35,9 @@ class ChaturbateProvider extends LiveProvider
     ChaturbateRoomPageParser roomPageParser = const ChaturbateRoomPageParser(),
     List<String>? recommendCarouselIds,
   }) {
-    final resolvedApiClient =
-        apiClient ?? HttpChaturbateApiClient(cookie: cookie);
+    final ownedApiClient =
+        apiClient == null ? HttpChaturbateApiClient(cookie: cookie) : null;
+    final resolvedApiClient = apiClient ?? ownedApiClient!;
     return ChaturbateProvider(
       dataSource: ChaturbateLiveDataSource(
         apiClient: resolvedApiClient,
@@ -42,6 +45,7 @@ class ChaturbateProvider extends LiveProvider
         recommendCarouselIds: recommendCarouselIds,
       ),
       danmakuApiClient: resolvedApiClient,
+      disposeOwnedResources: ownedApiClient?.close,
     );
   }
 
@@ -74,9 +78,15 @@ class ChaturbateProvider extends LiveProvider
 
   final ChaturbateDataSource _dataSource;
   final ChaturbateApiClient? _danmakuApiClient;
+  final void Function()? _disposeOwnedResources;
 
   @override
   ProviderDescriptor get descriptor => kDescriptor;
+
+  @override
+  void dispose() {
+    _disposeOwnedResources?.call();
+  }
 
   @override
   Future<List<LiveCategory>> fetchCategories() {
@@ -130,28 +140,28 @@ class ChaturbateProvider extends LiveProvider
   Future<DanmakuSession> createDanmakuSession(LiveRoomDetail detail) async {
     requireCapability(ProviderCapability.danmaku);
     final token = detail.danmakuToken;
-    if (token is Map && token['mode']?.toString() == 'preview') {
+    if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
         providerId: descriptor.id.value,
         detail: detail,
       );
     }
-    final broadcasterUid =
-        token is Map ? token['broadcasterUid']?.toString() ?? '' : '';
-    final csrfToken = token is Map ? token['csrfToken']?.toString() ?? '' : '';
-    final backend = token is Map ? token['backend']?.toString() ?? 'a' : 'a';
     final requestCookie =
         detail.metadata?['requestCookie']?.toString().trim() ?? '';
-    if (broadcasterUid.isNotEmpty && csrfToken.isNotEmpty) {
+    if (token is ChaturbateDanmakuToken &&
+        token.broadcasterUid.isNotEmpty &&
+        token.csrfToken.isNotEmpty) {
       final apiClient = requestCookie.isNotEmpty
           ? HttpChaturbateApiClient(cookie: requestCookie)
           : _danmakuApiClient ?? HttpChaturbateApiClient();
       return ChaturbateDanmakuSession(
         roomId: detail.roomId,
-        broadcasterUid: broadcasterUid,
-        csrfToken: csrfToken,
-        backend: backend,
+        broadcasterUid: token.broadcasterUid,
+        csrfToken: token.csrfToken,
+        backend: token.backend,
         apiClient: apiClient,
+        disposeOwnedApiClient:
+            requestCookie.isNotEmpty ? apiClient.close : null,
       );
     }
     return ProviderUnavailableDanmakuSession(

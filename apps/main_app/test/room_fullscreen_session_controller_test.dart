@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +29,58 @@ void main() {
     await harness.dispose();
   });
 
+  testWidgets('enter fullscreen with vertical video locks portrait orientation on Android', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness(verticalVideo: true);
+    addTearDown(harness.dispose);
+
+    await harness.controller.enterFullscreen();
+
+    expect(harness.controller.viewUiState.isFullscreen, isTrue);
+    expect(harness.android.events, contains('lockPortraitFullscreen'));
+    expect(harness.android.events, isNot(contains('lockLandscape')));
+
+    await harness.dispose();
+  });
+
+  testWidgets('enter fullscreen with vertical video sets preferred orientations on non-Android', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness(verticalVideo: true);
+    harness.android.supported = false;
+    addTearDown(harness.dispose);
+
+    await harness.controller.enterFullscreen();
+
+    expect(harness.controller.viewUiState.isFullscreen, isTrue);
+    expect(harness.systemUi.lastOrientations, contains(DeviceOrientation.portraitUp));
+    expect(harness.systemUi.lastOrientations, isNot(contains(DeviceOrientation.landscapeLeft)));
+
+    await harness.dispose();
+  });
+
+  testWidgets('enter fullscreen clears stale fullscreen lock state', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness();
+    addTearDown(harness.dispose);
+    harness.controller.replaceViewUiState(
+      const RoomViewUiState(
+        lockFullscreenControls: true,
+        showFullscreenChrome: false,
+      ),
+    );
+
+    await harness.controller.enterFullscreen();
+
+    expect(harness.controller.viewUiState.isFullscreen, isTrue);
+    expect(harness.controller.viewUiState.lockFullscreenControls, isFalse);
+    expect(harness.controller.viewUiState.showFullscreenChrome, isTrue);
+
+    await tester.pump(const Duration(seconds: 3));
+  });
+
   testWidgets('cancel pending fullscreen bootstrap restores inline chrome', (
     tester,
   ) async {
@@ -45,6 +99,51 @@ void main() {
 
     await harness.dispose();
   });
+
+  testWidgets('enter fullscreen swallows platform failures and reports them', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness();
+    addTearDown(harness.dispose);
+    harness.android.lockLandscapeError = PlatformException(code: 'lock');
+
+    await harness.controller.enterFullscreen();
+
+    expect(harness.controller.viewUiState.isFullscreen, isTrue);
+    expect(harness.messages.single, contains('切换全屏失败'));
+
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('exit fullscreen swallows restore failures and reports them', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness();
+    addTearDown(harness.dispose);
+    await harness.controller.enterFullscreen();
+    harness.android.lockPortraitError = PlatformException(code: 'unlock');
+
+    await harness.controller.exitFullscreen();
+
+    expect(harness.controller.viewUiState.isFullscreen, isFalse);
+    expect(harness.messages.last, contains('恢复界面失败'));
+
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets(
+    'start in fullscreen schedules chrome auto hide during bootstrap',
+    (tester) async {
+      final harness = _ControllerHarness();
+      addTearDown(harness.dispose);
+
+      await harness.controller.initialize(startInFullscreen: true);
+      await tester.pump(const Duration(seconds: 2));
+
+      expect(harness.controller.viewUiState.fullscreenBootstrapPending, isTrue);
+      expect(harness.controller.viewUiState.showFullscreenChrome, isFalse);
+    },
+  );
 
   testWidgets('auto fullscreen marks the room session as already applied', (
     tester,
@@ -70,6 +169,36 @@ void main() {
     expect(harness.controller.viewUiState.fullscreenAutoApplied, isTrue);
 
     await harness.dispose();
+  });
+
+  testWidgets('auto fullscreen does not re-enter while bootstrap pending', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness();
+    addTearDown(harness.dispose);
+    await harness.controller.initialize(startInFullscreen: true);
+    harness.player.emit(
+      const PlayerState(
+        backend: PlayerBackend.mpv,
+        status: PlaybackStatus.playing,
+      ),
+    );
+
+    harness.controller.handlePlayerStateChanged(
+      harness.player.currentState,
+      playbackAvailable: true,
+      autoFullscreenEnabled: true,
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(harness.controller.viewUiState.fullscreenAutoApplied, isFalse);
+    expect(
+      harness.android.events.where((event) => event == 'lockLandscape'),
+      isEmpty,
+    );
+
+    await tester.pump(const Duration(seconds: 2));
   });
 
   testWidgets('failed picture-in-picture restores danmaku and fullscreen UI', (
@@ -135,10 +264,7 @@ void main() {
     final harness = _ControllerHarness();
     addTearDown(harness.dispose);
     harness.controller.replaceViewUiState(
-      const RoomViewUiState(
-        isFullscreen: true,
-        showFullscreenChrome: true,
-      ),
+      const RoomViewUiState(isFullscreen: true, showFullscreenChrome: true),
     );
 
     harness.controller.toggleFullscreenLock();
@@ -172,79 +298,134 @@ void main() {
 
     expect(
       harness.android.events,
-      containsAllInOrder(<String>[
-        'prepareForPictureInPicture',
-      ]),
+      containsAllInOrder(<String>['prepareForPictureInPicture']),
     );
   });
 
   testWidgets(
-      'lifecycle pause and resume suspend and restore playback when enabled', (
-    tester,
-  ) async {
-    final harness = _ControllerHarness();
-    addTearDown(harness.dispose);
-    harness.player.emit(
-      PlayerState(
-        backend: PlayerBackend.mpv,
-        status: PlaybackStatus.playing,
-        source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
-      ),
-    );
-    harness.controller.replaceViewUiState(
-      const RoomViewUiState(
-        showInlinePlayerChrome: false,
-        showFullscreenChrome: true,
-      ),
-    );
+    'lifecycle pause and resume suspend and restore playback when enabled',
+    (tester) async {
+      final harness = _ControllerHarness();
+      addTearDown(harness.dispose);
+      harness.player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          source: PlaybackSource(
+            url: Uri.parse('https://example.com/live.m3u8'),
+          ),
+        ),
+      );
+      harness.controller.replaceViewUiState(
+        const RoomViewUiState(
+          showInlinePlayerChrome: false,
+          showFullscreenChrome: true,
+        ),
+      );
 
-    await harness.controller.handleLifecycleState(AppLifecycleState.paused);
-    expect(harness.player.events, contains('stop'));
-    expect(harness.controller.viewUiState.pausedByLifecycle, isFalse);
+      await harness.controller.handleLifecycleState(AppLifecycleState.paused);
+      expect(harness.player.events, contains('stop'));
+      expect(harness.controller.viewUiState.pausedByLifecycle, isFalse);
 
-    await harness.controller.handleLifecycleState(AppLifecycleState.resumed);
-    expect(harness.resolvePlaybackSourceForLifecycleRestoreCalls, 1);
-    expect(
-      harness.player.events,
-      containsAllInOrder(<String>['stop', 'setSource', 'play']),
-    );
-    expect(harness.player.events, contains('play'));
-    expect(harness.controller.viewUiState.pausedByLifecycle, isFalse);
-    expect(harness.controller.viewUiState.showInlinePlayerChrome, isFalse);
-    expect(
-      harness.player.currentState.source?.url.toString(),
-      'https://example.com/restored.m3u8',
-    );
-  });
+      await harness.controller.handleLifecycleState(AppLifecycleState.resumed);
+      expect(harness.resolvePlaybackSourceForLifecycleRestoreCalls, 1);
+      expect(
+        harness.player.events,
+        containsAllInOrder(<String>['stop', 'setSource', 'play']),
+      );
+      expect(harness.player.events, contains('play'));
+      expect(harness.controller.viewUiState.pausedByLifecycle, isFalse);
+      expect(harness.controller.viewUiState.showInlinePlayerChrome, isFalse);
+      expect(
+        harness.player.currentState.source?.url.toString(),
+        'https://example.com/restored.m3u8',
+      );
+    },
+  );
 
   testWidgets(
-      'fullscreen resume reapplies immersive landscape when leaving PiP',
-      (tester) async {
-    final harness = _ControllerHarness();
-    addTearDown(harness.dispose);
-    harness.controller.replaceViewUiState(
-      const RoomViewUiState(
-        isFullscreen: true,
-        showFullscreenChrome: true,
-        enteringPictureInPicture: true,
-      ),
-    );
-    harness.android.inPictureInPictureMode = false;
+    'fullscreen resume reapplies immersive landscape when leaving PiP',
+    (tester) async {
+      final harness = _ControllerHarness();
+      addTearDown(harness.dispose);
+      harness.controller.replaceViewUiState(
+        const RoomViewUiState(
+          isFullscreen: true,
+          showFullscreenChrome: true,
+          enteringPictureInPicture: true,
+        ),
+      );
+      harness.android.inPictureInPictureMode = false;
 
-    await harness.controller.handleLifecycleState(AppLifecycleState.resumed);
+      await harness.controller.handleLifecycleState(AppLifecycleState.resumed);
 
-    expect(harness.android.events, contains('lockLandscape'));
-    expect(harness.systemUi.lastMode, SystemUiMode.immersiveSticky);
+      expect(harness.android.events, contains('lockLandscape'));
+      expect(harness.systemUi.lastMode, SystemUiMode.immersiveSticky);
 
-    await harness.dispose();
-  });
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'dispose during pending picture-in-picture failure does not restore fullscreen UI',
+    (tester) async {
+      final harness = _ControllerHarness();
+      addTearDown(harness.dispose);
+      harness.pipHost.enablePipCompleter = Completer<PiPStatus>();
+      harness.pipHost.emitStatusOnEnable = false;
+      harness.controller.replaceViewUiState(
+        const RoomViewUiState(isFullscreen: true),
+      );
+
+      final enterFuture = harness.controller.enterPictureInPicture();
+      harness.disposeController();
+      harness.pipHost.enablePipCompleter!.complete(PiPStatus.disabled);
+      await enterFuture;
+
+      expect(harness.messages, isEmpty);
+      expect(harness.android.events, isNot(contains('lockLandscape')));
+    },
+  );
+
+  testWidgets(
+    'dispose during pending lifecycle resume skips fullscreen and playback restore',
+    (tester) async {
+      final harness = _ControllerHarness();
+      addTearDown(harness.dispose);
+      harness.player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          source: PlaybackSource(
+            url: Uri.parse('https://example.com/live.m3u8'),
+          ),
+        ),
+      );
+      harness.controller.replaceViewUiState(
+        const RoomViewUiState(isFullscreen: true, showFullscreenChrome: true),
+      );
+
+      await harness.controller.handleLifecycleState(AppLifecycleState.paused);
+
+      harness.android.inPictureInPictureModeCompleter = Completer<bool>();
+      final resumeFuture = harness.controller.handleLifecycleState(
+        AppLifecycleState.resumed,
+      );
+      harness.disposeController();
+      harness.android.inPictureInPictureModeCompleter!.complete(false);
+      await resumeFuture;
+
+      expect(harness.resolvePlaybackSourceForLifecycleRestoreCalls, 0);
+      expect(harness.android.events, isNot(contains('lockLandscape')));
+      expect(harness.player.events, isNot(contains('setSource')));
+      expect(harness.player.events, isNot(contains('play')));
+    },
+  );
 
   testWidgets('lifecycle pause does not stop playback when auto pause is off', (
     tester,
   ) async {
-    final harness = _ControllerHarness(
-      backgroundAutoPauseEnabled: false,
-    );
+    final harness = _ControllerHarness(backgroundAutoPauseEnabled: false);
     addTearDown(harness.dispose);
     harness.player.emit(
       const PlayerState(
@@ -259,30 +440,30 @@ void main() {
     expect(harness.controller.viewUiState.pausedByLifecycle, isFalse);
   });
 
-  testWidgets('cleanup playback stops only when not entering or already in PiP',
-      (
-    tester,
-  ) async {
-    final harness = _ControllerHarness();
-    addTearDown(harness.dispose);
+  testWidgets(
+    'cleanup playback stops only when not entering or already in PiP',
+    (tester) async {
+      final harness = _ControllerHarness();
+      addTearDown(harness.dispose);
 
-    await harness.controller.cleanupPlaybackOnLeave();
-    expect(harness.player.events, contains('stop'));
+      await harness.controller.cleanupPlaybackOnLeave();
+      expect(harness.player.events, contains('stop'));
 
-    final enteringHarness = _ControllerHarness();
-    addTearDown(enteringHarness.dispose);
-    enteringHarness.controller.replaceViewUiState(
-      const RoomViewUiState(enteringPictureInPicture: true),
-    );
-    await enteringHarness.controller.cleanupPlaybackOnLeave();
-    expect(enteringHarness.player.events, isNot(contains('stop')));
+      final enteringHarness = _ControllerHarness();
+      addTearDown(enteringHarness.dispose);
+      enteringHarness.controller.replaceViewUiState(
+        const RoomViewUiState(enteringPictureInPicture: true),
+      );
+      await enteringHarness.controller.cleanupPlaybackOnLeave();
+      expect(enteringHarness.player.events, isNot(contains('stop')));
 
-    final pipHarness = _ControllerHarness();
-    addTearDown(pipHarness.dispose);
-    pipHarness.android.inPictureInPictureMode = true;
-    await pipHarness.controller.cleanupPlaybackOnLeave();
-    expect(pipHarness.player.events, isNot(contains('stop')));
-  });
+      final pipHarness = _ControllerHarness();
+      addTearDown(pipHarness.dispose);
+      pipHarness.android.inPictureInPictureMode = true;
+      await pipHarness.controller.cleanupPlaybackOnLeave();
+      expect(pipHarness.player.events, isNot(contains('stop')));
+    },
+  );
 
   testWidgets('cleanup playback refreshes MDK backend after stop', (
     tester,
@@ -310,28 +491,30 @@ void main() {
   });
 
   testWidgets(
-      'cleanup playback stops MPV backend without refresh on Android leave', (
-    tester,
-  ) async {
-    final harness = _ControllerHarness(
-      playerBackend: PlayerBackend.mpv,
-      refreshableRuntime: true,
-    );
-    addTearDown(harness.dispose);
-    harness.player.emit(
-      PlayerState(
-        backend: PlayerBackend.mpv,
-        status: PlaybackStatus.playing,
-        source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
-      ),
-    );
+    'cleanup playback stops MPV backend without refresh on Android leave',
+    (tester) async {
+      final harness = _ControllerHarness(
+        playerBackend: PlayerBackend.mpv,
+        refreshableRuntime: true,
+      );
+      addTearDown(harness.dispose);
+      harness.player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          source: PlaybackSource(
+            url: Uri.parse('https://example.com/live.m3u8'),
+          ),
+        ),
+      );
 
-    await harness.controller.cleanupPlaybackOnLeave();
+      await harness.controller.cleanupPlaybackOnLeave();
 
-    expect(harness.player.events, contains('stop'));
-    expect(harness.player.events, isNot(contains('refreshBackend')));
-    expect(harness.refreshRuntime?.refreshCount, 0);
-  });
+      expect(harness.player.events, contains('stop'));
+      expect(harness.player.events, isNot(contains('refreshBackend')));
+      expect(harness.refreshRuntime?.refreshCount, 0);
+    },
+  );
 
   test('cleanup helper only refreshes active MDK sessions', () {
     expect(
@@ -357,8 +540,9 @@ void main() {
         PlayerState(
           backend: PlayerBackend.mpv,
           status: PlaybackStatus.playing,
-          source:
-              PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
+          source: PlaybackSource(
+            url: Uri.parse('https://example.com/live.m3u8'),
+          ),
         ),
       ),
       isFalse,
@@ -424,12 +608,13 @@ class _ControllerHarness {
     this.backgroundAutoPauseEnabled = true,
     this.playerBackend = PlayerBackend.mpv,
     this.refreshableRuntime = false,
-  })  : player = TestRecordingPlayer(playerBackend: playerBackend),
-        android = TestRoomAndroidPlaybackBridgeFacade(),
-        pipHost = TestRoomPipHostFacade(),
-        desktopWindow = TestRoomDesktopWindowFacade(),
-        screenAwake = TestRoomScreenAwakeFacade(),
-        systemUi = TestRoomSystemUiFacade() {
+    this.verticalVideo = false,
+  }) : player = TestRecordingPlayer(playerBackend: playerBackend),
+       android = TestRoomAndroidPlaybackBridgeFacade(),
+       pipHost = TestRoomPipHostFacade(),
+       desktopWindow = TestRoomDesktopWindowFacade(),
+       screenAwake = TestRoomScreenAwakeFacade(),
+       systemUi = TestRoomSystemUiFacade() {
     final playerRuntime = refreshableRuntime
         ? (_refreshRuntime = _RefreshTrackingPlayerRuntime(player))
         : PlayerRuntimeController(player);
@@ -458,6 +643,7 @@ class _ControllerHarness {
           resolvePlaybackSourceForLifecycleRestoreCalls += 1;
           return restoredPlaybackSource;
         },
+        resolveIsVerticalVideo: () => verticalVideo,
       ),
       platforms: RoomFullscreenSessionPlatforms(
         androidPlaybackBridge: android,
@@ -472,6 +658,7 @@ class _ControllerHarness {
   final bool backgroundAutoPauseEnabled;
   final PlayerBackend playerBackend;
   final bool refreshableRuntime;
+  final bool verticalVideo;
   final TestRecordingPlayer player;
   final TestRoomAndroidPlaybackBridgeFacade android;
   final TestRoomPipHostFacade pipHost;
@@ -484,20 +671,32 @@ class _ControllerHarness {
   _RefreshTrackingPlayerRuntime? _refreshRuntime;
   bool danmakuVisible = true;
   double volume = 0.6;
-  PlaybackSource restoredPlaybackSource =
-      PlaybackSource(url: Uri.parse('https://example.com/restored.m3u8'));
+  PlaybackSource restoredPlaybackSource = PlaybackSource(
+    url: Uri.parse('https://example.com/restored.m3u8'),
+  );
   int resolvePlaybackSourceForLifecycleRestoreCalls = 0;
   int followWatchlistLoadCount = 0;
   bool _disposed = false;
+  bool _controllerDisposed = false;
 
   _RefreshTrackingPlayerRuntime? get refreshRuntime => _refreshRuntime;
+
+  void disposeController() {
+    if (_controllerDisposed) {
+      return;
+    }
+    _controllerDisposed = true;
+    controller.dispose();
+  }
 
   Future<void> dispose() async {
     if (_disposed) {
       return;
     }
     _disposed = true;
-    controller.dispose();
+    if (!_controllerDisposed) {
+      controller.dispose();
+    }
     await pipHost.dispose();
     await player.dispose();
   }

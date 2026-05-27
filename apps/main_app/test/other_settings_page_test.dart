@@ -145,14 +145,8 @@ void main() {
       'platform': 'android',
       'version': 1,
       'time': 1234567890,
-      'config': {
-        'theme_mode': 'dark',
-        'player_auto_play': false,
-      },
-      'shield': {
-        '剧透': '剧透',
-        '广告': '广告',
-      },
+      'config': {'theme_mode': 'dark', 'player_auto_play': false},
+      'shield': {'剧透': '剧透', '广告': '广告'},
     });
 
     await tester.pumpWidget(
@@ -178,8 +172,10 @@ void main() {
     expect(snapshot.follows.single.roomId, '6');
     expect(snapshot.follows.single.lastTitle, '旧标题');
     expect(snapshot.follows.single.lastAreaName, '旧分区');
-    expect(snapshot.follows.single.lastCoverUrl,
-        'https://example.com/old-cover.png');
+    expect(
+      snapshot.follows.single.lastCoverUrl,
+      'https://example.com/old-cover.png',
+    );
     expect(
       snapshot.follows.single.lastKeyframeUrl,
       'https://example.com/old-keyframe.png',

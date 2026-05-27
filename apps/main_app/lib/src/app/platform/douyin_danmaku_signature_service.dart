@@ -13,6 +13,13 @@ class DouyinDanmakuSignatureService {
   FlutterQjs? _engine;
   bool _scriptLoaded = false;
 
+  static const String _scriptAsset = 'assets/js/douyin-webmssdk.js';
+  static const String _scriptSha256 =
+      '1947447062475c9f3edfedabea8f0fb888da1d469891311506f97ca2d28c7141';
+  static const String _webUserAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
+
   FlutterQjs get _runtime {
     final engine = _engine;
     if (engine != null) {
@@ -45,9 +52,13 @@ class DouyinDanmakuSignatureService {
       'identity': 'audience',
     };
     final stub = md5
-        .convert(utf8.encode(params.entries
-            .map((entry) => '${entry.key}=${entry.value}')
-            .join(',')))
+        .convert(
+          utf8.encode(
+            params.entries
+                .map((entry) => '${entry.key}=${entry.value}')
+                .join(','),
+          ),
+        )
         .toString();
     final result = _runtime.evaluate("get_sign('$stub')");
     return result?.toString() ?? '';
@@ -57,9 +68,28 @@ class DouyinDanmakuSignatureService {
     if (_scriptLoaded) {
       return;
     }
-    final script = await rootBundle.loadString('assets/js/douyin-webmssdk.js');
+    final data = await rootBundle.load(_scriptAsset);
+    final bytes = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
+    _verifyScriptIntegrity(bytes);
+    final script = utf8.decode(bytes);
+    _runtime.evaluate(
+      'var __NOLIVE_DOUYIN_USER_AGENT__ = ${jsonEncode(_webUserAgent)};',
+    );
     _runtime.evaluate(script);
     _scriptLoaded = true;
+  }
+
+  static void _verifyScriptIntegrity(Uint8List bytes) {
+    final actual = sha256.convert(bytes).toString();
+    if (actual != _scriptSha256) {
+      throw StateError(
+        'Douyin webmssdk integrity check failed: expected $_scriptSha256, '
+        'got $actual.',
+      );
+    }
   }
 }
 

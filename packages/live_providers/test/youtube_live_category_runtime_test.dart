@@ -1,5 +1,6 @@
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/src/providers/youtube/youtube_api_client.dart';
+import 'package:live_providers/src/providers/youtube/youtube_hls_master_playlist_parser.dart';
 import 'package:live_providers/src/providers/youtube/youtube_live_data_source.dart';
 import 'package:test/test.dart';
 
@@ -60,6 +61,79 @@ void main() {
       contains('@ESL/live'),
     );
   });
+
+  test('youtube live data source caps HLS caches', () {
+    final dataSource = _FakeYouTubeCategoryDataSource();
+    const limit = 64;
+
+    for (var index = 0; index < limit + 8; index += 1) {
+      final url = 'https://example.com/$index.m3u8';
+      dataSource.debugRememberHlsVariantCache(
+        url,
+        [
+          YouTubeHlsVariant(
+            url: url,
+            bandwidth: index,
+            label: '$index p',
+          ),
+        ],
+      );
+      dataSource.debugRememberHlsUsabilityCache(url, index.isEven);
+    }
+
+    expect(dataSource.debugHlsVariantCacheSize, limit);
+    expect(dataSource.debugHlsUsabilityCacheSize, limit);
+  });
+
+  test('youtube live data source bounds recursive context merge depth', () {
+    final dataSource = _FakeYouTubeCategoryDataSource();
+    final base = <String, dynamic>{
+      'client': _deepNestedMap(depth: 80, leafKey: 'baseLeaf', leafValue: 'ok'),
+    };
+    final overlay = <String, dynamic>{
+      'client': _deepNestedMap(
+        depth: 80,
+        leafKey: 'overlayLeaf',
+        leafValue: 'applied',
+      ),
+      'hl': 'en',
+    };
+
+    final merged = dataSource.debugMergeContextMaps(base, overlay);
+    expect(merged['hl'], 'en');
+    expect(
+      _readNestedLeafValue(
+        merged['client'] as Map<String, dynamic>,
+        depth: 80,
+        leafKey: 'overlayLeaf',
+      ),
+      'applied',
+    );
+  });
+}
+
+Map<String, dynamic> _deepNestedMap({
+  required int depth,
+  required String leafKey,
+  required Object leafValue,
+}) {
+  Map<String, dynamic> current = <String, dynamic>{leafKey: leafValue};
+  for (var index = 0; index < depth; index += 1) {
+    current = <String, dynamic>{'child': current};
+  }
+  return current;
+}
+
+Object? _readNestedLeafValue(
+  Map<String, dynamic> source, {
+  required int depth,
+  required String leafKey,
+}) {
+  Map<String, dynamic> current = source;
+  for (var index = 0; index < depth; index += 1) {
+    current = current['child'] as Map<String, dynamic>;
+  }
+  return current[leafKey];
 }
 
 class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
@@ -215,6 +289,7 @@ class _NoopYouTubeApiClient implements YouTubeApiClient {
     required String visitorData,
     required String referer,
     String clientVersion = YouTubeApiClient.defaultWebClientVersion,
+    Duration timeout = YouTubeApiClient.liveChatRequestTimeout,
   }) async {
     throw UnimplementedError();
   }

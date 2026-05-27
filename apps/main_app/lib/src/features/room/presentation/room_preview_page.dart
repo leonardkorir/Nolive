@@ -8,7 +8,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/room/application/room_ancillary_controller.dart';
 import 'package:nolive_app/src/features/room/application/room_follow_watchlist_controller.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
@@ -27,12 +26,12 @@ import 'package:nolive_app/src/features/room/presentation/room_gesture_ui_state.
 import 'package:nolive_app/src/features/room/presentation/room_panel_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_page_interaction_coordinator.dart';
 import 'package:nolive_app/src/features/room/presentation/room_page_session_coordinator.dart';
+import 'package:nolive_app/src/features/room/presentation/room_page_ui_effects.dart';
 import 'package:nolive_app/src/features/room/presentation/room_player_runtime_observer.dart';
 import 'package:nolive_app/src/features/room/presentation/room_playback_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_playback_session_state.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_chat_panels.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_controls.dart';
-import 'package:nolive_app/src/features/room/presentation/room_preview_page_controls_actions.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_danmaku.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_follow_actions.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_fullscreen.dart';
@@ -65,7 +64,8 @@ export 'room_player_runtime_observer.dart'
 export 'room_preview_page_player_surface.dart'
     show
         resolveEmbeddedPlayerLifecycleViewFlags,
-        resolveRoomPlayerPosterBackdropVisibility;
+        resolveRoomPlayerPosterBackdropVisibility,
+        resolveFriendlyPlayerErrorMessage;
 
 @visibleForTesting
 bool shouldCleanupPlaybackOnRoomPreviewDispose({
@@ -73,6 +73,17 @@ bool shouldCleanupPlaybackOnRoomPreviewDispose({
   required bool leavingRoom,
 }) {
   return !preserveRoomTransitionOnDispose && !leavingRoom;
+}
+
+@visibleForTesting
+bool shouldWaitForRenderedPlayerSurfacePaint(
+  RenderRepaintBoundary boundary, {
+  bool debugMode = kDebugMode,
+}) {
+  if (!debugMode) {
+    return false;
+  }
+  return boundary.debugNeedsPaint;
 }
 
 class RoomPreviewPage extends StatefulWidget {
@@ -102,10 +113,11 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   late final RoomFollowActionCoordinator _followActionCoordinator;
   late final RoomFollowWatchlistController _followWatchlistController;
   late final RoomFollowRoomTransitionCoordinator
-      _followRoomTransitionCoordinator;
+  _followRoomTransitionCoordinator;
   late final RoomFullscreenSessionController _fullscreenSessionController;
   late final RoomPanelController _panelController;
   late final RoomPageInteractionCoordinator _pageInteractionCoordinator;
+  late final RoomPageUiEffects _pageUiEffects;
   late final RoomPageSessionCoordinator _pageSessionCoordinator;
   late final RoomPlayerRuntimeObserver _playerRuntimeObserver;
   late final RoomPlaybackController _playbackController;
@@ -118,6 +130,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   Size? _inlinePlayerViewportSize;
   bool _pageRebuildQueued = false;
   int _embeddedPlayerViewEpoch = 0;
+  PlayerState? _currentPlayerState;
 
   Future<RoomSessionLoadResult> get _future =>
       _pageSessionCoordinator.roomFuture;
@@ -253,53 +266,13 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     if (!kDebugMode) {
       return;
     }
-    debugPrint(
-      '$prefix $message',
-    );
-  }
-
-  void _showPageMessage(String message) {
-    if (!mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
-  Future<void> _pushNamedRoute(
-    String routeName, {
-    bool rootNavigator = false,
-  }) async {
-    if (!mounted) {
-      return;
-    }
-    await Navigator.of(context, rootNavigator: rootNavigator).pushNamed(
-      routeName,
-    );
-  }
-
-  Future<void> _pushReplacementToRoom(RoomRouteArguments args) async {
-    if (!mounted) {
-      return;
-    }
-    await Navigator.of(context).pushReplacementNamed(
-      AppRoutes.room,
-      arguments: args,
-    );
+    debugPrint('$prefix $message');
   }
 
   Future<void> _exitFullscreenIfNeeded() async {
     if (_isFullscreen) {
       await _exitFullscreen();
     }
-  }
-
-  void _popPage() {
-    if (!mounted) {
-      return;
-    }
-    Navigator.of(context).pop();
   }
 
   LivePlayQuality _requestedQualityOf(RoomSessionLoadResult state) {
@@ -355,8 +328,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       descriptor?.displayName ?? widget.providerId.value,
     );
     final streamerName = normalizeDisplayText(room?.streamerName);
-    final avatarTextSource =
-        streamerName.isEmpty ? providerLabel : streamerName;
+    final avatarTextSource = streamerName.isEmpty
+        ? providerLabel
+        : streamerName;
     final avatarLabel = avatarTextSource.isEmpty
         ? '?'
         : avatarTextSource.substring(0, 1).toUpperCase();
@@ -381,8 +355,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     final viewerLabel = room.viewerCount == null
         ? '-'
         : room.viewerCount! >= 10000
-            ? '${(room.viewerCount! / 10000).toStringAsFixed(room.viewerCount! >= 100000 ? 0 : 1)}万'
-            : '${room.viewerCount!}';
+        ? '${(room.viewerCount! / 10000).toStringAsFixed(room.viewerCount! >= 100000 ? 0 : 1)}万'
+        : '${room.viewerCount!}';
+    final hasPdkeyHealthAlert = state.resolved?.hasPdkeyHealthAlert ?? false;
     return RoomSectionsViewData(
       providerLabel: providerLabel,
       streamerName: streamerName,
@@ -390,9 +365,13 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       roomLive: room.isLive,
       viewerLabel: viewerLabel,
       isFollowed: _isFollowed,
-      statusPresentation: resolveRoomChaturbateStatusPresentation(room),
-      qualityBadgeLabel:
-          _hasQualityFallback(state) ? _qualityBadgeLabel(state) : null,
+      statusPresentation: resolveRoomChaturbateStatusPresentation(
+        room,
+        hasPdkeyHealthAlert: hasPdkeyHealthAlert,
+      ),
+      qualityBadgeLabel: _hasQualityFallback(state)
+          ? _qualityBadgeLabel(state)
+          : null,
     );
   }
 
@@ -404,7 +383,11 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     String? inlineQualityLabel,
     String? inlineLineLabel,
   }) {
-    final statusPresentation = resolveRoomChaturbateStatusPresentation(room);
+    final hasPdkeyHealthAlert = _roomSessionController.current?.resolved?.hasPdkeyHealthAlert ?? false;
+    final statusPresentation = resolveRoomChaturbateStatusPresentation(
+      room,
+      hasPdkeyHealthAlert: hasPdkeyHealthAlert,
+    );
     return RoomPlayerSurfaceViewData(
       room: room,
       hasPlayback: hasPlayback,
@@ -423,6 +406,8 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
           statusPresentation?.description ?? '当前房间暂时没有公开播放流，请稍后刷新重试。',
       inlineQualityLabel: inlineQualityLabel,
       inlineLineLabel: inlineLineLabel,
+      playbackStatus: _currentPlayerState?.status,
+      playbackError: _currentPlayerState?.errorMessage,
     );
   }
 
@@ -433,7 +418,8 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     required List<LivePlayUrl> playUrls,
   }) {
     final liveDuration = formatRoomLiveDuration(room.startedAt);
-    final lineLabel = playUrls
+    final lineLabel =
+        playUrls
             .firstWhere(
               (item) => item.url == playbackSource.url.toString(),
               orElse: () => playUrls.first,
@@ -467,8 +453,11 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
 
   Widget _embeddedPlayerView(double? aspectRatio) {
     final lifecycleViewFlags = resolveEmbeddedPlayerLifecycleViewFlags(
-      androidPlaybackBridgeSupported: widget.dependencies
-          .fullscreenSessionPlatforms.androidPlaybackBridge.isSupported,
+      androidPlaybackBridgeSupported: widget
+          .dependencies
+          .fullscreenSessionPlatforms
+          .androidPlaybackBridge
+          .isSupported,
       backgroundAutoPauseEnabled: _backgroundAutoPauseEnabled,
     );
     return RepaintBoundary(
@@ -490,23 +479,35 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     if (!mounted || boundaryContext == null) {
       return null;
     }
-    var boundary =
-        boundaryContext.findRenderObject() as RenderRepaintBoundary?;
+    var boundary = boundaryContext.findRenderObject() as RenderRepaintBoundary?;
     if (boundary == null) {
       return null;
     }
     var view = View.maybeOf(boundaryContext);
-    if (boundary.debugNeedsPaint) {
+    if (shouldWaitForRenderedPlayerSurfacePaint(boundary)) {
       await WidgetsBinding.instance.endOfFrame;
-      if (!mounted || !boundary.attached || boundary.debugNeedsPaint) {
+      if (!mounted) {
+        return null;
+      }
+      boundary =
+          _playerSurfaceCaptureKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null ||
+          !boundary.attached ||
+          shouldWaitForRenderedPlayerSurfacePaint(boundary)) {
         return null;
       }
     }
-    final pixelRatio = (view?.devicePixelRatio ??
-            WidgetsBinding
-                .instance.platformDispatcher.views.first.devicePixelRatio)
-        .clamp(1.0, 2.0)
-        .toDouble();
+    final pixelRatio =
+        (view?.devicePixelRatio ??
+                WidgetsBinding
+                    .instance
+                    .platformDispatcher
+                    .views
+                    .first
+                    .devicePixelRatio)
+            .clamp(1.0, 2.0)
+            .toDouble();
     final image = await boundary.toImage(pixelRatio: pixelRatio);
     try {
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -567,8 +568,12 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   }
 
   Future<void> _exitFullscreen() async {
-    await _waitForPlayerBindingToFinish(reason: 'exit fullscreen');
+    if (_fullscreenBootstrapPending) {
+      await _cancelPendingFullscreenBootstrap(scheduleInlineChrome: true);
+      return;
+    }
     await _fullscreenSessionController.exitFullscreen();
+    unawaited(_waitForPlayerBindingToFinish(reason: 'exit fullscreen'));
   }
 
   Future<void> _restoreSystemUi() {
@@ -675,9 +680,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   Future<void> _presentPlayerDebugSheet({
     required RoomPlayerDebugViewData debugViewData,
   }) {
-    return showRoomPlayerDebugSheet(
-      context: context,
-      wrapFlatTileScope: wrapRoomFlatTileScope,
+    return _pageUiEffects.presentPlayerDebugSheet(
       debugViewData: debugViewData,
       diagnosticsStream: _runtimeViewAdapter.diagnosticsStream,
       initialDiagnostics: _runtimeViewAdapter.initialDiagnostics,
@@ -696,9 +699,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     required Future<void> Function() onShowAutoCloseSheet,
     required Future<void> Function() onShowDebugPanel,
   }) {
-    return showRoomQuickActionsSheet(
-      context: context,
-      wrapFlatTileScope: wrapRoomFlatTileScope,
+    return _pageUiEffects.presentQuickActionsSheet(
       viewData: viewData,
       onRefresh: onRefresh,
       onShowQuality: onShowQuality,
@@ -805,9 +806,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     required List<LivePlayQuality> qualities,
     required Future<void> Function(LivePlayQuality quality) onSelected,
   }) {
-    return showRoomQualitySheet(
-      context: context,
-      wrapFlatTileScope: wrapRoomFlatTileScope,
+    return _pageUiEffects.presentQualitySheet(
       selectedQuality: selectedQuality,
       qualities: qualities,
       onSelected: onSelected,
@@ -819,9 +818,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     required PlaybackSource playbackSource,
     required Future<void> Function(LivePlayUrl playUrl) onSelected,
   }) {
-    return showRoomLineSheet(
-      context: context,
-      wrapFlatTileScope: wrapRoomFlatTileScope,
+    return _pageUiEffects.presentLineSheet(
       playbackSource: playbackSource,
       playUrls: playUrls,
       onSelected: onSelected,
@@ -832,9 +829,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     required DateTime? scheduledCloseAt,
     required void Function(Duration? duration) onSelectDuration,
   }) {
-    return showRoomAutoCloseSheet(
-      context: context,
-      wrapFlatTileScope: wrapRoomFlatTileScope,
+    return _pageUiEffects.presentAutoCloseSheet(
       scheduledCloseAt: scheduledCloseAt,
       onSelectDuration: onSelectDuration,
     );
@@ -873,8 +868,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     required RoomSessionLoadResult state,
     required PlaybackSource? playbackSource,
   }) {
-    final debugPlayUrls =
-        _playUrls.isEmpty ? state.snapshot.playUrls : _playUrls;
+    final debugPlayUrls = _playUrls.isEmpty
+        ? state.snapshot.playUrls
+        : _playUrls;
     final hasPlayback = playbackSource != null && debugPlayUrls.isNotEmpty;
     return RoomPlayerDebugViewData(
       backendLabel: _runtimeViewAdapter.backendLabel,
@@ -897,9 +893,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     );
   }
 
-  Widget _buildFollowPanel({
-    required BuildContext context,
-  }) {
+  Widget _buildFollowPanel({required BuildContext context}) {
     final followState = _followWatchlistState;
     final watchlist =
         followState.watchlist ?? const FollowWatchlist(entries: []);
@@ -992,30 +986,25 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     );
   }
 
-  Future<void> _waitForPlayerBindingToFinish({
-    required String reason,
-  }) {
-    return _pageSessionCoordinator.waitForPlayerBindingToFinish(
-      reason: reason,
-    );
+  Future<void> _waitForPlayerBindingToFinish({required String reason}) {
+    return _pageSessionCoordinator.waitForPlayerBindingToFinish(reason: reason);
   }
 
   void _clearMdkTextureRecoveryState() {
     _playbackController.resetRecoveryState();
   }
 
-  Future<void> _resetEmbeddedPlayerViewAfterBackendRefresh(
-    String label,
-  ) async {
-    if (mounted) {
-      setState(() {
-        _embeddedPlayerViewEpoch += 1;
-      });
-    } else {
-      _embeddedPlayerViewEpoch += 1;
+  Future<void> _resetEmbeddedPlayerViewAfterBackendRefresh(String label) async {
+    if (!mounted) {
+      _roomTrace('$label mdk embedded view reset skipped unmounted');
+      return;
     }
+    setState(() {
+      _embeddedPlayerViewEpoch += 1;
+    });
     _roomTrace(
-        '$label mdk embedded view reset epoch=$_embeddedPlayerViewEpoch');
+      '$label mdk embedded view reset epoch=$_embeddedPlayerViewEpoch',
+    );
     await WidgetsBinding.instance.endOfFrame;
   }
 
@@ -1102,15 +1091,25 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   void initState() {
     super.initState();
     final playerRuntime = widget.dependencies.playerRuntime;
-    final fullscreenRuntime =
-        RoomFullscreenRuntimeContext.fromPlayerRuntime(playerRuntime);
-    final runtimeObservation =
-        RoomRuntimeObservationContext.fromPlayerRuntime(playerRuntime);
-    final runtimeInspection =
-        RoomRuntimeInspectionContext.fromPlayerRuntime(playerRuntime);
-    final runtimeControl =
-        RoomRuntimeControlContext.fromPlayerRuntime(playerRuntime);
+    _currentPlayerState = playerRuntime.currentState;
+    final fullscreenRuntime = RoomFullscreenRuntimeContext.fromPlayerRuntime(
+      playerRuntime,
+    );
+    final runtimeObservation = RoomRuntimeObservationContext.fromPlayerRuntime(
+      playerRuntime,
+    );
+    final runtimeInspection = RoomRuntimeInspectionContext.fromPlayerRuntime(
+      playerRuntime,
+    );
+    final runtimeControl = RoomRuntimeControlContext.fromPlayerRuntime(
+      playerRuntime,
+    );
     WidgetsBinding.instance.addObserver(this);
+    _pageUiEffects = RoomPageUiEffects(
+      context: context,
+      isMounted: () => mounted,
+      wrapFlatTileScope: wrapRoomFlatTileScope,
+    );
     _runtimeViewAdapter = RoomRuntimeViewAdapter(playerRuntime);
     _chatViewportCoordinator = RoomChatViewportCoordinator();
     _roomAncillaryController = RoomAncillaryController(
@@ -1135,13 +1134,13 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       ),
       trace: _roomTrace,
     );
-    _followWatchlistController.listenable
-        .addListener(_handleFollowWatchlistStateChanged);
+    _followWatchlistController.listenable.addListener(
+      _handleFollowWatchlistStateChanged,
+    );
     _panelController = RoomPanelController(
       pageController: _panelPageController,
-      onEnterChatPanel: () => _chatViewportCoordinator.scrollToBottom(
-        force: true,
-      ),
+      onEnterChatPanel: () =>
+          _chatViewportCoordinator.scrollToBottom(force: true),
       onEnterFollowPanel: () {
         unawaited(_ensureFollowWatchlistLoaded());
       },
@@ -1171,15 +1170,15 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
           _resetEmbeddedPlayerViewAfterBackendRefresh,
       waitForInitialEmbeddedSurfaceBootstrap:
           widget.dependencies.isLiveMode &&
-              defaultTargetPlatform == TargetPlatform.android &&
-              playerRuntime.supportsEmbeddedView,
+          defaultTargetPlatform == TargetPlatform.android &&
+          playerRuntime.supportsEmbeddedView,
     );
     _playbackController.addListener(_handlePlaybackControllerChanged);
     _fullscreenSessionController = RoomFullscreenSessionController(
       bindings: RoomFullscreenSessionBindings(
         runtime: fullscreenRuntime,
         trace: _roomTrace,
-        showMessage: _showPageMessage,
+        showMessage: _pageUiEffects.showMessage,
         ensureFollowWatchlistLoaded: () => _ensureFollowWatchlistLoaded(),
         resolveDarkThemeActive: () => _darkThemeActive,
         resolveBackgroundAutoPauseEnabled: () => _backgroundAutoPauseEnabled,
@@ -1205,6 +1204,12 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
             mounted ? MediaQuery.sizeOf(context) : const Size(0, 0),
         resolvePlaybackSourceForLifecycleRestore: () =>
             _pageSessionCoordinator.resolvePlaybackSourceForLifecycleRestore(),
+        resolveIsVerticalVideo: () {
+          final diagnostics = widget.dependencies.playerRuntime.currentDiagnostics;
+          final width = diagnostics.width ?? 0;
+          final height = diagnostics.height ?? 0;
+          return width > 0 && height > 0 && height > width;
+        },
       ),
       platforms: widget.dependencies.fullscreenSessionPlatforms,
     );
@@ -1227,6 +1232,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       isMounted: () => mounted,
       scheduleTwitchRecovery: _scheduleTwitchPlaybackRecovery,
       syncPlayerRuntimeState: () => _playerRuntimeObserver.syncCurrentState(),
+      initialLifecycleState: WidgetsBinding.instance.lifecycleState,
     );
     _pageSessionCoordinator.addListener(_handlePageSessionCoordinatorChanged);
     _controlsActionCoordinator = RoomControlsActionCoordinator(
@@ -1237,7 +1243,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
         isWeb: kIsWeb,
         runtime: runtimeControl,
         trace: _roomTrace,
-        showMessage: _showPageMessage,
+        showMessage: _pageUiEffects.showMessage,
         isMounted: () => mounted,
         resolveAutoPlayEnabled: () => _autoPlayEnabled,
         resolveForceHttpsEnabled: () => _forceHttpsEnabled,
@@ -1272,29 +1278,28 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
             widget.dependencies.loadPlayerPreferences(),
         applyPlayerPreferences: (preferences) =>
             _pageSessionCoordinator.applyPlayerPreferences(preferences),
-        refreshRoom: ({
-          bool showFeedback = false,
-          bool reloadPlayer = false,
-          bool forcePlaybackRebind = true,
-        }) {
-          return _pageSessionCoordinator.refreshRoom(
-            showFeedback: showFeedback,
-            reloadPlayer: reloadPlayer,
-            forcePlaybackRebind: forcePlaybackRebind,
-          );
-        },
+        refreshRoom:
+            ({
+              bool showFeedback = false,
+              bool reloadPlayer = false,
+              bool forcePlaybackRebind = true,
+            }) {
+              return _pageSessionCoordinator.refreshRoom(
+                showFeedback: showFeedback,
+                reloadPlayer: reloadPlayer,
+                forcePlaybackRebind: forcePlaybackRebind,
+              );
+            },
         loadDanmakuPreferences: () =>
             widget.dependencies.loadDanmakuPreferences(),
         loadBlockedKeywords: () => widget.dependencies.loadBlockedKeywords(),
-        applyDanmakuPreferences: ({
-          required preferences,
-          required blockedKeywords,
-        }) {
-          _pageSessionCoordinator.applyDanmakuPreferences(
-            preferences: preferences,
-            blockedKeywords: blockedKeywords,
-          );
-        },
+        applyDanmakuPreferences:
+            ({required preferences, required blockedKeywords}) {
+              _pageSessionCoordinator.applyDanmakuPreferences(
+                preferences: preferences,
+                blockedKeywords: blockedKeywords,
+              );
+            },
         openRoomDanmaku: ({required detail}) {
           return widget.dependencies.openRoomDanmaku(
             providerId: widget.providerId,
@@ -1328,12 +1333,10 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       context: RoomFollowActionContext(
         currentProviderId: widget.providerId,
         currentRoomId: widget.roomId,
-        showMessage: _showPageMessage,
+        showMessage: _pageUiEffects.showMessage,
         isMounted: () => mounted,
-        confirmUnfollow: (displayName) => confirmRoomUnfollowDialog(
-          context,
-          displayName: displayName,
-        ),
+        confirmUnfollow: (displayName) =>
+            confirmRoomUnfollowDialog(context, displayName: displayName),
         applyCurrentFollowed: _pageSessionCoordinator.applyCurrentFollowed,
         replaceWatchlistSnapshot: _followWatchlistController.replaceSnapshot,
         ensureFollowWatchlistLoaded: ({force = false}) =>
@@ -1346,16 +1349,16 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       context: RoomPageInteractionContext(
         isMounted: () => mounted,
         exitFullscreenIfNeeded: _exitFullscreenIfNeeded,
-        showMessage: _showPageMessage,
-        pushNamed: _pushNamedRoute,
-        pushReplacementToRoom: _pushReplacementToRoom,
-        popPage: _popPage,
+        showMessage: _pageUiEffects.showMessage,
+        pushNamed: _pageUiEffects.pushNamed,
+        pushReplacementToRoom: _pageUiEffects.pushReplacementToRoom,
+        popPage: _pageUiEffects.popPage,
         loadPlayerPreferences: () =>
             widget.dependencies.loadPlayerPreferences(),
         handlePlayerSettingsReturn: (previousPreferences) =>
             _controlsActionCoordinator.handlePlayerSettingsReturn(
-          previousPreferences: previousPreferences,
-        ),
+              previousPreferences: previousPreferences,
+            ),
         handleDanmakuSettingsReturn:
             _controlsActionCoordinator.handleDanmakuSettingsReturn,
         resolveRoomFuture: () => _future,
@@ -1365,95 +1368,98 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
         resolveRequestedQuality: _requestedQualityOf,
         resolveControlsViewData: _buildControlsViewData,
         resolvePlayerDebugViewData: _buildPlayerDebugViewData,
-        cycleScaleModeAndResolveControlsViewData: ({
-          required state,
-          required playUrls,
-          required playbackSource,
-          required hasPlayback,
-        }) async {
-          final modes = PlayerScaleMode.values;
-          final index = modes.indexOf(_scaleMode);
-          await _updateScaleMode(modes[(index + 1) % modes.length]);
-          return _buildControlsViewData(
-            state: state,
-            playUrls: playUrls,
-            playbackSource: playbackSource,
-            hasPlayback: hasPlayback,
-          );
-        },
-        presentQuickActionsSheet: ({
-          required viewData,
-          required onRefresh,
-          required onShowQuality,
-          required onShowLine,
-          required onCycleScaleMode,
-          required onEnterPictureInPicture,
-          required onToggleDesktopMiniWindow,
-          required onCaptureScreenshot,
-          required onShowAutoCloseSheet,
-          required onShowDebugPanel,
-        }) {
-          return _presentQuickActionsSheet(
-            viewData: viewData,
-            onRefresh: onRefresh,
-            onShowQuality: onShowQuality,
-            onShowLine: onShowLine,
-            onCycleScaleMode: onCycleScaleMode,
-            onEnterPictureInPicture: onEnterPictureInPicture,
-            onToggleDesktopMiniWindow: onToggleDesktopMiniWindow,
-            onCaptureScreenshot: onCaptureScreenshot,
-            onShowAutoCloseSheet: onShowAutoCloseSheet,
-            onShowDebugPanel: onShowDebugPanel,
-          );
-        },
-        presentQualitySheet: ({
-          required selectedQuality,
-          required qualities,
-          required onSelected,
-        }) {
-          return _presentQualitySheet(
-            selectedQuality: selectedQuality,
-            qualities: qualities,
-            onSelected: onSelected,
-          );
-        },
-        presentLineSheet: ({
-          required playUrls,
-          required playbackSource,
-          required onSelected,
-        }) {
-          return _presentLineSheet(
-            playUrls: playUrls,
-            playbackSource: playbackSource,
-            onSelected: onSelected,
-          );
-        },
-        presentAutoCloseSheet: ({
-          required scheduledCloseAt,
-          required onSelectDuration,
-        }) {
-          return _presentAutoCloseSheet(
-            scheduledCloseAt: scheduledCloseAt,
-            onSelectDuration: onSelectDuration,
-          );
-        },
+        cycleScaleModeAndResolveControlsViewData:
+            ({
+              required state,
+              required playUrls,
+              required playbackSource,
+              required hasPlayback,
+            }) async {
+              final modes = PlayerScaleMode.values;
+              final index = modes.indexOf(_scaleMode);
+              await _updateScaleMode(modes[(index + 1) % modes.length]);
+              return _buildControlsViewData(
+                state: state,
+                playUrls: playUrls,
+                playbackSource: playbackSource,
+                hasPlayback: hasPlayback,
+              );
+            },
+        presentQuickActionsSheet:
+            ({
+              required viewData,
+              required onRefresh,
+              required onShowQuality,
+              required onShowLine,
+              required onCycleScaleMode,
+              required onEnterPictureInPicture,
+              required onToggleDesktopMiniWindow,
+              required onCaptureScreenshot,
+              required onShowAutoCloseSheet,
+              required onShowDebugPanel,
+            }) {
+              return _presentQuickActionsSheet(
+                viewData: viewData,
+                onRefresh: onRefresh,
+                onShowQuality: onShowQuality,
+                onShowLine: onShowLine,
+                onCycleScaleMode: onCycleScaleMode,
+                onEnterPictureInPicture: onEnterPictureInPicture,
+                onToggleDesktopMiniWindow: onToggleDesktopMiniWindow,
+                onCaptureScreenshot: onCaptureScreenshot,
+                onShowAutoCloseSheet: onShowAutoCloseSheet,
+                onShowDebugPanel: onShowDebugPanel,
+              );
+            },
+        presentQualitySheet:
+            ({
+              required selectedQuality,
+              required qualities,
+              required onSelected,
+            }) {
+              return _presentQualitySheet(
+                selectedQuality: selectedQuality,
+                qualities: qualities,
+                onSelected: onSelected,
+              );
+            },
+        presentLineSheet:
+            ({
+              required playUrls,
+              required playbackSource,
+              required onSelected,
+            }) {
+              return _presentLineSheet(
+                playUrls: playUrls,
+                playbackSource: playbackSource,
+                onSelected: onSelected,
+              );
+            },
+        presentAutoCloseSheet:
+            ({required scheduledCloseAt, required onSelectDuration}) {
+              return _presentAutoCloseSheet(
+                scheduledCloseAt: scheduledCloseAt,
+                onSelectDuration: onSelectDuration,
+              );
+            },
         presentPlayerDebugSheet: ({required debugViewData}) {
           return _presentPlayerDebugSheet(debugViewData: debugViewData);
         },
         enterPictureInPicture: _enterPictureInPicture,
         toggleDesktopMiniWindow: _toggleDesktopMiniWindow,
         captureScreenshot: _captureScreenshot,
-        refreshRoom: ({
-          bool showFeedback = false,
-          bool reloadPlayer = false,
-          bool forcePlaybackRebind = true,
-        }) {
-          return _pageSessionCoordinator.refreshRoom(
-            showFeedback: showFeedback,
-            reloadPlayer: reloadPlayer,
-            forcePlaybackRebind: forcePlaybackRebind,
-          );
-        },
+        refreshRoom:
+            ({
+              bool showFeedback = false,
+              bool reloadPlayer = false,
+              bool forcePlaybackRebind = true,
+            }) {
+              return _pageSessionCoordinator.refreshRoom(
+                showFeedback: showFeedback,
+                reloadPlayer: reloadPlayer,
+                forcePlaybackRebind: forcePlaybackRebind,
+              );
+            },
         leaveRoomCleanup: _pageSessionCoordinator.leaveRoom,
         switchQuality: (snapshot, quality) =>
             _controlsActionCoordinator.switchQuality(snapshot, quality),
@@ -1461,19 +1467,14 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
         resolveScheduledCloseAt: () =>
             _controlsActionCoordinator.scheduledCloseAt,
         setAutoCloseTimer: _controlsActionCoordinator.setAutoCloseTimer,
-        openFollowRoomTransition: (
-          entry, {
-          required commitNavigation,
-          required showMessage,
-        }) {
-          return _followRoomTransitionCoordinator.openFollowRoom(
-            leavingRoom: _isLeavingRoom,
-            commitNavigation: (preserveFullscreen) {
-              unawaited(commitNavigation(preserveFullscreen));
+        openFollowRoomTransition:
+            (entry, {required commitNavigation, required showMessage}) {
+              return _followRoomTransitionCoordinator.openFollowRoom(
+                leavingRoom: _isLeavingRoom,
+                commitNavigation: commitNavigation,
+                showMessage: showMessage,
+              );
             },
-            showMessage: showMessage,
-          );
-        },
       ),
     );
     _fullscreenSessionController.addListener(_handleFullscreenSessionChanged);
@@ -1484,14 +1485,35 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
         runtime: runtimeObservation,
         trace: _roomTrace,
         resolvePlaybackAvailable: () => _roomPlaybackAvailable,
-        onPlayerStateChanged: (
-          state, {
-          required playbackAvailable,
-        }) {
+        resolveIsLeavingRoom: () => _isLeavingRoom,
+        resolvePlaybackRebindInFlight: () => _playerBindingInFlight,
+        shouldRecoverUnexpectedStop: (_) {
+          // Disable auto-recovery for Stripchat on unexpected playback stop.
+          // Stripchat streams involve complex JS-bridge key decryptions and private-mode/P2P
+          // status transitions. Blind hot-retries on stop can cause infinite loops fetching
+          // non-existent play URLs (rate-limiting issues) when a broadcaster goes private or key expires.
+          return widget.providerId != ProviderId.stripchat;
+        },
+        onPlayerStateChanged: (state, {required playbackAvailable}) {
+          _currentPlayerState = state;
           _fullscreenSessionController.handlePlayerStateChanged(
             state,
             playbackAvailable: playbackAvailable,
             autoFullscreenEnabled: _autoFullscreenEnabled,
+          );
+          if (state.status == PlaybackStatus.error &&
+              _roomSessionController.current?.resolved?.hasPdkeyHealthAlert == true) {
+            _pageUiEffects.showMessage(
+              'Stripchat 播放解密失败：pdkey 可能已失效或耗尽。请在"设置 -> 账户设置"中更新 Mouflon 密钥。',
+            );
+          }
+          _markPageNeedsBuild();
+        },
+        onUnexpectedPlaybackStop: (_) {
+          return _pageSessionCoordinator.refreshRoom(
+            showFeedback: false,
+            reloadPlayer: false,
+            forcePlaybackRebind: true,
           );
         },
       ),
@@ -1525,31 +1547,35 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     _clearMdkTextureRecoveryState();
     final shouldCleanupPlaybackOnDispose =
         shouldCleanupPlaybackOnRoomPreviewDispose(
-      preserveRoomTransitionOnDispose:
-          _fullscreenSessionController.preserveRoomTransitionOnDispose,
-      leavingRoom: _isLeavingRoom,
-    );
+          preserveRoomTransitionOnDispose:
+              _fullscreenSessionController.preserveRoomTransitionOnDispose,
+          leavingRoom: _isLeavingRoom,
+        );
     if (shouldCleanupPlaybackOnDispose) {
       unawaited(_restoreSystemUi());
       unawaited(_setScreenAwake(false));
       unawaited(_pageSessionCoordinator.cleanupPlaybackOnLeave());
     }
-    _roomDanmakuController.listenable
-        .removeListener(_handleDanmakuStateChanged);
+    _roomDanmakuController.listenable.removeListener(
+      _handleDanmakuStateChanged,
+    );
     _roomDanmakuController.messages.removeListener(
       _handleDanmakuMessagesChanged,
     );
-    _roomDanmakuController.dispose();
-    _followWatchlistController.listenable
-        .removeListener(_handleFollowWatchlistStateChanged);
+    unawaited(_roomDanmakuController.dispose());
+    _followWatchlistController.listenable.removeListener(
+      _handleFollowWatchlistStateChanged,
+    );
     _followWatchlistController.dispose();
     _panelController.removeListener(_handlePanelControllerChanged);
     _panelController.dispose();
-    _controlsActionCoordinator
-        .removeListener(_handleControlsActionCoordinatorChanged);
+    _controlsActionCoordinator.removeListener(
+      _handleControlsActionCoordinatorChanged,
+    );
     _controlsActionCoordinator.dispose();
-    _pageSessionCoordinator
-        .removeListener(_handlePageSessionCoordinatorChanged);
+    _pageSessionCoordinator.removeListener(
+      _handlePageSessionCoordinatorChanged,
+    );
     _pageSessionCoordinator.dispose();
     _roomTwitchRecoveryController.dispose();
     _playbackController.removeListener(_handlePlaybackControllerChanged);
@@ -1558,8 +1584,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       _handleFollowRoomTransitionCoordinatorChanged,
     );
     _followRoomTransitionCoordinator.dispose();
-    _fullscreenSessionController
-        .removeListener(_handleFullscreenSessionChanged);
+    _fullscreenSessionController.removeListener(
+      _handleFullscreenSessionChanged,
+    );
     unawaited(_playerRuntimeObserver.dispose());
     _chatViewportCoordinator.dispose();
     _panelPageController.dispose();
@@ -1585,6 +1612,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   }
 
   Future<void> _handleLifecycleState(AppLifecycleState state) async {
+    _pageSessionCoordinator.handleLifecycleState(state);
     final enteringPictureInPicture = _viewUiState.enteringPictureInPicture;
     await _fullscreenSessionController.handleLifecycleState(state);
     final androidPlaybackBridge =
@@ -1606,8 +1634,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
 
   @override
   Widget build(BuildContext context) {
-    final descriptor =
-        widget.dependencies.findProviderDescriptorById(widget.providerId.value);
+    final descriptor = widget.dependencies.findProviderDescriptorById(
+      widget.providerId.value,
+    );
     final fullscreenSessionActive =
         _isFullscreen || _fullscreenBootstrapPending;
 
@@ -1654,8 +1683,8 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                       resolvedTitle.isNotEmpty
                           ? resolvedTitle
                           : activeTitle.isNotEmpty
-                              ? activeTitle
-                              : '${descriptor?.displayName ?? widget.providerId.value} · ${widget.roomId}',
+                          ? activeTitle
+                          : '${descriptor?.displayName ?? widget.providerId.value} · ${widget.roomId}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     );
@@ -1690,9 +1719,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
             }
             if (!snapshot.hasData) {
               return RoomLoadingRoomShell(
-                data: _loadingShellViewData(
-                  descriptor: descriptor,
-                ),
+                data: _loadingShellViewData(descriptor: descriptor),
                 embeddedPlayerView: _runtimeViewAdapter.supportsEmbeddedView
                     ? _embeddedPlayerView(16 / 9)
                     : null,
@@ -1705,8 +1732,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                 snapshot.connectionState != ConnectionState.done;
             final playbackSource =
                 _playbackSource ?? state.resolved?.playbackSource;
-            final playUrls =
-                _playUrls.isEmpty ? state.snapshot.playUrls : _playUrls;
+            final playUrls = _playUrls.isEmpty
+                ? state.snapshot.playUrls
+                : _playUrls;
             final hasPlayback = playbackSource != null && playUrls.isNotEmpty;
             final activePlaybackSource = hasPlayback ? playbackSource : null;
             _resolveFullscreenBootstrap(
@@ -1767,7 +1795,8 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                       fullscreen: false,
                       inlineQualityLabel: hasPlayback
                           ? _compactQualityLabel(
-                              _effectiveQualityOf(state).label)
+                              _effectiveQualityOf(state).label,
+                            )
                           : null,
                       inlineLineLabel: activePlaybackSource != null
                           ? _compactLineLabel(
@@ -1788,6 +1817,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                             if (_playerBindingInFlight) {
                               return;
                             }
+                            _inlinePlayerViewportSize = null;
                             unawaited(_enterFullscreen());
                           }
                         : null,
@@ -1811,14 +1841,14 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                         _pageInteractionCoordinator.openDanmakuSettings,
                     onShowQuality: hasPlayback
                         ? () => _pageInteractionCoordinator.showQualitySheet(
-                              state,
-                            )
+                            state,
+                          )
                         : null,
                     onShowLine: activePlaybackSource != null
                         ? () => _pageInteractionCoordinator.showLineSheet(
-                              playUrls,
-                              activePlaybackSource,
-                            )
+                            playUrls,
+                            activePlaybackSource,
+                          )
                         : null,
                     onKeepInlinePlayerChromeVisible:
                         _showInlinePlayerChromeTemporarily,
@@ -1834,10 +1864,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                     child: IgnorePointer(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surface
-                              .withValues(alpha: 0.24),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surface.withValues(alpha: 0.24),
                         ),
                         child: const Center(
                           child: CircularProgressIndicator.adaptive(),
@@ -1850,10 +1879,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                     child: IgnorePointer(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surface
-                              .withValues(alpha: 0.32),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surface.withValues(alpha: 0.32),
                         ),
                         child: const Center(
                           child: CircularProgressIndicator.adaptive(),
@@ -1879,11 +1907,11 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                           _fullscreenSessionController.toggleFullscreenChrome,
                       onOpenFollowDrawer: _openFullscreenFollowDrawer,
                       onToggleFullscreen: () {
-                        if (_playerBindingInFlight) {
+                        if (_isFullscreen || _fullscreenBootstrapPending) {
+                          unawaited(_exitFullscreen());
                           return;
                         }
-                        if (_isFullscreen) {
-                          unawaited(_exitFullscreen());
+                        if (_playerBindingInFlight) {
                           return;
                         }
                         unawaited(_enterFullscreen());
@@ -1974,7 +2002,10 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
       ),
     );
 
-    if (!widget.dependencies.fullscreenSessionPlatforms.androidPlaybackBridge
+    if (!widget
+        .dependencies
+        .fullscreenSessionPlatforms
+        .androidPlaybackBridge
         .isSupported) {
       return page;
     }

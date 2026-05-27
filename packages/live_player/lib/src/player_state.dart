@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
+
 import 'player_backend.dart';
 
 enum PlaybackBufferProfile {
   defaultLowLatency,
   edgeLowLatencyHls,
+  loopbackStableHls,
   chaturbateLlHlsProxyStable,
   heavyStreamStable,
 }
@@ -63,6 +66,32 @@ class PlayerState {
       backend: backend ?? this.backend,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is PlayerState &&
+            status == other.status &&
+            position == other.position &&
+            buffered == other.buffered &&
+            duration == other.duration &&
+            errorMessage == other.errorMessage &&
+            volume == other.volume &&
+            source == other.source &&
+            backend == other.backend;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        status,
+        position,
+        buffered,
+        duration,
+        errorMessage,
+        volume,
+        source,
+        backend,
+      );
 }
 
 class PlaybackSource {
@@ -83,6 +112,30 @@ class PlaybackSource {
   final String? masterPlaylistContent;
   final PlaybackBufferProfile bufferProfile;
   final String? hlsBitrate;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is PlaybackSource &&
+            url == other.url &&
+            mapEquals(headers, other.headers) &&
+            externalAudio == other.externalAudio &&
+            masterPlaylistUrl == other.masterPlaylistUrl &&
+            masterPlaylistContent == other.masterPlaylistContent &&
+            bufferProfile == other.bufferProfile &&
+            hlsBitrate == other.hlsBitrate;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        url,
+        _mapHash(headers),
+        externalAudio,
+        masterPlaylistUrl,
+        masterPlaylistContent,
+        bufferProfile,
+        hlsBitrate,
+      );
 }
 
 class PlaybackExternalMedia {
@@ -97,4 +150,30 @@ class PlaybackExternalMedia {
   final Map<String, String> headers;
   final String? label;
   final String? mimeType;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is PlaybackExternalMedia &&
+            url == other.url &&
+            mapEquals(headers, other.headers) &&
+            label == other.label &&
+            mimeType == other.mimeType;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        url,
+        _mapHash(headers),
+        label,
+        mimeType,
+      );
+}
+
+int _mapHash(Map<String, String> values) {
+  final entries = values.entries.toList(growable: false)
+    ..sort((left, right) => left.key.compareTo(right.key));
+  return Object.hashAll(
+    entries.map((entry) => Object.hash(entry.key, entry.value)),
+  );
 }

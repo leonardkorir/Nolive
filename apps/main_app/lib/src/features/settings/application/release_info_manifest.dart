@@ -2,7 +2,7 @@ class ReleaseInfoManifest {
   const ReleaseInfoManifest._();
 
   static const fallbackAppName = 'Nolive';
-  static const fallbackVersion = '0.3.3+6';
+  static const fallbackVersion = '0.3.4+7';
   static const fallbackBundleId = 'app.nolive.mobile';
   static const primaryPlatform = 'Android mobile';
   static const flutterBaseline = 'Flutter 3.35+ stable / Dart 3.6+';
@@ -23,7 +23,7 @@ class ReleaseInfoManifest {
   ];
 
   static const releaseScope = <String>[
-    'Android mobile first release：四平台 live provider runtime',
+    'Android mobile first release：五平台 live provider runtime',
     '首页 / 分类发现 / 搜索 / 关注 / 我的 五段式 Android 主壳',
     '房间详情、真全屏、播放器内弹幕、线路与清晰度切换',
     '关注直播流、历史、标签、本地快照、WebDAV 与局域网同步入口',
@@ -32,6 +32,7 @@ class ReleaseInfoManifest {
   ];
 
   static const highlights = <String>[
+    '新增 Stripchat 平台接入，补齐房间、播放与弹幕链路',
     '文件仓储驱动的 settings / follows / history / tags 持久化链路',
     '首页、分类发现、搜索、关注、我的 已按 Android 内容流重新设计',
     '关注页现已支持直播中 / 未开播筛选、直播卡片优先展示与长按快捷操作',

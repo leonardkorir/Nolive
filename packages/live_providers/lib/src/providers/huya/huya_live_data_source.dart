@@ -1,5 +1,6 @@
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
 import 'huya_data_source.dart';
 import 'huya_mapper.dart';
 import 'huya_sign_service.dart';
@@ -112,7 +113,7 @@ class HuyaLiveDataSource implements HuyaDataSource {
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     final html = await _transport.getText(
       'https://www.huya.com/$roomId',
-      headers: {'user-agent': HttpHuyaSignService.playerUserAgent},
+      headers: {'user-agent': _signService.playerUserAgent},
     );
     return HuyaMapper.mapRoomDetail(html, requestedRoomId: roomId);
   }
@@ -144,7 +145,7 @@ class HuyaLiveDataSource implements HuyaDataSource {
       urls.add(
         LivePlayUrl(
           url: _signService.buildUrl(line: line, bitRate: bitRate),
-          headers: const {'user-agent': HttpHuyaSignService.playerUserAgent},
+          headers: {'user-agent': _signService.playerUserAgent},
           lineLabel: line['cdnType']?.toString(),
         ),
       );
@@ -207,26 +208,14 @@ class HuyaLiveDataSource implements HuyaDataSource {
   }
 
   Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    return int.tryParse(value?.toString() ?? '');
+    return ProviderJson.asInt(value);
   }
 }

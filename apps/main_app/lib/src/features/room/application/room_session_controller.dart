@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
@@ -37,6 +35,19 @@ class RoomSessionLoadResult {
   final TwitchStartupPlan startupPlan;
 }
 
+TwitchStartupPlan resolveRoomStartupPlan({
+  required LoadedRoomSnapshot snapshot,
+  required LivePlayQuality requestedQuality,
+}) {
+  if (snapshot.providerId != ProviderId.twitch) {
+    return TwitchStartupPlan(startupQuality: requestedQuality);
+  }
+  return resolveTwitchStartupPlan(
+    qualities: snapshot.qualities,
+    requestedQuality: requestedQuality,
+  );
+}
+
 class RoomSessionController {
   RoomSessionController({
     required this.dependencies,
@@ -55,6 +66,7 @@ class RoomSessionController {
   final void Function(String message)? trace;
 
   RoomSessionLoadResult? _current;
+  int _generation = 0;
 
   RoomSessionLoadResult? get current => _current;
 
@@ -91,7 +103,8 @@ class RoomSessionController {
       detail: snapshot.detail,
       quality: quality,
       preferHttps: preferHttps,
-      preloadedPlayUrls: allowSnapshotPlayUrlsReuse &&
+      preloadedPlayUrls:
+          allowSnapshotPlayUrlsReuse &&
               _canReuseSnapshotPlayUrls(
                 snapshot: snapshot,
                 requestedQuality: quality,
@@ -132,7 +145,8 @@ class RoomSessionController {
     required String? preferredQualityId,
     required bool? recordHistory,
   }) async {
-    _trace('load start preferredQuality=${preferredQualityId ?? '-'}');
+    final myGeneration = ++_generation;
+    _trace('load start preferredQuality=${preferredQualityId ?? '-'} generation=$myGeneration');
     final playerPreferences = await dependencies.loadPlayerPreferences();
     final blockedKeywords = await dependencies.loadBlockedKeywords();
     final danmakuPreferences = await dependencies.loadDanmakuPreferences();
@@ -155,7 +169,10 @@ class RoomSessionController {
     );
     await dependencies.playerRuntime.initialize();
     await dependencies.playerRuntime.setVolume(
-      Platform.isAndroid ? 1.0 : playerPreferences.volume,
+      resolveRoomRuntimePlayerVolume(
+        playerPreferences: playerPreferences,
+        targetPlatform: targetPlatform,
+      ),
     );
 
     final startedAt = DateTime.now();
@@ -222,7 +239,11 @@ class RoomSessionController {
       playbackQuality: playbackQuality,
       startupPlan: startupPlan,
     );
-    _current = result;
+    if (myGeneration == _generation) {
+      _current = result;
+    } else {
+      _trace('Discarding outdated load result for generation $myGeneration (current: $_generation)');
+    }
     return result;
   }
 
@@ -243,11 +264,8 @@ class RoomSessionController {
     required LoadedRoomSnapshot snapshot,
     required LivePlayQuality requestedQuality,
   }) {
-    if (snapshot.providerId != ProviderId.twitch) {
-      return TwitchStartupPlan(startupQuality: requestedQuality);
-    }
-    return resolveTwitchStartupPlan(
-      qualities: snapshot.qualities,
+    return resolveRoomStartupPlan(
+      snapshot: snapshot,
       requestedQuality: requestedQuality,
     );
   }
@@ -276,4 +294,14 @@ class RoomSessionController {
     }
     return '$base + audio=${audio.host}${audio.path}';
   }
+}
+
+double resolveRoomRuntimePlayerVolume({
+  required PlayerPreferences playerPreferences,
+  required TargetPlatform targetPlatform,
+}) {
+  if (targetPlatform == TargetPlatform.android) {
+    return 1.0;
+  }
+  return playerPreferences.volume;
 }

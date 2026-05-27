@@ -5,6 +5,7 @@ import 'package:nolive_app/src/features/room/application/resolve_play_source_use
 import 'package:nolive_app/src/features/room/application/twitch_playback_recovery.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_action_context.dart';
 import 'package:nolive_app/src/features/room/presentation/room_playback_controller.dart';
+import 'package:nolive_app/src/features/room/presentation/room_playback_source_helpers.dart';
 
 class RoomControlsPlaybackActions {
   const RoomControlsPlaybackActions({required this.context});
@@ -24,7 +25,7 @@ class RoomControlsPlaybackActions {
     final resolved = await context.resolvePlaybackRefresh(snapshot, quality);
     context.trace(
       'manual switch quality=${quality.id}/${quality.label} '
-      'playback=${_summarizePlaybackSource(resolved.playbackSource)}',
+      'playback=${summarizePlaybackSource(resolved.playbackSource)}',
     );
     await _applyResolvedPlaybackSource(
       resolved,
@@ -76,7 +77,7 @@ class RoomControlsPlaybackActions {
       'refresh playback quality=${quality.id}/${quality.label} '
       'line=${refreshedLine?.lineLabel ?? '-'} '
       'playerType=${refreshedLine?.metadata?['playerType'] ?? '-'} '
-      'playback=${_summarizePlaybackSource(resolved.playbackSource)}',
+      'playback=${summarizePlaybackSource(resolved.playbackSource)}',
     );
     await _applyResolvedPlaybackSource(
       resolved,
@@ -98,14 +99,15 @@ class RoomControlsPlaybackActions {
   }) async {
     final source = context.playbackSourceFromLine(
       playUrl,
-      quality: context.resolveEffectiveQuality() ??
+      quality:
+          context.resolveEffectiveQuality() ??
           context.resolveSelectedQuality() ??
           context.resolveLatestLoadedState()?.snapshot.selectedQuality,
     );
     context.trace(
       'manual switch line=${playUrl.lineLabel ?? '-'} '
       'playerType=${playUrl.metadata?['playerType'] ?? '-'} '
-      'playback=${_summarizePlaybackSource(source)}',
+      'playback=${summarizePlaybackSource(source)}',
     );
     if (context.providerId == ProviderId.twitch) {
       context.prepareTwitchForLineSwitch(
@@ -121,11 +123,11 @@ class RoomControlsPlaybackActions {
           : Duration.zero,
       preferFreshBackendBeforeFirstSetSource:
           shouldPreRefreshMdkBackendBeforeSameSourceRebind(
-        state: context.runtime.readCurrentState(),
-        playbackSource: source,
-        runtimeBackend: context.runtime.resolveBackend(),
-        currentPlaybackSource: context.resolvePlaybackReferenceSource(),
-      ),
+            state: context.runtime.readCurrentState(),
+            playbackSource: source,
+            runtimeBackend: context.runtime.resolveBackend(),
+            currentPlaybackSource: context.resolvePlaybackReferenceSource(),
+          ),
     );
     if (!bound || !context.isMounted()) {
       return;
@@ -138,7 +140,8 @@ class RoomControlsPlaybackActions {
     if (latestState == null) {
       return;
     }
-    final selectedQuality = context.resolveSelectedQuality() ??
+    final selectedQuality =
+        context.resolveSelectedQuality() ??
         latestState.snapshot.selectedQuality;
     final currentPlayUrls = context.resolveCurrentPlayUrls();
     final playUrls = currentPlayUrls.isNotEmpty
@@ -158,7 +161,8 @@ class RoomControlsPlaybackActions {
     LivePlayQuality? twitchStartupPromotionQuality,
     bool resetTwitchRecoveryAttempts = true,
   }) async {
-    if (context.providerId == ProviderId.twitch) {
+    if (context.providerId == ProviderId.twitch ||
+        context.providerId == ProviderId.stripchat) {
       context.prepareTwitchForResolvedPlayback(
         startupPromotionQuality: twitchStartupPromotionQuality,
         resetAttempts: resetTwitchRecoveryAttempts,
@@ -174,7 +178,7 @@ class RoomControlsPlaybackActions {
       playbackSourceToStore = currentState.source ?? resolved.playbackSource;
       context.trace(
         'manual apply source skipped equivalent chaturbate proxy '
-        'playback=${_summarizePlaybackSource(playbackSourceToStore)}',
+        'playback=${summarizePlaybackSource(playbackSourceToStore)}',
       );
     } else {
       final bound = await context.bindPlaybackSourceWithRecovery(
@@ -186,22 +190,24 @@ class RoomControlsPlaybackActions {
             : Duration.zero,
         preferFreshBackendBeforeFirstSetSource:
             shouldPreRefreshMdkBackendBeforeSameSourceRebind(
-          state: currentState,
-          playbackSource: resolved.playbackSource,
-          runtimeBackend: context.runtime.resolveBackend(),
-          currentPlaybackSource: context.resolvePlaybackReferenceSource(),
-        ),
+              state: currentState,
+              playbackSource: resolved.playbackSource,
+              runtimeBackend: context.runtime.resolveBackend(),
+              currentPlaybackSource: context.resolvePlaybackReferenceSource(),
+            ),
       );
       if (!bound || !context.isMounted()) {
         return;
       }
     }
-    final activeRoomDetail = context.resolveActiveRoomDetail() ??
+    final activeRoomDetail =
+        context.resolveActiveRoomDetail() ??
         context.resolveLatestLoadedState()?.snapshot.detail;
     if (activeRoomDetail == null) {
       return;
     }
-    final nextSelectedQuality = selectedQuality ??
+    final nextSelectedQuality =
+        selectedQuality ??
         context.resolveSelectedQuality() ??
         context.resolveLatestLoadedState()?.snapshot.selectedQuality ??
         resolved.quality;
@@ -266,18 +272,5 @@ class RoomControlsPlaybackActions {
 
   void _showPlaybackUnavailableHint(String? reason) {
     context.showMessage(reason ?? '当前房间暂时没有可用播放地址。');
-  }
-
-  String _summarizePlaybackSource(PlaybackSource? source) {
-    final url = source?.url;
-    if (url == null) {
-      return '-';
-    }
-    final audio = source?.externalAudio?.url;
-    final base = '${url.host}${url.path}';
-    if (audio == null) {
-      return base;
-    }
-    return '$base + audio=${audio.host}${audio.path}';
   }
 }

@@ -8,8 +8,8 @@
 
 建议使用以下环境：
 
-- Flutter `3.35+`
-- Dart `3.6+`
+- Flutter `3.38+`（CI 使用 `3.41.4`）
+- Dart `3.10+`
 - Android SDK
 - `bash`
 

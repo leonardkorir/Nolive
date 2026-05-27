@@ -41,6 +41,25 @@ void main() {
     await inbound.close();
   });
 
+  test('twitch danmaku session uses oauth PASS when token is provided',
+      () async {
+    final inbound = StreamController<dynamic>();
+    final socket = _FakeTwitchSocketClient(inbound.stream);
+    final session = TwitchDanmakuSession(
+      roomId: 'xqc',
+      nick: 'tester',
+      oauthToken: 'secret-token',
+      socketClientFactory: (_) => socket,
+    );
+
+    await session.connect();
+
+    expect(socket.sent, contains('PASS oauth:secret-token'));
+
+    await session.disconnect();
+    await inbound.close();
+  });
+
   test('twitch danmaku session performs IRC handshake and maps chat messages',
       () async {
     final inbound = StreamController<dynamic>();
@@ -79,6 +98,31 @@ void main() {
     expect(messages.last.type, LiveMessageType.chat);
     expect(messages.last.userName, 'Alice');
     expect(messages.last.content, 'hello world');
+
+    await session.disconnect();
+    await subscription.cancel();
+    await inbound.close();
+  });
+
+  test('twitch danmaku session emits inactivity timeout notice', () async {
+    final inbound = StreamController<dynamic>();
+    final socket = _FakeTwitchSocketClient(inbound.stream);
+    final session = TwitchDanmakuSession(
+      roomId: 'xqc',
+      nick: 'watchdog',
+      inactivityTimeout: const Duration(milliseconds: 20),
+      socketClientFactory: (_) => socket,
+    );
+    final messages = <LiveMessage>[];
+    final subscription = session.messages.listen(messages.add);
+
+    await session.connect();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(
+      messages.any((item) => item.content.contains('连接活动超时')),
+      isTrue,
+    );
 
     await session.disconnect();
     await subscription.cancel();

@@ -37,14 +37,14 @@ void main() {
     );
 
     final session = BilibiliDanmakuSession(
-      tokenData: {
-        'roomId': 22747736,
-        'uid': 445566,
-        'token': 'mock-token',
-        'serverHost': 'broadcastlv.chat.bilibili.com',
-        'buvid': 'mock-buvid3',
-        'cookie': 'SESSDATA=test-session; DedeUserID=445566;',
-      },
+      danmakuToken: const BilibiliDanmakuToken(
+        roomId: 22747736,
+        uid: 445566,
+        token: 'mock-token',
+        serverHost: 'broadcastlv.chat.bilibili.com',
+        buvid: 'mock-buvid3',
+        cookie: 'SESSDATA=test-session; DedeUserID=445566;',
+      ),
       channelConnector: (
         _, {
         Map<String, dynamic>? headers,
@@ -118,14 +118,14 @@ void main() {
     );
 
     final session = BilibiliDanmakuSession(
-      tokenData: {
-        'roomId': 22747736,
-        'uid': 445566,
-        'token': 'mock-token',
-        'serverHost': 'broadcastlv.chat.bilibili.com',
-        'buvid': 'mock-buvid3',
-        'cookie': 'SESSDATA=test-session; DedeUserID=445566;',
-      },
+      danmakuToken: const BilibiliDanmakuToken(
+        roomId: 22747736,
+        uid: 445566,
+        token: 'mock-token',
+        serverHost: 'broadcastlv.chat.bilibili.com',
+        buvid: 'mock-buvid3',
+        cookie: 'SESSDATA=test-session; DedeUserID=445566;',
+      ),
       channelConnector: (
         _, {
         Map<String, dynamic>? headers,
@@ -161,14 +161,252 @@ void main() {
       ),
     );
   });
+
+  test(
+      'bilibili danmaku session does not report connected before auth succeeds',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+
+    final joinPacket = Completer<void>();
+    final upgradedSocket = Completer<WebSocket>();
+
+    unawaited(
+      server.first.then((request) async {
+        final socket = await WebSocketTransformer.upgrade(request);
+        upgradedSocket.complete(socket);
+        socket.listen((data) {
+          if (data is List<int> && !joinPacket.isCompleted) {
+            joinPacket.complete();
+          }
+        });
+      }),
+    );
+
+    final session = BilibiliDanmakuSession(
+      danmakuToken: const BilibiliDanmakuToken(
+        roomId: 22747736,
+        uid: 445566,
+        token: 'mock-token',
+        serverHost: 'broadcastlv.chat.bilibili.com',
+        buvid: 'mock-buvid3',
+        cookie: '',
+      ),
+      channelConnector: (
+        _, {
+        Map<String, dynamic>? headers,
+        Iterable<String>? protocols,
+        Duration connectTimeout = const Duration(seconds: 10),
+      }) =>
+          Future<IOWebSocketChannel>.value(
+        IOWebSocketChannel.connect(
+          'ws://127.0.0.1:${server.port}',
+          headers: headers,
+          protocols: protocols,
+          connectTimeout: connectTimeout,
+        ),
+      ),
+    );
+    addTearDown(() => session.disconnect());
+
+    var connected = false;
+    final connectFuture = session.connect().then((_) {
+      connected = true;
+    });
+
+    await joinPacket.future.timeout(const Duration(seconds: 2));
+    final socket =
+        await upgradedSocket.future.timeout(const Duration(seconds: 2));
+    socket.add(_encodePacket('\u0000\u0000\u3039', 3));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(connected, isFalse);
+
+    socket.add(_encodePacket(jsonEncode({'code': -101}), 8));
+    await expectLater(connectFuture, throwsA(isA<ProviderParseException>()));
+    expect(connected, isFalse);
+  });
+
+  test('bilibili danmaku session decodes html entities in chat content',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+
+    final joinPacket = Completer<void>();
+    final upgradedSocket = Completer<WebSocket>();
+
+    unawaited(
+      server.first.then((request) async {
+        final socket = await WebSocketTransformer.upgrade(request);
+        upgradedSocket.complete(socket);
+        socket.listen((data) {
+          if (data is List<int> && !joinPacket.isCompleted) {
+            joinPacket.complete();
+          }
+        });
+      }),
+    );
+
+    final session = BilibiliDanmakuSession(
+      danmakuToken: const BilibiliDanmakuToken(
+        roomId: 22747736,
+        uid: 445566,
+        token: 'mock-token',
+        serverHost: 'broadcastlv.chat.bilibili.com',
+        buvid: 'mock-buvid3',
+        cookie: '',
+      ),
+      channelConnector: (
+        _, {
+        Map<String, dynamic>? headers,
+        Iterable<String>? protocols,
+        Duration connectTimeout = const Duration(seconds: 10),
+      }) =>
+          Future<IOWebSocketChannel>.value(
+        IOWebSocketChannel.connect(
+          'ws://127.0.0.1:${server.port}',
+          headers: headers,
+          protocols: protocols,
+          connectTimeout: connectTimeout,
+        ),
+      ),
+    );
+    addTearDown(() => session.disconnect());
+
+    final messages = <LiveMessage>[];
+    final subscription = session.messages.listen(messages.add);
+    addTearDown(subscription.cancel);
+
+    final connectFuture = session.connect();
+    await joinPacket.future.timeout(const Duration(seconds: 2));
+    final socket =
+        await upgradedSocket.future.timeout(const Duration(seconds: 2));
+    socket.add(_encodePacket(jsonEncode({'code': 0}), 8));
+    await connectFuture.timeout(const Duration(seconds: 2));
+    await Future<void>.delayed(Duration.zero);
+    messages.clear();
+
+    socket.add(
+      _encodePacket(
+        jsonEncode({
+          'cmd': 'DANMU_MSG',
+          'info': [
+            [],
+            '&amp;lt;3 &amp;amp; &#39;ok&#39; &amp;copy;',
+            [0, 'tester'],
+          ],
+        }),
+        5,
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(messages.single.content, "<3 & 'ok' ©");
+    expect(messages.single.userName, 'tester');
+  });
+
+  test('bilibili danmaku session drops oversized decoded compressed payloads',
+      () async {
+    final oversizedDecodedPayload = Uint8List(4 * 1024 * 1024 + 1);
+    final cases = <String, ({int protocolVersion, List<int> body})>{
+      'zlib': (
+        protocolVersion: 2,
+        body: zlib.encode(oversizedDecodedPayload),
+      ),
+      'brotli': (
+        protocolVersion: 3,
+        body: base64Decode('mwAAQAAkAOKxQHTvfwA='),
+      ),
+    };
+
+    for (final entry in cases.entries) {
+      expect(entry.value.body.length, lessThan(2 * 1024 * 1024));
+
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final joinPacket = Completer<void>();
+      final upgradedSocket = Completer<WebSocket>();
+
+      unawaited(
+        server.first.then((request) async {
+          final socket = await WebSocketTransformer.upgrade(request);
+          upgradedSocket.complete(socket);
+          socket.listen((data) {
+            if (data is List<int> && !joinPacket.isCompleted) {
+              joinPacket.complete();
+            }
+          });
+        }),
+      );
+
+      final session = BilibiliDanmakuSession(
+        danmakuToken: const BilibiliDanmakuToken(
+          roomId: 22747736,
+          uid: 445566,
+          token: 'mock-token',
+          serverHost: 'broadcastlv.chat.bilibili.com',
+          buvid: 'mock-buvid3',
+          cookie: '',
+        ),
+        channelConnector: (
+          _, {
+          Map<String, dynamic>? headers,
+          Iterable<String>? protocols,
+          Duration connectTimeout = const Duration(seconds: 10),
+        }) =>
+            Future<IOWebSocketChannel>.value(
+          IOWebSocketChannel.connect(
+            'ws://127.0.0.1:${server.port}',
+            headers: headers,
+            protocols: protocols,
+            connectTimeout: connectTimeout,
+          ),
+        ),
+      );
+
+      final messages = <LiveMessage>[];
+      final subscription = session.messages.listen(messages.add);
+      try {
+        final connectFuture = session.connect();
+        await joinPacket.future.timeout(const Duration(seconds: 2));
+
+        final socket =
+            await upgradedSocket.future.timeout(const Duration(seconds: 2));
+        socket.add(_encodePacket(jsonEncode({'code': 0}), 8));
+        await connectFuture.timeout(const Duration(seconds: 2));
+        await Future<void>.delayed(Duration.zero);
+
+        messages.clear();
+        socket.add(
+          _encodePacketBytes(
+            entry.value.body,
+            5,
+            protocolVersion: entry.value.protocolVersion,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(messages, isEmpty, reason: entry.key);
+      } finally {
+        await subscription.cancel();
+        await session.disconnect();
+        await server.close(force: true);
+      }
+    }
+  });
 }
 
 Uint8List _encodePacket(String body, int operation) {
-  final bodyBytes = utf8.encode(body);
+  return _encodePacketBytes(utf8.encode(body), operation);
+}
+
+Uint8List _encodePacketBytes(
+  List<int> bodyBytes,
+  int operation, {
+  int protocolVersion = 0,
+}) {
   final byteData = ByteData(16 + bodyBytes.length);
   byteData.setInt32(0, 16 + bodyBytes.length, Endian.big);
   byteData.setInt16(4, 16, Endian.big);
-  byteData.setInt16(6, 0, Endian.big);
+  byteData.setInt16(6, protocolVersion, Endian.big);
   byteData.setInt32(8, operation, Endian.big);
   byteData.setInt32(12, 1, Endian.big);
   final bytes = byteData.buffer.asUint8List();

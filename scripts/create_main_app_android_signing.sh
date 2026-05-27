@@ -58,13 +58,20 @@ fi
 
 STORE_PASSWORD="${ANDROID_STORE_PASSWORD:-$(generate_password)}"
 KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-$STORE_PASSWORD}"
+PASSWORD_DIR="$(mktemp -d)"
+trap 'rm -rf "$PASSWORD_DIR"' EXIT
+STORE_PASSWORD_FILE="$PASSWORD_DIR/storepass"
+KEY_PASSWORD_FILE="$PASSWORD_DIR/keypass"
+printf '%s' "$STORE_PASSWORD" > "$STORE_PASSWORD_FILE"
+printf '%s' "$KEY_PASSWORD" > "$KEY_PASSWORD_FILE"
+chmod 600 "$STORE_PASSWORD_FILE" "$KEY_PASSWORD_FILE"
 
 keytool -genkeypair \
   -v \
   -keystore "$KEYSTORE_PATH" \
-  -storepass "$STORE_PASSWORD" \
+  -storepass:file "$STORE_PASSWORD_FILE" \
   -alias "$KEY_ALIAS" \
-  -keypass "$KEY_PASSWORD" \
+  -keypass:file "$KEY_PASSWORD_FILE" \
   -keyalg RSA \
   -keysize "$KEY_SIZE" \
   -validity "$VALIDITY_DAYS" \
@@ -89,5 +96,5 @@ echo "future updates must keep using the same keystore."
 echo
 keytool -list -v \
   -keystore "$KEYSTORE_PATH" \
-  -storepass "$STORE_PASSWORD" \
+  -storepass:file "$STORE_PASSWORD_FILE" \
   -alias "$KEY_ALIAS" | sed -n '1,24p'

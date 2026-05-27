@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:live_core/live_core.dart';
 import 'package:http/http.dart' as http;
 
+import '../provider_runtime_support.dart';
+
 abstract class DouyuTransport {
   Future<String> getText(
     String url, {
@@ -68,9 +70,18 @@ abstract class DouyuTransport {
 }
 
 class HttpDouyuTransport extends DouyuTransport {
-  HttpDouyuTransport({http.Client? client}) : _client = client ?? http.Client();
+  HttpDouyuTransport({
+    http.Client? client,
+    ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
+  })  : _client = client ?? http.Client(),
+        _retryPolicy = retryPolicy;
 
   final http.Client _client;
+  final ProviderRetryPolicy _retryPolicy;
+
+  void close() {
+    _client.close();
+  }
 
   @override
   Future<String> getText(
@@ -81,15 +92,7 @@ class HttpDouyuTransport extends DouyuTransport {
     final uri = Uri.parse(url).replace(
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
-    final response = await _client.get(uri, headers: headers);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ProviderParseException(
-        providerId: ProviderId.douyu,
-        message:
-            'Douyu request failed for $uri with status ${response.statusCode}.',
-      );
-    }
-    return utf8.decode(response.bodyBytes);
+    return _sendText(uri, () => _client.get(uri, headers: headers));
   }
 
   @override
@@ -102,18 +105,73 @@ class HttpDouyuTransport extends DouyuTransport {
     final uri = Uri.parse(url).replace(
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
-    final response = await _client.post(
+    return _sendText(
       uri,
-      headers: headers,
-      body: body,
+      () => _client.post(
+        uri,
+        headers: headers,
+        body: body,
+      ),
     );
+  }
+
+  Future<String> _sendText(
+    Uri uri,
+    Future<http.Response> Function() request,
+  ) {
+    return runProviderRequestWithRetry(
+      providerId: ProviderId.douyu,
+      operation: 'douyu transport $uri',
+      policy: _retryPolicy,
+      action: (_) async {
+        final response = await _sendResponse(uri, request);
+        return _decodeText(response.bodyBytes, uri);
+      },
+    );
+  }
+
+  Future<http.Response> _sendResponse(
+    Uri uri,
+    Future<http.Response> Function() request,
+  ) async {
+    late final http.Response response;
+    try {
+      response = await request();
+    } catch (error, stackTrace) {
+      throw ProviderRetryableException(
+        ProviderParseException(
+          providerId: ProviderId.douyu,
+          message: 'Douyu request failed before response: $uri',
+          cause: error,
+          stackTrace: stackTrace,
+        ),
+        stackTrace,
+      );
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ProviderParseException(
+      final failure = ProviderParseException(
         providerId: ProviderId.douyu,
         message:
             'Douyu request failed for $uri with status ${response.statusCode}.',
       );
+      if (isRetryableHttpStatus(response.statusCode)) {
+        throw ProviderRetryableException(failure);
+      }
+      throw failure;
     }
-    return utf8.decode(response.bodyBytes);
+    return response;
+  }
+
+  String _decodeText(List<int> bodyBytes, Uri uri) {
+    try {
+      return utf8.decode(bodyBytes);
+    } on FormatException catch (error, stackTrace) {
+      throw ProviderParseException(
+        providerId: ProviderId.douyu,
+        message: 'Douyu response was not valid UTF-8: $uri',
+        cause: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 }

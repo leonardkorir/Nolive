@@ -67,34 +67,27 @@ void main() {
     String content, {
     required DateTime timestamp,
   }) {
-    return LiveMessage(
-      type: type,
-      content: content,
-      timestamp: timestamp,
-    );
+    return LiveMessage(type: type, content: content, timestamp: timestamp);
   }
 
-  testWidgets('fullscreen overlay section renders follow drawer and overlays',
-      (tester) async {
+  testWidgets('fullscreen overlay section renders follow drawer and overlays', (
+    tester,
+  ) async {
     configureTestViewport(tester, const Size(1080, 1920));
-    final messages = ValueNotifier<List<LiveMessage>>(
-      [
-        buildMessage(
-          LiveMessageType.chat,
-          'fullscreen-bubble',
-          timestamp: DateTime(2026, 1, 1, 0, 0, 1),
-        ),
-      ],
-    );
-    final playerSuperChats = ValueNotifier<List<LiveMessage>>(
-      [
-        buildMessage(
-          LiveMessageType.superChat,
-          'super-chat',
-          timestamp: DateTime(2026, 1, 1, 0, 0, 2),
-        ),
-      ],
-    );
+    final messages = ValueNotifier<List<LiveMessage>>([
+      buildMessage(
+        LiveMessageType.chat,
+        'fullscreen-bubble',
+        timestamp: DateTime(2026, 1, 1, 0, 0, 1),
+      ),
+    ]);
+    final playerSuperChats = ValueNotifier<List<LiveMessage>>([
+      buildMessage(
+        LiveMessageType.superChat,
+        'super-chat',
+        timestamp: DateTime(2026, 1, 1, 0, 0, 2),
+      ),
+    ]);
     addTearDown(messages.dispose);
     addTearDown(playerSuperChats.dispose);
 
@@ -139,16 +132,20 @@ void main() {
     expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
     expect(find.byKey(const Key('follow-drawer')), findsOneWidget);
     expect(find.byKey(const Key('room-danmaku-overlay')), findsOneWidget);
-    expect(find.byKey(const Key('room-player-super-chat-overlay')),
-        findsOneWidget);
+    expect(
+      find.byKey(const Key('room-player-super-chat-overlay')),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('fullscreen overlay section forwards chrome actions',
-      (tester) async {
+  testWidgets('fullscreen overlay section forwards chrome actions', (
+    tester,
+  ) async {
     configureTestViewport(tester, const Size(1080, 1920));
     final messages = ValueNotifier<List<LiveMessage>>(const <LiveMessage>[]);
-    final playerSuperChats =
-        ValueNotifier<List<LiveMessage>>(const <LiveMessage>[]);
+    final playerSuperChats = ValueNotifier<List<LiveMessage>>(
+      const <LiveMessage>[],
+    );
     addTearDown(messages.dispose);
     addTearDown(playerSuperChats.dispose);
 
@@ -225,58 +222,58 @@ void main() {
   });
 
   testWidgets(
-      'fullscreen overlay section normalizes danmaku visibility from outer view data',
-      (tester) async {
-    configureTestViewport(tester, const Size(1080, 1920));
-    final messages = ValueNotifier<List<LiveMessage>>(
-      [
+    'fullscreen overlay section normalizes danmaku visibility from outer view data',
+    (tester) async {
+      configureTestViewport(tester, const Size(1080, 1920));
+      final messages = ValueNotifier<List<LiveMessage>>([
         buildMessage(
           LiveMessageType.chat,
           'should-not-render',
           timestamp: DateTime(2026, 1, 1, 0, 0, 1),
         ),
-      ],
-    );
-    final playerSuperChats =
-        ValueNotifier<List<LiveMessage>>(const <LiveMessage>[]);
-    addTearDown(messages.dispose);
-    addTearDown(playerSuperChats.dispose);
+      ]);
+      final playerSuperChats = ValueNotifier<List<LiveMessage>>(
+        const <LiveMessage>[],
+      );
+      addTearDown(messages.dispose);
+      addTearDown(playerSuperChats.dispose);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: RoomFullscreenOverlaySection(
-            data: buildViewData(showDanmakuOverlay: false).copyWith(
-              playerSurfaceData: buildPlayerSurfaceViewData(),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RoomFullscreenOverlaySection(
+              data: buildViewData(
+                showDanmakuOverlay: false,
+              ).copyWith(playerSurfaceData: buildPlayerSurfaceViewData()),
+              messagesListenable: messages,
+              playerSuperChatMessagesListenable: playerSuperChats,
+              followDrawer: const SizedBox.shrink(),
+              buildEmbeddedPlayerView: (_) => const SizedBox.shrink(),
+              onToggleChrome: () {},
+              onOpenFollowDrawer: () {},
+              onToggleFullscreen: () {},
+              onVerticalDragStart: (_) {},
+              onVerticalDragUpdate: (_) {},
+              onVerticalDragEnd: (_) {},
+              onExitFullscreen: () {},
+              onEnterPictureInPicture: () {},
+              onToggleDesktopMiniWindow: () {},
+              onCapture: () {},
+              onShowDebug: () {},
+              onShowMore: () {},
+              onToggleFullscreenLock: () {},
+              onRefresh: () {},
+              onToggleDanmakuOverlay: () {},
+              onOpenDanmakuSettings: () {},
+              onShowQuality: () {},
+              onShowLine: () {},
             ),
-            messagesListenable: messages,
-            playerSuperChatMessagesListenable: playerSuperChats,
-            followDrawer: const SizedBox.shrink(),
-            buildEmbeddedPlayerView: (_) => const SizedBox.shrink(),
-            onToggleChrome: () {},
-            onOpenFollowDrawer: () {},
-            onToggleFullscreen: () {},
-            onVerticalDragStart: (_) {},
-            onVerticalDragUpdate: (_) {},
-            onVerticalDragEnd: (_) {},
-            onExitFullscreen: () {},
-            onEnterPictureInPicture: () {},
-            onToggleDesktopMiniWindow: () {},
-            onCapture: () {},
-            onShowDebug: () {},
-            onShowMore: () {},
-            onToggleFullscreenLock: () {},
-            onRefresh: () {},
-            onToggleDanmakuOverlay: () {},
-            onOpenDanmakuSettings: () {},
-            onShowQuality: () {},
-            onShowLine: () {},
           ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    expect(find.byKey(const Key('room-danmaku-overlay')), findsNothing);
-  });
+      expect(find.byKey(const Key('room-danmaku-overlay')), findsNothing);
+    },
+  );
 }

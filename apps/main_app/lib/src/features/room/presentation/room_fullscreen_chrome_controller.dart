@@ -126,7 +126,7 @@ class RoomFullscreenChromeController {
 
   void toggleInlinePlayerChrome() {
     final viewState = context.readViewUiState();
-    if (viewState.isFullscreen) {
+    if (viewState.fullscreenSessionActive) {
       return;
     }
     _inlineChromeTimer?.cancel();
@@ -140,7 +140,7 @@ class RoomFullscreenChromeController {
   }
 
   void showInlinePlayerChromeTemporarily() {
-    if (context.readViewUiState().isFullscreen) {
+    if (context.readViewUiState().fullscreenSessionActive) {
       return;
     }
     _inlineChromeTimer?.cancel();
@@ -154,7 +154,7 @@ class RoomFullscreenChromeController {
     _fullscreenChromeTimer?.cancel();
     final viewState = context.readViewUiState();
     final gestureState = context.readGestureUiState();
-    if (!viewState.isFullscreen ||
+    if (!viewState.fullscreenSessionActive ||
         viewState.showFullscreenFollowDrawer ||
         viewState.enteringPictureInPicture ||
         gestureState.tipText != null) {
@@ -168,7 +168,7 @@ class RoomFullscreenChromeController {
         final currentViewState = context.readViewUiState();
         final currentGestureState = context.readGestureUiState();
         if (context.isDisposed() ||
-            !currentViewState.isFullscreen ||
+            !currentViewState.fullscreenSessionActive ||
             !currentViewState.lockFullscreenControls ||
             !currentViewState.showFullscreenLockButton ||
             currentViewState.showFullscreenFollowDrawer ||
@@ -186,7 +186,7 @@ class RoomFullscreenChromeController {
       final currentViewState = context.readViewUiState();
       final currentGestureState = context.readGestureUiState();
       if (context.isDisposed() ||
-          !currentViewState.isFullscreen ||
+          !currentViewState.fullscreenSessionActive ||
           currentViewState.lockFullscreenControls ||
           currentViewState.showFullscreenFollowDrawer ||
           currentViewState.enteringPictureInPicture ||
@@ -202,13 +202,14 @@ class RoomFullscreenChromeController {
   void scheduleInlineChromeAutoHide() {
     _inlineChromeTimer?.cancel();
     final viewState = context.readViewUiState();
-    if (viewState.isFullscreen || !viewState.showInlinePlayerChrome) {
+    if (viewState.fullscreenSessionActive ||
+        !viewState.showInlinePlayerChrome) {
       return;
     }
     _inlineChromeTimer = Timer(const Duration(seconds: 2), () {
       final currentViewState = context.readViewUiState();
       if (context.isDisposed() ||
-          currentViewState.isFullscreen ||
+          currentViewState.fullscreenSessionActive ||
           !currentViewState.showInlinePlayerChrome) {
         return;
       }
@@ -224,7 +225,7 @@ class RoomFullscreenChromeController {
     context.updateGestureUiState(
       (current) => current.copyWith(tipText: text),
     );
-    if (context.readViewUiState().isFullscreen) {
+    if (context.readViewUiState().fullscreenSessionActive) {
       context.updateViewUiState(
         (current) => current.copyWith(
           showFullscreenChrome: true,
@@ -251,16 +252,19 @@ class RoomFullscreenChromeController {
     );
     final viewState = context.readViewUiState();
     if (rescheduleChrome &&
-        viewState.isFullscreen &&
+        viewState.fullscreenSessionActive &&
         viewState.showFullscreenChrome) {
       scheduleFullscreenChromeAutoHide();
     }
   }
 
   Future<void> handleVerticalDragStart(DragStartDetails details) async {
+    if (context.isDisposed()) {
+      return;
+    }
     final viewState = context.readViewUiState();
     if (!context.androidPlaybackBridge.isSupported ||
-        !viewState.isFullscreen ||
+        !viewState.fullscreenSessionActive ||
         viewState.lockFullscreenControls) {
       return;
     }
@@ -273,6 +277,9 @@ class RoomFullscreenChromeController {
       ),
     );
     final mediaVolume = await context.androidPlaybackBridge.getMediaVolume();
+    if (context.isDisposed()) {
+      return;
+    }
     context.updateGestureUiState(
       (current) => current.copyWith(
         startVolume: mediaVolume ?? context.resolveVolume(),
@@ -280,10 +287,16 @@ class RoomFullscreenChromeController {
     );
     try {
       final brightness = await _screenBrightness.application;
+      if (context.isDisposed()) {
+        return;
+      }
       context.updateGestureUiState(
         (current) => current.copyWith(startBrightness: brightness),
       );
     } catch (_) {
+      if (context.isDisposed()) {
+        return;
+      }
       context.updateGestureUiState(
         (current) => current.copyWith(startBrightness: 0.5),
       );
@@ -322,7 +335,7 @@ class RoomFullscreenChromeController {
       (current) => current.copyWith(tracking: false),
     );
     final viewState = context.readViewUiState();
-    if (viewState.isFullscreen && viewState.showFullscreenChrome) {
+    if (viewState.fullscreenSessionActive && viewState.showFullscreenChrome) {
       scheduleFullscreenChromeAutoHide();
     }
   }

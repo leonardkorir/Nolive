@@ -1,5 +1,6 @@
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
 import 'douyu_sign_service.dart';
 
 class DouyuMapper {
@@ -75,7 +76,7 @@ class DouyuMapper {
       sourceUrl: 'https://www.douyu.com/$requestedRoomId',
       isLive: isLive,
       viewerCount: parseHotCount(roomBiz['hot']),
-      danmakuToken: {'roomId': roomId, 'mode': 'migration-pending'},
+      danmakuToken: DouyuDanmakuToken(roomId: roomId),
       metadata: {
         'requestedRoomId': requestedRoomId,
         'playBody': playContext.body,
@@ -158,7 +159,7 @@ class DouyuMapper {
 
     return [
       LivePlayUrl(
-        url: '$rtmpUrl/$livePath',
+        url: _joinUrlPath(rtmpUrl, livePath),
         headers: headers,
         lineLabel: resolvedLineLabel,
         metadata: {
@@ -168,6 +169,10 @@ class DouyuMapper {
         },
       ),
     ];
+  }
+
+  static String _joinUrlPath(String base, String path) {
+    return '${base.replaceFirst(RegExp(r'/+$'), '')}/${path.replaceFirst(RegExp(r'^/+'), '')}';
   }
 
   static int _resolveSortOrder({
@@ -278,26 +283,14 @@ class DouyuMapper {
   }
 
   static Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   static List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   static int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    return int.tryParse(value?.toString() ?? '');
+    return ProviderJson.asInt(value);
   }
 }

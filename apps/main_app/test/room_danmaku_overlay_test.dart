@@ -8,10 +8,7 @@ void main() {
   DanmakuPreferences buildPreferences() =>
       DanmakuPreferences.defaults.copyWith(strokeWidth: 0);
 
-  LiveMessage buildChatMessage(
-    String content, {
-    required DateTime timestamp,
-  }) {
+  LiveMessage buildChatMessage(String content, {required DateTime timestamp}) {
     return LiveMessage(
       type: LiveMessageType.chat,
       content: content,
@@ -19,8 +16,9 @@ void main() {
     );
   }
 
-  testWidgets('room danmaku overlay renders inline track bubble',
-      (tester) async {
+  testWidgets('room danmaku overlay renders inline track bubble', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -45,8 +43,9 @@ void main() {
     expect(find.text('inline-bubble'), findsOneWidget);
   });
 
-  testWidgets('room danmaku overlay does not enqueue duplicate messages',
-      (tester) async {
+  testWidgets('room danmaku overlay does not enqueue duplicate messages', (
+    tester,
+  ) async {
     final duplicated = buildChatMessage(
       'duplicate-bubble',
       timestamp: DateTime(2026, 1, 1, 0, 0, 2),
@@ -70,8 +69,9 @@ void main() {
     expect(find.text('duplicate-bubble'), findsOneWidget);
   });
 
-  testWidgets('room danmaku overlay also renders in fullscreen mode',
-      (tester) async {
+  testWidgets('room danmaku overlay also renders in fullscreen mode', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1080, 1920);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {
@@ -102,17 +102,16 @@ void main() {
     expect(find.text('fullscreen-bubble'), findsOneWidget);
   });
 
-  testWidgets('room player super chat overlay keeps compact text style',
-      (tester) async {
-    final messages = ValueNotifier<List<LiveMessage>>(
-      [
-        LiveMessage(
-          type: LiveMessageType.superChat,
-          content: 'sc-message',
-          timestamp: DateTime(2026, 1, 1, 0, 0, 4),
-        ),
-      ],
-    );
+  testWidgets('room player super chat overlay keeps compact text style', (
+    tester,
+  ) async {
+    final messages = ValueNotifier<List<LiveMessage>>([
+      LiveMessage(
+        type: LiveMessageType.superChat,
+        content: 'sc-message',
+        timestamp: DateTime(2026, 1, 1, 0, 0, 4),
+      ),
+    ]);
     addTearDown(messages.dispose);
 
     await tester.pumpWidget(

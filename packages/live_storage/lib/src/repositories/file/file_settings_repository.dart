@@ -49,10 +49,7 @@ class FileSettingsRepository implements SettingsRepository {
       return value.toString() as T;
     }
     if (<String>[] is T && value is List) {
-      return value
-          .map((item) => item.toString().trim())
-          .where((item) => item.isNotEmpty)
-          .toList(growable: false) as T;
+      return value.map((item) => item.toString()).toList(growable: false) as T;
     }
     return null;
   }

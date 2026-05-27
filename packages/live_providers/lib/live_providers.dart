@@ -15,3 +15,4 @@ export 'src/providers/youtube/youtube_provider.dart';
 export 'src/reference/reference_provider_catalog.dart';
 export 'src/providers/bilibili/bilibili_account_client.dart';
 export 'src/providers/douyin/douyin_account_client.dart';
+export 'src/providers/stripchat/stripchat_provider.dart';

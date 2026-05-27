@@ -46,6 +46,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
   bool _loadingMore = false;
   bool _hasMore = false;
   int _currentPage = 1;
+  int _roomsRequestGeneration = 0;
   Object? _categoriesError;
   Object? _roomsError;
 
@@ -154,6 +155,8 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
     bool append = false,
     int attempt = 0,
   }) async {
+    final requestGeneration =
+        append ? _roomsRequestGeneration : ++_roomsRequestGeneration;
     setState(() {
       _selectedCategory = category;
       _roomsError = null;
@@ -169,7 +172,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
         category: category,
         page: page,
       );
-      if (!mounted) {
+      if (!_isCurrentRoomsRequest(requestGeneration, category)) {
         return;
       }
       final mergedRooms = append
@@ -199,7 +202,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
         attempt: attempt,
       )) {
         await Future<void>.delayed(const Duration(milliseconds: 250));
-        if (!mounted) {
+        if (!_isCurrentRoomsRequest(requestGeneration, category)) {
           return;
         }
         await _loadRooms(
@@ -210,7 +213,7 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
         );
         return;
       }
-      if (!mounted) {
+      if (!_isCurrentRoomsRequest(requestGeneration, category)) {
         return;
       }
       setState(() {
@@ -242,6 +245,8 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
     if (category == null || _loadingMore || !_hasMore) {
       return;
     }
+    final requestGeneration = _roomsRequestGeneration;
+    final requestedPage = _currentPage + 1;
 
     setState(() {
       _roomsError = null;
@@ -249,14 +254,13 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
     });
 
     try {
-      final requestedPage = _currentPage + 1;
       final response = await widget.dependencies.loadCategoryRooms(
         providerId: widget.providerId,
         category: category,
         page: requestedPage,
       );
 
-      if (!mounted) {
+      if (!_isCurrentRoomsRequest(requestGeneration, category)) {
         return;
       }
 
@@ -272,11 +276,11 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
         'categories',
         'category rooms load-more failed '
             'provider=${widget.providerId.value} '
-            'category=${category.id} page=${_currentPage + 1}',
+            'category=${category.id} page=$requestedPage',
         error: error,
         stackTrace: stackTrace,
       );
-      if (!mounted) {
+      if (!_isCurrentRoomsRequest(requestGeneration, category)) {
         return;
       }
       setState(() {
@@ -284,6 +288,12 @@ class _ProviderCategoriesPageState extends State<ProviderCategoriesPage> {
         _loadingMore = false;
       });
     }
+  }
+
+  bool _isCurrentRoomsRequest(int generation, LiveSubCategory category) {
+    return mounted &&
+        generation == _roomsRequestGeneration &&
+        _selectedCategory?.id == category.id;
   }
 
   void _scheduleAutoLoadMoreIfNeeded() {

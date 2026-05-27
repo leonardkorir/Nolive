@@ -37,6 +37,9 @@ PY
 require_cmd keytool
 require_cmd python3
 
+PASSWORD_DIR="$(mktemp -d)"
+trap 'rm -rf "$PASSWORD_DIR"' EXIT
+
 if [[ ! -f "$KEY_PROPERTIES_PATH" ]]; then
   echo "missing Android signing file: $KEY_PROPERTIES_PATH" >&2
   exit 1
@@ -61,13 +64,18 @@ if [[ "$store_file" == *debug.keystore || "$key_alias" == "androiddebugkey" ]]; 
   echo "debug keystore/debug alias is not allowed for release verification" >&2
   exit 1
 fi
+STORE_PASSWORD_FILE="$PASSWORD_DIR/storepass"
+KEY_PASSWORD_FILE="$PASSWORD_DIR/keypass"
+printf '%s' "$store_password" > "$STORE_PASSWORD_FILE"
+printf '%s' "$key_password" > "$KEY_PASSWORD_FILE"
+chmod 600 "$STORE_PASSWORD_FILE" "$KEY_PASSWORD_FILE"
 
 keystore_sha256="$(
   keytool -list -v \
     -keystore "$store_file" \
-    -storepass "$store_password" \
+    -storepass:file "$STORE_PASSWORD_FILE" \
     -alias "$key_alias" \
-    -keypass "$key_password" |
+    -keypass:file "$KEY_PASSWORD_FILE" |
     sed -n 's/^[[:space:]]*SHA256: //p' | head -n1
 )"
 
@@ -85,9 +93,11 @@ if [[ "${#artifacts[@]}" -eq 0 ]]; then
     "$APP_DIR/build/app/outputs/bundle/release/app-release.aab"
   )
   for artifact in "${default_artifacts[@]}"; do
-    if [[ -f "$artifact" ]]; then
-      artifacts+=("$artifact")
+    if [[ ! -f "$artifact" ]]; then
+      echo "missing default Android release artifact: $artifact" >&2
+      exit 1
     fi
+    artifacts+=("$artifact")
   done
 fi
 

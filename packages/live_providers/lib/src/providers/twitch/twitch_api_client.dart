@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:live_core/live_core.dart';
 
+import '../provider_runtime_support.dart';
+
 abstract interface class TwitchApiClient {
-  static const String clientId = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
-  static const String browserUserAgent =
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
+  static const String defaultClientId = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
+  static const String browserUserAgent = kChromiumDesktopUserAgent;
 
   Future<Object?> postGraphQl(
     Object payload, {
@@ -26,11 +26,30 @@ class HttpTwitchApiClient implements TwitchApiClient {
   HttpTwitchApiClient({
     http.Client? client,
     String cookie = '',
+    String clientId = TwitchApiClient.defaultClientId,
+    ProviderBrowserProfile browserProfile =
+        ProviderBrowserProfile.chromiumDesktop,
+    ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
+    void Function(String message)? diagnostics,
   })  : _client = client ?? http.Client(),
-        _cookie = cookie.trim();
+        _cookie = cookie.trim(),
+        _browserProfile = browserProfile,
+        _retryPolicy = retryPolicy,
+        _diagnostics = diagnostics,
+        _clientId = clientId.trim().isEmpty
+            ? TwitchApiClient.defaultClientId
+            : clientId.trim();
 
   final http.Client _client;
   final String _cookie;
+  final ProviderBrowserProfile _browserProfile;
+  final ProviderRetryPolicy _retryPolicy;
+  final void Function(String message)? _diagnostics;
+  final String _clientId;
+
+  void close() {
+    _client.close();
+  }
 
   @override
   Future<Object?> postGraphQl(
@@ -41,15 +60,15 @@ class HttpTwitchApiClient implements TwitchApiClient {
   }) async {
     final headers = <String, String>{
       'accept': '*/*',
-      'accept-language': 'en-US,en;q=0.9',
-      'client-id': TwitchApiClient.clientId,
+      'accept-language': _browserProfile.acceptLanguage,
+      'client-id': _clientId,
       'content-type': 'text/plain; charset=UTF-8',
       'origin': 'https://www.twitch.tv',
       'referer': 'https://www.twitch.tv/',
       'sec-fetch-dest': 'empty',
       'sec-fetch-mode': 'cors',
       'sec-fetch-site': 'same-site',
-      'user-agent': TwitchApiClient.browserUserAgent,
+      'user-agent': _browserProfile.userAgent,
     };
     if (deviceId.trim().isNotEmpty) {
       headers['device-id'] = deviceId.trim();
@@ -65,10 +84,41 @@ class HttpTwitchApiClient implements TwitchApiClient {
       headers['cookie'] = _cookie;
     }
 
-    final response = await _client.post(
-      Uri.https('gql.twitch.tv', '/gql'),
-      headers: headers,
-      body: jsonEncode(payload),
+    final response = await runProviderRequestWithRetry(
+      providerId: ProviderId.twitch,
+      operation: 'twitch GraphQL request',
+      policy: _retryPolicy,
+      diagnostics: _diagnostics,
+      action: (_) async {
+        late final http.Response response;
+        try {
+          response = await _client.post(
+            Uri.https('gql.twitch.tv', '/gql'),
+            headers: headers,
+            body: jsonEncode(payload),
+          );
+        } catch (error, stackTrace) {
+          throw ProviderRetryableException(
+            ProviderParseException(
+              providerId: ProviderId.twitch,
+              message: 'Twitch GraphQL request failed before response.',
+              cause: error,
+              stackTrace: stackTrace,
+            ),
+            stackTrace,
+          );
+        }
+        if (isRetryableHttpStatus(response.statusCode)) {
+          throw ProviderRetryableException(
+            ProviderParseException(
+              providerId: ProviderId.twitch,
+              message:
+                  'Twitch GraphQL request failed with status ${response.statusCode}.',
+            ),
+          );
+        }
+        return response;
+      },
     );
     _ensureSuccess(response, context: 'GraphQL request');
     return _decodeJson(
@@ -82,12 +132,44 @@ class HttpTwitchApiClient implements TwitchApiClient {
     String url, {
     Map<String, String> headers = const {},
   }) async {
-    final response = await _client.get(
-      Uri.parse(url),
-      headers: {
-        'user-agent': TwitchApiClient.browserUserAgent,
-        if (_cookie.isNotEmpty) 'cookie': _cookie,
-        ...headers,
+    final response = await runProviderRequestWithRetry(
+      providerId: ProviderId.twitch,
+      operation: 'twitch document request',
+      policy: _retryPolicy,
+      diagnostics: _diagnostics,
+      action: (_) async {
+        late final http.Response response;
+        try {
+          response = await _client.get(
+            Uri.parse(url),
+            headers: {
+              'user-agent': _browserProfile.userAgent,
+              'accept-language': _browserProfile.acceptLanguage,
+              if (_cookie.isNotEmpty) 'cookie': _cookie,
+              ...headers,
+            },
+          );
+        } catch (error, stackTrace) {
+          throw ProviderRetryableException(
+            ProviderParseException(
+              providerId: ProviderId.twitch,
+              message: 'Twitch document request failed before response: $url',
+              cause: error,
+              stackTrace: stackTrace,
+            ),
+            stackTrace,
+          );
+        }
+        if (isRetryableHttpStatus(response.statusCode)) {
+          throw ProviderRetryableException(
+            ProviderParseException(
+              providerId: ProviderId.twitch,
+              message:
+                  'Twitch document request failed with status ${response.statusCode}: $url',
+            ),
+          );
+        }
+        return response;
       },
     );
     _ensureSuccess(response, context: 'document request for $url');

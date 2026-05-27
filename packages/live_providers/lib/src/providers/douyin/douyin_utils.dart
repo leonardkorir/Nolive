@@ -21,9 +21,10 @@ class DouyinUtils {
     resolvedParams['compress'] = 'gzip';
     resolvedParams['device_platform'] = 'web';
     resolvedParams['browser_language'] = 'zh-CN';
-    resolvedParams['browser_platform'] = 'Win32';
-    resolvedParams['browser_name'] = 'Edge';
-    resolvedParams['browser_version'] = '125.0.0.0';
+    resolvedParams['browser_platform'] =
+        DouyinRequestParams.browserPlatformValue;
+    resolvedParams['browser_name'] = DouyinRequestParams.browserNameValue;
+    resolvedParams['browser_version'] = DouyinRequestParams.browserVersionValue;
     resolvedParams.putIfAbsent('msToken', () => getMSToken());
 
     final query = Uri(

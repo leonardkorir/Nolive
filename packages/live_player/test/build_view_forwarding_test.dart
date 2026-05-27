@@ -60,6 +60,29 @@ void main() {
     await player.dispose();
   });
 
+  test('switchable player retries delegate initialization after failure',
+      () async {
+    final mpvPlayer = _CapturingPlayer(
+      PlayerBackend.mpv,
+      initializeError: StateError('init failed'),
+    );
+    final player = SwitchablePlayer(
+      initialBackend: PlayerBackend.mpv,
+      builders: {
+        PlayerBackend.memory: () => _CapturingPlayer(PlayerBackend.memory),
+        PlayerBackend.mpv: () => mpvPlayer,
+        PlayerBackend.mdk: () => _CapturingPlayer(PlayerBackend.mdk),
+      },
+    );
+
+    await expectLater(player.initialize(), throwsA(isA<StateError>()));
+    await expectLater(player.initialize(), throwsA(isA<StateError>()));
+
+    expect(mpvPlayer.events, ['initialize', 'initialize']);
+
+    await player.dispose();
+  });
+
   test('switchable player stops active delegate before backend replace',
       () async {
     final mpvPlayer = _CapturingPlayer(PlayerBackend.mpv);
@@ -161,12 +184,106 @@ void main() {
 
     await player.dispose();
   });
+
+  test('switchable player serializes concurrent backend replacement requests',
+      () async {
+    final initialStopCompleter = Completer<void>();
+    final initialMpvPlayer = _CapturingPlayer(
+      PlayerBackend.mpv,
+      stopCompleter: initialStopCompleter,
+    );
+    final mpvPlayers = <_CapturingPlayer>[initialMpvPlayer];
+    final mdkPlayers = <_CapturingPlayer>[];
+    var mpvBuildCount = 0;
+    final player = SwitchablePlayer(
+      initialBackend: PlayerBackend.mpv,
+      builders: {
+        PlayerBackend.memory: () => _CapturingPlayer(PlayerBackend.memory),
+        PlayerBackend.mpv: () {
+          if (mpvBuildCount == 0) {
+            mpvBuildCount += 1;
+            return initialMpvPlayer;
+          }
+          final instance = _CapturingPlayer(PlayerBackend.mpv);
+          mpvPlayers.add(instance);
+          return instance;
+        },
+        PlayerBackend.mdk: () {
+          final instance = _CapturingPlayer(PlayerBackend.mdk);
+          mdkPlayers.add(instance);
+          return instance;
+        },
+      },
+    );
+    final source =
+        PlaybackSource(url: Uri.parse('https://example.com/live.flv'));
+
+    await player.initialize();
+    await player.setSource(source);
+    await player.play();
+
+    final switchFuture = player.switchBackend(PlayerBackend.mdk);
+    final refreshFuture = player.refreshBackend();
+    await Future<void>.delayed(Duration.zero);
+    initialStopCompleter.complete();
+    await Future.wait<void>([switchFuture, refreshFuture]);
+
+    expect(player.backend, PlayerBackend.mdk);
+    expect(mpvPlayers, hasLength(1));
+    expect(mdkPlayers, hasLength(2));
+
+    await player.dispose();
+  });
+
+  test('switchable player does not build a new backend after dispose',
+      () async {
+    final initialStopCompleter = Completer<void>();
+    final initialMpvPlayer = _CapturingPlayer(
+      PlayerBackend.mpv,
+      stopCompleter: initialStopCompleter,
+    );
+    var mdkBuildCount = 0;
+    final player = SwitchablePlayer(
+      initialBackend: PlayerBackend.mpv,
+      builders: {
+        PlayerBackend.memory: () => _CapturingPlayer(PlayerBackend.memory),
+        PlayerBackend.mpv: () => initialMpvPlayer,
+        PlayerBackend.mdk: () {
+          mdkBuildCount += 1;
+          return _CapturingPlayer(PlayerBackend.mdk);
+        },
+      },
+    );
+    final source =
+        PlaybackSource(url: Uri.parse('https://example.com/live.flv'));
+
+    await player.initialize();
+    await player.setSource(source);
+    await player.play();
+
+    final switchFuture = player.switchBackend(PlayerBackend.mdk);
+    await Future<void>.delayed(Duration.zero);
+    final disposeFuture = player.dispose();
+    await Future<void>.delayed(Duration.zero);
+    initialStopCompleter.complete();
+
+    await Future.wait<void>([switchFuture, disposeFuture]);
+
+    expect(mdkBuildCount, 0);
+    expect(
+      initialMpvPlayer.events,
+      containsAllInOrder(
+          ['initialize', 'setSource', 'play', 'stop', 'dispose']),
+    );
+  });
 }
 
 class _CapturingPlayer implements BasePlayer {
   _CapturingPlayer(
     this.backend, {
     PlayerDiagnostics? diagnostics,
+    this.stopCompleter,
+    this.initializeError,
   })  : _currentState = PlayerState(backend: backend),
         _currentDiagnostics = diagnostics ?? PlayerDiagnostics.empty(backend);
 
@@ -177,6 +294,8 @@ class _CapturingPlayer implements BasePlayer {
 
   @override
   final PlayerBackend backend;
+  final Completer<void>? stopCompleter;
+  final Object? initializeError;
 
   PlayerState _currentState;
   final PlayerDiagnostics _currentDiagnostics;
@@ -208,6 +327,10 @@ class _CapturingPlayer implements BasePlayer {
   @override
   Future<void> initialize() async {
     events.add('initialize');
+    final error = initializeError;
+    if (error != null) {
+      throw error;
+    }
   }
 
   @override
@@ -231,6 +354,10 @@ class _CapturingPlayer implements BasePlayer {
   @override
   Future<void> stop() async {
     events.add('stop');
+    final completer = stopCompleter;
+    if (completer != null) {
+      await completer.future;
+    }
     _currentState = _currentState.copyWith(status: PlaybackStatus.ready);
   }
 

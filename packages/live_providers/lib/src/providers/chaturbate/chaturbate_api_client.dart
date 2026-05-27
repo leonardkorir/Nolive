@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
+import '../provider_runtime_support.dart';
+
 abstract interface class ChaturbateApiClient {
   static const List<String> defaultRecommendCarouselIds = [
     'most_popular',
@@ -51,42 +54,65 @@ abstract interface class ChaturbateApiClient {
     required String csrfToken,
     required Map<String, dynamic> topics,
   });
+
+  void close() {}
+}
+
+class ChaturbateRoomHistoryUnavailableException extends ProviderParseException {
+  ChaturbateRoomHistoryUnavailableException({
+    required this.statusCode,
+    String? message,
+  }) : super(
+          providerId: ProviderId.chaturbate,
+          message: message ??
+              'Chaturbate room_history response failed with status $statusCode.',
+        );
+
+  final int statusCode;
 }
 
 class HttpChaturbateApiClient implements ChaturbateApiClient {
   HttpChaturbateApiClient({
     this.cookie = '',
     http.Client? client,
-  }) : _client = client ?? http.Client();
+    ProviderBrowserProfile browserProfile =
+        ProviderBrowserProfile.chromiumDesktop,
+    ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
+    void Function(String message)? diagnostics,
+  })  : _client = client ?? http.Client(),
+        _browserProfile = browserProfile,
+        _retryPolicy = retryPolicy,
+        _diagnostics = diagnostics;
 
   final http.Client _client;
   final String cookie;
+  final ProviderBrowserProfile _browserProfile;
+  final ProviderRetryPolicy _retryPolicy;
+  final void Function(String message)? _diagnostics;
 
-  static const String browserUserAgent =
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
-  static const String browserAcceptLanguage = 'zh-CN,zh;q=0.9';
-  static const String browserSecChUa =
-      '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"';
-  static const String browserSecChUaMobile = '?0';
-  static const String browserSecChUaPlatform = '"Linux"';
+  @override
+  void close() {
+    _client.close();
+  }
 
-  static const Map<String, String> _baseHeaders = {
-    'user-agent': browserUserAgent,
-    'accept-language': browserAcceptLanguage,
-    'sec-ch-ua': browserSecChUa,
-    'sec-ch-ua-mobile': browserSecChUaMobile,
-    'sec-ch-ua-platform': browserSecChUaPlatform,
-  };
+  static const String browserUserAgent = kChromiumDesktopUserAgent;
+  static const String browserAcceptLanguage = kChromiumDesktopAcceptLanguage;
+  static const String browserSecChUa = kChromiumDesktopSecChUa;
+  static const String browserSecChUaMobile = kChromiumDesktopSecChUaMobile;
+  static const String browserSecChUaPlatform = kChromiumDesktopSecChUaPlatform;
 
   static Map<String, String> buildPlaybackHeaders({
     required String referer,
     String cookie = '',
+    ProviderBrowserProfile browserProfile =
+        ProviderBrowserProfile.chromiumDesktop,
   }) {
     final normalizedReferer = _normalizePlaybackReferer(referer);
     final normalizedCookie = cookie.trim();
     return <String, String>{
-      ..._baseHeaders,
+      'user-agent': browserProfile.userAgent,
+      'accept-language': browserProfile.acceptLanguage,
+      ...browserProfile.buildClientHintHeaders(),
       'accept': '*/*',
       'origin': 'https://chaturbate.com',
       'priority': 'u=4, i',
@@ -117,7 +143,7 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     String carouselId, {
     String genders = '',
   }) async {
-    final response = await _client.get(
+    final response = await _get(
       Uri.https(
         'chaturbate.com',
         '/api/ts/discover/carousels/$carouselId/',
@@ -126,6 +152,7 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
       headers: _buildApiHeaders(
         referer: _buildDiscoverReferer(genders),
       ),
+      context: 'carousel $carouselId request',
     );
     _ensureSuccessfulResponse(
       response,
@@ -156,7 +183,7 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
       queryParameters['genders'] = normalizedGenders;
     }
 
-    final response = await _client.get(
+    final response = await _get(
       Uri.https(
         'chaturbate.com',
         '/api/ts/roomlist/room-list/',
@@ -165,6 +192,7 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
       headers: _buildApiHeaders(
         referer: _buildSearchReferer(query: query, genders: normalizedGenders),
       ),
+      context: 'room list request',
     );
     _ensureSuccessfulResponse(response, context: 'room list request');
 
@@ -173,18 +201,22 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
 
   @override
   Future<String> fetchRoomPage(String roomId) async {
-    final response = await _client.get(
+    final response = await _get(
       Uri.https('chaturbate.com', '/$roomId/'),
       headers: _buildDocumentHeaders(
         referer: 'https://chaturbate.com/',
       ),
+      context: 'room page request for $roomId',
     );
     _ensureSuccessfulResponse(
       response,
       context: 'room page request for $roomId',
     );
 
-    return response.body;
+    return _decodeTextBody(
+      response,
+      context: 'room page response for $roomId',
+    );
   }
 
   @override
@@ -192,12 +224,13 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     String roomId, {
     String? cookie,
   }) async {
-    final response = await _client.get(
+    final response = await _get(
       Uri.https('chaturbate.com', '/api/chatvideocontext/$roomId/'),
       headers: _buildApiHeaders(
         referer: _buildRoomReferer(roomId),
         cookieOverride: cookie,
       ),
+      context: 'room context request for $roomId',
     );
     _ensureSuccessfulResponse(
       response,
@@ -215,12 +248,13 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     String? referer,
     String? cookie,
   }) async {
-    final response = await _client.get(
+    final response = await _get(
       Uri.parse(url),
       headers: _buildMediaHeaders(
         referer: referer ?? 'https://chaturbate.com/',
         cookieOverride: cookie,
       ),
+      context: 'hls playlist request',
     );
     _ensureSuccessfulResponse(response, context: 'hls playlist request');
     return response.body;
@@ -253,7 +287,7 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     required String csrfToken,
     required Map<String, dynamic> topics,
   }) async {
-    final response = await _sendMultipart(
+    final response = await _sendMultipartResponse(
       path: '/push_service/room_history/',
       referer: _buildRoomReferer(roomId),
       fields: {
@@ -261,7 +295,18 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
         'csrfmiddlewaretoken': csrfToken,
       },
     );
-    return _decodeJsonList(response, context: 'room_history response');
+    if (_looksLikeCloudflareChallenge(response)) {
+      _ensureSuccessfulResponse(response, context: 'room_history request');
+    }
+    if (response.statusCode == 403) {
+      throw ChaturbateRoomHistoryUnavailableException(
+        statusCode: 403,
+        message:
+            'Chaturbate room_history response returned status 403; realtime danmaku can continue.',
+      );
+    }
+    _ensureSuccessfulResponse(response, context: 'room_history request');
+    return _decodeJsonList(response.body, context: 'room_history response');
   }
 
   Future<String> _sendMultipart({
@@ -269,24 +314,65 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     required String referer,
     required Map<String, String> fields,
   }) async {
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.https('chaturbate.com', path),
-    )
-      ..headers.addAll(
-        _buildApiHeaders(
-          referer: referer,
-          extraHeaders: {
-            'origin': 'https://chaturbate.com',
-          },
-        ),
-      )
-      ..fields.addAll(fields);
-
-    final streamed = await _client.send(request);
-    final response = await http.Response.fromStream(streamed);
+    final response = await _sendMultipartResponse(
+      path: path,
+      referer: referer,
+      fields: fields,
+    );
     _ensureSuccessfulResponse(response, context: '$path request');
     return response.body;
+  }
+
+  Future<http.Response> _sendMultipartResponse({
+    required String path,
+    required String referer,
+    required Map<String, String> fields,
+  }) async {
+    return runProviderRequestWithRetry(
+      providerId: ProviderId.chaturbate,
+      operation: 'chaturbate multipart $path',
+      policy: _retryPolicy,
+      diagnostics: _diagnostics,
+      action: (_) async {
+        final request = http.MultipartRequest(
+          'POST',
+          Uri.https('chaturbate.com', path),
+        )
+          ..headers.addAll(
+            _buildApiHeaders(
+              referer: referer,
+              extraHeaders: {
+                'origin': 'https://chaturbate.com',
+              },
+            ),
+          )
+          ..fields.addAll(fields);
+        late final http.StreamedResponse streamed;
+        try {
+          streamed = await _client.send(request);
+        } catch (error, stackTrace) {
+          throw ProviderRetryableException(
+            ProviderParseException(
+              providerId: ProviderId.chaturbate,
+              message: 'Chaturbate $path request failed before response.',
+              cause: error,
+              stackTrace: stackTrace,
+            ),
+            stackTrace,
+          );
+        }
+        if (isRetryableHttpStatus(streamed.statusCode)) {
+          throw ProviderRetryableException(
+            ProviderParseException(
+              providerId: ProviderId.chaturbate,
+              message:
+                  'Chaturbate $path request failed with status ${streamed.statusCode}.',
+            ),
+          );
+        }
+        return http.Response.fromStream(streamed);
+      },
+    );
   }
 
   Map<String, String> _buildDocumentHeaders({
@@ -332,6 +418,7 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     return HttpChaturbateApiClient.buildPlaybackHeaders(
       referer: referer,
       cookie: cookieOverride ?? cookie,
+      browserProfile: _browserProfile,
     );
   }
 
@@ -381,7 +468,9 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     String? cookieOverride,
   }) {
     final headers = <String, String>{
-      ..._baseHeaders,
+      'user-agent': _browserProfile.userAgent,
+      'accept-language': _browserProfile.acceptLanguage,
+      ..._browserProfile.buildClientHintHeaders(),
       ...extraHeaders,
     };
     final normalizedCookie = (cookieOverride ?? cookie).trim();
@@ -428,6 +517,39 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     return 'Chaturbate $context was blocked by Cloudflare challenge. $guidance';
   }
 
+  String _decodeTextBody(
+    http.Response response, {
+    required String context,
+  }) {
+    final bytes = response.bodyBytes;
+    try {
+      return utf8.decode(bytes);
+    } on FormatException {
+      final encoding = _resolveResponseEncoding(response);
+      if (encoding != null) {
+        try {
+          return encoding.decode(bytes);
+        } on FormatException {
+          // Fall through to the package http body decoder below.
+        }
+      }
+      return response.body;
+    }
+  }
+
+  Encoding? _resolveResponseEncoding(http.Response response) {
+    final contentType = response.headers['content-type'];
+    if (contentType == null) {
+      return null;
+    }
+    final match = RegExp(r'charset=([^;]+)', caseSensitive: false)
+        .firstMatch(contentType);
+    if (match == null) {
+      return null;
+    }
+    return Encoding.getByName(match.group(1)?.trim());
+  }
+
   Map<String, dynamic> _decodeJson(
     String body, {
     required String context,
@@ -463,7 +585,7 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
       final decoded = jsonDecode(body);
       if (decoded is List) {
         return decoded
-            .map((item) => _asMap(item))
+            .map((item) => ProviderJson.asMap(item))
             .where((item) => item.isNotEmpty)
             .toList(growable: false);
       }
@@ -482,13 +604,42 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     );
   }
 
-  Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+  Future<http.Response> _get(
+    Uri uri, {
+    required Map<String, String> headers,
+    required String context,
+  }) {
+    return runProviderRequestWithRetry(
+      providerId: ProviderId.chaturbate,
+      operation: 'chaturbate GET ${uri.toString()}',
+      policy: _retryPolicy,
+      diagnostics: _diagnostics,
+      action: (_) async {
+        late final http.Response response;
+        try {
+          response = await _client.get(uri, headers: headers);
+        } catch (error, stackTrace) {
+          throw ProviderRetryableException(
+            ProviderParseException(
+              providerId: ProviderId.chaturbate,
+              message: 'Chaturbate $context failed before response.',
+              cause: error,
+              stackTrace: stackTrace,
+            ),
+            stackTrace,
+          );
+        }
+        if (isRetryableHttpStatus(response.statusCode)) {
+          throw ProviderRetryableException(
+            ProviderParseException(
+              providerId: ProviderId.chaturbate,
+              message:
+                  'Chaturbate $context failed with status ${response.statusCode}.',
+            ),
+          );
+        }
+        return response;
+      },
+    );
   }
 }

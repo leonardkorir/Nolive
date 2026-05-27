@@ -12,7 +12,8 @@ String formatPlayerDiagnosticsSummary({
 }) {
   final width =
       diagnostics.width ?? int.tryParse(diagnostics.videoParams['width'] ?? '');
-  final height = diagnostics.height ??
+  final height =
+      diagnostics.height ??
       int.tryParse(diagnostics.videoParams['height'] ?? '');
   final frameRate = diagnostics.videoParams['frame_rate'] ?? '-';
   final decoder = diagnostics.videoParams['codec'] ?? '-';
@@ -51,10 +52,17 @@ String summarizeRoomPlaybackSource(PlaybackSource? source) {
   return '$base + audio=${audio.host}${audio.path}';
 }
 
-typedef RoomPlayerRuntimeStateCallback = void Function(
-  PlayerState state, {
-  required bool playbackAvailable,
-});
+typedef RoomPlayerRuntimeStateCallback =
+    void Function(PlayerState state, {required bool playbackAvailable});
+typedef RoomPlayerUnexpectedStopCallback =
+    Future<void> Function(PlayerState state);
+typedef RoomPlayerShouldRecoverUnexpectedStop =
+    bool Function(PlayerState state);
+
+bool _defaultFalse() => false;
+bool _defaultTrue(PlayerState _) => true;
+
+Future<void> _noopUnexpectedStopRecovery(PlayerState state) async {}
 
 class RoomPlayerRuntimeObserverContext {
   const RoomPlayerRuntimeObserverContext({
@@ -64,6 +72,11 @@ class RoomPlayerRuntimeObserverContext {
     required this.trace,
     required this.resolvePlaybackAvailable,
     required this.onPlayerStateChanged,
+    this.resolveIsLeavingRoom = _defaultFalse,
+    this.resolvePlaybackRebindInFlight = _defaultFalse,
+    this.shouldRecoverUnexpectedStop = _defaultTrue,
+    this.onUnexpectedPlaybackStop = _noopUnexpectedStopRecovery,
+    this.unexpectedStopRecoveryDelay = const Duration(seconds: 2),
   });
 
   final ProviderId providerId;
@@ -72,6 +85,11 @@ class RoomPlayerRuntimeObserverContext {
   final void Function(String message) trace;
   final bool Function() resolvePlaybackAvailable;
   final RoomPlayerRuntimeStateCallback onPlayerStateChanged;
+  final bool Function() resolveIsLeavingRoom;
+  final bool Function() resolvePlaybackRebindInFlight;
+  final RoomPlayerShouldRecoverUnexpectedStop shouldRecoverUnexpectedStop;
+  final RoomPlayerUnexpectedStopCallback onUnexpectedPlaybackStop;
+  final Duration unexpectedStopRecoveryDelay;
 }
 
 class RoomPlayerRuntimeObserver {
@@ -87,6 +105,9 @@ class RoomPlayerRuntimeObserver {
   String? _lastPlayerDiagnosticsError;
   String? _lastPlayerRecentLogEntry;
   PlaybackBufferProfile? _lastPlayerBufferProfile;
+  Timer? _unexpectedStopRecoveryTimer;
+  String? _unexpectedStopRecoverySignature;
+  bool _unexpectedStopRecoveryInFlight = false;
   bool _disposed = false;
 
   void attach() {
@@ -107,6 +128,7 @@ class RoomPlayerRuntimeObserver {
 
   Future<void> dispose() async {
     _disposed = true;
+    _cancelUnexpectedStopRecovery();
     await _playerStateSubscription?.cancel();
     await _playerDiagnosticsSubscription?.cancel();
   }
@@ -119,10 +141,9 @@ class RoomPlayerRuntimeObserver {
   }
 
   void _forwardPlayerState(PlayerState state) {
-    context.onPlayerStateChanged(
-      state,
-      playbackAvailable: context.resolvePlaybackAvailable(),
-    );
+    final playbackAvailable = context.resolvePlaybackAvailable();
+    context.onPlayerStateChanged(state, playbackAvailable: playbackAvailable);
+    _handleUnexpectedStopState(state, playbackAvailable: playbackAvailable);
     if (kReleaseMode) {
       return;
     }
@@ -145,6 +166,88 @@ class RoomPlayerRuntimeObserver {
     );
   }
 
+  void _handleUnexpectedStopState(
+    PlayerState state, {
+    required bool playbackAvailable,
+  }) {
+    if (!playbackAvailable ||
+        state.source == null ||
+        context.resolveIsLeavingRoom() ||
+        context.resolvePlaybackRebindInFlight() ||
+        !context.shouldRecoverUnexpectedStop(state)) {
+      _cancelUnexpectedStopRecovery();
+      return;
+    }
+    if (state.status != PlaybackStatus.completed &&
+        state.status != PlaybackStatus.error) {
+      _cancelUnexpectedStopRecovery();
+      return;
+    }
+    final signature = _unexpectedStopSignature(state);
+    if (_unexpectedStopRecoverySignature == signature &&
+        _unexpectedStopRecoveryTimer != null) {
+      return;
+    }
+    _unexpectedStopRecoveryTimer?.cancel();
+    _unexpectedStopRecoverySignature = signature;
+    _unexpectedStopRecoveryTimer = Timer(
+      context.unexpectedStopRecoveryDelay,
+      () {
+        unawaited(_runUnexpectedStopRecovery(signature));
+      },
+    );
+    context.trace(
+      'player unexpected stop recovery scheduled status=${state.status.name}',
+    );
+  }
+
+  Future<void> _runUnexpectedStopRecovery(String signature) async {
+    _unexpectedStopRecoveryTimer = null;
+    final current = context.runtime.readCurrentState();
+    if (_disposed ||
+        _unexpectedStopRecoveryInFlight ||
+        context.resolveIsLeavingRoom() ||
+        context.resolvePlaybackRebindInFlight() ||
+        !context.shouldRecoverUnexpectedStop(current) ||
+        !context.resolvePlaybackAvailable()) {
+      return;
+    }
+    if (_unexpectedStopSignature(current) != signature ||
+        (current.status != PlaybackStatus.completed &&
+            current.status != PlaybackStatus.error) ||
+        current.source == null) {
+      return;
+    }
+    _unexpectedStopRecoveryInFlight = true;
+    try {
+      context.trace(
+        'player unexpected stop recovery refresh status=${current.status.name}',
+      );
+      await context.onUnexpectedPlaybackStop(current);
+    } catch (error) {
+      context.trace('player unexpected stop recovery failed: $error');
+    } finally {
+      _unexpectedStopRecoveryInFlight = false;
+      if (_unexpectedStopRecoverySignature == signature) {
+        _unexpectedStopRecoverySignature = null;
+      }
+    }
+  }
+
+  String _unexpectedStopSignature(PlayerState state) {
+    return [
+      state.status.name,
+      state.source?.url.toString() ?? '',
+      state.errorMessage ?? '',
+    ].join('|');
+  }
+
+  void _cancelUnexpectedStopRecovery() {
+    _unexpectedStopRecoveryTimer?.cancel();
+    _unexpectedStopRecoveryTimer = null;
+    _unexpectedStopRecoverySignature = null;
+  }
+
   void _handlePlayerDiagnostics(PlayerDiagnostics diagnostics) {
     if (_disposed) {
       return;
@@ -156,7 +259,9 @@ class RoomPlayerRuntimeObserver {
       _lastPlayerDiagnosticsSourceSignature = sourceSignature;
       _lastPlayerDiagnosticsSummarySignature = null;
       _lastPlayerDiagnosticsError = null;
-      _lastPlayerRecentLogEntry = null;
+      _lastPlayerRecentLogEntry = diagnostics.recentLogs.isEmpty
+          ? null
+          : diagnostics.recentLogs.last;
       _lastPlayerBufferProfile = null;
     }
     if (source == null) {
@@ -186,6 +291,9 @@ class RoomPlayerRuntimeObserver {
       context.trace('player diagnostics error=$error');
     }
     if (!verboseTracingEnabled) {
+      return;
+    }
+    if (source == null) {
       return;
     }
     final recentLogs = diagnostics.recentLogs;

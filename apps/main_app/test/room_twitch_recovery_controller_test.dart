@@ -12,256 +12,385 @@ import 'package:nolive_app/src/features/room/presentation/room_twitch_recovery_c
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 void main() {
-  test('room twitch recovery controller promotes startup quality after warmup',
-      () async {
-    final player = _TwitchRecoveryTestPlayer();
-    final runtime = PlayerRuntimeController(player);
-    final controller = RoomTwitchRecoveryController(
-      runtime: RoomRuntimeInspectionContext.fromPlayerRuntime(runtime),
-      delay: (_) async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
+  test(
+    'room twitch recovery controller promotes startup quality after warmup',
+    () async {
+      final player = _TwitchRecoveryTestPlayer();
+      final runtime = PlayerRuntimeController(player);
+      final controller = RoomTwitchRecoveryController(
+        runtime: RoomRuntimeInspectionContext.fromPlayerRuntime(runtime),
+        delay: (_) async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
 
-    const auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
-    const q1080 = LivePlayQuality(
-      id: '1080p60',
-      label: '1080p60',
-      sortOrder: 4,
-    );
-    final playbackSource = PlaybackSource(
-      url: Uri.parse('https://example.com/auto.m3u8'),
-    );
-    player.emit(
-      PlayerState(
-        backend: PlayerBackend.mpv,
-        status: PlaybackStatus.playing,
-        position: const Duration(milliseconds: 1500),
-        buffered: const Duration(seconds: 3),
-        source: playbackSource,
-      ),
-    );
-    controller.applyStartupPlan(
-      const TwitchStartupPlan(
-        startupQuality: auto,
-        promotionQuality: q1080,
-      ),
-    );
+      final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+      final q1080 = LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 4,
+      );
+      final playbackSource = PlaybackSource(
+        url: Uri.parse('https://example.com/auto.m3u8'),
+      );
+      player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          position: const Duration(milliseconds: 1500),
+          buffered: const Duration(seconds: 3),
+          source: playbackSource,
+        ),
+      );
+      controller.applyStartupPlan(
+        TwitchStartupPlan(startupQuality: auto, promotionQuality: q1080),
+      );
 
-    LivePlayQuality? switchedQuality;
-    await controller.scheduleRecovery(
-      providerId: ProviderId.twitch,
-      snapshot: _buildSnapshot(
+      LivePlayQuality? switchedQuality;
+      await controller.scheduleRecovery(
+        providerId: ProviderId.twitch,
+        snapshot: _buildSnapshot(
+          selectedQuality: auto,
+          qualities: [auto, q1080],
+          playUrls: const [LivePlayUrl(url: 'https://example.com/auto.m3u8')],
+        ),
+        playbackSource: playbackSource,
+        playUrls: const [LivePlayUrl(url: 'https://example.com/auto.m3u8')],
         selectedQuality: auto,
-        qualities: const [auto, q1080],
-        playUrls: const [
-          LivePlayUrl(url: 'https://example.com/auto.m3u8'),
-        ],
-      ),
-      playbackSource: playbackSource,
-      playUrls: const [
-        LivePlayUrl(url: 'https://example.com/auto.m3u8'),
-      ],
-      selectedQuality: auto,
-      resolveCurrentQuality: () => auto,
-      isMounted: () => true,
-      switchQuality: (
-        snapshot,
-        quality, {
-        bool resetTwitchRecoveryAttempts = true,
-        LivePlayQuality? twitchStartupPromotionQuality,
-      }) async {
-        switchedQuality = quality;
-        expect(resetTwitchRecoveryAttempts, isFalse);
-        expect(twitchStartupPromotionQuality, isNull);
-      },
-      refreshPlaybackSource: (
-        snapshot,
-        quality, {
-        LivePlayQuality? twitchStartupPromotionQuality,
-        bool resetTwitchRecoveryAttempts = false,
-        PlaybackSource? preferredPlaybackSource,
-        List<LivePlayUrl>? currentPlayUrls,
-      }) async {
-        fail('should not refresh playback source during promotion');
-      },
-      switchLine: (
-        playUrl, {
-        bool resetTwitchRecoveryAttempts = true,
-      }) async {
-        fail('should not switch line during promotion');
-      },
-    );
+        resolveCurrentQuality: () => auto,
+        isMounted: () => true,
+        switchQuality:
+            (
+              snapshot,
+              quality, {
+              bool resetTwitchRecoveryAttempts = true,
+              LivePlayQuality? twitchStartupPromotionQuality,
+            }) async {
+              switchedQuality = quality;
+              expect(resetTwitchRecoveryAttempts, isFalse);
+              expect(twitchStartupPromotionQuality, isNull);
+            },
+        refreshPlaybackSource:
+            (
+              snapshot,
+              quality, {
+              LivePlayQuality? twitchStartupPromotionQuality,
+              bool resetTwitchRecoveryAttempts = false,
+              PlaybackSource? preferredPlaybackSource,
+              List<LivePlayUrl>? currentPlayUrls,
+            }) async {
+              fail('should not refresh playback source during promotion');
+            },
+        switchLine: (playUrl, {bool resetTwitchRecoveryAttempts = true}) async {
+          fail('should not switch line during promotion');
+        },
+      );
 
-    expect(switchedQuality?.id, '1080p60');
-    expect(controller.current.startupPromotionQuality, isNull);
-    expect(controller.current.recoveryAttempts, 0);
-  });
+      expect(switchedQuality?.id, '1080p60');
+      expect(controller.current.startupPromotionQuality, isNull);
+      expect(controller.current.recoveryAttempts, 0);
+    },
+  );
 
-  test('room twitch recovery controller escalates from line switch to refresh',
-      () async {
-    final player = _TwitchRecoveryTestPlayer();
-    final runtime = PlayerRuntimeController(player);
-    final controller = RoomTwitchRecoveryController(
-      runtime: RoomRuntimeInspectionContext.fromPlayerRuntime(runtime),
-      delay: (_) async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
+  test(
+    'room twitch recovery controller waits for stripchat playback progress',
+    () async {
+      final player = _TwitchRecoveryTestPlayer();
+      final runtime = PlayerRuntimeController(player);
+      final controller = RoomTwitchRecoveryController(
+        runtime: RoomRuntimeInspectionContext.fromPlayerRuntime(runtime),
+        delay: (_) async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
 
-    const q1080 = LivePlayQuality(
-      id: '1080p60',
-      label: '1080p60',
-      sortOrder: 4,
-    );
-    final popoutSource = PlaybackSource(
-      url: Uri.parse(
-        'http://127.0.0.1:33101/twitch-ad-guard/popout/stream.m3u8',
-      ),
-    );
-    final siteSource = PlaybackSource(
-      url: Uri.parse(
+      final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+      final q1080 = LivePlayQuality(
+        id: '1080p',
+        label: '1080p',
+        sortOrder: 1080,
+      );
+      final playbackSource = PlaybackSource(
+        url: Uri.parse('https://example.com/auto.m3u8'),
+      );
+      player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.ready,
+          position: Duration.zero,
+          buffered: Duration.zero,
+          source: playbackSource,
+        ),
+      );
+      controller.applyStartupPlan(
+        TwitchStartupPlan(startupQuality: auto, promotionQuality: q1080),
+      );
+
+      LivePlayQuality? switchedQuality;
+      await controller.scheduleRecovery(
+        providerId: ProviderId.stripchat,
+        snapshot: _buildSnapshot(
+          providerId: ProviderId.stripchat,
+          selectedQuality: auto,
+          qualities: [auto, q1080],
+          playUrls: const [LivePlayUrl(url: 'https://example.com/auto.m3u8')],
+        ),
+        playbackSource: playbackSource,
+        playUrls: const [LivePlayUrl(url: 'https://example.com/auto.m3u8')],
+        selectedQuality: auto,
+        resolveCurrentQuality: () => auto,
+        isMounted: () => true,
+        switchQuality:
+            (
+              snapshot,
+              quality, {
+              bool resetTwitchRecoveryAttempts = true,
+              LivePlayQuality? twitchStartupPromotionQuality,
+            }) async {
+              switchedQuality = quality;
+            },
+        refreshPlaybackSource:
+            (
+              snapshot,
+              quality, {
+              LivePlayQuality? twitchStartupPromotionQuality,
+              bool resetTwitchRecoveryAttempts = false,
+              PlaybackSource? preferredPlaybackSource,
+              List<LivePlayUrl>? currentPlayUrls,
+            }) async {
+              fail(
+                'should not refresh stripchat playback source during promotion',
+              );
+            },
+        switchLine: (playUrl, {bool resetTwitchRecoveryAttempts = true}) async {
+          fail('stripchat startup promotion should not switch line');
+        },
+      );
+
+      expect(switchedQuality, isNull);
+      expect(controller.current.startupPromotionQuality?.id, '1080p');
+      expect(controller.current.recoveryAttempts, 2);
+
+      player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          position: const Duration(milliseconds: 1200),
+          buffered: const Duration(seconds: 2),
+          source: playbackSource,
+        ),
+      );
+      await controller.scheduleRecovery(
+        providerId: ProviderId.stripchat,
+        snapshot: _buildSnapshot(
+          providerId: ProviderId.stripchat,
+          selectedQuality: auto,
+          qualities: [auto, q1080],
+          playUrls: const [LivePlayUrl(url: 'https://example.com/auto.m3u8')],
+        ),
+        playbackSource: playbackSource,
+        playUrls: const [LivePlayUrl(url: 'https://example.com/auto.m3u8')],
+        selectedQuality: auto,
+        resolveCurrentQuality: () => auto,
+        isMounted: () => true,
+        switchQuality:
+            (
+              snapshot,
+              quality, {
+              bool resetTwitchRecoveryAttempts = true,
+              LivePlayQuality? twitchStartupPromotionQuality,
+            }) async {
+              switchedQuality = quality;
+              expect(resetTwitchRecoveryAttempts, isFalse);
+              expect(twitchStartupPromotionQuality, isNull);
+            },
+        refreshPlaybackSource:
+            (
+              snapshot,
+              quality, {
+              LivePlayQuality? twitchStartupPromotionQuality,
+              bool resetTwitchRecoveryAttempts = false,
+              PlaybackSource? preferredPlaybackSource,
+              List<LivePlayUrl>? currentPlayUrls,
+            }) async {
+              fail(
+                'should not refresh stripchat playback source during promotion',
+              );
+            },
+        switchLine: (playUrl, {bool resetTwitchRecoveryAttempts = true}) async {
+          fail('stripchat startup promotion should not switch line');
+        },
+      );
+
+      expect(switchedQuality?.id, '1080p');
+      expect(controller.current.startupPromotionQuality, isNull);
+      expect(controller.current.recoveryAttempts, 0);
+    },
+  );
+
+  test(
+    'room twitch recovery controller escalates from line switch to refresh',
+    () async {
+      final player = _TwitchRecoveryTestPlayer();
+      final runtime = PlayerRuntimeController(player);
+      final controller = RoomTwitchRecoveryController(
+        runtime: RoomRuntimeInspectionContext.fromPlayerRuntime(runtime),
+        delay: (_) async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
+
+      final q1080 = LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 4,
+      );
+      final popoutSource = PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:33101/twitch-ad-guard/popout/stream.m3u8',
+        ),
+      );
+      final siteSource = PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:33101/twitch-ad-guard/site/stream.m3u8',
+        ),
+      );
+      const playUrls = [
+        LivePlayUrl(
+          url: 'http://127.0.0.1:33101/twitch-ad-guard/popout/stream.m3u8',
+          lineLabel: '默认 Popout',
+          metadata: {'playerType': 'popout'},
+        ),
+        LivePlayUrl(
+          url: 'http://127.0.0.1:33101/twitch-ad-guard/site/stream.m3u8',
+          lineLabel: '备用 Site',
+          metadata: {'playerType': 'site'},
+        ),
+      ];
+      final snapshot = _buildSnapshot(
+        selectedQuality: q1080,
+        qualities: [q1080],
+        playUrls: playUrls,
+      );
+      controller.applyStartupPlan(TwitchStartupPlan(startupQuality: q1080));
+
+      player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          position: Duration.zero,
+          buffered: Duration.zero,
+          source: popoutSource,
+        ),
+      );
+
+      LivePlayUrl? switchedLine;
+      await controller.scheduleRecovery(
+        providerId: ProviderId.twitch,
+        snapshot: snapshot,
+        playbackSource: popoutSource,
+        playUrls: playUrls,
+        selectedQuality: q1080,
+        resolveCurrentQuality: () => q1080,
+        isMounted: () => true,
+        switchQuality:
+            (
+              snapshot,
+              quality, {
+              bool resetTwitchRecoveryAttempts = true,
+              LivePlayQuality? twitchStartupPromotionQuality,
+            }) async {
+              fail('should not change quality during fixed line recovery');
+            },
+        refreshPlaybackSource:
+            (
+              snapshot,
+              quality, {
+              LivePlayQuality? twitchStartupPromotionQuality,
+              bool resetTwitchRecoveryAttempts = false,
+              PlaybackSource? preferredPlaybackSource,
+              List<LivePlayUrl>? currentPlayUrls,
+            }) async {
+              fail('should switch line before refreshing current line');
+            },
+        switchLine: (playUrl, {bool resetTwitchRecoveryAttempts = true}) async {
+          switchedLine = playUrl;
+          expect(resetTwitchRecoveryAttempts, isFalse);
+        },
+      );
+
+      expect(switchedLine?.lineLabel, '备用 Site');
+      expect(controller.current.recoveryAttempts, 1);
+
+      controller.prepareForLineSwitch(resetAttempts: false);
+      player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          position: Duration.zero,
+          buffered: Duration.zero,
+          source: siteSource,
+        ),
+      );
+
+      var refreshCount = 0;
+      PlaybackSource? refreshedSource;
+      await controller.scheduleRecovery(
+        providerId: ProviderId.twitch,
+        snapshot: snapshot,
+        playbackSource: siteSource,
+        playUrls: playUrls,
+        selectedQuality: q1080,
+        resolveCurrentQuality: () => q1080,
+        isMounted: () => true,
+        switchQuality:
+            (
+              snapshot,
+              quality, {
+              bool resetTwitchRecoveryAttempts = true,
+              LivePlayQuality? twitchStartupPromotionQuality,
+            }) async {
+              fail('should not change quality during current-line refresh');
+            },
+        refreshPlaybackSource:
+            (
+              snapshot,
+              quality, {
+              LivePlayQuality? twitchStartupPromotionQuality,
+              bool resetTwitchRecoveryAttempts = false,
+              PlaybackSource? preferredPlaybackSource,
+              List<LivePlayUrl>? currentPlayUrls,
+            }) async {
+              refreshCount += 1;
+              refreshedSource = preferredPlaybackSource;
+              expect(resetTwitchRecoveryAttempts, isFalse);
+              expect(currentPlayUrls, playUrls);
+            },
+        switchLine: (playUrl, {bool resetTwitchRecoveryAttempts = true}) async {
+          fail('should refresh current line after one line retry');
+        },
+      );
+
+      expect(refreshCount, 1);
+      expect(
+        refreshedSource?.url.toString(),
         'http://127.0.0.1:33101/twitch-ad-guard/site/stream.m3u8',
-      ),
-    );
-    const playUrls = [
-      LivePlayUrl(
-        url: 'http://127.0.0.1:33101/twitch-ad-guard/popout/stream.m3u8',
-        lineLabel: '默认 Popout',
-        metadata: {'playerType': 'popout'},
-      ),
-      LivePlayUrl(
-        url: 'http://127.0.0.1:33101/twitch-ad-guard/site/stream.m3u8',
-        lineLabel: '备用 Site',
-        metadata: {'playerType': 'site'},
-      ),
-    ];
-    final snapshot = _buildSnapshot(
-      selectedQuality: q1080,
-      qualities: const [q1080],
-      playUrls: playUrls,
-    );
-    controller.applyStartupPlan(
-      const TwitchStartupPlan(startupQuality: q1080),
-    );
-
-    player.emit(
-      PlayerState(
-        backend: PlayerBackend.mpv,
-        status: PlaybackStatus.playing,
-        position: Duration.zero,
-        buffered: Duration.zero,
-        source: popoutSource,
-      ),
-    );
-
-    LivePlayUrl? switchedLine;
-    await controller.scheduleRecovery(
-      providerId: ProviderId.twitch,
-      snapshot: snapshot,
-      playbackSource: popoutSource,
-      playUrls: playUrls,
-      selectedQuality: q1080,
-      resolveCurrentQuality: () => q1080,
-      isMounted: () => true,
-      switchQuality: (
-        snapshot,
-        quality, {
-        bool resetTwitchRecoveryAttempts = true,
-        LivePlayQuality? twitchStartupPromotionQuality,
-      }) async {
-        fail('should not change quality during fixed line recovery');
-      },
-      refreshPlaybackSource: (
-        snapshot,
-        quality, {
-        LivePlayQuality? twitchStartupPromotionQuality,
-        bool resetTwitchRecoveryAttempts = false,
-        PlaybackSource? preferredPlaybackSource,
-        List<LivePlayUrl>? currentPlayUrls,
-      }) async {
-        fail('should switch line before refreshing current line');
-      },
-      switchLine: (
-        playUrl, {
-        bool resetTwitchRecoveryAttempts = true,
-      }) async {
-        switchedLine = playUrl;
-        expect(resetTwitchRecoveryAttempts, isFalse);
-      },
-    );
-
-    expect(switchedLine?.lineLabel, '备用 Site');
-    expect(controller.current.recoveryAttempts, 1);
-
-    controller.prepareForLineSwitch(resetAttempts: false);
-    player.emit(
-      PlayerState(
-        backend: PlayerBackend.mpv,
-        status: PlaybackStatus.playing,
-        position: Duration.zero,
-        buffered: Duration.zero,
-        source: siteSource,
-      ),
-    );
-
-    var refreshCount = 0;
-    PlaybackSource? refreshedSource;
-    await controller.scheduleRecovery(
-      providerId: ProviderId.twitch,
-      snapshot: snapshot,
-      playbackSource: siteSource,
-      playUrls: playUrls,
-      selectedQuality: q1080,
-      resolveCurrentQuality: () => q1080,
-      isMounted: () => true,
-      switchQuality: (
-        snapshot,
-        quality, {
-        bool resetTwitchRecoveryAttempts = true,
-        LivePlayQuality? twitchStartupPromotionQuality,
-      }) async {
-        fail('should not change quality during current-line refresh');
-      },
-      refreshPlaybackSource: (
-        snapshot,
-        quality, {
-        LivePlayQuality? twitchStartupPromotionQuality,
-        bool resetTwitchRecoveryAttempts = false,
-        PlaybackSource? preferredPlaybackSource,
-        List<LivePlayUrl>? currentPlayUrls,
-      }) async {
-        refreshCount += 1;
-        refreshedSource = preferredPlaybackSource;
-        expect(resetTwitchRecoveryAttempts, isFalse);
-        expect(currentPlayUrls, playUrls);
-      },
-      switchLine: (
-        playUrl, {
-        bool resetTwitchRecoveryAttempts = true,
-      }) async {
-        fail('should refresh current line after one line retry');
-      },
-    );
-
-    expect(refreshCount, 1);
-    expect(
-      refreshedSource?.url.toString(),
-      'http://127.0.0.1:33101/twitch-ad-guard/site/stream.m3u8',
-    );
-    expect(controller.current.recoveryAttempts, 2);
-  });
+      );
+      expect(controller.current.recoveryAttempts, 2);
+    },
+  );
 }
 
 LoadedRoomSnapshot _buildSnapshot({
+  ProviderId providerId = ProviderId.twitch,
   required LivePlayQuality selectedQuality,
   required List<LivePlayQuality> qualities,
   required List<LivePlayUrl> playUrls,
 }) {
   return LoadedRoomSnapshot(
-    providerId: ProviderId.twitch,
+    providerId: providerId,
     detail: LiveRoomDetail(
-      providerId: ProviderId.twitch.value,
+      providerId: providerId.value,
       roomId: 'room-id',
       title: 'title',
       streamerName: 'streamer',
@@ -325,10 +454,7 @@ class _TwitchRecoveryTestPlayer implements BasePlayer {
   @override
   Future<void> stop() async {
     emit(
-      _currentState.copyWith(
-        status: PlaybackStatus.ready,
-        clearSource: true,
-      ),
+      _currentState.copyWith(status: PlaybackStatus.ready, clearSource: true),
     );
   }
 

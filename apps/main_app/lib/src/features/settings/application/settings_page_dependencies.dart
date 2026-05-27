@@ -61,6 +61,8 @@ class PlayerSettingsDependencies {
     required this.applyPlayerPreferencesToRuntime,
     required this.playerRuntime,
     required this.isLiveMode,
+    this.usesSystemMediaVolume = false,
+    this.loadSystemMediaVolume,
   });
 
   final LoadPlayerPreferencesUseCase loadPlayerPreferences;
@@ -68,6 +70,8 @@ class PlayerSettingsDependencies {
   final ApplyPlayerPreferencesToRuntimeUseCase applyPlayerPreferencesToRuntime;
   final PlayerRuntimeController playerRuntime;
   final bool isLiveMode;
+  final bool usesSystemMediaVolume;
+  final Future<double?> Function()? loadSystemMediaVolume;
 }
 
 class DanmakuSettingsDependencies {

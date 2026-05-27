@@ -4,7 +4,8 @@ import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/settings_feature_dependencies.dart';
-import 'package:nolive_app/src/features/settings/presentation/chaturbate_web_login_page.dart';
+import 'package:nolive_app/src/features/settings/application/stripchat_mouflon_key_store.dart';
+import 'package:nolive_app/src/features/settings/presentation/provider_web_login_pages.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/provider_badge.dart';
@@ -36,8 +37,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   }
 
   Future<void> _openBilibiliQrLogin() async {
-    final result =
-        await Navigator.of(context).pushNamed(AppRoutes.bilibiliQrLogin);
+    final result = await Navigator.of(
+      context,
+    ).pushNamed(AppRoutes.bilibiliQrLogin);
     if (result == true && mounted) {
       await _reload();
     }
@@ -48,15 +50,15 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('清除账号凭据'),
-        content: Text(
-          switch (kind) {
-            ProviderAccountKind.bilibili => '确定要清除哔哩哔哩账号信息吗？',
-            ProviderAccountKind.chaturbate => '确定要清除 Chaturbate Cookie 吗？',
-            ProviderAccountKind.douyin => '确定要清除抖音账号 Cookie 吗？',
-            ProviderAccountKind.twitch => '确定要清除 Twitch Cookie 吗？',
-            ProviderAccountKind.youtube => '确定要清除 YouTube Cookie 吗？',
-          },
-        ),
+        content: Text(switch (kind) {
+          ProviderAccountKind.bilibili => '确定要清除哔哩哔哩账号信息吗？',
+          ProviderAccountKind.chaturbate => '确定要清除 Chaturbate Cookie 吗？',
+          ProviderAccountKind.douyin => '确定要清除抖音账号 Cookie 吗？',
+          ProviderAccountKind.stripchat =>
+            '确定要清除 Stripchat 旧 Cookie、手动导入密钥与旧缓存吗？',
+          ProviderAccountKind.twitch => '确定要清除 Twitch Cookie 吗？',
+          ProviderAccountKind.youtube => '确定要清除 YouTube Cookie 吗？',
+        }),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -143,9 +145,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     ProviderAccountDashboard dashboard,
   ) async {
     final result = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => const ChaturbateWebLoginPage(),
-      ),
+      MaterialPageRoute(builder: (_) => const ChaturbateWebLoginPage()),
     );
     if (result == null || result.trim().isEmpty) {
       return;
@@ -161,9 +161,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
 
   Future<void> _openDouyinWebLogin(ProviderAccountDashboard dashboard) async {
     final result = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => const DouyinWebLoginPage(),
-      ),
+      MaterialPageRoute(builder: (_) => const DouyinWebLoginPage()),
     );
     if (result == null || result.trim().isEmpty) {
       return;
@@ -215,15 +213,81 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
 
   Future<void> _openTwitchWebLogin(ProviderAccountDashboard dashboard) async {
     final result = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => const TwitchWebLoginPage(),
-      ),
+      MaterialPageRoute(builder: (_) => const TwitchWebLoginPage()),
     );
     if (result == null || result.trim().isEmpty) {
       return;
     }
     await widget.dependencies.updateProviderAccountSettings(
       dashboard.settings.copyWith(twitchCookie: result.trim()),
+    );
+    if (!mounted) {
+      return;
+    }
+    await _reload();
+  }
+
+  Future<void> _importStripchatKeys(ProviderAccountDashboard dashboard) async {
+    final controller = TextEditingController();
+    final imported = await showDialog<List<StripchatMouflonKeyRecord>>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('手动导入 Stripchat 播放密钥'),
+          content: SizedBox(
+            width: 640,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '每行一个 `pkey:pdkey`，支持一次粘贴多行。',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  minLines: 4,
+                  maxLines: 8,
+                  decoration: const InputDecoration(labelText: 'pkey:pdkey'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                try {
+                  final parsed = parseStripchatMouflonImport(
+                    controller.text,
+                    source: StripchatCalibrationSource.manual,
+                  );
+                  Navigator.of(context).pop(parsed);
+                } catch (error) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('$error')));
+                }
+              },
+              child: const Text('导入'),
+            ),
+          ],
+        );
+      },
+    );
+    if (imported == null || imported.isEmpty) {
+      return;
+    }
+    final merged = dashboard.settings.stripchatMouflonKeys.mergeRecords(
+      imported,
+      source: StripchatCalibrationSource.manual,
+    );
+    await widget.dependencies.updateProviderAccountSettings(
+      dashboard.settings.copyWith(stripchatMouflonKeys: merged),
     );
     if (!mounted) {
       return;
@@ -415,7 +479,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                         OutlinedButton.icon(
                           onPressed: dashboard.bilibili.isConfigured
                               ? () =>
-                                  _clearAccount(ProviderAccountKind.bilibili)
+                                    _clearAccount(ProviderAccountKind.bilibili)
                               : null,
                           icon: const Icon(Icons.logout),
                           label: const Text('清除凭据'),
@@ -441,8 +505,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     _ProviderAccountListItem(
                       providerId: dashboard.chaturbate.providerId,
                       title: dashboard.chaturbate.providerName,
-                      status:
-                          _statusMetaForAccount(dashboard.chaturbate, scheme),
+                      status: _statusMetaForAccount(
+                        dashboard.chaturbate,
+                        scheme,
+                      ),
                       credentialSummary: dashboard.chaturbate.credentialSummary,
                       identitySummary: dashboard.chaturbate.identitySummary,
                       errorMessage: dashboard.chaturbate.errorMessage,
@@ -460,8 +526,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                         ),
                         OutlinedButton.icon(
                           onPressed: dashboard.chaturbate.isConfigured
-                              ? () =>
-                                  _clearAccount(ProviderAccountKind.chaturbate)
+                              ? () => _clearAccount(
+                                  ProviderAccountKind.chaturbate,
+                                )
                               : null,
                           icon: const Icon(Icons.delete_outline),
                           label: const Text('清除 Cookie'),
@@ -504,6 +571,43 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                           onPressed: _reload,
                           icon: const Icon(Icons.verified_outlined),
                           label: const Text('校验状态'),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 32),
+                    _ProviderAccountListItem(
+                      providerId: dashboard.stripchat.providerId,
+                      title: dashboard.stripchat.providerName,
+                      status: _statusMetaForAccount(
+                        dashboard.stripchat,
+                        scheme,
+                      ),
+                      credentialSummary: dashboard.stripchat.credentialSummary,
+                      identitySummary: dashboard.stripchat.identitySummary,
+                      playbackSummary: dashboard.stripchat.playbackSummary,
+                      errorMessage: dashboard.stripchat.errorMessage,
+                      actions: [
+                        OutlinedButton.icon(
+                          onPressed: () => _importStripchatKeys(dashboard),
+                          icon: const Icon(Icons.vpn_key_outlined),
+                          label: const Text('手动导入密钥'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed:
+                              dashboard.stripchat.isConfigured ||
+                                  dashboard.settings.stripchatCookie
+                                      .trim()
+                                      .isNotEmpty
+                              ? () =>
+                                    _clearAccount(ProviderAccountKind.stripchat)
+                              : null,
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('清除凭据'),
+                        ),
+                        TextButton.icon(
+                          onPressed: _reload,
+                          icon: const Icon(Icons.verified_outlined),
+                          label: const Text('刷新状态'),
                         ),
                       ],
                     ),
@@ -587,6 +691,7 @@ class _ProviderAccountListItem extends StatelessWidget {
     required this.status,
     required this.credentialSummary,
     required this.identitySummary,
+    this.playbackSummary,
     required this.actions,
     this.errorMessage,
   });
@@ -596,6 +701,7 @@ class _ProviderAccountListItem extends StatelessWidget {
   final _StatusMeta status;
   final String credentialSummary;
   final String identitySummary;
+  final String? playbackSummary;
   final String? errorMessage;
   final List<Widget> actions;
 
@@ -631,16 +737,26 @@ class _ProviderAccountListItem extends StatelessWidget {
                   Text(
                     identitySummary,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
+                  if (playbackSummary != null &&
+                      playbackSummary!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      playbackSummary!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                   if (errorMessage != null) ...[
                     const SizedBox(height: 8),
                     Text(
                       errorMessage!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.error,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: scheme.error),
                     ),
                   ],
                 ],
@@ -652,11 +768,7 @@ class _ProviderAccountListItem extends StatelessWidget {
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.only(left: 54),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: actions,
-            ),
+            child: Wrap(spacing: 8, runSpacing: 8, children: actions),
           ),
         ],
       ],
@@ -681,10 +793,7 @@ class _StaticProviderListItem extends StatelessWidget {
         _ProviderLogoBadge(providerId: providerId),
         const SizedBox(width: 14),
         Expanded(
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          child: Text(title, style: Theme.of(context).textTheme.titleMedium),
         ),
         _StatusChip(
           status: _StatusMeta(
@@ -751,9 +860,9 @@ class _StatusChip extends StatelessWidget {
       child: Text(
         status.label,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: status.foregroundColor,
-              fontWeight: FontWeight.w700,
-            ),
+          color: status.foregroundColor,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -774,20 +883,20 @@ class _StatusMeta {
 _StatusMeta _statusMeta(ProviderAccountHealth health, ColorScheme scheme) {
   return switch (health) {
     ProviderAccountHealth.notConfigured => _StatusMeta(
-        label: '未配置',
-        backgroundColor: scheme.surfaceContainerHighest,
-        foregroundColor: scheme.onSurfaceVariant,
-      ),
+      label: '未配置',
+      backgroundColor: scheme.surfaceContainerHighest,
+      foregroundColor: scheme.onSurfaceVariant,
+    ),
     ProviderAccountHealth.verified => _StatusMeta(
-        label: '已验证',
-        backgroundColor: scheme.primaryContainer,
-        foregroundColor: scheme.onPrimaryContainer,
-      ),
+      label: '已验证',
+      backgroundColor: scheme.primaryContainer,
+      foregroundColor: scheme.onPrimaryContainer,
+    ),
     ProviderAccountHealth.invalid => _StatusMeta(
-        label: '需更新',
-        backgroundColor: scheme.errorContainer,
-        foregroundColor: scheme.onErrorContainer,
-      ),
+      label: '需更新',
+      backgroundColor: scheme.errorContainer,
+      foregroundColor: scheme.onErrorContainer,
+    ),
   };
 }
 

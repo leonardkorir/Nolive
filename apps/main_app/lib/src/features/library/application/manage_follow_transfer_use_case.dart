@@ -49,31 +49,43 @@ class ImportFollowListJsonUseCase {
 
   Future<FollowTransferSummary> call(String rawJson) async {
     final records = _decodeImportedFollowRecords(rawJson);
-    final existingTags = (await tagRepository.listAll()).toSet();
+    final previousFollows = await followRepository.listAll();
+    final previousTags = await tagRepository.listAll();
+    final existingFollows = {
+      for (final record in previousFollows)
+        '${record.providerId}:${record.roomId}',
+    };
+    final existingTags = previousTags.toSet();
     var createdCount = 0;
     var updatedCount = 0;
     var createdTagCount = 0;
 
-    for (final record in records) {
-      final exists = await followRepository.exists(
-        record.providerId,
-        record.roomId,
-      );
-      await followRepository.upsert(record);
-      if (exists) {
-        updatedCount += 1;
-      } else {
-        createdCount += 1;
-      }
-
-      for (final tag in record.tags) {
-        final normalizedTag = tag.trim();
-        if (normalizedTag.isEmpty || !existingTags.add(normalizedTag)) {
-          continue;
+    try {
+      for (final record in records) {
+        final followKey = '${record.providerId}:${record.roomId}';
+        await followRepository.upsert(record);
+        if (existingFollows.contains(followKey)) {
+          updatedCount += 1;
+        } else {
+          createdCount += 1;
+          existingFollows.add(followKey);
         }
-        await tagRepository.create(normalizedTag);
-        createdTagCount += 1;
+
+        for (final tag in record.tags) {
+          final normalizedTag = tag.trim();
+          if (normalizedTag.isEmpty || !existingTags.add(normalizedTag)) {
+            continue;
+          }
+          await tagRepository.create(normalizedTag);
+          createdTagCount += 1;
+        }
       }
+    } catch (error, stackTrace) {
+      await _restoreFollowImportSnapshot(
+        previousFollows: previousFollows,
+        previousTags: previousTags,
+      );
+      Error.throwWithStackTrace(error, stackTrace);
     }
 
     final totalCount = (await followRepository.listAll()).length;
@@ -88,6 +100,40 @@ class ImportFollowListJsonUseCase {
       createdTagCount: createdTagCount,
       totalCount: totalCount,
     );
+  }
+
+  Future<void> _restoreFollowImportSnapshot({
+    required List<FollowRecord> previousFollows,
+    required List<String> previousTags,
+  }) async {
+    try {
+      await followRepository.upsertAll(previousFollows.reversed);
+    } catch (_) {
+      await followRepository.clear();
+      try {
+        await followRepository.upsertAll(previousFollows.reversed);
+      } catch (innerError) {
+        for (final record in previousFollows.reversed) {
+          try {
+            await followRepository.upsert(record);
+          } catch (_) {
+            // Ignore individual failure to restore as many as possible
+          }
+        }
+      }
+    }
+    try {
+      await tagRepository.clear();
+      for (final tag in previousTags) {
+        try {
+          await tagRepository.create(tag);
+        } catch (_) {
+          // Ignore individual tag create failures
+        }
+      }
+    } catch (_) {
+      // Ignore tag clear failures
+    }
   }
 }
 

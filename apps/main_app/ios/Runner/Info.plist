@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>用于保存直播截图到系统相册。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>用于扫描局域网同步配对二维码。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

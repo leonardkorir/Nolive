@@ -4,7 +4,20 @@ bool _decodeBoolSetting(String? raw, {bool fallback = false}) {
   if (raw == null || raw.isEmpty) {
     return fallback;
   }
-  return raw.toLowerCase() == 'true';
+  switch (raw.trim().toLowerCase()) {
+    case 'true':
+    case '1':
+    case 'yes':
+    case 'on':
+      return true;
+    case 'false':
+    case '0':
+    case 'no':
+    case 'off':
+      return false;
+    default:
+      return fallback;
+  }
 }
 
 const String _storageFileName = 'nolive_storage.json';
@@ -28,7 +41,15 @@ Future<File> _resolveStorageFile(Directory directory) async {
   try {
     return await legacyFile.rename(storageFile.path);
   } on FileSystemException {
-    await legacyFile.copy(storageFile.path);
+    try {
+      await legacyFile.copy(storageFile.path);
+    } on FileSystemException {
+      if (await storageFile.exists()) {
+        await storageFile.delete();
+      }
+      rethrow;
+    }
+    await legacyFile.delete();
     return storageFile;
   }
 }
@@ -42,13 +63,13 @@ PlayerBackend _decodePlayerBackend(String? raw) {
 
 class _BootstrapStateBundle {
   _BootstrapStateBundle()
-      : themeMode = ValueNotifier<ThemeMode>(ThemeMode.system),
-        layoutPreferences = ValueNotifier<LayoutPreferences>(
-          LayoutPreferences.defaults(),
-        ),
-        providerCatalogRevision = ValueNotifier<int>(0),
-        followDataRevision = ValueNotifier<int>(0),
-        followWatchlistSnapshot = ValueNotifier<FollowWatchlist?>(null);
+    : themeMode = ValueNotifier<ThemeMode>(ThemeMode.system),
+      layoutPreferences = ValueNotifier<LayoutPreferences>(
+        LayoutPreferences.defaults(),
+      ),
+      providerCatalogRevision = ValueNotifier<int>(0),
+      followDataRevision = ValueNotifier<int>(0),
+      followWatchlistSnapshot = ValueNotifier<FollowWatchlist?>(null);
 
   final ValueNotifier<ThemeMode> themeMode;
   final ValueNotifier<LayoutPreferences> layoutPreferences;
@@ -142,21 +163,25 @@ class _BootstrapAccountClients {
 class _BootstrapAssemblyContext {
   const _BootstrapAssemblyContext({
     required this.mode,
+    required this.platformCapabilities,
     required this.state,
     required this.repositories,
     required this.settings,
     required this.secureCredentialStore,
     required this.warmUpSecureCredentialStore,
     required this.accountClients,
+    required this.disposeResources,
   });
 
   final AppRuntimeMode mode;
+  final AppPlatformCapabilities platformCapabilities;
   final _BootstrapStateBundle state;
   final _BootstrapRepositories repositories;
   final _BootstrapSettingReaders settings;
   final SecureCredentialStore secureCredentialStore;
   final Future<void> Function() warmUpSecureCredentialStore;
   final _BootstrapAccountClients accountClients;
+  final Future<void> Function() disposeResources;
 }
 
 AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
@@ -166,7 +191,9 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
   );
   final runtimeBridges = _buildAppRuntimeBridges(
     mode: context.mode,
+    platformCapabilities: context.platformCapabilities,
     loadProviderAccountSettings: loadProviderAccountSettings,
+    secureCredentialStore: context.secureCredentialStore,
   );
   final providerRegistry = _buildProviderRegistry(
     context,
@@ -187,18 +214,77 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     snapshotService: snapshotService,
     secureCredentialStore: context.secureCredentialStore,
   );
-  Future<LocalSyncPeerInfo> readLocalPeerInfo() async {
+  Future<LocalSyncPeerInfo>? localPeerInfoInFlight;
+
+  String generateSecureHexToken({
+    required String prefix,
+    required int byteCount,
+  }) {
+    final random = Random.secure();
+    final buffer = StringBuffer(prefix);
+    for (var index = 0; index < byteCount; index += 1) {
+      buffer.write(random.nextInt(256).toRadixString(16).padLeft(2, '0'));
+    }
+    return buffer.toString();
+  }
+
+  String generateLocalSyncDeviceId() {
+    return generateSecureHexToken(prefix: 'nolive-', byteCount: 16);
+  }
+
+  String generateLocalSyncAccessToken() {
+    return generateSecureHexToken(prefix: '', byteCount: 32);
+  }
+
+  bool isValidLocalSyncDeviceId(String value) {
+    return RegExp(r'^nolive-[0-9a-f]{32}$').hasMatch(value.trim());
+  }
+
+  final storedInitialAccessToken = context.settings
+      .stringSetting(SensitiveSettingKeys.syncLocalAccessToken)
+      .trim();
+  final initialLocalSyncAccessToken = storedInitialAccessToken.isNotEmpty
+      ? storedInitialAccessToken
+      : generateLocalSyncAccessToken();
+
+  Future<String> loadLocalSyncAccessToken() async {
+    await context.secureCredentialStore.ensureReady();
+    final secureAccessToken = await context.secureCredentialStore.read(
+      SensitiveSettingKeys.syncLocalAccessToken,
+    );
+    final legacyAccessToken = await context.repositories.settingsRepository
+        .readValue<String>(SensitiveSettingKeys.syncLocalAccessToken);
+    final nextAccessToken = secureAccessToken.trim().isNotEmpty
+        ? secureAccessToken.trim()
+        : (legacyAccessToken?.trim().isNotEmpty == true
+              ? legacyAccessToken!.trim()
+              : initialLocalSyncAccessToken);
+    await context.secureCredentialStore.write(
+      SensitiveSettingKeys.syncLocalAccessToken,
+      nextAccessToken,
+    );
+    if (context.secureCredentialStore.storesSecureValuesSeparately) {
+      await context.repositories.settingsRepository.remove(
+        SensitiveSettingKeys.syncLocalAccessToken,
+      );
+    }
+    return nextAccessToken;
+  }
+
+  Future<LocalSyncPeerInfo> loadLocalPeerInfo() async {
     final storedName = await context.repositories.settingsRepository
         .readValue<String>('sync_local_device_name');
     final storedDeviceId = await context.repositories.settingsRepository
-        .readValue<String>('sync_local_device_id');
+        .readValue<String>(SensitiveSettingKeys.syncLocalDeviceId);
     final displayName = storedName?.trim();
-    final nextDeviceId = storedDeviceId?.trim().isNotEmpty == true
-        ? storedDeviceId!.trim()
-        : 'nolive-${DateTime.now().microsecondsSinceEpoch}';
-    if (storedDeviceId?.trim().isNotEmpty != true) {
+    final normalizedStoredDeviceId = storedDeviceId?.trim() ?? '';
+    final nextDeviceId = isValidLocalSyncDeviceId(normalizedStoredDeviceId)
+        ? normalizedStoredDeviceId
+        : generateLocalSyncDeviceId();
+    final nextAccessToken = await loadLocalSyncAccessToken();
+    if (normalizedStoredDeviceId != nextDeviceId) {
       await context.repositories.settingsRepository.writeValue(
-        'sync_local_device_id',
+        SensitiveSettingKeys.syncLocalDeviceId,
         nextDeviceId,
       );
     }
@@ -207,8 +293,25 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
           ? 'nolive-device'
           : displayName,
       deviceId: nextDeviceId,
-      platform: Platform.operatingSystem,
+      platform: _localSyncPlatformLabel(context.platformCapabilities),
+      accessToken: nextAccessToken,
     );
+  }
+
+  Future<LocalSyncPeerInfo> readLocalPeerInfo() async {
+    final inFlight = localPeerInfoInFlight;
+    if (inFlight != null) {
+      return inFlight;
+    }
+    final future = loadLocalPeerInfo();
+    localPeerInfoInFlight = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(localPeerInfoInFlight, future)) {
+        localPeerInfoInFlight = null;
+      }
+    }
   }
 
   final localDiscoveryService = UdpLocalDiscoveryService(
@@ -219,12 +322,15 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     importSnapshot: snapshotImportCoordinator.importSnapshot,
     exportCategory: snapshotService.exportCategory,
     importCategory: snapshotImportCoordinator.importCategory,
+    rollbackCategory: snapshotImportCoordinator.restoreCategoryBackup,
     readInfo: readLocalPeerInfo,
+    accessTokenResolver: loadLocalSyncAccessToken,
   );
   final localSyncClient = HttpLocalSyncClient();
 
-  final loadLayoutPreferences =
-      LoadLayoutPreferencesUseCase(context.repositories.settingsRepository);
+  final loadLayoutPreferences = LoadLayoutPreferencesUseCase(
+    context.repositories.settingsRepository,
+  );
   final updateLayoutPreferences = UpdateLayoutPreferencesUseCase(
     settingsRepository: context.repositories.settingsRepository,
     preferencesNotifier: context.state.layoutPreferences,
@@ -298,8 +404,9 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
       registry: providerRegistry,
       listAvailableProviders: listAvailableProviders,
     ),
-    loadProviderRecommendRooms:
-        LoadProviderRecommendRoomsUseCase(providerRegistry),
+    loadProviderRecommendRooms: LoadProviderRecommendRoomsUseCase(
+      providerRegistry,
+    ),
     loadProviderCategories: LoadProviderCategoriesUseCase(providerRegistry),
     loadFavoriteCategoryTags: LoadFavoriteCategoryTagsUseCase(
       context.repositories.settingsRepository,
@@ -321,6 +428,7 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     resolvePlaySource: ResolvePlaySourceUseCase(
       providerRegistry,
       wrapChaturbatePlayUrls: runtimeBridges.chaturbateLlHlsProxy?.wrapPlayUrls,
+      wrapStripchatPlayUrls: runtimeBridges.stripchatLlHlsProxy?.wrapPlayUrls,
       wrapTwitchPlayUrls: runtimeBridges.twitchAdGuardProxy?.wrapPlayUrls,
     ),
     searchProviderRooms: SearchProviderRoomsUseCase(providerRegistry),
@@ -338,8 +446,9 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     updateFollowPreferences: updateFollowPreferences,
     loadHistoryPreferences: loadHistoryPreferences,
     updateHistoryPreferences: updateHistoryPreferences,
-    exportFollowListJson:
-        ExportFollowListJsonUseCase(context.repositories.followRepository),
+    exportFollowListJson: ExportFollowListJsonUseCase(
+      context.repositories.followRepository,
+    ),
     importFollowListJson: ImportFollowListJsonUseCase(
       followRepository: context.repositories.followRepository,
       tagRepository: context.repositories.tagRepository,
@@ -350,8 +459,9 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
       context.repositories.followRepository,
       followDataRevision: context.state.followDataRevision,
     ),
-    isFollowedRoom:
-        IsFollowedRoomUseCase(context.repositories.followRepository),
+    isFollowedRoom: IsFollowedRoomUseCase(
+      context.repositories.followRepository,
+    ),
     listTags: ListTagsUseCase(context.repositories.tagRepository),
     createTag: CreateTagUseCase(context.repositories.tagRepository),
     removeTag: RemoveTagUseCase(
@@ -370,8 +480,9 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
       context.repositories.followRepository,
       followDataRevision: context.state.followDataRevision,
     ),
-    removeHistoryRecord:
-        RemoveHistoryRecordUseCase(context.repositories.historyRepository),
+    removeHistoryRecord: RemoveHistoryRecordUseCase(
+      context.repositories.historyRepository,
+    ),
     clearHistory: ClearHistoryUseCase(context.repositories.historyRepository),
     loadSyncSnapshot: loadSyncSnapshot,
     loadSyncPreferences: LoadSyncPreferencesUseCase(
@@ -460,31 +571,45 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
       settingsRepository: context.repositories.settingsRepository,
       themeModeNotifier: context.state.themeMode,
     ),
-    loadBlockedKeywords:
-        LoadBlockedKeywordsUseCase(context.repositories.settingsRepository),
-    addBlockedKeyword:
-        AddBlockedKeywordUseCase(context.repositories.settingsRepository),
-    removeBlockedKeyword:
-        RemoveBlockedKeywordUseCase(context.repositories.settingsRepository),
-    loadDanmakuPreferences:
-        LoadDanmakuPreferencesUseCase(context.repositories.settingsRepository),
+    loadBlockedKeywords: LoadBlockedKeywordsUseCase(
+      context.repositories.settingsRepository,
+    ),
+    addBlockedKeyword: AddBlockedKeywordUseCase(
+      context.repositories.settingsRepository,
+    ),
+    removeBlockedKeyword: RemoveBlockedKeywordUseCase(
+      context.repositories.settingsRepository,
+    ),
+    loadDanmakuPreferences: LoadDanmakuPreferencesUseCase(
+      context.repositories.settingsRepository,
+    ),
     updateDanmakuPreferences: UpdateDanmakuPreferencesUseCase(
-        context.repositories.settingsRepository),
+      context.repositories.settingsRepository,
+    ),
     clearFollows: ClearFollowsUseCase(
       context.repositories.followRepository,
       followWatchlistSnapshot: context.state.followWatchlistSnapshot,
       followDataRevision: context.state.followDataRevision,
     ),
-    loadRoomUiPreferences:
-        LoadRoomUiPreferencesUseCase(context.repositories.settingsRepository),
-    updateRoomUiPreferences:
-        UpdateRoomUiPreferencesUseCase(context.repositories.settingsRepository),
-    loadPlayerPreferences:
-        LoadPlayerPreferencesUseCase(context.repositories.settingsRepository),
-    updatePlayerPreferences:
-        UpdatePlayerPreferencesUseCase(context.repositories.settingsRepository),
-    applyPlayerPreferencesToRuntime:
-        ApplyPlayerPreferencesToRuntimeUseCase(playerRuntime),
+    loadRoomUiPreferences: LoadRoomUiPreferencesUseCase(
+      context.repositories.settingsRepository,
+    ),
+    updateRoomUiPreferences: UpdateRoomUiPreferencesUseCase(
+      context.repositories.settingsRepository,
+    ),
+    loadPlayerPreferences: LoadPlayerPreferencesUseCase(
+      context.repositories.settingsRepository,
+    ),
+    updatePlayerPreferences: UpdatePlayerPreferencesUseCase(
+      context.repositories.settingsRepository,
+    ),
+    applyPlayerPreferencesToRuntime: ApplyPlayerPreferencesToRuntimeUseCase(
+      playerRuntime,
+      usesSystemMediaVolume: () =>
+          context.mode == AppRuntimeMode.live &&
+          context.platformCapabilities.isAndroid,
+      setSystemMediaVolume: AndroidPlaybackBridge.instance.setMediaVolume,
+    ),
     parseRoomInput: ParseRoomInputUseCase(providerRegistry),
     inspectParsedRoom: InspectParsedRoomUseCase(
       providerRegistry,
@@ -493,7 +618,35 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
           runtimeBridges.requireChaturbateCookiePreflight,
       roomDetailOverride: runtimeBridges.roomDetailOverride,
     ),
+    disposeResources: () async {
+      await localDiscoveryService.dispose();
+      await localSyncServer.stop();
+      await localSyncClient.close(force: true);
+      providerRegistry.clearCache();
+      await runtimeBridges.dispose();
+      await playerRuntime.dispose();
+      await context.disposeResources();
+    },
   );
+}
+
+String _localSyncPlatformLabel(AppPlatformCapabilities platform) {
+  if (platform.isAndroid) {
+    return 'android-mobile';
+  }
+  if (platform.isIOS) {
+    return 'ios-mobile';
+  }
+  if (platform.isLinux) {
+    return 'desktop-linux';
+  }
+  if (platform.isMacOS) {
+    return 'desktop-macos';
+  }
+  if (platform.isWindows) {
+    return 'desktop-windows';
+  }
+  return 'unknown';
 }
 
 ProviderRegistry _buildProviderRegistry(
@@ -503,41 +656,55 @@ ProviderRegistry _buildProviderRegistry(
   return switch (context.mode) {
     AppRuntimeMode.preview => ReferenceProviderCatalog.buildPreviewRegistry(),
     AppRuntimeMode.live => ReferenceProviderCatalog.buildLiveRegistry(
-        stringSetting: context.settings.stringSetting,
-        intSetting: context.settings.intSetting,
-        douyinDanmakuSignatureBuilder: Platform.isAndroid
-            ? (roomId, userUniqueId) =>
-                DouyinDanmakuSignatureService.instance.buildSignature(
-                  roomId: roomId,
-                  userUniqueId: userUniqueId,
-                )
-            : null,
-        twitchPlaybackBootstrapResolver:
-            runtimeBridges.twitchWebPlaybackBridge?.call,
-      ),
+      stringSetting: context.settings.stringSetting,
+      intSetting: context.settings.intSetting,
+      douyinDanmakuSignatureBuilder: context.platformCapabilities.isAndroid
+          ? (roomId, userUniqueId) => DouyinDanmakuSignatureService.instance
+                .buildSignature(roomId: roomId, userUniqueId: userUniqueId)
+          : null,
+      twitchPlaybackBootstrapResolver:
+          runtimeBridges.twitchWebPlaybackBridge?.call,
+    ),
   };
 }
 
 AppRuntimeBridges _buildAppRuntimeBridges({
   required AppRuntimeMode mode,
+  required AppPlatformCapabilities platformCapabilities,
   required LoadProviderAccountSettingsUseCase loadProviderAccountSettings,
+  required SecureCredentialStore secureCredentialStore,
 }) {
   final chaturbateWebRoomDetailLoader = _buildChaturbateRoomDetailLoader(
     mode: mode,
+    platformCapabilities: platformCapabilities,
     loadProviderAccountSettings: loadProviderAccountSettings,
   );
   return AppRuntimeBridges(
-    chaturbateLlHlsProxy: _buildChaturbateLlHlsProxy(mode: mode),
+    chaturbateLlHlsProxy: _buildChaturbateLlHlsProxy(
+      mode: mode,
+      platformCapabilities: platformCapabilities,
+    ),
+    stripchatLlHlsProxy: _buildStripchatLlHlsProxy(
+      mode: mode,
+      platformCapabilities: platformCapabilities,
+      loadProviderAccountSettings: loadProviderAccountSettings,
+    ),
     roomDetailOverride: chaturbateWebRoomDetailLoader?.call,
     twitchWebPlaybackBridge: _buildTwitchWebPlaybackBridge(
       mode: mode,
+      platformCapabilities: platformCapabilities,
       loadProviderAccountSettings: loadProviderAccountSettings,
     ),
-    twitchAdGuardProxy: _buildTwitchAdGuardProxy(mode: mode),
+    twitchAdGuardProxy: _buildTwitchAdGuardProxy(
+      mode: mode,
+      platformCapabilities: platformCapabilities,
+    ),
     // Chaturbate can often resolve room detail and playback anonymously.
     // Saved browser cookies are now treated as a fallback for WebView /
     // Cloudflare bootstrap instead of a hard prerequisite.
-    requireChaturbateCookiePreflight: false,
+    requireChaturbateCookiePreflight: const bool.fromEnvironment(
+      'NOLIVE_CHATURBATE_COOKIE_PREFLIGHT',
+    ),
   );
 }
 
@@ -553,15 +720,15 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
     builders: {
       PlayerBackend.memory: MemoryPlayer.new,
       PlayerBackend.mpv: () {
-        final mpvLogEnabled = !kReleaseMode &&
+        final mpvLogEnabled =
+            !kReleaseMode &&
             _decodeBoolSetting(
               context.settings.stringSetting('player_mpv_log_enable'),
             );
         return MpvPlayer(
+          isAndroid: context.platformCapabilities.isAndroid,
           enableHardwareAcceleration: _decodeBoolSetting(
-            context.settings.stringSetting(
-              'player_mpv_hardware_acceleration',
-            ),
+            context.settings.stringSetting('player_mpv_hardware_acceleration'),
             fallback: true,
           ),
           compatMode: _decodeBoolSetting(
@@ -586,63 +753,92 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
         );
       },
       PlayerBackend.mdk: () => MdkPlayer(
-            lowLatency: _decodeBoolSetting(
-              context.settings.stringSetting('player_mdk_low_latency'),
-              fallback: true,
-            ),
-            androidTunnel: _decodeBoolSetting(
-              context.settings.stringSetting('player_mdk_android_tunnel'),
-            ),
-            androidPreferHardwareVideoDecoder: _decodeBoolSetting(
-              context.settings.stringSetting(
-                'player_mdk_android_hardware_video_decoder',
-              ),
-              fallback: true,
-            ),
+        lowLatency: _decodeBoolSetting(
+          context.settings.stringSetting('player_mdk_low_latency'),
+          fallback: true,
+        ),
+        androidTunnel: _decodeBoolSetting(
+          context.settings.stringSetting('player_mdk_android_tunnel'),
+        ),
+        androidPreferHardwareVideoDecoder: _decodeBoolSetting(
+          context.settings.stringSetting(
+            'player_mdk_android_hardware_video_decoder',
           ),
+          fallback: true,
+        ),
+      ),
     },
   );
 }
 
 ChaturbateWebRoomDetailLoader? _buildChaturbateRoomDetailLoader({
   required AppRuntimeMode mode,
+  required AppPlatformCapabilities platformCapabilities,
   required LoadProviderAccountSettingsUseCase loadProviderAccountSettings,
 }) {
   if (mode != AppRuntimeMode.live) {
     return null;
   }
-  if (!Platform.isAndroid && !Platform.isIOS) {
+  if (!platformCapabilities.isMobile) {
     return null;
   }
   return ChaturbateWebRoomDetailLoader(
     loadProviderAccountSettings: loadProviderAccountSettings,
+    platformCapabilities: platformCapabilities,
   );
 }
 
 ChaturbateLlHlsProxy? _buildChaturbateLlHlsProxy({
   required AppRuntimeMode mode,
+  required AppPlatformCapabilities platformCapabilities,
 }) {
   if (mode != AppRuntimeMode.live) {
     return null;
   }
-  if (!Platform.isAndroid && !Platform.isIOS) {
+  if (!platformCapabilities.isMobile) {
     return null;
   }
-  return ChaturbateLlHlsProxy();
+  return ChaturbateLlHlsProxy(platformCapabilities: platformCapabilities);
 }
 
-TwitchWebPlaybackBridge? _buildTwitchWebPlaybackBridge({
+StripchatLlHlsProxy? _buildStripchatLlHlsProxy({
   required AppRuntimeMode mode,
+  required AppPlatformCapabilities platformCapabilities,
   required LoadProviderAccountSettingsUseCase loadProviderAccountSettings,
 }) {
   if (mode != AppRuntimeMode.live) {
     return null;
   }
-  if (!Platform.isAndroid && !Platform.isIOS) {
+  if (!platformCapabilities.isMobile) {
+    return null;
+  }
+  return StripchatLlHlsProxy(
+    enablePdkeyFallback: true,
+    platformCapabilities: platformCapabilities,
+    decodedUrlResolver: null,
+    warmDecodedUrlBridge: null,
+    pdkeyResolver: () async {
+      final settings = await loadProviderAccountSettings();
+      return settings.stripchatMouflonKeys;
+    },
+  );
+}
+
+
+TwitchWebPlaybackBridge? _buildTwitchWebPlaybackBridge({
+  required AppRuntimeMode mode,
+  required AppPlatformCapabilities platformCapabilities,
+  required LoadProviderAccountSettingsUseCase loadProviderAccountSettings,
+}) {
+  if (mode != AppRuntimeMode.live) {
+    return null;
+  }
+  if (!platformCapabilities.isMobile) {
     return null;
   }
   final bridge = TwitchWebPlaybackBridge(
     loadProviderAccountSettings: loadProviderAccountSettings,
+    platformCapabilities: platformCapabilities,
     timeout: const Duration(seconds: 6),
     bootstrapScriptTimeout: const Duration(milliseconds: 2500),
   );
@@ -651,12 +847,13 @@ TwitchWebPlaybackBridge? _buildTwitchWebPlaybackBridge({
 
 TwitchAdGuardProxy? _buildTwitchAdGuardProxy({
   required AppRuntimeMode mode,
+  required AppPlatformCapabilities platformCapabilities,
 }) {
   if (mode != AppRuntimeMode.live) {
     return null;
   }
-  if (!Platform.isAndroid && !Platform.isIOS) {
+  if (!platformCapabilities.isMobile) {
     return null;
   }
-  return TwitchAdGuardProxy();
+  return TwitchAdGuardProxy(platformCapabilities: platformCapabilities);
 }

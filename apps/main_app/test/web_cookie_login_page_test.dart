@@ -1,6 +1,6 @@
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nolive_app/src/features/settings/presentation/chaturbate_web_login_page.dart';
+import 'package:nolive_app/src/features/settings/presentation/provider_web_login_pages.dart';
 
 void main() {
   test('web login load failure only reports main-frame request errors', () {

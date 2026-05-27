@@ -208,6 +208,101 @@ void main() {
     expect(urls, isNotEmpty);
     expect(urls.first.url, contains('/origin.'));
   });
+
+  test('douyin categories parse multiline homepage payloads', () async {
+    final provider = DouyinProvider(
+      dataSource: DouyinLiveDataSource(
+        transport: _MultilineCategoryDouyinTransport(),
+        signService: HttpDouyinSignService(cookie: 'ttwid=test-cookie'),
+      ),
+    );
+
+    final categories = await provider.fetchCategories();
+
+    expect(categories, hasLength(1));
+    expect(categories.single.name, '游戏');
+  });
+
+  test('douyin request retry refreshes cookie and succeeds on second attempt',
+      () async {
+    final signService = _TrackingDouyinSignService();
+    final provider = DouyinProvider(
+      dataSource: DouyinLiveDataSource(
+        transport: _RetryOnceDouyinTransport(),
+        signService: signService,
+      ),
+    );
+
+    final rooms = await provider.searchRooms('关键');
+
+    expect(rooms.items, hasLength(1));
+    expect(signService.forceRefreshCalls, 1);
+  });
+
+  test('douyin request retry rethrows second risk-control failure', () async {
+    final provider = DouyinProvider(
+      dataSource: DouyinLiveDataSource(
+        transport: _AlwaysRiskControlDouyinTransport(),
+        signService: _TrackingDouyinSignService(),
+      ),
+    );
+
+    expect(
+      () => provider.searchRooms('关键'),
+      throwsA(
+        isA<ProviderParseException>().having(
+          (error) => error.message,
+          'message',
+          contains('status 403'),
+        ),
+      ),
+    );
+  });
+
+  test('douyin signed requests avoid hardcoded Win32/Edge fingerprints',
+      () async {
+    final transport = _InspectingDouyinTransport();
+    final provider = DouyinProvider(
+      dataSource: DouyinLiveDataSource(
+        transport: transport,
+        signService: _TrackingDouyinSignService(),
+      ),
+    );
+
+    await provider.searchRooms('测试');
+
+    final uri = transport.lastRequestUri;
+    expect(uri, isNotNull);
+    expect(uri!.queryParameters['browser_platform'], 'Linux x86_64');
+    expect(uri.queryParameters['browser_name'], 'Chrome');
+    expect(uri.queryParameters['browser_version'], '125.0.0.0');
+    expect(uri.queryParameters['os_name'], 'Linux');
+    expect(uri.query, isNot(contains('Win32')));
+    expect(uri.query, isNot(contains('Edge')));
+  });
+
+  test('douyin search skips malformed lives payload entries', () async {
+    final provider = DouyinProvider(
+      dataSource: DouyinLiveDataSource(
+        transport: _MalformedSearchRawdataDouyinTransport(),
+        signService: HttpDouyinSignService(cookie: 'ttwid=test-cookie'),
+      ),
+    );
+
+    final rooms = await provider.searchRooms('测试');
+
+    expect(rooms.items, hasLength(1));
+    expect(rooms.items.single.roomId, 'valid-room');
+  });
+
+  test('douyin html state reports non-object payloads as parse failures', () {
+    expect(
+      () => DouyinMapper.parseHtmlState(
+        r'{\"state\":{\"appStore\":{},\"roomStore\":[]}]\\n',
+      ),
+      throwsA(isA<ProviderParseException>()),
+    );
+  });
 }
 
 class _FakeDouyinTransport extends DouyinTransport {
@@ -307,6 +402,26 @@ class _FakeDouyinTransport extends DouyinTransport {
       );
     }
     fail('Unexpected douyin request: $uri');
+  }
+}
+
+class _InspectingDouyinTransport extends _FakeDouyinTransport {
+  Uri? lastRequestUri;
+
+  @override
+  Future<DouyinHttpResponse> getResponse(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) {
+    lastRequestUri = Uri.parse(url).replace(
+      queryParameters: queryParameters.isEmpty ? null : queryParameters,
+    );
+    return super.getResponse(
+      url,
+      queryParameters: queryParameters,
+      headers: headers,
+    );
   }
 }
 
@@ -451,6 +566,141 @@ class _CategoryIconDouyinTransport extends DouyinTransport {
           r'{\"pathname\":\"/\",\"categoryData\":[{\"partition\":{\"id_str\":\"720\",\"type\":1,\"title\":\"游戏\",\"icon\":{\"url\":\"https://douyin.test/category-icon.png\"}},\"sub_partition\":[]}]}],',
       headers: const {},
     );
+  }
+}
+
+class _MultilineCategoryDouyinTransport extends DouyinTransport {
+  @override
+  Future<DouyinHttpResponse> getResponse(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    return DouyinHttpResponse(
+      body:
+          '{\\"pathname\\":\\"/\\",\n\\"categoryData\\":[{\n\\"partition\\":{\\"id_str\\":\\"720\\",\\"type\\":1,\\"title\\":\\"游戏\\"},\\"sub_partition\\":[]}]}],',
+      headers: const {},
+    );
+  }
+}
+
+class _RetryOnceDouyinTransport extends DouyinTransport {
+  var _attempts = 0;
+
+  @override
+  Future<DouyinHttpResponse> getResponse(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    _attempts += 1;
+    if (_attempts == 1) {
+      throw ProviderParseException(
+        providerId: ProviderId.douyin,
+        message: 'Douyin request failed with status 403.',
+      );
+    }
+    return DouyinHttpResponse(
+      body: jsonEncode({
+        'status_code': 0,
+        'data': [
+          {
+            'lives': {
+              'rawdata': jsonEncode({
+                'title': '重试成功',
+                'owner': {
+                  'web_rid': 'retry-room',
+                  'nickname': '重试主播',
+                },
+                'room': {'title': '重试成功'},
+              }),
+            },
+          },
+        ],
+      }),
+      headers: const {},
+    );
+  }
+}
+
+class _AlwaysRiskControlDouyinTransport extends DouyinTransport {
+  @override
+  Future<DouyinHttpResponse> getResponse(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    throw ProviderParseException(
+      providerId: ProviderId.douyin,
+      message: 'Douyin request failed with status 403.',
+    );
+  }
+}
+
+class _MalformedSearchRawdataDouyinTransport extends DouyinTransport {
+  @override
+  Future<DouyinHttpResponse> getResponse(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    return DouyinHttpResponse(
+      body: jsonEncode({
+        'status_code': 0,
+        'data': [
+          {
+            'lives': {
+              'rawdata': jsonEncode([
+                {'unexpected': true},
+              ]),
+            },
+          },
+          {
+            'lives': {
+              'rawdata': jsonEncode({
+                'title': '有效房间',
+                'owner': {
+                  'web_rid': 'valid-room',
+                  'nickname': '有效主播',
+                },
+                'room': {'title': '有效房间'},
+              }),
+            },
+          },
+        ],
+      }),
+      headers: const {},
+    );
+  }
+}
+
+class _TrackingDouyinSignService implements DouyinSignService {
+  int forceRefreshCalls = 0;
+
+  @override
+  Future<Map<String, String>> buildHeaders({
+    String? refererPath,
+    bool forceRefreshCookie = false,
+  }) async {
+    if (forceRefreshCookie) {
+      forceRefreshCalls += 1;
+    }
+    return {
+      'referer': 'https://live.douyin.com',
+      'user-agent': 'test-agent',
+      'cookie': forceRefreshCookie ? 'ttwid=refreshed' : 'ttwid=initial',
+    };
+  }
+
+  @override
+  String buildSignedUrl(String baseUrl, Map<String, dynamic> queryParameters) {
+    return Uri.parse(baseUrl)
+        .replace(
+          queryParameters: queryParameters.map(
+            (key, value) => MapEntry(key, value.toString()),
+          ),
+        )
+        .toString();
   }
 }
 

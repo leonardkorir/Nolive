@@ -24,9 +24,7 @@ void main() {
   testWidgets('inline chrome auto hides after delay', (tester) async {
     final harness = _ChromeHarness();
     addTearDown(harness.dispose);
-    harness.viewUiState = const RoomViewUiState(
-      showInlinePlayerChrome: true,
-    );
+    harness.viewUiState = const RoomViewUiState(showInlinePlayerChrome: true);
 
     harness.controller.scheduleInlineChromeAutoHide();
     await tester.pump(const Duration(seconds: 2));
@@ -34,23 +32,25 @@ void main() {
     expect(harness.viewUiState.showInlinePlayerChrome, isFalse);
   });
 
-  testWidgets('follow drawer open keeps fullscreen chrome visible state stable',
-      (tester) async {
-    final harness = _ChromeHarness();
-    addTearDown(harness.dispose);
-    harness.viewUiState = const RoomViewUiState(
-      isFullscreen: true,
-      showFullscreenChrome: true,
-    );
+  testWidgets(
+    'follow drawer open keeps fullscreen chrome visible state stable',
+    (tester) async {
+      final harness = _ChromeHarness();
+      addTearDown(harness.dispose);
+      harness.viewUiState = const RoomViewUiState(
+        isFullscreen: true,
+        showFullscreenChrome: true,
+      );
 
-    harness.controller.openFullscreenFollowDrawer();
-    harness.controller.scheduleFullscreenChromeAutoHide();
-    await tester.pump(const Duration(seconds: 2));
+      harness.controller.openFullscreenFollowDrawer();
+      harness.controller.scheduleFullscreenChromeAutoHide();
+      await tester.pump(const Duration(seconds: 2));
 
-    expect(harness.viewUiState.showFullscreenFollowDrawer, isTrue);
-    expect(harness.viewUiState.showFullscreenChrome, isFalse);
-    expect(harness.followWatchlistLoadCount, 1);
-  });
+      expect(harness.viewUiState.showFullscreenFollowDrawer, isTrue);
+      expect(harness.viewUiState.showFullscreenChrome, isFalse);
+      expect(harness.followWatchlistLoadCount, 1);
+    },
+  );
 
   testWidgets('gesture tip pauses auto hide and reschedules after clear', (
     tester,
@@ -115,6 +115,34 @@ void main() {
 
     expect(harness.android.events, isNot(contains('setMediaVolume')));
   });
+
+  testWidgets(
+    'fullscreen bootstrap pending still supports gesture volume and auto hide',
+    (tester) async {
+      final harness = _ChromeHarness();
+      addTearDown(harness.dispose);
+      harness.viewUiState = const RoomViewUiState(
+        fullscreenBootstrapPending: true,
+        showFullscreenChrome: true,
+        lockFullscreenControls: false,
+      );
+      harness.gestureUiState = const RoomGestureUiState(
+        tracking: true,
+        adjustingBrightness: false,
+        startY: 1200,
+        startVolume: 0.6,
+      );
+      await harness.controller.handleVerticalDragUpdate(
+        DragUpdateDetails(globalPosition: const Offset(900, 900)),
+      );
+      await harness.controller.handleVerticalDragEnd();
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump(const Duration(seconds: 2));
+
+      expect(harness.android.events, contains('setMediaVolume'));
+      expect(harness.viewUiState.showFullscreenChrome, isFalse);
+    },
+  );
 }
 
 class _ChromeHarness {

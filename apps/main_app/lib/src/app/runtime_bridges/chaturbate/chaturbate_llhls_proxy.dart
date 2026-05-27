@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart'
     show ChaturbateHlsMasterPlaylistParser, ChaturbateHlsVariant;
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 
 import '../../../shared/application/app_log.dart';
 
@@ -54,6 +55,7 @@ const _lateAssetAvailabilityWaitTimeout = Duration(milliseconds: 900);
 const _initAssetAvailabilityWaitTimeout = Duration(milliseconds: 250);
 const _playlistMapDecisionSniffTimeout = Duration(milliseconds: 450);
 const _assetAvailabilityPollInterval = Duration(milliseconds: 120);
+const _proxyDisposeDrainTimeout = Duration(milliseconds: 500);
 
 @visibleForTesting
 bool shouldServeChaturbateStartupPlaylistEarly({
@@ -94,10 +96,8 @@ bool _mp4BytesContainBox(Uint8List bytes, String boxType) {
   int minimumStartupPlayableSegmentCount,
   int minimumStartupImmediateServeSegmentCount,
   Duration initialPlaylistStartupWaitTimeout,
-}) resolveChaturbateLlHlsStartupPolicy({
-  required int bandwidth,
-  int? height,
-}) {
+})
+resolveChaturbateLlHlsStartupPolicy({required int bandwidth, int? height}) {
   final normalizedHeight = height ?? 0;
   if (bandwidth >= 4500000 || normalizedHeight >= 1080) {
     return (
@@ -135,9 +135,12 @@ class ChaturbateLlHlsProxy {
     HttpClient? client,
     Duration sessionTtl = const Duration(minutes: 8),
     bool? enabledOverride,
-  })  : _client = client ?? HttpClient(),
-        _sessionTtl = sessionTtl,
-        _enabledOverride = enabledOverride {
+    AppPlatformCapabilities? platformCapabilities,
+  }) : _client = client ?? HttpClient(),
+       _sessionTtl = sessionTtl,
+       _enabledOverride = enabledOverride,
+       _platformCapabilities =
+           platformCapabilities ?? AppPlatformCapabilities.current() {
     _client.connectionTimeout = const Duration(seconds: 15);
     _client.idleTimeout = const Duration(seconds: 15);
     _client.maxConnectionsPerHost = 32;
@@ -148,6 +151,7 @@ class ChaturbateLlHlsProxy {
   final HttpClient _client;
   final Duration _sessionTtl;
   final bool? _enabledOverride;
+  final AppPlatformCapabilities _platformCapabilities;
   final Map<String, _ChaturbateLlHlsSession> _sessions =
       <String, _ChaturbateLlHlsSession>{};
 
@@ -176,10 +180,7 @@ class ChaturbateLlHlsProxy {
         wrapped.add(playUrl);
         continue;
       }
-      final session = _createSession(
-        quality: quality,
-        playUrl: proxyPlayUrl,
-      );
+      final session = _createSession(quality: quality, playUrl: proxyPlayUrl);
       _sessions[session.id] = session;
       wrapped.add(
         LivePlayUrl(
@@ -198,11 +199,41 @@ class ChaturbateLlHlsProxy {
   }
 
   Future<void> dispose() async {
-    await _server?.close(force: true);
+    final sessions = _sessions.values.toList(growable: false);
+    _sessions.clear();
+    for (final session in sessions) {
+      session.markDisposed();
+    }
+    await Future.wait(
+      sessions.map(_drainSessionWork),
+      eagerError: false,
+    ).timeout(_proxyDisposeDrainTimeout, onTimeout: () => const <void>[]);
+    final server = _server;
+    if (server != null) {
+      try {
+        await server.close(force: false).timeout(_proxyDisposeDrainTimeout);
+      } on TimeoutException {
+        await server.close(force: true);
+      }
+    }
     _server = null;
     _endpoint = null;
-    _sessions.clear();
     _client.close(force: true);
+  }
+
+  Future<void> _drainSessionWork(_ChaturbateLlHlsSession session) async {
+    final inFlight = <Future<void>>[
+      ?session.startupPrimeInFlight,
+      ?session.refreshInFlight,
+      ?session.assetPrefetchInFlight,
+    ];
+    if (inFlight.isEmpty) {
+      return;
+    }
+    await Future.wait(
+      inFlight,
+      eagerError: false,
+    ).timeout(_proxyDisposeDrainTimeout, onTimeout: () => const <void>[]);
   }
 
   Future<LivePlayUrl?> _resolveProxyPlayUrl({
@@ -212,10 +243,7 @@ class ChaturbateLlHlsProxy {
     if (_supportsSplitProxy(playUrl)) {
       return playUrl;
     }
-    return _resolveMasterOnlyPlayUrl(
-      quality: quality,
-      playUrl: playUrl,
-    );
+    return _resolveMasterOnlyPlayUrl(quality: quality, playUrl: playUrl);
   }
 
   bool _supportsSplitProxy(LivePlayUrl playUrl) {
@@ -247,8 +275,10 @@ class ChaturbateLlHlsProxy {
       return null;
     }
     final metadata = playUrl.metadata ?? const <String, Object?>{};
-    final masterPlaylistUrl = _firstNonEmpty(
-        [metadata['masterPlaylistUrl']?.toString(), playUrl.url]);
+    final masterPlaylistUrl = _firstNonEmpty([
+      metadata['masterPlaylistUrl']?.toString(),
+      playUrl.url,
+    ]);
     if (masterPlaylistUrl.isEmpty) {
       return null;
     }
@@ -291,19 +321,11 @@ class ChaturbateLlHlsProxy {
             : _readHeadersMap(metadata['audioHeaders']),
         'audioMimeType': metadata['audioMimeType'] ?? 'application/x-mpegURL',
         'audioGroupId': variant.audioGroupId,
-        'bandwidth': _readFirstPositiveInt([
-              metadata['bandwidth'],
-              variant.bandwidth,
-            ]) ??
+        'bandwidth':
+            _readFirstPositiveInt([metadata['bandwidth'], variant.bandwidth]) ??
             variant.bandwidth,
-        'width': _readFirstPositiveInt([
-          metadata['width'],
-          variant.width,
-        ]),
-        'height': _readFirstPositiveInt([
-          metadata['height'],
-          variant.height,
-        ]),
+        'width': _readFirstPositiveInt([metadata['width'], variant.width]),
+        'height': _readFirstPositiveInt([metadata['height'], variant.height]),
         'hlsBitrate': _resolveHlsBitrateForVariant(
           quality: quality,
           variant: variant,
@@ -346,12 +368,25 @@ class ChaturbateLlHlsProxy {
     if (_server != null && _endpoint != null) {
       return;
     }
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final (server, address) = await _bindLoopbackServer();
     _server = server;
-    _endpoint = Uri.parse(
-      'http://${InternetAddress.loopbackIPv4.address}:${server.port}/$_routePrefix',
+    _endpoint = Uri(
+      scheme: 'http',
+      host: address.address,
+      port: server.port,
+      path: _routePrefix,
     );
     server.listen(_handleRequest);
+  }
+
+  Future<(HttpServer, InternetAddress)> _bindLoopbackServer() async {
+    try {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      return (server, InternetAddress.loopbackIPv4);
+    } on SocketException {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv6, 0);
+      return (server, InternetAddress.loopbackIPv6);
+    }
   }
 
   Uri _sessionMasterUri(String sessionId) {
@@ -375,7 +410,8 @@ class ChaturbateLlHlsProxy {
       videoHeaders: playUrl.headers,
       audioPlaylistUrl: audioUrl,
       audioHeaders: audioHeaders.isEmpty ? playUrl.headers : audioHeaders,
-      bandwidth: _readFirstPositiveInt([
+      bandwidth:
+          _readFirstPositiveInt([
             metadata['bandwidth'],
             metadata['bitrate'],
             quality.metadata?['bandwidth'],
@@ -442,11 +478,7 @@ class ChaturbateLlHlsProxy {
             await response.close();
             return;
           }
-          await _pipeAsset(
-            response,
-            session: session,
-            assetId: assetId,
-          );
+          await _pipeAsset(response, session: session, assetId: assetId);
           return;
       }
       response.statusCode = HttpStatus.notFound;
@@ -484,8 +516,11 @@ class ChaturbateLlHlsProxy {
         'CODECS="${session.codecs!.trim()}"',
       'AUDIO="audio"',
     ];
-    response.headers.contentType =
-        ContentType('application', 'vnd.apple.mpegurl', charset: 'utf-8');
+    response.headers.contentType = ContentType(
+      'application',
+      'vnd.apple.mpegurl',
+      charset: 'utf-8',
+    );
     response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
     response.write(
       <String>[
@@ -507,10 +542,7 @@ class ChaturbateLlHlsProxy {
     required _ChaturbateLlHlsMediaKind mediaKind,
   }) async {
     try {
-      await _ensureTimelineDataForRequest(
-        session,
-        mediaKind: mediaKind,
-      );
+      await _ensureTimelineDataForRequest(session, mediaKind: mediaKind);
       final timeline = session.timelineFor(mediaKind);
       final segments = await _resolvePlayableSegmentsForRequest(
         session: session,
@@ -545,8 +577,9 @@ class ChaturbateLlHlsProxy {
       );
       await _writePlaylistResponse(response, rewritten);
     } catch (error) {
-      final cachedPlaylist =
-          session.playlistSnapshotFor(mediaKind)?.playlistBody;
+      final cachedPlaylist = session
+          .playlistSnapshotFor(mediaKind)
+          ?.playlistBody;
       if (cachedPlaylist != null) {
         if (kDebugMode) {
           debugPrint(
@@ -565,8 +598,11 @@ class ChaturbateLlHlsProxy {
     HttpResponse response,
     String playlistBody,
   ) async {
-    response.headers.contentType =
-        ContentType('application', 'vnd.apple.mpegurl', charset: 'utf-8');
+    response.headers.contentType = ContentType(
+      'application',
+      'vnd.apple.mpegurl',
+      charset: 'utf-8',
+    );
     response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
     response.write(playlistBody);
     await response.close();
@@ -584,16 +620,23 @@ class ChaturbateLlHlsProxy {
     final hasRequestedTimeline = await _waitForRequestedTimelineData(
       session,
       mediaKind: mediaKind,
-      timeout:
-          _startupPolicyForSession(session).initialPlaylistStartupWaitTimeout,
+      timeout: _startupPolicyForSession(
+        session,
+      ).initialPlaylistStartupWaitTimeout,
     );
     if (hasRequestedTimeline) {
       return;
     }
-    await _refreshTimelineForRequest(
-      session: session,
-      mediaKind: mediaKind,
-    );
+    final inFlight = session.refreshInFlight;
+    if (inFlight != null) {
+      try {
+        await inFlight;
+      } catch (_) {}
+      if (timeline.hasSegments) {
+        return;
+      }
+    }
+    await _refreshTimelineForRequest(session: session, mediaKind: mediaKind);
   }
 
   Future<bool> _waitForRequestedTimelineData(
@@ -629,6 +672,9 @@ class ChaturbateLlHlsProxy {
   }
 
   void _startSessionPrimeIfNeeded(_ChaturbateLlHlsSession session) {
+    if (session.isDisposed) {
+      return;
+    }
     if (session.startupPrimeInFlight != null) {
       return;
     }
@@ -657,13 +703,32 @@ class ChaturbateLlHlsProxy {
     var lastProgressSignature = _sessionStartupProgressSignature(session);
     var lastProgressAt = DateTime.now();
     while (true) {
+      if (session.isDisposed) {
+        return;
+      }
       _startSessionRefreshIfNeeded(session, force: true);
       final refresh = session.refreshInFlight;
       if (refresh != null) {
-        await refresh;
+        try {
+          await refresh;
+        } catch (error) {
+          if (kDebugMode) {
+            debugPrint('ChaturbateLlHlsProxy prime refresh failed: $error');
+          }
+        }
       }
       if (!session.hasTimelineData) {
-        return;
+        final remaining = deadline.difference(DateTime.now());
+        if (remaining <= Duration.zero) {
+          return;
+        }
+        await _waitForSessionProgress(
+          session,
+          remaining < _playlistAdvancePollInterval
+              ? remaining
+              : _playlistAdvancePollInterval,
+        );
+        continue;
       }
       await _warmStartupAssetsIfNeeded(session);
       _startStableAssetPrefetchIfNeeded(session);
@@ -699,11 +764,15 @@ class ChaturbateLlHlsProxy {
     _ChaturbateLlHlsSession session, {
     bool force = false,
   }) {
+    if (session.isDisposed) {
+      return;
+    }
     if (session.refreshInFlight != null) {
       return;
     }
     final now = DateTime.now();
-    final needsRefresh = force ||
+    final needsRefresh =
+        force ||
         !session.hasTimelineData ||
         now.difference(session.lastRefreshAt) >= _minimumRefreshInterval;
     if (!needsRefresh) {
@@ -784,10 +853,7 @@ class ChaturbateLlHlsProxy {
   }) async {
     final timeline = session.timelineFor(mediaKind);
     try {
-      final text = await _fetchText(
-        playlistUrl,
-        headers: headers,
-      );
+      final text = await _fetchText(playlistUrl, headers: headers);
       final parsed = _parseMediaPlaylist(text);
       timeline.merge(
         playlist: parsed,
@@ -847,7 +913,8 @@ class ChaturbateLlHlsProxy {
         continue;
       }
       if (trimmed.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
-        nextSequenceNumber = int.tryParse(
+        nextSequenceNumber =
+            int.tryParse(
               trimmed.substring('#EXT-X-MEDIA-SEQUENCE:'.length).trim(),
             ) ??
             nextSequenceNumber;
@@ -964,8 +1031,9 @@ class ChaturbateLlHlsProxy {
     required _ChaturbateLlHlsMediaTimeline timeline,
   }) async {
     final startupPolicy = _startupPolicyForSession(session);
-    final deadline =
-        DateTime.now().add(startupPolicy.initialPlaylistStartupWaitTimeout);
+    final deadline = DateTime.now().add(
+      startupPolicy.initialPlaylistStartupWaitTimeout,
+    );
     var lastProgressSignature = _sessionStartupProgressSignature(session);
     var lastProgressAt = DateTime.now();
     while (true) {
@@ -1057,6 +1125,9 @@ class ChaturbateLlHlsProxy {
     if (timeout <= Duration.zero) {
       return;
     }
+    if (session.isDisposed) {
+      return;
+    }
     try {
       final refresh = session.refreshInFlight;
       if (refresh != null) {
@@ -1093,8 +1164,8 @@ class ChaturbateLlHlsProxy {
     }
     final servingSameEdge =
         segments.last.sequenceNumber <= snapshot.lastSequenceNumber &&
-            segments.length <= snapshot.segmentCount &&
-            segments.first.sequenceNumber == snapshot.firstSequenceNumber;
+        segments.length <= snapshot.segmentCount &&
+        segments.first.sequenceNumber == snapshot.firstSequenceNumber;
     if (!servingSameEdge) {
       return false;
     }
@@ -1115,7 +1186,8 @@ class ChaturbateLlHlsProxy {
       timeline: timeline,
     );
     final hasUncachedStableTail = segments.length < stableSegments.length;
-    final refreshDue = DateTime.now().difference(session.lastRefreshAt) >=
+    final refreshDue =
+        DateTime.now().difference(session.lastRefreshAt) >=
         _minimumRefreshInterval;
     return hasUncachedStableTail ||
         refreshDue ||
@@ -1249,7 +1321,8 @@ class ChaturbateLlHlsProxy {
       timeline: timeline,
       segments: playlistSegments,
     );
-    final message = 'playlist decision '
+    final message =
+        'playlist decision '
         'session=${session.id} kind=${mediaKind.name} '
         'original=${_segmentRangeLabel(originalSegments)} '
         'served=${_segmentRangeLabel(playlistSegments)} '
@@ -1307,16 +1380,18 @@ class ChaturbateLlHlsProxy {
     if (assetIds.isEmpty) {
       return;
     }
-    await Future.wait<void>(assetIds.map((assetId) async {
-      try {
-        await _cacheAssetIfNeeded(
-          session: session,
-          assetId: assetId,
-        ).timeout(_playlistMapDecisionSniffTimeout);
-      } catch (_) {
-        // Best-effort sniff only; unresolved assets keep lazy fetch behavior.
-      }
-    }));
+    await Future.wait<void>(
+      assetIds.map((assetId) async {
+        try {
+          await _cacheAssetIfNeeded(
+            session: session,
+            assetId: assetId,
+          ).timeout(_playlistMapDecisionSniffTimeout);
+        } catch (_) {
+          // Best-effort sniff only; unresolved assets keep lazy fetch behavior.
+        }
+      }),
+    );
   }
 
   List<_StoredMediaSegment> _selectStableSegments({
@@ -1329,10 +1404,12 @@ class ChaturbateLlHlsProxy {
     }
     final cutoff = _stableProgramDateTimeCutoff(session);
     if (cutoff != null) {
-      final stableByTime = ordered.where((segment) {
-        final programDateTime = segment.programDateTime;
-        return programDateTime == null || !programDateTime.isAfter(cutoff);
-      }).toList(growable: false);
+      final stableByTime = ordered
+          .where((segment) {
+            final programDateTime = segment.programDateTime;
+            return programDateTime == null || !programDateTime.isAfter(cutoff);
+          })
+          .toList(growable: false);
       if (stableByTime.length >= _stableWindowMinimumSegments) {
         final start = max(0, stableByTime.length - _stableWindowSegmentLimit);
         return stableByTime.sublist(start);
@@ -1537,14 +1614,16 @@ class ChaturbateLlHlsProxy {
   }
 
   ({int videoLastSequence, int audioLastSequence})
-      _sessionStartupProgressSignature(_ChaturbateLlHlsSession session) {
+  _sessionStartupProgressSignature(_ChaturbateLlHlsSession session) {
     final videoSegments = session.videoTimeline.orderedSegments;
     final audioSegments = session.audioTimeline.orderedSegments;
     return (
-      videoLastSequence:
-          videoSegments.isEmpty ? -1 : videoSegments.last.sequenceNumber,
-      audioLastSequence:
-          audioSegments.isEmpty ? -1 : audioSegments.last.sequenceNumber,
+      videoLastSequence: videoSegments.isEmpty
+          ? -1
+          : videoSegments.last.sequenceNumber,
+      audioLastSequence: audioSegments.isEmpty
+          ? -1
+          : audioSegments.last.sequenceNumber,
     );
   }
 
@@ -1581,7 +1660,8 @@ class ChaturbateLlHlsProxy {
       return null;
     }
     final base = videoLatest.isBefore(audioLatest) ? videoLatest : audioLatest;
-    final holdBackSeconds = max(
+    final holdBackSeconds =
+        max(
           session.videoTimeline.targetDurationSeconds,
           session.audioTimeline.targetDurationSeconds,
         ) *
@@ -1594,9 +1674,7 @@ class ChaturbateLlHlsProxy {
     if (endpoint == null) {
       throw StateError('ChaturbateLlHlsProxy has not been started.');
     }
-    return endpoint.replace(
-      path: '${endpoint.path}/$sessionId/asset/$assetId',
-    );
+    return endpoint.replace(path: '${endpoint.path}/$sessionId/asset/$assetId');
   }
 
   Future<void> _pipeAsset(
@@ -1643,6 +1721,9 @@ class ChaturbateLlHlsProxy {
         : _lateAssetAvailabilityWaitTimeout;
     final deadline = DateTime.now().add(availabilityTimeout);
     while (true) {
+      if (session.isDisposed) {
+        return false;
+      }
       final asset = session.assets[assetId];
       if (asset == null) {
         return false;
@@ -1651,10 +1732,7 @@ class ChaturbateLlHlsProxy {
         return true;
       }
       try {
-        await _cacheAssetIfNeeded(
-          session: session,
-          assetId: assetId,
-        );
+        await _cacheAssetIfNeeded(session: session, assetId: assetId);
       } catch (error) {
         if (kDebugMode) {
           debugPrint('ChaturbateLlHlsProxy asset fetch failed: $error');
@@ -1688,6 +1766,9 @@ class ChaturbateLlHlsProxy {
   }
 
   void _startStableAssetPrefetchIfNeeded(_ChaturbateLlHlsSession session) {
+    if (session.isDisposed) {
+      return;
+    }
     if (!session.hasTimelineData) {
       return;
     }
@@ -1726,10 +1807,7 @@ class ChaturbateLlHlsProxy {
       late final Future<void> tracked;
       tracked = (() async {
         try {
-          await _cacheAssetIfNeeded(
-            session: session,
-            assetId: assetId,
-          );
+          await _cacheAssetIfNeeded(session: session, assetId: assetId);
         } catch (_) {
           // Keep playback moving even if one upstream segment vanished.
         } finally {
@@ -1777,17 +1855,11 @@ class ChaturbateLlHlsProxy {
 
     addTimeline(
       session.videoTimeline,
-      _selectStableSegments(
-        session: session,
-        timeline: session.videoTimeline,
-      ),
+      _selectStableSegments(session: session, timeline: session.videoTimeline),
     );
     addTimeline(
       session.audioTimeline,
-      _selectStableSegments(
-        session: session,
-        timeline: session.audioTimeline,
-      ),
+      _selectStableSegments(session: session, timeline: session.audioTimeline),
     );
     return assetIds.toList(growable: false);
   }
@@ -1804,10 +1876,7 @@ class ChaturbateLlHlsProxy {
         assetIds.add(initAssetId);
       }
       for (final segment in _trimStartupSegmentsForPlayback(
-        _selectStartupSegments(
-          session: session,
-          timeline: timeline,
-        ),
+        _selectStartupSegments(session: session, timeline: timeline),
         warmSegmentCount: startupPolicy.warmSegmentCount,
       )) {
         assetIds.add(segment.assetId);
@@ -1819,23 +1888,23 @@ class ChaturbateLlHlsProxy {
     if (assetIds.isEmpty) {
       return;
     }
-    await Future.wait<void>(assetIds.map((assetId) async {
-      try {
-        await _cacheAssetIfNeeded(
-          session: session,
-          assetId: assetId,
-        );
-      } catch (_) {
-        // Fall back to lazy per-request fetch if a warm asset disappears.
-      }
-    }));
+    await Future.wait<void>(
+      assetIds.map((assetId) async {
+        try {
+          await _cacheAssetIfNeeded(session: session, assetId: assetId);
+        } catch (_) {
+          // Fall back to lazy per-request fetch if a warm asset disappears.
+        }
+      }),
+    );
   }
 
   void _kickUrgentStableAssetPrefetch(_ChaturbateLlHlsSession session) {
     final urgentAssetIds = <String>{};
 
     void addFrontierAndLatestCriticalAssets(
-        _ChaturbateLlHlsMediaTimeline timeline) {
+      _ChaturbateLlHlsMediaTimeline timeline,
+    ) {
       final segments = _selectStableSegments(
         session: session,
         timeline: timeline,
@@ -1847,8 +1916,9 @@ class ChaturbateLlHlsProxy {
           break;
         }
       }
-      for (final segment
-          in segments.reversed.take(_urgentEdgePrefetchSegmentCount)) {
+      for (final segment in segments.reversed.take(
+        _urgentEdgePrefetchSegmentCount,
+      )) {
         final asset = session.assets[segment.assetId];
         if (asset != null && !asset.hasCachedBody) {
           urgentAssetIds.add(segment.assetId);
@@ -1861,10 +1931,7 @@ class ChaturbateLlHlsProxy {
     for (final assetId in urgentAssetIds) {
       unawaited(() async {
         try {
-          await _cacheAssetIfNeeded(
-            session: session,
-            assetId: assetId,
-          );
+          await _cacheAssetIfNeeded(session: session, assetId: assetId);
         } catch (_) {
           // Best-effort fast lane for the newest stable edge assets.
         }
@@ -1885,10 +1952,7 @@ class ChaturbateLlHlsProxy {
       await inFlight;
       return;
     }
-    final fetch = _fetchAndStoreAsset(
-      session: session,
-      assetId: assetId,
-    );
+    final fetch = _fetchAndStoreAsset(session: session, assetId: assetId);
     asset.cacheInFlight = fetch;
     try {
       await fetch;
@@ -1932,7 +1996,11 @@ class ChaturbateLlHlsProxy {
   void _purgeExpiredSessions() {
     final now = DateTime.now();
     _sessions.removeWhere((_, session) {
-      return now.difference(session.lastTouchedAt) > _sessionTtl;
+      final isExpired = now.difference(session.lastTouchedAt) > _sessionTtl;
+      if (isExpired) {
+        session.markDisposed();
+      }
+      return isExpired;
     });
   }
 
@@ -2011,10 +2079,7 @@ class ChaturbateLlHlsProxy {
     if (override != null) {
       return override;
     }
-    if (kIsWeb) {
-      return false;
-    }
-    return Platform.isAndroid || Platform.isIOS;
+    return _platformCapabilities.isMobile;
   }
 
   ChaturbateHlsVariant? _selectVariantForQuality({
@@ -2034,7 +2099,8 @@ class ChaturbateLlHlsProxy {
           return variant;
         }
       }
-      final sorted = [...variants]..sort((left, right) {
+      final sorted = [...variants]
+        ..sort((left, right) {
           final leftDelta = (left.bandwidth - requestedBandwidth).abs();
           final rightDelta = (right.bandwidth - requestedBandwidth).abs();
           final compare = leftDelta.compareTo(rightDelta);
@@ -2091,7 +2157,8 @@ class ChaturbateLlHlsProxy {
     int minimumStartupPlayableSegmentCount,
     int minimumStartupImmediateServeSegmentCount,
     Duration initialPlaylistStartupWaitTimeout,
-  }) _startupPolicyForSession(_ChaturbateLlHlsSession session) {
+  })
+  _startupPolicyForSession(_ChaturbateLlHlsSession session) {
     return resolveChaturbateLlHlsStartupPolicy(
       bandwidth: session.bandwidth,
       height: session.height,
@@ -2133,13 +2200,24 @@ class _ChaturbateLlHlsSession {
   Future<void>? startupPrimeInFlight;
   Future<void>? refreshInFlight;
   Future<void>? assetPrefetchInFlight;
+  bool isDisposed = false;
   final Set<String> _pendingAssetPrefetchIds = <String>{};
   final Map<_ChaturbateLlHlsMediaKind, _ServedPlaylistSnapshot>
-      _servedPlaylistSnapshots =
+  _servedPlaylistSnapshots =
       <_ChaturbateLlHlsMediaKind, _ServedPlaylistSnapshot>{};
 
   void touch() {
+    if (isDisposed) {
+      return;
+    }
     lastTouchedAt = DateTime.now();
+  }
+
+  void markDisposed() {
+    isDisposed = true;
+    _pendingAssetPrefetchIds.clear();
+    _servedPlaylistSnapshots.clear();
+    assets.clear();
   }
 
   bool get hasTimelineData =>
@@ -2154,9 +2232,7 @@ class _ChaturbateLlHlsSession {
     }
   }
 
-  _ServedPlaylistSnapshot? playlistSnapshotFor(
-    _ChaturbateLlHlsMediaKind kind,
-  ) {
+  _ServedPlaylistSnapshot? playlistSnapshotFor(_ChaturbateLlHlsMediaKind kind) {
     return _servedPlaylistSnapshots[kind];
   }
 
@@ -2286,10 +2362,7 @@ class _ChaturbateLlHlsSession {
 }
 
 class _ChaturbateLlHlsAsset {
-  _ChaturbateLlHlsAsset({
-    required this.url,
-    required this.headers,
-  });
+  _ChaturbateLlHlsAsset({required this.url, required this.headers});
 
   final String url;
   final Map<String, String> headers;
@@ -2320,10 +2393,7 @@ class _ServedPlaylistSnapshot {
   int get lastSequence => lastSequenceNumber;
 }
 
-enum _ChaturbateLlHlsMediaKind {
-  video,
-  audio,
-}
+enum _ChaturbateLlHlsMediaKind { video, audio }
 
 class _ChaturbateLlHlsMediaTimeline {
   final SplayTreeMap<int, _StoredMediaSegment> _segments =

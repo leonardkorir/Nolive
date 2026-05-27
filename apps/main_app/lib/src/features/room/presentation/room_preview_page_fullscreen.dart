@@ -147,6 +147,7 @@ class RoomFullscreenOverlaySection extends StatelessWidget {
       player: RoomPlayerSurfaceSection(
         data: playerSurfaceData,
         buildEmbeddedPlayerView: buildEmbeddedPlayerView,
+        onRefresh: onRefresh,
         danmakuOverlay: _buildDanmakuOverlay(),
         playerSuperChatOverlay: RoomPlayerSuperChatOverlay(
           messagesListenable: playerSuperChatMessagesListenable,

@@ -8,65 +8,90 @@ import 'package:nolive_app/src/shared/application/player_runtime_controller.dart
 
 void main() {
   test(
-      'ensureBackendWithoutPlaybackState refreshes same backend when source exists',
-      () async {
-    var buildCount = 0;
-    final player = SwitchablePlayer(
-      initialBackend: PlayerBackend.mpv,
-      builders: {
-        PlayerBackend.mpv: () {
-          buildCount += 1;
-          return _TestSwitchablePlayer(PlayerBackend.mpv);
+    'ensureBackendWithoutPlaybackState refreshes same backend when source exists',
+    () async {
+      var buildCount = 0;
+      final player = SwitchablePlayer(
+        initialBackend: PlayerBackend.mpv,
+        builders: {
+          PlayerBackend.mpv: () {
+            buildCount += 1;
+            return _TestSwitchablePlayer(PlayerBackend.mpv);
+          },
+          PlayerBackend.mdk: () => _TestSwitchablePlayer(PlayerBackend.mdk),
         },
-        PlayerBackend.mdk: () => _TestSwitchablePlayer(PlayerBackend.mdk),
-      },
-    );
-    addTearDown(player.dispose);
-    final runtime = PlayerRuntimeController(player);
-    final source = PlaybackSource(
-      url: Uri.parse('https://example.com/live.m3u8'),
-    );
+      );
+      addTearDown(player.dispose);
+      final runtime = PlayerRuntimeController(player);
+      final source = PlaybackSource(
+        url: Uri.parse('https://example.com/live.m3u8'),
+      );
 
-    await runtime.initialize();
-    await runtime.setSource(source);
-    expect(runtime.currentState.source, isNotNull);
+      await runtime.initialize();
+      await runtime.setSource(source);
+      expect(runtime.currentState.source, isNotNull);
 
-    await runtime.ensureBackendWithoutPlaybackState(PlayerBackend.mpv);
+      await runtime.ensureBackendWithoutPlaybackState(PlayerBackend.mpv);
 
-    expect(buildCount, 2);
-    expect(runtime.backend, PlayerBackend.mpv);
-    expect(runtime.currentState.source, isNull);
-  });
+      expect(buildCount, 2);
+      expect(runtime.backend, PlayerBackend.mpv);
+      expect(runtime.currentState.source, isNull);
+    },
+  );
 
   test(
-      'ensureBackendWithoutPlaybackState leaves same backend intact when no playback state exists',
-      () async {
-    var buildCount = 0;
-    final player = SwitchablePlayer(
-      initialBackend: PlayerBackend.mpv,
-      builders: {
-        PlayerBackend.mpv: () {
-          buildCount += 1;
-          return _TestSwitchablePlayer(PlayerBackend.mpv);
+    'ensureBackendWithoutPlaybackState leaves same backend intact when no playback state exists',
+    () async {
+      var buildCount = 0;
+      final player = SwitchablePlayer(
+        initialBackend: PlayerBackend.mpv,
+        builders: {
+          PlayerBackend.mpv: () {
+            buildCount += 1;
+            return _TestSwitchablePlayer(PlayerBackend.mpv);
+          },
+          PlayerBackend.mdk: () => _TestSwitchablePlayer(PlayerBackend.mdk),
         },
-        PlayerBackend.mdk: () => _TestSwitchablePlayer(PlayerBackend.mdk),
-      },
-    );
-    addTearDown(player.dispose);
-    final runtime = PlayerRuntimeController(player);
+      );
+      addTearDown(player.dispose);
+      final runtime = PlayerRuntimeController(player);
 
-    await runtime.initialize();
-    await runtime.ensureBackendWithoutPlaybackState(PlayerBackend.mpv);
+      await runtime.initialize();
+      await runtime.ensureBackendWithoutPlaybackState(PlayerBackend.mpv);
 
-    expect(buildCount, 1);
-    expect(runtime.currentState.source, isNull);
-  });
+      expect(buildCount, 1);
+      expect(runtime.currentState.source, isNull);
+    },
+  );
+
+  test(
+    'serializeRoomTeardown allows nested teardown inside the same chain',
+    () async {
+      final runtime = PlayerRuntimeController(
+        _TestSwitchablePlayer(PlayerBackend.mpv),
+      );
+      addTearDown(runtime.dispose);
+      final order = <String>[];
+
+      await runtime
+          .serializeRoomTeardown(() async {
+            order.add('outer-start');
+            await runtime.serializeRoomTeardown(() async {
+              order.add('inner');
+            });
+            order.add('outer-end');
+          })
+          .timeout(const Duration(seconds: 2));
+
+      expect(order, <String>['outer-start', 'inner', 'outer-end']);
+    },
+  );
 }
 
 class _TestSwitchablePlayer implements BasePlayer {
   _TestSwitchablePlayer(this.playerBackend)
-      : _currentState = PlayerState(backend: playerBackend),
-        _currentDiagnostics = PlayerDiagnostics(backend: playerBackend);
+    : _currentState = PlayerState(backend: playerBackend),
+      _currentDiagnostics = PlayerDiagnostics(backend: playerBackend);
 
   final PlayerBackend playerBackend;
   final StreamController<PlayerState> _states =
@@ -105,12 +130,7 @@ class _TestSwitchablePlayer implements BasePlayer {
 
   @override
   Future<void> setSource(PlaybackSource source) async {
-    _emit(
-      _currentState.copyWith(
-        status: PlaybackStatus.ready,
-        source: source,
-      ),
-    );
+    _emit(_currentState.copyWith(status: PlaybackStatus.ready, source: source));
   }
 
   @override
@@ -126,10 +146,7 @@ class _TestSwitchablePlayer implements BasePlayer {
   @override
   Future<void> stop() async {
     _emit(
-      _currentState.copyWith(
-        status: PlaybackStatus.ready,
-        clearSource: true,
-      ),
+      _currentState.copyWith(status: PlaybackStatus.ready, clearSource: true),
     );
   }
 

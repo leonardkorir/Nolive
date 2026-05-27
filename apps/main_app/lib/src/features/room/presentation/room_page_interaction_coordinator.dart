@@ -51,8 +51,8 @@ typedef RoomResolvePlayerDebugViewData = RoomPlayerDebugViewData Function({
   required RoomSessionLoadResult state,
   required PlaybackSource? playbackSource,
 });
-typedef RoomCycleScaleModeAndResolveControlsViewData =
-    Future<RoomControlsViewData> Function({
+typedef RoomCycleScaleModeAndResolveControlsViewData
+    = Future<RoomControlsViewData> Function({
   required RoomSessionLoadResult state,
   required List<LivePlayUrl> playUrls,
   required PlaybackSource? playbackSource,
@@ -135,8 +135,8 @@ class RoomPageInteractionContext {
   final Future<void> Function() captureScreenshot;
   final RoomPerformRefresh refreshRoom;
   final Future<void> Function() leaveRoomCleanup;
-  final Future<void> Function(LoadedRoomSnapshot snapshot, LivePlayQuality quality)
-      switchQuality;
+  final Future<void> Function(
+      LoadedRoomSnapshot snapshot, LivePlayQuality quality) switchQuality;
   final Future<void> Function(LivePlayUrl playUrl) switchLine;
   final DateTime? Function() resolveScheduledCloseAt;
   final void Function(Duration? duration) setAutoCloseTimer;
@@ -201,8 +201,8 @@ class RoomPageInteractionCoordinator {
     if (!context.isMounted()) {
       return;
     }
-    final resolvedPlaybackSource =
-        context.resolveCurrentPlaybackSource() ?? state.resolved?.playbackSource;
+    final resolvedPlaybackSource = context.resolveCurrentPlaybackSource() ??
+        state.resolved?.playbackSource;
     final currentPlayUrls = context.resolveCurrentPlayUrls();
     final resolvedPlayUrls =
         currentPlayUrls.isEmpty ? state.snapshot.playUrls : currentPlayUrls;
@@ -299,7 +299,14 @@ class RoomPageInteractionCoordinator {
         return;
       }
     }
-    await context.leaveRoomCleanup();
+    try {
+      await context.leaveRoomCleanup();
+    } catch (_) {
+      if (context.isMounted()) {
+        context.showMessage('退出房间失败，请稍后重试');
+      }
+      return;
+    }
     if (!context.isMounted()) {
       return;
     }

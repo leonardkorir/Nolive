@@ -25,9 +25,7 @@ void main() {
   });
 
   testWidgets('disclaimer page hides intro subtitle', (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(home: DisclaimerPage()),
-    );
+    await tester.pumpWidget(const MaterialApp(home: DisclaimerPage()));
     await tester.pumpAndSettle();
 
     expect(find.text('免责声明'), findsWidgets);

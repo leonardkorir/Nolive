@@ -28,20 +28,20 @@ void main() {
     test('top-level pages settle after a shorter drag distance', () {
       expect(
         resolveResponsivePageTarget(
-          page: 0.17,
+          page: 0.11,
           velocity: 0,
           velocityThreshold: 80,
-          settlePageThresholdFraction: 0.18,
+          settlePageThresholdFraction: 0.12,
           direction: ScrollDirection.reverse,
         ),
         0,
       );
       expect(
         resolveResponsivePageTarget(
-          page: 0.18,
+          page: 0.12,
           velocity: 0,
           velocityThreshold: 80,
-          settlePageThresholdFraction: 0.18,
+          settlePageThresholdFraction: 0.12,
           direction: ScrollDirection.reverse,
         ),
         1,
@@ -51,25 +51,67 @@ void main() {
     test('top-level pages use the same shorter threshold when returning', () {
       expect(
         resolveResponsivePageTarget(
-          page: 0.83,
+          page: 0.89,
           velocity: 0,
           velocityThreshold: 80,
-          settlePageThresholdFraction: 0.18,
+          settlePageThresholdFraction: 0.12,
           direction: ScrollDirection.forward,
         ),
         1,
       );
       expect(
         resolveResponsivePageTarget(
-          page: 0.82,
+          page: 0.88,
           velocity: 0,
           velocityThreshold: 80,
-          settlePageThresholdFraction: 0.18,
+          settlePageThresholdFraction: 0.12,
           direction: ScrollDirection.forward,
         ),
         0,
       );
     });
+
+    test(
+      'top-level idle settles away from the nearest page after threshold',
+      () {
+        expect(
+          resolveResponsivePageTarget(
+            page: 1.11,
+            velocity: 0,
+            velocityThreshold: 80,
+            settlePageThresholdFraction: 0.12,
+          ),
+          1,
+        );
+        expect(
+          resolveResponsivePageTarget(
+            page: 1.12,
+            velocity: 0,
+            velocityThreshold: 80,
+            settlePageThresholdFraction: 0.12,
+          ),
+          2,
+        );
+        expect(
+          resolveResponsivePageTarget(
+            page: 1.89,
+            velocity: 0,
+            velocityThreshold: 80,
+            settlePageThresholdFraction: 0.12,
+          ),
+          2,
+        );
+        expect(
+          resolveResponsivePageTarget(
+            page: 1.88,
+            velocity: 0,
+            velocityThreshold: 80,
+            settlePageThresholdFraction: 0.12,
+          ),
+          1,
+        );
+      },
+    );
 
     test('fling direction still wins even with very small drag offset', () {
       expect(
@@ -77,7 +119,7 @@ void main() {
           page: 0.05,
           velocity: 120,
           velocityThreshold: 80,
-          settlePageThresholdFraction: 0.18,
+          settlePageThresholdFraction: 0.12,
           direction: ScrollDirection.reverse,
         ),
         1,
@@ -87,7 +129,7 @@ void main() {
           page: 0.95,
           velocity: -120,
           velocityThreshold: 80,
-          settlePageThresholdFraction: 0.18,
+          settlePageThresholdFraction: 0.12,
           direction: ScrollDirection.forward,
         ),
         0,

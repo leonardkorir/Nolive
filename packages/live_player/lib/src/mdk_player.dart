@@ -59,6 +59,7 @@ class MdkPlayer implements BasePlayer {
   Duration? _lastRebufferDuration;
   Timer? _tunnelFirstFrameWatchdog;
   bool _tunnelFallbackAttempted = false;
+  bool _disposed = false;
 
   @override
   PlayerBackend get backend => PlayerBackend.mdk;
@@ -516,6 +517,10 @@ class MdkPlayer implements BasePlayer {
 
   @override
   Future<void> dispose() async {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
     _invalidateActiveRequest('dispose');
     _logEvent('dispose start');
     _progressTimer?.cancel();
@@ -557,6 +562,21 @@ class MdkPlayer implements BasePlayer {
         'event category=${event.category} detail=${event.detail} '
         'error=${event.error}',
       );
+      final eventError = resolveMdkRuntimeEventErrorMessage(
+        category: event.category,
+        detail: event.detail,
+        rawError: event.error.toString(),
+      );
+      if (eventError != null) {
+        _emitDiagnostics(_currentDiagnostics.copyWith(error: eventError));
+        _emit(
+          _currentState.copyWith(
+            status: PlaybackStatus.error,
+            errorMessage: eventError,
+          ),
+        );
+        return;
+      }
       if (event.category == 'render.video' && event.detail == '1st_frame') {
         _tunnelFirstFrameWatchdog?.cancel();
         _firstFrameRendered = true;
@@ -1057,6 +1077,39 @@ PlaybackStatus? resolveMdkBufferingStatusTransition({
     return null;
   }
   return firstFrameRendered ? PlaybackStatus.playing : PlaybackStatus.ready;
+}
+
+@visibleForTesting
+String? resolveMdkRuntimeEventErrorMessage({
+  required String? category,
+  required String? detail,
+  required String? rawError,
+}) {
+  final normalized = rawError?.trim() ?? '';
+  if (normalized.isEmpty) {
+    return null;
+  }
+  final normalizedCategory = category?.trim().toLowerCase() ?? '';
+  final normalizedDetail = detail?.trim().toLowerCase() ?? '';
+  if (normalizedCategory == 'render.video' && normalizedDetail == '1st_frame') {
+    return null;
+  }
+  const fatalMarkers = <String>[
+    'error',
+    'fail',
+    'exception',
+    'invalid',
+    'timeout',
+  ];
+  final isFatal = fatalMarkers.any(
+    (marker) =>
+        normalizedCategory.contains(marker) ||
+        normalizedDetail.contains(marker),
+  );
+  if (!isFatal) {
+    return null;
+  }
+  return normalized;
 }
 
 typedef MdkBufferStrategy = ({int minMs, int maxMs, bool drop});

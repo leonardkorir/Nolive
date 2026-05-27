@@ -1,5 +1,6 @@
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
 import 'twitch_hls_master_playlist_parser.dart';
 import 'twitch_playback_manifest.dart';
 
@@ -159,7 +160,7 @@ class TwitchMapper {
       startedAt: _asDateTime(stream['createdAt']),
       isLive: (stream['type']?.toString().toLowerCase() ?? '') == 'live',
       viewerCount: _asInt(viewStream['viewersCount']),
-      danmakuToken: roomId.isEmpty ? null : {'roomId': roomId},
+      danmakuToken: roomId.isEmpty ? null : TwitchDanmakuToken(roomId: roomId),
       metadata: metadata,
     );
   }
@@ -343,13 +344,7 @@ class TwitchMapper {
   }
 
   static Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   static String? _nonEmptyString(Object? value) {
@@ -368,13 +363,7 @@ class TwitchMapper {
   }
 
   static int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is num) {
-      return value.toInt();
-    }
-    return int.tryParse(value?.toString() ?? '');
+    return ProviderJson.asInt(value, allowNum: true);
   }
 
   static DateTime? _asDateTime(Object? value) {

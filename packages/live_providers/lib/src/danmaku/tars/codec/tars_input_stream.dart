@@ -26,6 +26,7 @@ class BinaryReader {
   /// 从当前流中读取下一个字节，并使流的当前位置提升 1 个字节
   /// 返回下一个字节(0-255)
   int read() {
+    _ensureRemaining(1);
     var byte = buffer[position];
     position += 1;
     return byte;
@@ -36,6 +37,7 @@ class BinaryReader {
   /// len=1为int8,2为int16,4为int32,8为int64。dart中统一为int类型
   /// 返回整数
   int readInt(int len) {
+    _ensureRemaining(len);
     var result = 0;
     // if (len == 1) {
     //   result = buffer[position];
@@ -66,6 +68,7 @@ class BinaryReader {
   /// [len] 指定长度
   /// 返回字节数组
   Uint8List readBytes(int len) {
+    _ensureRemaining(len);
     var bytes =
         Uint8List.fromList(buffer.getRange(position, position + len).toList());
     position += len;
@@ -77,6 +80,7 @@ class BinaryReader {
   /// len=4为float,8为double。dart中统一为double类型
   /// 返回浮点数
   double readFloat(int len) {
+    _ensureRemaining(len);
     var result = 0.0;
     var bytes =
         Uint8List.fromList(buffer.getRange(position, position + len).toList());
@@ -91,16 +95,22 @@ class BinaryReader {
     position += len;
     return result;
   }
+
+  void _ensureRemaining(int len) {
+    if (len < 0 || position + len > buffer.length) {
+      throw TarsDecodeException(
+        'buffer underflow: need $len bytes at $position, length=${buffer.length}',
+      );
+    }
+  }
 }
 
 class TarsInputStream {
   late BinaryReader br;
 
   TarsInputStream(Uint8List? bytes, {int pos = 0}) {
-    if (bytes != null) {
-      br = BinaryReader(bytes);
-      br.position = pos;
-    }
+    br = BinaryReader(bytes ?? Uint8List(0));
+    br.position = pos;
   }
 
   void wrap(Uint8List bytes, {int pos = 0}) {
@@ -134,37 +144,38 @@ class TarsInputStream {
   }
 
   void skip(int len) {
+    br._ensureRemaining(len);
     br.position += len;
   }
 
   bool skipToTag(int tag) {
-    try {
-      var hd = HeadData();
-      while (true) {
-        var len = peakHead(hd);
-        if (tag <= hd.tag || hd.type == TarsStructType.STRUCT_END.index) {
-          return tag == hd.tag;
-        }
+    var hd = HeadData();
+    while (true) {
+      var len = peakHead(hd);
+      if (tag <= hd.tag || hd.type == TarsStructType.STRUCT_END.index) {
+        return tag == hd.tag;
+      }
 
-        skip(len);
-        skipFieldWithType(hd.type);
-      }
-    } catch (e) {
-      if (e is TarsDecodeException) {
-        print(e);
-      }
-      print(e);
+      skip(len);
+      skipFieldWithType(hd.type);
     }
-    return false;
   }
 
   // 跳到当前结构的结束位置
   void skipToStructEnd() {
     var hd = HeadData();
-    do {
+    var iterations = 0;
+    final maxIterations = br.length + 1;
+    while (true) {
+      if (iterations++ > maxIterations) {
+        throw TarsDecodeException('struct end not found');
+      }
       readHead(hd);
+      if (hd.type == TarsStructType.STRUCT_END.index) {
+        return;
+      }
       skipFieldWithType(hd.type);
-    } while (hd.type != TarsStructType.STRUCT_END.index);
+    }
   }
 
   // 跳过一个字段
@@ -175,7 +186,7 @@ class TarsInputStream {
   }
 
   void skipFieldWithType(int type) {
-    var t = TarsStructType.values[type];
+    var t = _typeOf(type);
     switch (t) {
       case TarsStructType.BYTE:
         skip(1);
@@ -206,7 +217,11 @@ class TarsInputStream {
         }
       case TarsStructType.STRING4:
         {
-          skip(br.readInt(4));
+          final len = br.readInt(4);
+          if (len < 0 || len > TarsStruct.TARS_MAX_STRING_LENGTH) {
+            throw TarsDecodeException('invalid string length: $len');
+          }
+          skip(len);
           break;
         }
       case TarsStructType.MAP:
@@ -234,6 +249,9 @@ class TarsInputStream {
                 'skipField with invalid type, type value: $type,${hd.type}');
           }
           var size = readInt(0, true);
+          if (size < 0) {
+            throw TarsDecodeException('invalid simple list size: $size');
+          }
           skip(size);
           break;
         }
@@ -276,7 +294,7 @@ class TarsInputStream {
     if (skipToTag(tag)) {
       var hd = HeadData();
       readHead(hd);
-      var t = TarsStructType.values[hd.type];
+      var t = _typeOf(hd.type);
       switch (t) {
         case TarsStructType.ZERO_TAG:
           n = 0;
@@ -322,7 +340,7 @@ class TarsInputStream {
     if (skipToTag(tag)) {
       var hd = HeadData();
       readHead(hd);
-      var t = TarsStructType.values[hd.type];
+      var t = _typeOf(hd.type);
       switch (t) {
         case TarsStructType.STRING1:
           n = _readString1();
@@ -371,7 +389,7 @@ class TarsInputStream {
     if (skipToTag(tag)) {
       var hd = HeadData();
       readHead(hd);
-      var t = TarsStructType.values[hd.type];
+      var t = _typeOf(hd.type);
       switch (t) {
         case TarsStructType.ZERO_TAG:
           n = 0;
@@ -402,7 +420,7 @@ class TarsInputStream {
     if (skipToTag(tag)) {
       var hd = HeadData();
       readHead(hd);
-      var t = TarsStructType.values[hd.type];
+      var t = _typeOf(hd.type);
       switch (t) {
         case TarsStructType.SIMPLE_LIST:
           {
@@ -418,13 +436,12 @@ class TarsInputStream {
                   'invalid size, tag: $tag, type: ${hd.type}, ${hh.type}  size:$size');
             }
 
-            lr = Uint8List(size);
             try {
               lr = br.readBytes(size);
-            } catch (e) {
-              //QTrace.Trace(e.Message);
-              print(e);
-              return Uint8List(0);
+            } catch (error) {
+              throw TarsDecodeException(
+                'invalid byte list size: $size, error: $error',
+              );
             }
           }
           break;
@@ -432,6 +449,9 @@ class TarsInputStream {
           {
             var size = readInt(0, true);
             if (size < 0) throw TarsDecodeException('size invalid: $size');
+            if (size > br.length - br.position) {
+              throw TarsDecodeException('byte list too large: $size');
+            }
             lr = Uint8List(size);
             for (var i = 0; i < size; ++i) {
               lr[i] = readInt(0, true);
@@ -451,6 +471,11 @@ class TarsInputStream {
   /// 需要指定键、值的类型
   /// 对应Tars类型：Map
   Map<K, V> readMap<K, V>(Map<K, V> data, int tag, bool isRequire) {
+    if (data.isEmpty) {
+      throw TarsDecodeException(
+        'map type template must contain one key/value sample.',
+      );
+    }
     Iterable<MapEntry<K, V>> it = data.entries;
     MapEntry<K, V> en = it.first;
     K k = en.key;
@@ -460,7 +485,7 @@ class TarsInputStream {
     if (skipToTag(tag)) {
       var hd = HeadData();
       readHead(hd);
-      var t = TarsStructType.values[hd.type];
+      var t = _typeOf(hd.type);
       if (t == TarsStructType.MAP) {
         var size = readInt(0, true);
         if (size < 0) {
@@ -499,7 +524,7 @@ class TarsInputStream {
     if (skipToTag(tag)) {
       var hd = HeadData();
       readHead(hd);
-      var t = TarsStructType.values[hd.type];
+      var t = _typeOf(hd.type);
       if (t == TarsStructType.MAP) {
         var size = readInt(0, true);
         if (size < 0) {
@@ -538,7 +563,7 @@ class TarsInputStream {
     if (skipToTag(tag)) {
       var hd = HeadData();
       readHead(hd);
-      var t = TarsStructType.values[hd.type];
+      var t = _typeOf(hd.type);
       if (t == TarsStructType.MAP) {
         var size = readInt(0, true);
         if (size < 0) {
@@ -571,7 +596,7 @@ class TarsInputStream {
     if (skipToTag(tag)) {
       var hd = HeadData();
       readHead(hd);
-      var t = TarsStructType.values[hd.type];
+      var t = _typeOf(hd.type);
       switch (t) {
         case TarsStructType.LIST:
           {
@@ -598,7 +623,7 @@ class TarsInputStream {
     if (skipToTag(tag)) {
       var hd = HeadData();
       readHead(hd);
-      var t = TarsStructType.values[hd.type];
+      var t = _typeOf(hd.type);
       if (t == TarsStructType.STRUCT_BEGIN) {
         var copyTs = ts.deepCopy() as TarsStruct;
         copyTs.readFrom(this);
@@ -618,5 +643,12 @@ class TarsInputStream {
   int setServerEncoding(String se) {
     sServerEncoding = se;
     return 0;
+  }
+
+  TarsStructType _typeOf(int type) {
+    if (type < 0 || type >= TarsStructType.values.length) {
+      throw TarsDecodeException('invalid tars type index: $type');
+    }
+    return TarsStructType.values[type];
   }
 }

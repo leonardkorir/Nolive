@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/app/platform/android_playback_bridge.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/app/shell/app_shell_dependencies.dart';
 import 'package:nolive_app/src/app/shell/app_shell_page.dart';
@@ -45,9 +47,8 @@ class AppRouter {
       case AppRoutes.home:
         return _buildRoute(
           settings: settings,
-          builder: (_) => AppShellPage(
-            dependencies: _buildAppShellDependencies(),
-          ),
+          builder: (_) =>
+              AppShellPage(dependencies: _buildAppShellDependencies()),
         );
       case AppRoutes.room:
         final arguments = settings.arguments;
@@ -119,9 +120,8 @@ class AppRouter {
       case AppRoutes.roomSettings:
         return _buildRoute(
           settings: settings,
-          builder: (_) => RoomSettingsPage(
-            dependencies: _buildRoomSettingsDependencies(),
-          ),
+          builder: (_) =>
+              RoomSettingsPage(dependencies: _buildRoomSettingsDependencies()),
         );
       case AppRoutes.playerSettings:
         return _buildRoute(
@@ -192,9 +192,8 @@ class AppRouter {
       case AppRoutes.parseRoom:
         return _buildRoute(
           settings: settings,
-          builder: (_) => ParseRoomPage(
-            dependencies: _buildParseFeatureDependencies(),
-          ),
+          builder: (_) =>
+              ParseRoomPage(dependencies: _buildParseFeatureDependencies()),
         );
       default:
         return _errorRoute('未找到路由：${settings.name}');
@@ -205,10 +204,7 @@ class AppRouter {
     required RouteSettings settings,
     required WidgetBuilder builder,
   }) {
-    return MaterialPageRoute<void>(
-      settings: settings,
-      builder: builder,
-    );
+    return MaterialPageRoute<void>(settings: settings, builder: builder);
   }
 
   MaterialPageRoute<void> _errorRoute(String message) {
@@ -345,6 +341,11 @@ class AppRouter {
           bootstrap.applyPlayerPreferencesToRuntime,
       playerRuntime: bootstrap.playerRuntime,
       isLiveMode: bootstrap.isLiveMode,
+      usesSystemMediaVolume:
+          bootstrap.isLiveMode &&
+          !kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android,
+      loadSystemMediaVolume: AndroidPlaybackBridge.instance.getMediaVolume,
     );
   }
 

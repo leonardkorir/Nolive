@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:live_storage/live_storage.dart';
 
@@ -28,10 +29,7 @@ abstract class SecureCredentialStore {
 }
 
 class SecureCredentialStoreUnavailableException implements Exception {
-  const SecureCredentialStoreUnavailableException(
-    this.message, {
-    this.cause,
-  });
+  const SecureCredentialStoreUnavailableException(this.message, {this.cause});
 
   final String message;
   final Object? cause;
@@ -47,11 +45,11 @@ class SecureCredentialStoreUnavailableException implements Exception {
 
 class InMemorySecureCredentialStore implements SecureCredentialStore {
   InMemorySecureCredentialStore({Map<String, String>? initialValues})
-      : _values = {
-          if (initialValues != null)
-            for (final entry in initialValues.entries)
-              if (entry.value.trim().isNotEmpty) entry.key: entry.value.trim(),
-        };
+    : _values = {
+        if (initialValues != null)
+          for (final entry in initialValues.entries)
+            if (entry.value.trim().isNotEmpty) entry.key: entry.value.trim(),
+      };
 
   final Map<String, String> _values;
 
@@ -115,9 +113,9 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
   FlutterSecureCredentialStore._(this._storage);
 
   static const String _keyPrefix = 'nolive.secure.';
-  static const Duration _storageOperationTimeout = Duration(seconds: 3);
-  static const int _readAllRetryAttempts = 2;
-  static const Duration _readAllRetryDelay = Duration(milliseconds: 250);
+  static const Duration _storageOperationTimeout = Duration(seconds: 10);
+  static const int _storageRetryAttempts = 2;
+  static const Duration _storageRetryDelay = Duration(milliseconds: 250);
 
   final FlutterSecureStorage _storage;
   final Map<String, String> _cache = <String, String>{};
@@ -209,22 +207,21 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
   }
 
   Future<void> _load() async {
-    final stored = await _runStorageOperation(
-      'readAll()',
-      _storage.readAll,
-    );
+    final stored = await _runStorageOperation('readAll()', _storage.readAll);
     _cache
       ..clear()
       ..addEntries(
-        stored.entries.where((entry) {
-          return entry.key.startsWith(_keyPrefix) &&
-              entry.value.trim().isNotEmpty;
-        }).map(
-          (entry) => MapEntry(
-            entry.key.substring(_keyPrefix.length),
-            entry.value.trim(),
-          ),
-        ),
+        stored.entries
+            .where((entry) {
+              return entry.key.startsWith(_keyPrefix) &&
+                  entry.value.trim().isNotEmpty;
+            })
+            .map(
+              (entry) => MapEntry(
+                entry.key.substring(_keyPrefix.length),
+                entry.value.trim(),
+              ),
+            ),
       );
   }
 
@@ -234,13 +231,13 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
     String operation,
     Future<T> Function() action,
   ) async {
-    final maxAttempts = operation == 'readAll()' ? _readAllRetryAttempts : 1;
+    const maxAttempts = _storageRetryAttempts;
     for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         return await action().timeout(_storageOperationTimeout);
       } on TimeoutException catch (error) {
         if (attempt < maxAttempts) {
-          await Future<void>.delayed(_readAllRetryDelay);
+          await Future<void>.delayed(_storageRetryDelay);
           continue;
         }
         throw SecureCredentialStoreUnavailableException(
@@ -248,6 +245,10 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
           cause: error,
         );
       } catch (error) {
+        if (_isTransientStorageError(error) && attempt < maxAttempts) {
+          await Future<void>.delayed(_storageRetryDelay);
+          continue;
+        }
         throw SecureCredentialStoreUnavailableException(
           'Secure storage operation failed: $operation',
           cause: error,
@@ -258,14 +259,34 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
       'Secure storage operation failed: unknown storage failure',
     );
   }
+
+  bool _isTransientStorageError(Object error) {
+    if (error is TimeoutException) {
+      return true;
+    }
+    if (error is PlatformException) {
+      final code = error.code.toLowerCase();
+      final message = (error.message ?? '').toLowerCase();
+      return code.contains('timeout') ||
+          code.contains('temporar') ||
+          code.contains('unavailable') ||
+          code.contains('busy') ||
+          message.contains('timeout') ||
+          message.contains('temporar') ||
+          message.contains('try again') ||
+          message.contains('unavailable') ||
+          message.contains('busy');
+    }
+    return false;
+  }
 }
 
 class SettingsBackedSecureCredentialStore implements SecureCredentialStore {
   SettingsBackedSecureCredentialStore._({
     required SettingsRepository settingsRepository,
     required Set<String> allowedKeys,
-  })  : _settingsRepository = settingsRepository,
-        _allowedKeys = allowedKeys;
+  }) : _settingsRepository = settingsRepository,
+       _allowedKeys = allowedKeys;
 
   final SettingsRepository _settingsRepository;
   final Set<String> _allowedKeys;
@@ -381,24 +402,26 @@ class LazySecureCredentialStore implements SecureCredentialStore {
     required Map<String, Object?> initialSettings,
     required Future<SecureCredentialStore> Function() loader,
     void Function(Map<String, String> snapshot)? onSnapshotChanged,
-  })  : _settingsRepository = settingsRepository,
-        _allowedKeys = allowedKeys.toSet(),
-        _loader = loader,
-        _fallbackStore = SettingsBackedSecureCredentialStore.seeded(
-          settingsRepository: settingsRepository,
-          allowedKeys: allowedKeys,
-          initialSettings: initialSettings,
-        ),
-        _onSnapshotChanged = onSnapshotChanged,
-        _activeStore = SettingsBackedSecureCredentialStore.seeded(
-          settingsRepository: settingsRepository,
-          allowedKeys: allowedKeys,
-          initialSettings: initialSettings,
-        ),
-        _publishedSnapshot = _extractAllowedSecureValues(
-          initialSettings,
-          allowedKeys.toSet(),
-        );
+  }) : _settingsRepository = settingsRepository,
+       _allowedKeys = {...allowedKeys, _migrationSentinelKey},
+       _loader = loader,
+       _fallbackStore = SettingsBackedSecureCredentialStore.seeded(
+         settingsRepository: settingsRepository,
+         allowedKeys: [...allowedKeys, _migrationSentinelKey],
+         initialSettings: initialSettings,
+       ),
+       _onSnapshotChanged = onSnapshotChanged,
+       _activeStore = SettingsBackedSecureCredentialStore.seeded(
+         settingsRepository: settingsRepository,
+         allowedKeys: [...allowedKeys, _migrationSentinelKey],
+         initialSettings: initialSettings,
+       ),
+       _publishedSnapshot = _extractAllowedSecureValues(
+         initialSettings,
+         {...allowedKeys, _migrationSentinelKey},
+       );
+
+  static const String _migrationSentinelKey = 'nolive.secure.migration_complete';
 
   final SettingsRepository _settingsRepository;
   final Set<String> _allowedKeys;
@@ -407,14 +430,37 @@ class LazySecureCredentialStore implements SecureCredentialStore {
   final void Function(Map<String, String> snapshot)? _onSnapshotChanged;
 
   SecureCredentialStore _activeStore;
+  SecureCredentialStore? _resolvedStore;
   Map<String, String> _publishedSnapshot;
   Future<void>? _readyFuture;
   bool _ready = false;
+
+  final Set<String> _writtenKeysDuringWarmup = <String>{};
+  final Set<String> _deletedKeysDuringWarmup = <String>{};
+  Future<void> _transactionQueue = Future.value();
+
+  Future<void> _enqueue(Future<void> Function() action) {
+    final completer = Completer<void>();
+    _transactionQueue = _transactionQueue.then(
+      (_) => action(),
+      onError: (_) => action(),
+    ).then(
+      completer.complete,
+      onError: completer.completeError,
+    );
+    return completer.future;
+  }
 
   @override
   bool get storesSecureValuesSeparately =>
       _activeStore.storesSecureValuesSeparately;
 
+  /// Ensures the store is fully initialized and ready.
+  ///
+  /// This method is fail-open: if the underlying secure storage resolution (warmup)
+  /// fails, it logs the error and falls back to using the legacy, unencrypted
+  /// settings-backed store, allowing the application to proceed. Once failed, it will
+  /// not attempt to retry warming up/promoting for the remainder of the session.
   @override
   Future<void> ensureReady() async {
     if (_ready) {
@@ -424,24 +470,54 @@ class LazySecureCredentialStore implements SecureCredentialStore {
   }
 
   @override
-  Future<void> clear() async {
-    await ensureReady();
-    await _activeStore.clear();
-    await _publishSnapshotIfChanged();
+  Future<void> clear() {
+    return _enqueue(() async {
+      await _activeStore.clear();
+      await _fallbackStore.clear();
+      final resolved = _resolvedStore;
+      if (resolved != null && _activeStore != resolved) {
+        await resolved.clear();
+      }
+      if (!_ready) {
+        _deletedKeysDuringWarmup.addAll(_allowedKeys);
+        _writtenKeysDuringWarmup.clear();
+      }
+      await _publishSnapshotIfChanged();
+    });
   }
 
   @override
-  Future<void> delete(String key) async {
-    await ensureReady();
-    await _activeStore.delete(key);
-    await _publishSnapshotIfChanged();
+  Future<void> delete(String key) {
+    return _enqueue(() async {
+      await _activeStore.delete(key);
+      await _fallbackStore.delete(key);
+      final resolved = _resolvedStore;
+      if (resolved != null && _activeStore != resolved) {
+        await resolved.delete(key);
+      }
+      if (!_ready) {
+        _deletedKeysDuringWarmup.add(key);
+        _writtenKeysDuringWarmup.remove(key);
+      }
+      await _publishSnapshotIfChanged();
+    });
   }
 
   @override
-  Future<void> deleteAll(Iterable<String> keys) async {
-    await ensureReady();
-    await _activeStore.deleteAll(keys);
-    await _publishSnapshotIfChanged();
+  Future<void> deleteAll(Iterable<String> keys) {
+    return _enqueue(() async {
+      await _activeStore.deleteAll(keys);
+      await _fallbackStore.deleteAll(keys);
+      final resolved = _resolvedStore;
+      if (resolved != null && _activeStore != resolved) {
+        await resolved.deleteAll(keys);
+      }
+      if (!_ready) {
+        _deletedKeysDuringWarmup.addAll(keys);
+        _writtenKeysDuringWarmup.removeAll(keys);
+      }
+      await _publishSnapshotIfChanged();
+    });
   }
 
   @override
@@ -451,7 +527,6 @@ class LazySecureCredentialStore implements SecureCredentialStore {
 
   @override
   Future<Map<String, String>> readAll() async {
-    await ensureReady();
     return snapshot();
   }
 
@@ -461,17 +536,37 @@ class LazySecureCredentialStore implements SecureCredentialStore {
   }
 
   @override
-  Future<void> write(String key, String value) async {
-    await ensureReady();
-    await _activeStore.write(key, value);
-    await _publishSnapshotIfChanged();
+  Future<void> write(String key, String value) {
+    return _enqueue(() async {
+      await _activeStore.write(key, value);
+      await _fallbackStore.write(key, value);
+      final resolved = _resolvedStore;
+      if (resolved != null && _activeStore != resolved) {
+        await resolved.write(key, value);
+      }
+      if (!_ready) {
+        _writtenKeysDuringWarmup.add(key);
+        _deletedKeysDuringWarmup.remove(key);
+      }
+      await _publishSnapshotIfChanged();
+    });
   }
 
   @override
-  Future<void> writeAll(Map<String, String> values) async {
-    await ensureReady();
-    await _activeStore.writeAll(values);
-    await _publishSnapshotIfChanged();
+  Future<void> writeAll(Map<String, String> values) {
+    return _enqueue(() async {
+      await _activeStore.writeAll(values);
+      await _fallbackStore.writeAll(values);
+      final resolved = _resolvedStore;
+      if (resolved != null && _activeStore != resolved) {
+        await resolved.writeAll(values);
+      }
+      if (!_ready) {
+        _writtenKeysDuringWarmup.addAll(values.keys);
+        _deletedKeysDuringWarmup.removeAll(values.keys);
+      }
+      await _publishSnapshotIfChanged();
+    });
   }
 
   Future<void> _warmUp() async {
@@ -482,7 +577,8 @@ class LazySecureCredentialStore implements SecureCredentialStore {
     );
     try {
       final resolvedStore = await _loader();
-      await _promoteResolvedStore(resolvedStore);
+      _resolvedStore = resolvedStore;
+      await _enqueue(() => _promoteResolvedStore(resolvedStore));
       AppLog.instance.info(
         'bootstrap',
         'secure store prewarm done backend=flutter_secure_storage '
@@ -504,30 +600,146 @@ class LazySecureCredentialStore implements SecureCredentialStore {
             'keys=${_fallbackStore.snapshot().length}',
       );
     } finally {
+      // Fail-open logic: we set _ready = true unconditionally so the application
+      // can proceed with the fallback SettingsBackedSecureCredentialStore even if
+      // the secure storage resolution failed.
       _ready = true;
     }
   }
 
   Future<void> _promoteResolvedStore(
-      SecureCredentialStore resolvedStore) async {
-    final fallbackSnapshot = _fallbackStore.snapshot();
+    SecureCredentialStore resolvedStore,
+  ) async {
+    final activeSnapshot = _activeStore.snapshot();
     final resolvedSnapshot = resolvedStore.snapshot();
+
+    final isMigrated = resolvedSnapshot.containsKey(_migrationSentinelKey);
+
+    // Capture checkpoint of current warmup dirty sets
+    final writtenDuringWarmup = Set<String>.from(_writtenKeysDuringWarmup);
+    final deletedDuringWarmup = Set<String>.from(_deletedKeysDuringWarmup);
+
+    // Remove them from the main sets since we are reconciling them now
+    _writtenKeysDuringWarmup.removeAll(writtenDuringWarmup);
+    _deletedKeysDuringWarmup.removeAll(deletedDuringWarmup);
+
     final valuesToWrite = <String, String>{};
-    for (final entry in fallbackSnapshot.entries) {
-      if (!resolvedSnapshot.containsKey(entry.key)) {
-        valuesToWrite[entry.key] = entry.value;
+    final keysToDelete = <String>[];
+
+    try {
+      // 1. Determine writes
+      for (final entry in activeSnapshot.entries) {
+        final key = entry.key;
+        if (key == _migrationSentinelKey) {
+          continue;
+        }
+
+        final isDirty = writtenDuringWarmup.contains(key);
+        final isNotMigratedAndMissing = !isMigrated && !resolvedSnapshot.containsKey(key);
+        final shouldWrite = (isDirty || isNotMigratedAndMissing) && !deletedDuringWarmup.contains(key);
+        if (shouldWrite) {
+          // Skip if a concurrent operation modified this key after our checkpoint
+          if (!_writtenKeysDuringWarmup.contains(key) && !_deletedKeysDuringWarmup.contains(key)) {
+            if (resolvedSnapshot[key] != entry.value) {
+              valuesToWrite[key] = entry.value;
+            }
+          }
+        }
       }
-    }
-    if (valuesToWrite.isNotEmpty) {
-      await resolvedStore.writeAll(valuesToWrite);
-    }
-    if (resolvedStore.storesSecureValuesSeparately) {
-      for (final key in _allowedKeys) {
-        await _settingsRepository.remove(key);
+
+      // 2. Determine deletes
+      for (final key in resolvedSnapshot.keys) {
+        if (key == _migrationSentinelKey) {
+          continue;
+        }
+        final shouldDelete = deletedDuringWarmup.contains(key);
+        if (shouldDelete) {
+          // Skip if a concurrent operation modified this key after our checkpoint
+          if (!_writtenKeysDuringWarmup.contains(key) && !_deletedKeysDuringWarmup.contains(key)) {
+            keysToDelete.add(key);
+          }
+        }
       }
+
+      // 3. Apply changes to resolvedStore
+      if (valuesToWrite.isNotEmpty) {
+        await resolvedStore.writeAll(valuesToWrite);
+      }
+      if (keysToDelete.isNotEmpty) {
+        await resolvedStore.deleteAll(keysToDelete);
+      }
+
+      // 4. Write sentinel if not migrated yet
+      if (!isMigrated) {
+        await resolvedStore.write(_migrationSentinelKey, 'true');
+      }
+    } catch (error, stackTrace) {
+      // Rollback: restore the checkpointed warmup keys so they can be tried again
+      _writtenKeysDuringWarmup.addAll(writtenDuringWarmup);
+      _deletedKeysDuringWarmup.addAll(deletedDuringWarmup);
+
+      // Rollback writes and deletes to resolvedStore
+      try {
+        final rollbackWrites = <String, String>{};
+        final rollbackDeletes = <String>[];
+        for (final key in valuesToWrite.keys) {
+          if (resolvedSnapshot.containsKey(key)) {
+            rollbackWrites[key] = resolvedSnapshot[key]!;
+          } else {
+            rollbackDeletes.add(key);
+          }
+        }
+        for (final key in keysToDelete) {
+          if (resolvedSnapshot.containsKey(key)) {
+            rollbackWrites[key] = resolvedSnapshot[key]!;
+          }
+        }
+        if (rollbackWrites.isNotEmpty) {
+          await resolvedStore.writeAll(rollbackWrites);
+        }
+        if (rollbackDeletes.isNotEmpty) {
+          await resolvedStore.deleteAll(rollbackDeletes);
+        }
+      } catch (rollbackError, rollbackStackTrace) {
+        AppLog.instance.error(
+          'bootstrap',
+          'secure store promotion rollback failed',
+          error: rollbackError,
+          stackTrace: rollbackStackTrace,
+        );
+      }
+
+      AppLog.instance.error(
+        'bootstrap',
+        'secure store promotion failed during reconciliation. '
+        'Tainted write keys: ${valuesToWrite.keys.toList()}, '
+        'Tainted delete keys: $keysToDelete',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
     }
+
     _activeStore = resolvedStore;
     await _publishSnapshotIfChanged();
+
+    // Clean up legacy settings if resolved store is separate secure storage
+    if (resolvedStore.storesSecureValuesSeparately) {
+      try {
+        for (final key in _allowedKeys) {
+          if (key != _migrationSentinelKey) {
+            await _settingsRepository.remove(key);
+          }
+        }
+      } catch (error, stackTrace) {
+        AppLog.instance.error(
+          'bootstrap',
+          'secure store legacy cleanup failed after promotion',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
   }
 
   Future<void> _publishSnapshotIfChanged() async {

@@ -15,15 +15,19 @@ class SyncSnapshotJsonCodec {
 
   static SyncSnapshot decode(String rawJson) {
     final decoded = jsonDecode(rawJson);
-    if (decoded is! Map<String, dynamic>) {
+    if (decoded is! Map) {
       throw const FormatException('Sync snapshot JSON must be an object.');
     }
-    if (!_looksLikeSnapshotJson(decoded)) {
+    final json = decoded is Map<String, dynamic>
+        ? decoded
+        : decoded.map((key, value) => MapEntry(key.toString(), value));
+    _validateFormatVersion(json['format_version']);
+    if (!_looksLikeSnapshotJson(json)) {
       throw const FormatException(
         'Sync snapshot JSON must include at least one snapshot section.',
       );
     }
-    return _fromJson(decoded);
+    return _fromJson(json);
   }
 
   static Map<String, Object?> _toJson(SyncSnapshot snapshot) {
@@ -89,10 +93,14 @@ class SyncSnapshotJsonCodec {
 
     return raw.whereType<Map>().map((item) {
       final viewedAtRaw = item['viewed_at']?.toString();
-      final viewedAt = viewedAtRaw == null
-          ? DateTime.fromMillisecondsSinceEpoch(0)
-          : DateTime.tryParse(viewedAtRaw) ??
-              DateTime.fromMillisecondsSinceEpoch(0);
+      final viewedAt = viewedAtRaw == null || viewedAtRaw.isEmpty
+          ? null
+          : DateTime.tryParse(viewedAtRaw);
+      if (viewedAt == null) {
+        throw FormatException(
+          'Invalid history viewed_at timestamp: ${viewedAtRaw ?? '<missing>'}',
+        );
+      }
       return HistoryRecord(
         providerId: item['provider_id']?.toString() ?? '',
         roomId: item['room_id']?.toString() ?? '',
@@ -103,6 +111,25 @@ class SyncSnapshotJsonCodec {
     }).where((item) {
       return item.providerId.isNotEmpty && item.roomId.isNotEmpty;
     }).toList(growable: false);
+  }
+
+  static void _validateFormatVersion(Object? rawVersion) {
+    if (rawVersion == null) {
+      return;
+    }
+    final version = switch (rawVersion) {
+      int value => value,
+      num value => value.toInt(),
+      _ => int.tryParse(rawVersion.toString()),
+    };
+    if (version == null || version <= 0) {
+      throw const FormatException('Sync snapshot format_version is invalid.');
+    }
+    if (version > currentFormatVersion) {
+      throw FormatException(
+        'Sync snapshot format_version $version is newer than supported version $currentFormatVersion.',
+      );
+    }
   }
 
   static List<FollowRecord> _decodeFollows(Object? raw) {

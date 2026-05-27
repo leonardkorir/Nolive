@@ -45,8 +45,10 @@ void main() {
     expect(find.text('房间号 1002'), findsOneWidget);
     expect(find.text('哔哩哔哩 · 房间号 1001'), findsOneWidget);
     expect(find.text('斗鱼 · 房间号 1002'), findsOneWidget);
-    expect(find.byKey(const Key('watch-history-recording-switch')),
-        findsOneWidget);
+    expect(
+      find.byKey(const Key('watch-history-recording-switch')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('watch history page toggles recording preference', (

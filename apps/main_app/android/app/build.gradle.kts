@@ -28,6 +28,23 @@ val releaseSigningReady =
         !releaseKeyPassword.isNullOrBlank() &&
         !releaseStoreFilePath.contains("debug.keystore") &&
         releaseKeyAlias != "androiddebugkey"
+if (gradle.startParameter.taskNames.any { it.contains("Release") } &&
+    !releaseSigningReady) {
+    throw GradleException(
+        "Android release signing is not configured. Run scripts/create_main_app_android_signing.sh or provide a complete android/key.properties.",
+    )
+}
+tasks.configureEach {
+    if (name.contains("Release")) {
+        doFirst {
+            if (!releaseSigningReady) {
+                throw GradleException(
+                    "Android release signing is not configured. Run scripts/create_main_app_android_signing.sh or provide a complete android/key.properties.",
+                )
+            }
+        }
+    }
+}
 val androidSdkDir =
     localProperties.getProperty("sdk.dir")?.trim()
         ?: System.getenv("ANDROID_SDK_ROOT")?.trim()
@@ -46,7 +63,6 @@ val buildRustDanmakuMask by tasks.registering(Exec::class) {
     inputs.file(rustBuildScript)
     inputs.property("rustDanmakuMaskEnabled", rustDanmakuMaskEnabled)
     outputs.dir(rustJniLibsDir)
-    isIgnoreExitValue = true
 
     doFirst {
         delete(rustJniLibsDir)
@@ -62,15 +78,12 @@ val buildRustDanmakuMask by tasks.registering(Exec::class) {
     )
 
     doLast {
-        val exitCode = executionResult.get().exitValue
-        if (exitCode != 0) {
-            logger.warn(
-                "Rust danmaku mask build skipped or failed (exit code: $exitCode); Android runtime will use Dart fallback.",
-            )
-        } else if (!rustDanmakuMaskEnabled) {
+        if (!rustDanmakuMaskEnabled) {
             logger.lifecycle(
                 "Rust danmaku mask build disabled; Android runtime will use Dart fallback.",
             )
+        } else {
+            logger.lifecycle("Rust danmaku mask native artifacts built.")
         }
     }
 }
@@ -128,16 +141,7 @@ android {
             }
         }
         release {
-            if (keystorePropertiesFile.exists() && !releaseSigningReady) {
-                logger.warn(
-                    "Android release signing is not ready; falling back to debug signing for release build.",
-                )
-            }
-            signingConfig = if (releaseSigningReady) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(
@@ -146,6 +150,34 @@ android {
             )
         }
     }
+}
+
+val generatedPluginRegistrantFile =
+    project.file("src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java")
+val sanitizeGeneratedPluginRegistrantForRelease by tasks.registering {
+    doLast {
+        if (!generatedPluginRegistrantFile.exists()) {
+            return@doLast
+        }
+        val original = generatedPluginRegistrantFile.readText()
+        val sanitized =
+            original.replace(
+                Regex(
+                    """\s*try \{\s*flutterEngine\.getPlugins\(\)\.add\(new dev\.flutter\.plugins\.integration_test\.IntegrationTestPlugin\(\)\);\s*\} catch \(Exception e\) \{\s*Log\.e\(TAG, "Error registering plugin integration_test, dev\.flutter\.plugins\.integration_test\.IntegrationTestPlugin", e\);\s*\}\s*""",
+                    setOf(RegexOption.DOT_MATCHES_ALL),
+                ),
+                "\n",
+            )
+        if (sanitized != original) {
+            generatedPluginRegistrantFile.writeText(sanitized)
+            logger.lifecycle(
+                "Sanitized stale integration_test registrant entry for release build.",
+            )
+        }
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(sanitizeGeneratedPluginRegistrantForRelease)
 }
 
 flutter {

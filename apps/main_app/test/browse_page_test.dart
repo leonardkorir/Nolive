@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/browse/presentation/browse_page.dart';
+import 'package:nolive_app/src/features/search/presentation/search_page.dart';
 import 'package:nolive_app/src/shared/presentation/gestures/responsive_tab_swipe_switcher.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
 import 'test_feature_dependencies.dart';
@@ -118,13 +119,69 @@ void main() {
     await tester.tap(providerTab);
     await tester.pumpAndSettle();
 
-    final visualFinder =
-        find.byKey(const Key('browse-category-visual-twitch-leaf'));
+    final visualFinder = find.byKey(
+      const Key('browse-category-visual-twitch-leaf'),
+    );
     expect(visualFinder, findsOneWidget);
 
     final size = tester.getSize(visualFinder);
     expect(size.width, closeTo(size.height, 0.1));
   });
+
+  testWidgets(
+    'browse search action opens standalone search seeded with the selected provider',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final expectedIndex = _sortedSearchProviders(
+        bootstrap,
+      ).indexWhere((item) => item.id == ProviderId.douyu);
+
+      expect(expectedIndex, greaterThanOrEqualTo(0));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BrowsePage(
+            dependencies: buildBrowseFeatureDependencies(bootstrap),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final douyuTab = find.byKey(const Key('browse-provider-tab-douyu'));
+      await tester.ensureVisible(douyuTab);
+      await tester.tap(douyuTab, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('browse-appbar-search-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SearchPage), findsOneWidget);
+      expect(
+        tester
+            .widget<DefaultTabController>(
+              find.descendant(
+                of: find.byType(SearchPage),
+                matching: find.byType(DefaultTabController),
+              ),
+            )
+            .initialIndex,
+        expectedIndex,
+      );
+    },
+  );
+}
+
+List<ProviderDescriptor> _sortedSearchProviders(AppBootstrap bootstrap) {
+  final preferences = bootstrap.layoutPreferences.value;
+  return bootstrap
+      .listAvailableProviders()
+      .where((item) => item.supports(ProviderCapability.searchRooms))
+      .toList(growable: false)
+    ..sort(
+      (a, b) => preferences
+          .providerSortIndex(a.id.value)
+          .compareTo(preferences.providerSortIndex(b.id.value)),
+    );
 }
 
 class _MalformedBrowseCategoryProvider extends LiveProvider
@@ -132,9 +189,7 @@ class _MalformedBrowseCategoryProvider extends LiveProvider
   static const providerDescriptor = ProviderDescriptor(
     id: ProviderId.twitch,
     displayName: 'Twitch',
-    capabilities: {
-      ProviderCapability.categories,
-    },
+    capabilities: {ProviderCapability.categories},
     supportedPlatforms: {ProviderPlatform.android},
   );
 

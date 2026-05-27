@@ -39,7 +39,7 @@ void main() {
             streamerName: 'fixture streamer',
             isLive: true,
           ),
-          qualities: const [
+          qualities: [
             LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
           ],
           urls: const [
@@ -133,7 +133,7 @@ void main() {
             title: 'fixture room',
             streamerName: 'fixture streamer',
           ),
-          qualities: const [
+          qualities: [
             LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
           ],
           urls: const [],
@@ -181,7 +181,7 @@ void main() {
         streamerName: 'fixture streamer',
         isLive: true,
       ),
-      qualities: const [
+      qualities: [
         LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
       ],
       urls: const [
@@ -210,6 +210,79 @@ void main() {
     expect(validateProviderSmokeResult(result), isNull);
     expect(provider.searchCalls, 2);
     expect(provider.fetchRecommendRoomsCalls, 1);
+  });
+
+  test(
+      'provider smoke classifies bilibili login-required failures as auth skips',
+      () {
+    final bilibiliCase = ProviderSmokeCase(
+      name: 'bilibili',
+      provider: _FakeSmokeProvider(
+        rooms: const [],
+        detail: const LiveRoomDetail(
+          providerId: 'bilibili',
+          roomId: 'unused',
+          title: 'unused',
+          streamerName: 'unused',
+        ),
+        qualities: const [],
+        urls: const [],
+      ),
+      query: '聊天',
+    );
+    final douyuCase = ProviderSmokeCase(
+      name: 'douyu',
+      provider: _FakeSmokeProvider(
+        descriptor: const ProviderDescriptor(
+          id: ProviderId.douyu,
+          displayName: 'Douyu Fixture',
+          capabilities: {
+            ProviderCapability.searchRooms,
+            ProviderCapability.roomDetail,
+            ProviderCapability.playQualities,
+            ProviderCapability.playUrls,
+          },
+          supportedPlatforms: {ProviderPlatform.android},
+          maturity: ProviderMaturity.ready,
+        ),
+        rooms: const [],
+        detail: const LiveRoomDetail(
+          providerId: 'douyu',
+          roomId: 'unused',
+          title: 'unused',
+          streamerName: 'unused',
+        ),
+        qualities: const [],
+        urls: const [],
+      ),
+      query: '王者荣耀',
+    );
+    final error = ProviderParseException(
+      providerId: ProviderId.bilibili,
+      message: 'Bilibili load WBI keys failed with code -101: 账号未登录',
+    );
+
+    expect(
+      isKnownProviderSmokeAuthPreconditionFailure(bilibiliCase, error),
+      isTrue,
+    );
+    expect(
+      isKnownProviderSmokeAuthPreconditionFailure(douyuCase, error),
+      isFalse,
+    );
+    expect(providerSmokeStrictAuthEnabled(const {}), isFalse);
+    expect(
+      providerSmokeStrictAuthEnabled(
+        const {'NOLIVE_PROVIDER_SMOKE_STRICT_AUTH': '1'},
+      ),
+      isTrue,
+    );
+    expect(
+      providerSmokeStrictAuthEnabled(
+        const {'NOLIVE_PROVIDER_SMOKE_STRICT_AUTH': 'true'},
+      ),
+      isTrue,
+    );
   });
 }
 

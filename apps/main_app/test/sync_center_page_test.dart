@@ -5,9 +5,7 @@ import 'package:nolive_app/src/features/sync/application/sync_feature_dependenci
 import 'package:nolive_app/src/features/sync/presentation/sync_center_page.dart';
 
 void main() {
-  testWidgets('sync center page shows landing entries', (
-    tester,
-  ) async {
+  testWidgets('sync center page shows landing entries', (tester) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     await tester.pumpWidget(
       MaterialApp(

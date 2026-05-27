@@ -85,7 +85,7 @@ class TwitchPreviewDataSource implements TwitchDataSource {
       sourceUrl: 'https://www.twitch.tv/xqc',
       isLive: true,
       viewerCount: 22089,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'masterPlaylistUrl':
             'https://usher.ttvnw.net/api/v2/channel/hls/xqc.m3u8',
@@ -104,7 +104,7 @@ class TwitchPreviewDataSource implements TwitchDataSource {
       sourceUrl: 'https://www.twitch.tv/arky',
       isLive: true,
       viewerCount: 7944,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'masterPlaylistUrl':
             'https://usher.ttvnw.net/api/v2/channel/hls/arky.m3u8',
@@ -119,7 +119,7 @@ class TwitchPreviewDataSource implements TwitchDataSource {
           'https://static-cdn.jtvnw.net/jtv_user_pictures/a9ce83ba-c0bd-49cc-83bd-9d17647a211a-profile_image-70x70.png',
       sourceUrl: 'https://www.twitch.tv/zackrawrr',
       isLive: false,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
       metadata: {
         'masterPlaylistUrl':
             'https://usher.ttvnw.net/api/v2/channel/hls/zackrawrr.m3u8',

@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:live_storage/live_storage.dart';
 
 import '../model/sync_data_category.dart';
@@ -61,6 +63,9 @@ class RepositorySyncSnapshotService {
     if (clearExisting) {
       final existingSettings = await settingsRepository.listAll();
       for (final key in existingSettings.keys) {
+        if (shouldIncludeSettingInSnapshot?.call(key) == false) {
+          continue;
+        }
         await settingsRepository.remove(key);
       }
       await historyRepository.clear();
@@ -100,6 +105,9 @@ class RepositorySyncSnapshotService {
             if (key == 'blocked_keywords') {
               continue;
             }
+            if (shouldIncludeSettingInSnapshot?.call(key) == false) {
+              continue;
+            }
             await settingsRepository.remove(key);
           }
         }
@@ -128,6 +136,20 @@ class RepositorySyncSnapshotService {
         }
         return;
       case SyncDataCategory.blockedKeywords:
+        if (!clearExisting) {
+          final existing =
+              await settingsRepository.readValue<List>('blocked_keywords') ??
+                  const <Object?>[];
+          final merged = <String>[
+            for (final item in existing) item.toString(),
+            for (final item in snapshot.blockedKeywords) item,
+          ];
+          await settingsRepository.writeValue(
+            'blocked_keywords',
+            LinkedHashSet<String>.from(merged).toList(growable: false),
+          );
+          return;
+        }
         await settingsRepository.writeValue(
           'blocked_keywords',
           snapshot.blockedKeywords,

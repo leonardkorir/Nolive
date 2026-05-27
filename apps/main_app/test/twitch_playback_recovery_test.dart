@@ -5,35 +5,36 @@ import 'package:nolive_app/src/features/room/application/twitch_playback_recover
 
 void main() {
   test(
-      'twitch startup prefers auto and keeps requested fixed quality for promotion',
-      () {
-    const auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
-    const q1080 = LivePlayQuality(
-      id: '1080p60',
-      label: '1080p60',
-      sortOrder: 4,
-    );
+    'twitch startup prefers auto and keeps requested fixed quality for promotion',
+    () {
+      final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+      final q1080 = LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 4,
+      );
 
-    final plan = resolveTwitchStartupPlan(
-      qualities: const [auto, q1080],
-      requestedQuality: q1080,
-    );
+      final plan = resolveTwitchStartupPlan(
+        qualities: [auto, q1080],
+        requestedQuality: q1080,
+      );
 
-    expect(plan.startupQuality.id, 'auto');
-    expect(plan.promotionQuality?.id, '1080p60');
-    expect(plan.startupQuality.metadata?['twitchStartupAuto'], isTrue);
-  });
+      expect(plan.startupQuality.id, 'auto');
+      expect(plan.promotionQuality?.id, '1080p60');
+      expect(plan.startupQuality.metadata?['twitchStartupAuto'], isTrue);
+    },
+  );
 
   test('twitch startup keeps auto when it is already requested', () {
-    const auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
-    const q1080 = LivePlayQuality(
+    final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+    final q1080 = LivePlayQuality(
       id: '1080p60',
       label: '1080p60',
       sortOrder: 4,
     );
 
     final plan = resolveTwitchStartupPlan(
-      qualities: const [auto, q1080],
+      qualities: [auto, q1080],
       requestedQuality: auto,
     );
 
@@ -41,22 +42,24 @@ void main() {
     expect(plan.promotionQuality, isNull);
   });
 
-  test('twitch quality recovery avoids bouncing back to auto after startup',
-      () {
-    const auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
-    const q1080 = LivePlayQuality(
-      id: '1080p60',
-      label: '1080p60',
-      sortOrder: 4,
-    );
+  test(
+    'twitch quality recovery avoids bouncing back to auto after startup',
+    () {
+      final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+      final q1080 = LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 4,
+      );
 
-    final recovery = selectTwitchRecoveryQuality(
-      qualities: const [auto, q1080],
-      currentQuality: q1080,
-    );
+      final recovery = selectTwitchRecoveryQuality(
+        qualities: [auto, q1080],
+        currentQuality: q1080,
+      );
 
-    expect(recovery, isNull);
-  });
+      expect(recovery, isNull);
+    },
+  );
 
   test('twitch startup promotion waits for buffered playback progress', () {
     final state = PlayerState(
@@ -70,57 +73,49 @@ void main() {
   });
 
   test('twitch recovery delay is aggressive for auto startup retries', () {
-    const auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
-    const q1080 = LivePlayQuality(
+    final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+    final q1080 = LivePlayQuality(
       id: '1080p60',
       label: '1080p60',
       sortOrder: 4,
     );
 
     expect(
-      resolveTwitchRecoveryDelay(
-        currentQuality: auto,
-        recoveryAttempts: 0,
-      ),
+      resolveTwitchRecoveryDelay(currentQuality: auto, recoveryAttempts: 0),
       const Duration(seconds: 2),
     );
     expect(
-      resolveTwitchRecoveryDelay(
-        currentQuality: auto,
-        recoveryAttempts: 1,
-      ),
+      resolveTwitchRecoveryDelay(currentQuality: auto, recoveryAttempts: 1),
       const Duration(seconds: 2),
     );
     expect(
-      resolveTwitchRecoveryDelay(
-        currentQuality: q1080,
-        recoveryAttempts: 0,
-      ),
+      resolveTwitchRecoveryDelay(currentQuality: q1080, recoveryAttempts: 0),
       const Duration(seconds: 2),
     );
   });
 
   test(
-      'twitch startup recovery retries with promotion quality when auto stalls',
-      () {
-    const auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
-    const q1080 = LivePlayQuality(
-      id: '1080p60',
-      label: '1080p60',
-      sortOrder: 4,
-    );
+    'twitch startup recovery retries with promotion quality when auto stalls',
+    () {
+      final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+      final q1080 = LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 4,
+      );
 
-    final recovery = selectTwitchStartupRecoveryQuality(
-      currentQuality: auto,
-      promotionQuality: q1080,
-    );
+      final recovery = selectTwitchStartupRecoveryQuality(
+        currentQuality: auto,
+        promotionQuality: q1080,
+      );
 
-    expect(recovery?.id, '1080p60');
-  });
+      expect(recovery?.id, '1080p60');
+    },
+  );
 
   test('twitch startup recovery does not override fixed startup quality', () {
-    const auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
-    const q1080 = LivePlayQuality(
+    final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+    final q1080 = LivePlayQuality(
       id: '1080p60',
       label: '1080p60',
       sortOrder: 4,
@@ -137,7 +132,8 @@ void main() {
   test('twitch recovery prefers site line after stuck popout playback', () {
     final playbackSource = PlaybackSource(
       url: Uri.parse(
-          'http://127.0.0.1:33101/twitch-ad-guard/popout/stream.m3u8'),
+        'http://127.0.0.1:33101/twitch-ad-guard/popout/stream.m3u8',
+      ),
     );
     final playUrls = [
       const LivePlayUrl(
@@ -162,8 +158,9 @@ void main() {
 
   test('twitch recovery falls back to any other line when site is absent', () {
     final playbackSource = PlaybackSource(
-      url:
-          Uri.parse('http://127.0.0.1:33101/twitch-ad-guard/embed/stream.m3u8'),
+      url: Uri.parse(
+        'http://127.0.0.1:33101/twitch-ad-guard/embed/stream.m3u8',
+      ),
     );
     final playUrls = [
       const LivePlayUrl(
@@ -238,80 +235,84 @@ void main() {
     expect(stopDecision.action, TwitchFixedRecoveryAction.stop);
   });
 
-  test('twitch refresh line keeps same upstream when proxy session changes',
-      () {
-    final playbackSource = PlaybackSource(
-      url: Uri.parse(
-        'http://127.0.0.1:33101/twitch-ad-guard/session-a/stream.m3u8',
-      ),
-    );
-    final currentPlayUrls = [
-      const LivePlayUrl(
-        url: 'http://127.0.0.1:33101/twitch-ad-guard/session-b/stream.m3u8',
-        lineLabel: '默认 Popout',
-        metadata: {
-          'playerType': 'popout',
-          'upstreamUrl': 'https://example.com/popout.m3u8',
-        },
-      ),
-      const LivePlayUrl(
-        url: 'http://127.0.0.1:33101/twitch-ad-guard/session-a/stream.m3u8',
-        lineLabel: '备用 Site',
-        metadata: {
-          'playerType': 'site',
-          'upstreamUrl': 'https://example.com/site.m3u8',
-        },
-      ),
-    ];
-    final refreshedPlayUrls = [
-      const LivePlayUrl(
-        url: 'http://127.0.0.1:33101/twitch-ad-guard/session-d/stream.m3u8',
-        lineLabel: '默认 Popout',
-        metadata: {
-          'playerType': 'popout',
-          'upstreamUrl': 'https://example.com/popout.m3u8',
-        },
-      ),
-      const LivePlayUrl(
-        url: 'http://127.0.0.1:33101/twitch-ad-guard/session-c/stream.m3u8',
-        lineLabel: '备用 Site',
-        metadata: {
-          'playerType': 'site',
-          'upstreamUrl': 'https://example.com/site.m3u8',
-        },
-      ),
-    ];
+  test(
+    'twitch refresh line keeps same upstream when proxy session changes',
+    () {
+      final playbackSource = PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:33101/twitch-ad-guard/session-a/stream.m3u8',
+        ),
+      );
+      final currentPlayUrls = [
+        const LivePlayUrl(
+          url: 'http://127.0.0.1:33101/twitch-ad-guard/session-b/stream.m3u8',
+          lineLabel: '默认 Popout',
+          metadata: {
+            'playerType': 'popout',
+            'upstreamUrl': 'https://example.com/popout.m3u8',
+          },
+        ),
+        const LivePlayUrl(
+          url: 'http://127.0.0.1:33101/twitch-ad-guard/session-a/stream.m3u8',
+          lineLabel: '备用 Site',
+          metadata: {
+            'playerType': 'site',
+            'upstreamUrl': 'https://example.com/site.m3u8',
+          },
+        ),
+      ];
+      final refreshedPlayUrls = [
+        const LivePlayUrl(
+          url: 'http://127.0.0.1:33101/twitch-ad-guard/session-d/stream.m3u8',
+          lineLabel: '默认 Popout',
+          metadata: {
+            'playerType': 'popout',
+            'upstreamUrl': 'https://example.com/popout.m3u8',
+          },
+        ),
+        const LivePlayUrl(
+          url: 'http://127.0.0.1:33101/twitch-ad-guard/session-c/stream.m3u8',
+          lineLabel: '备用 Site',
+          metadata: {
+            'playerType': 'site',
+            'upstreamUrl': 'https://example.com/site.m3u8',
+          },
+        ),
+      ];
 
-    final refreshedLine = selectTwitchRefreshLine(
-      playbackSource: playbackSource,
-      currentPlayUrls: currentPlayUrls,
-      refreshedPlayUrls: refreshedPlayUrls,
-    );
+      final refreshedLine = selectTwitchRefreshLine(
+        playbackSource: playbackSource,
+        currentPlayUrls: currentPlayUrls,
+        refreshedPlayUrls: refreshedPlayUrls,
+      );
 
-    expect(refreshedLine?.lineLabel, '备用 Site');
-    expect(refreshedLine?.metadata?['playerType'], 'site');
-    expect(
-      refreshedLine?.metadata?['upstreamUrl'],
-      'https://example.com/site.m3u8',
-    );
-  });
+      expect(refreshedLine?.lineLabel, '备用 Site');
+      expect(refreshedLine?.metadata?['playerType'], 'site');
+      expect(
+        refreshedLine?.metadata?['upstreamUrl'],
+        'https://example.com/site.m3u8',
+      );
+    },
+  );
 
-  test('twitch recovery only triggers when playback remains near zero progress',
-      () {
-    final idle = PlayerState(
-      status: PlaybackStatus.playing,
-      position: Duration.zero,
-      buffered: Duration.zero,
-      source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
-    );
-    final healthy = PlayerState(
-      status: PlaybackStatus.playing,
-      position: Duration(seconds: 6),
-      buffered: Duration(seconds: 9),
-      source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
-    );
+  test(
+    'twitch recovery only triggers when playback remains near zero progress',
+    () {
+      final idle = PlayerState(
+        status: PlaybackStatus.playing,
+        position: Duration.zero,
+        buffered: Duration.zero,
+        source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
+      );
+      final healthy = PlayerState(
+        status: PlaybackStatus.playing,
+        position: Duration(seconds: 6),
+        buffered: Duration(seconds: 9),
+        source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
+      );
 
-    expect(shouldAttemptTwitchPlaybackRecovery(idle), isTrue);
-    expect(shouldAttemptTwitchPlaybackRecovery(healthy), isFalse);
-  });
+      expect(shouldAttemptTwitchPlaybackRecovery(idle), isTrue);
+      expect(shouldAttemptTwitchPlaybackRecovery(healthy), isFalse);
+    },
+  );
 }

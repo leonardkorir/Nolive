@@ -58,10 +58,14 @@ void main() {
     );
 
     expect(
-        find.byKey(const Key('room-fullscreen-lock-button')), findsOneWidget);
+      find.byKey(const Key('room-fullscreen-lock-button')),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('room-exit-fullscreen-button')), findsNothing);
     expect(
-        find.byKey(const Key('room-fullscreen-refresh-button')), findsNothing);
+      find.byKey(const Key('room-fullscreen-refresh-button')),
+      findsNothing,
+    );
   });
 
   testWidgets('locked fullscreen can hide lock button independently', (
@@ -113,61 +117,63 @@ void main() {
   });
 
   testWidgets(
-      'fullscreen overlay adapts compact chrome and sanitizes malformed labels',
-      (tester) async {
-    configureTestViewport(tester, const Size(640, 360));
-    final badLabel =
-        '游${String.fromCharCode(0xD800)}戏${String.fromCharCode(0xDC00)}厅';
+    'fullscreen overlay adapts compact chrome and sanitizes malformed labels',
+    (tester) async {
+      configureTestViewport(tester, const Size(640, 360));
+      final badLabel =
+          '游${String.fromCharCode(0xD800)}戏${String.fromCharCode(0xDC00)}厅';
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: RoomFullscreenOverlay(
-            player: const SizedBox.expand(),
-            followDrawer: const SizedBox.shrink(),
-            showChrome: true,
-            showLockButton: true,
-            lockControls: false,
-            gestureTipText: badLabel,
-            pipSupported: true,
-            supportsDesktopMiniWindow: true,
-            desktopMiniWindowActive: false,
-            supportsPlayerCapture: true,
-            showDanmakuOverlay: true,
-            title: badLabel,
-            liveDuration: '00:10:00',
-            qualityLabel: badLabel,
-            lineLabel: badLabel,
-            onToggleChrome: () {},
-            onOpenFollowDrawer: () {},
-            onToggleFullscreen: () {},
-            onVerticalDragStart: (_) {},
-            onVerticalDragUpdate: (_) {},
-            onVerticalDragEnd: (_) {},
-            onExitFullscreen: () {},
-            onEnterPictureInPicture: () {},
-            onToggleDesktopMiniWindow: () {},
-            onCapture: () {},
-            onShowDebug: () {},
-            onShowMore: () {},
-            onToggleFullscreenLock: () {},
-            onRefresh: () {},
-            onToggleDanmakuOverlay: () {},
-            onOpenDanmakuSettings: () {},
-            onShowQuality: () {},
-            onShowLine: () {},
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RoomFullscreenOverlay(
+              player: const SizedBox.expand(),
+              followDrawer: const SizedBox.shrink(),
+              showChrome: true,
+              showLockButton: true,
+              lockControls: false,
+              gestureTipText: badLabel,
+              pipSupported: true,
+              supportsDesktopMiniWindow: true,
+              desktopMiniWindowActive: false,
+              supportsPlayerCapture: true,
+              showDanmakuOverlay: true,
+              title: badLabel,
+              liveDuration: '00:10:00',
+              qualityLabel: badLabel,
+              lineLabel: badLabel,
+              onToggleChrome: () {},
+              onOpenFollowDrawer: () {},
+              onToggleFullscreen: () {},
+              onVerticalDragStart: (_) {},
+              onVerticalDragUpdate: (_) {},
+              onVerticalDragEnd: (_) {},
+              onExitFullscreen: () {},
+              onEnterPictureInPicture: () {},
+              onToggleDesktopMiniWindow: () {},
+              onCapture: () {},
+              onShowDebug: () {},
+              onShowMore: () {},
+              onToggleFullscreenLock: () {},
+              onRefresh: () {},
+              onToggleDanmakuOverlay: () {},
+              onOpenDanmakuSettings: () {},
+              onShowQuality: () {},
+              onShowLine: () {},
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    expect(tester.takeException(), isNull);
-    expect(find.text('游戏厅'), findsWidgets);
-  });
+      expect(tester.takeException(), isNull);
+      expect(find.text('游戏厅'), findsWidgets);
+    },
+  );
 
-  testWidgets('fullscreen overlay avoids overflow on ultra compact widths',
-      (tester) async {
+  testWidgets('fullscreen overlay avoids overflow on ultra compact widths', (
+    tester,
+  ) async {
     configureTestViewport(tester, const Size(480, 320));
 
     await tester.pumpWidget(
@@ -215,7 +221,9 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-        find.byKey(const Key('room-fullscreen-more-button')), findsOneWidget);
+      find.byKey(const Key('room-fullscreen-more-button')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const Key('room-fullscreen-capture-button')),
       findsNothing,
@@ -224,14 +232,12 @@ void main() {
       find.byKey(const Key('room-fullscreen-desktop-mini-window-button')),
       findsNothing,
     );
-    expect(
-      find.byKey(const Key('room-fullscreen-debug-button')),
-      findsNothing,
-    );
+    expect(find.byKey(const Key('room-fullscreen-debug-button')), findsNothing);
   });
 
-  testWidgets('fullscreen overlay keeps chrome stable on compact landscape',
-      (tester) async {
+  testWidgets('fullscreen overlay keeps chrome stable on compact landscape', (
+    tester,
+  ) async {
     configureTestViewport(tester, const Size(640, 280));
 
     await tester.pumpWidget(
@@ -279,17 +285,22 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-        find.byKey(const Key('room-fullscreen-more-button')), findsOneWidget);
-    expect(find.byKey(const Key('room-fullscreen-quality-button')),
-        findsOneWidget);
+      find.byKey(const Key('room-fullscreen-more-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('room-fullscreen-quality-button')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const Key('room-fullscreen-line-button')),
       findsOneWidget,
     );
   });
 
-  testWidgets('fullscreen overlay avoids overflow on typical phone landscape',
-      (tester) async {
+  testWidgets('fullscreen overlay avoids overflow on typical phone landscape', (
+    tester,
+  ) async {
     configureTestViewport(tester, const Size(844, 390));
 
     await tester.pumpWidget(
@@ -338,15 +349,18 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-        find.byKey(const Key('room-fullscreen-more-button')), findsOneWidget);
+      find.byKey(const Key('room-fullscreen-more-button')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const Key('room-fullscreen-quality-button')),
       findsOneWidget,
     );
   });
 
-  testWidgets('fullscreen overlay avoids overflow on narrow phone fullscreen',
-      (tester) async {
+  testWidgets('fullscreen overlay avoids overflow on narrow phone fullscreen', (
+    tester,
+  ) async {
     configureTestViewport(tester, const Size(412, 220));
 
     await tester.pumpWidget(
@@ -404,66 +418,68 @@ void main() {
   });
 
   testWidgets(
-      'fullscreen overlay avoids overflow on compact xperia landscape viewport',
-      (tester) async {
-    configureTestViewport(tester, const Size(384, 220));
+    'fullscreen overlay avoids overflow on compact xperia landscape viewport',
+    (tester) async {
+      configureTestViewport(tester, const Size(384, 220));
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: RoomFullscreenOverlay(
-            player: const SizedBox.expand(),
-            followDrawer: const SizedBox.shrink(),
-            showChrome: true,
-            showLockButton: true,
-            lockControls: false,
-            gestureTipText: null,
-            pipSupported: true,
-            supportsDesktopMiniWindow: true,
-            desktopMiniWindowActive: false,
-            supportsPlayerCapture: true,
-            showDanmakuOverlay: true,
-            title: 'queen_kitty1818 live room title for compact landscape',
-            liveDuration: '12:34:56',
-            qualityLabel: '1080p 原画',
-            lineLabel: '主线路-回源',
-            onToggleChrome: () {},
-            onOpenFollowDrawer: () {},
-            onToggleFullscreen: () {},
-            onVerticalDragStart: (_) {},
-            onVerticalDragUpdate: (_) {},
-            onVerticalDragEnd: (_) {},
-            onExitFullscreen: () {},
-            onEnterPictureInPicture: () {},
-            onToggleDesktopMiniWindow: () {},
-            onCapture: () {},
-            onShowDebug: () {},
-            onShowMore: () {},
-            onToggleFullscreenLock: () {},
-            onRefresh: () {},
-            onToggleDanmakuOverlay: () {},
-            onOpenDanmakuSettings: () {},
-            onShowQuality: () {},
-            onShowLine: () {},
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RoomFullscreenOverlay(
+              player: const SizedBox.expand(),
+              followDrawer: const SizedBox.shrink(),
+              showChrome: true,
+              showLockButton: true,
+              lockControls: false,
+              gestureTipText: null,
+              pipSupported: true,
+              supportsDesktopMiniWindow: true,
+              desktopMiniWindowActive: false,
+              supportsPlayerCapture: true,
+              showDanmakuOverlay: true,
+              title: 'queen_kitty1818 live room title for compact landscape',
+              liveDuration: '12:34:56',
+              qualityLabel: '1080p 原画',
+              lineLabel: '主线路-回源',
+              onToggleChrome: () {},
+              onOpenFollowDrawer: () {},
+              onToggleFullscreen: () {},
+              onVerticalDragStart: (_) {},
+              onVerticalDragUpdate: (_) {},
+              onVerticalDragEnd: (_) {},
+              onExitFullscreen: () {},
+              onEnterPictureInPicture: () {},
+              onToggleDesktopMiniWindow: () {},
+              onCapture: () {},
+              onShowDebug: () {},
+              onShowMore: () {},
+              onToggleFullscreenLock: () {},
+              onRefresh: () {},
+              onToggleDanmakuOverlay: () {},
+              onOpenDanmakuSettings: () {},
+              onShowQuality: () {},
+              onShowLine: () {},
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    expect(tester.takeException(), isNull);
-    expect(
-      find.byKey(const Key('room-fullscreen-exit-button')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('room-fullscreen-quality-button')),
-      findsOneWidget,
-    );
-  });
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const Key('room-fullscreen-exit-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('room-fullscreen-quality-button')),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('fullscreen overlay avoids overflow on wide phone landscape',
-      (tester) async {
+  testWidgets('fullscreen overlay avoids overflow on wide phone landscape', (
+    tester,
+  ) async {
     configureTestViewport(tester, const Size(932, 412));
 
     await tester.pumpWidget(
@@ -520,8 +536,9 @@ void main() {
     );
   });
 
-  testWidgets('fullscreen overlay avoids overflow on xperia landscape width',
-      (tester) async {
+  testWidgets('fullscreen overlay avoids overflow on xperia landscape width', (
+    tester,
+  ) async {
     configureTestViewport(tester, const Size(896, 411));
 
     await tester.pumpWidget(
@@ -569,6 +586,8 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-        find.byKey(const Key('room-fullscreen-more-button')), findsOneWidget);
+      find.byKey(const Key('room-fullscreen-more-button')),
+      findsOneWidget,
+    );
   });
 }

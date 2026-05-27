@@ -13,10 +13,7 @@ class _RoomChatPanelStatus extends ChangeNotifier {
     required this.hasDanmakuSession,
   });
 
-  void update({
-    bool? ancillaryLoading,
-    bool? hasDanmakuSession,
-  }) {
+  void update({bool? ancillaryLoading, bool? hasDanmakuSession}) {
     this.ancillaryLoading = ancillaryLoading ?? this.ancillaryLoading;
     this.hasDanmakuSession = hasDanmakuSession ?? this.hasDanmakuSession;
     notifyListeners();
@@ -24,8 +21,9 @@ class _RoomChatPanelStatus extends ChangeNotifier {
 }
 
 void main() {
-  testWidgets('room chat panel shows ancillary loading empty state',
-      (tester) async {
+  testWidgets('room chat panel shows ancillary loading empty state', (
+    tester,
+  ) async {
     final messages = ValueNotifier<List<LiveMessage>>(const []);
     final status = _RoomChatPanelStatus(
       ancillaryLoading: true,
@@ -66,55 +64,58 @@ void main() {
     expect(find.text('视频和关注状态会继续在后台加载'), findsOneWidget);
   });
 
-  testWidgets('room chat panel shows chaturbate status card and refresh action',
-      (tester) async {
-    final messages = ValueNotifier<List<LiveMessage>>(const []);
-    final status = _RoomChatPanelStatus(
-      ancillaryLoading: false,
-      hasDanmakuSession: false,
-    );
-    final scrollController = ScrollController();
-    var refreshCount = 0;
-    addTearDown(messages.dispose);
-    addTearDown(status.dispose);
-    addTearDown(scrollController.dispose);
+  testWidgets(
+    'room chat panel shows chaturbate status card and refresh action',
+    (tester) async {
+      final messages = ValueNotifier<List<LiveMessage>>(const []);
+      final status = _RoomChatPanelStatus(
+        ancillaryLoading: false,
+        hasDanmakuSession: false,
+      );
+      final scrollController = ScrollController();
+      var refreshCount = 0;
+      addTearDown(messages.dispose);
+      addTearDown(status.dispose);
+      addTearDown(scrollController.dispose);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: RoomChatPanel(
-            messagesListenable: messages,
-            statusListenable: status,
-            resolveAncillaryLoading: () => status.ancillaryLoading,
-            resolveHasDanmakuSession: () => status.hasDanmakuSession,
-            room: const LiveRoomDetail(
-              providerId: 'chaturbate',
-              roomId: 'cb-room',
-              title: 'cb-title',
-              streamerName: 'cb-streamer',
-              isLive: true,
-              metadata: <String, dynamic>{'roomStatus': 'private show'},
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RoomChatPanel(
+              messagesListenable: messages,
+              statusListenable: status,
+              resolveAncillaryLoading: () => status.ancillaryLoading,
+              resolveHasDanmakuSession: () => status.hasDanmakuSession,
+              room: const LiveRoomDetail(
+                providerId: 'chaturbate',
+                roomId: 'cb-room',
+                title: 'cb-title',
+                streamerName: 'cb-streamer',
+                isLive: true,
+                metadata: <String, dynamic>{'roomStatus': 'private show'},
+              ),
+              scrollController: scrollController,
+              chatTextSize: 14,
+              chatTextGap: 4,
+              chatBubbleStyle: false,
+              onRefreshRoom: () {
+                refreshCount += 1;
+              },
             ),
-            scrollController: scrollController,
-            chatTextSize: 14,
-            chatTextGap: 4,
-            chatBubbleStyle: false,
-            onRefreshRoom: () {
-              refreshCount += 1;
-            },
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('私密表演中'), findsOneWidget);
-    expect(find.textContaining('Private Show'), findsOneWidget);
-    await tester.tap(find.text('刷新房间状态'));
-    expect(refreshCount, 1);
-  });
+      expect(find.text('私密表演中'), findsOneWidget);
+      expect(find.textContaining('Private Show'), findsOneWidget);
+      await tester.tap(find.text('刷新房间状态'));
+      expect(refreshCount, 1);
+    },
+  );
 
-  testWidgets('room chat panel sorts visible messages by timestamp',
-      (tester) async {
+  testWidgets('room chat panel sorts visible messages by timestamp', (
+    tester,
+  ) async {
     final messages = ValueNotifier<List<LiveMessage>>([
       LiveMessage(
         type: LiveMessageType.chat,
@@ -169,14 +170,19 @@ void main() {
       ),
     );
 
-    final tiles = tester
-        .widgetList<RoomChatMessageTile>(find.byType(RoomChatMessageTile));
-    expect(tiles.map((tile) => tile.message.content).toList(),
-        ['first', 'second', 'third']);
+    final tiles = tester.widgetList<RoomChatMessageTile>(
+      find.byType(RoomChatMessageTile),
+    );
+    expect(tiles.map((tile) => tile.message.content).toList(), [
+      'first',
+      'second',
+      'third',
+    ]);
   });
 
-  testWidgets('room chat panel normalizes malformed UTF-16 message text',
-      (tester) async {
+  testWidgets('room chat panel normalizes malformed UTF-16 message text', (
+    tester,
+  ) async {
     final messages = ValueNotifier<List<LiveMessage>>([
       LiveMessage(
         type: LiveMessageType.chat,
@@ -225,59 +231,58 @@ void main() {
   });
 
   testWidgets(
-      'room chat panel exits loading copy once danmaku session is ready even without messages',
-      (tester) async {
-    final messages = ValueNotifier<List<LiveMessage>>(const []);
-    final status = _RoomChatPanelStatus(
-      ancillaryLoading: true,
-      hasDanmakuSession: false,
-    );
-    final scrollController = ScrollController();
-    addTearDown(messages.dispose);
-    addTearDown(status.dispose);
-    addTearDown(scrollController.dispose);
+    'room chat panel exits loading copy once danmaku session is ready even without messages',
+    (tester) async {
+      final messages = ValueNotifier<List<LiveMessage>>(const []);
+      final status = _RoomChatPanelStatus(
+        ancillaryLoading: true,
+        hasDanmakuSession: false,
+      );
+      final scrollController = ScrollController();
+      addTearDown(messages.dispose);
+      addTearDown(status.dispose);
+      addTearDown(scrollController.dispose);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: RoomChatPanel(
-            messagesListenable: messages,
-            statusListenable: status,
-            resolveAncillaryLoading: () => status.ancillaryLoading,
-            resolveHasDanmakuSession: () => status.hasDanmakuSession,
-            room: const LiveRoomDetail(
-              providerId: 'douyu',
-              roomId: '2140934',
-              title: '单机王中王',
-              streamerName: '老皮历险记',
-              isLive: true,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RoomChatPanel(
+              messagesListenable: messages,
+              statusListenable: status,
+              resolveAncillaryLoading: () => status.ancillaryLoading,
+              resolveHasDanmakuSession: () => status.hasDanmakuSession,
+              room: const LiveRoomDetail(
+                providerId: 'douyu',
+                roomId: '2140934',
+                title: '单机王中王',
+                streamerName: '老皮历险记',
+                isLive: true,
+              ),
+              scrollController: scrollController,
+              chatTextSize: 14,
+              chatTextGap: 4,
+              chatBubbleStyle: false,
+              onRefreshRoom: () {},
             ),
-            scrollController: scrollController,
-            chatTextSize: 14,
-            chatTextGap: 4,
-            chatBubbleStyle: false,
-            onRefreshRoom: () {},
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('房间页已进入，正在补齐聊天数据'), findsOneWidget);
+      expect(find.text('房间页已进入，正在补齐聊天数据'), findsOneWidget);
 
-    status.update(
-      ancillaryLoading: true,
-      hasDanmakuSession: true,
-    );
-    await tester.pump();
+      status.update(ancillaryLoading: true, hasDanmakuSession: true);
+      await tester.pump();
 
-    expect(find.text('房间页已进入，正在补齐聊天数据'), findsNothing);
-    expect(find.text('当前还没有聊天消息'), findsOneWidget);
-    expect(find.text('弹幕连接已建立，等待新消息'), findsOneWidget);
-    expect(find.text('新消息到达后会在这里继续滚动'), findsOneWidget);
-  });
+      expect(find.text('房间页已进入，正在补齐聊天数据'), findsNothing);
+      expect(find.text('当前还没有聊天消息'), findsOneWidget);
+      expect(find.text('弹幕连接已建立，等待新消息'), findsOneWidget);
+      expect(find.text('新消息到达后会在这里继续滚动'), findsOneWidget);
+    },
+  );
 
-  testWidgets('room super chat panel shows plain empty state text',
-      (tester) async {
+  testWidgets('room super chat panel shows plain empty state text', (
+    tester,
+  ) async {
     final messages = ValueNotifier<List<LiveMessage>>(const []);
     addTearDown(messages.dispose);
 
@@ -295,8 +300,9 @@ void main() {
     expect(find.text('当前没有 SC 会话。'), findsOneWidget);
   });
 
-  testWidgets('room super chat panel caps output at 24 entries',
-      (tester) async {
+  testWidgets('room super chat panel caps output at 24 entries', (
+    tester,
+  ) async {
     final messages = ValueNotifier<List<LiveMessage>>([
       for (var index = 0; index < 30; index += 1)
         LiveMessage(

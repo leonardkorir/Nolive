@@ -110,6 +110,30 @@ void main() {
       });
 
       test(
+          'live twitch runtime returns preferred surface before slow alternates',
+          () async {
+        final provider = TwitchProvider(
+          dataSource: TwitchLiveDataSource(
+            apiClient: _FixtureTwitchApiClient(
+              stalledPlayerTypes: const {'embed', 'site', 'autoplay'},
+            ),
+            alternateSurfaceTimeout: const Duration(seconds: 3),
+          ),
+        );
+
+        final detail = await provider.fetchRoomDetail('xqc');
+        final stopwatch = Stopwatch()..start();
+        final qualities = await provider.fetchPlayQualities(detail).timeout(
+              const Duration(seconds: 1),
+            );
+        stopwatch.stop();
+
+        expect(qualities.length, greaterThan(1));
+        expect(qualities.first.id, 'auto');
+        expect(stopwatch.elapsed, lessThan(const Duration(seconds: 1)));
+      });
+
+      test(
           'live twitch runtime does not wait for slower resolver when direct bootstrap is usable',
           () async {
         final provider = TwitchProvider(
@@ -163,8 +187,8 @@ void main() {
                 deviceId: 'resolver-device-id',
                 clientSessionId: 'resolver-session-id',
                 clientIntegrity: 'resolver-integrity',
-                sourceUrl:
-                    detail.sourceUrl ?? 'https://www.twitch.tv/${detail.roomId}',
+                sourceUrl: detail.sourceUrl ??
+                    'https://www.twitch.tv/${detail.roomId}',
                 masterPlaylistUrl: resolverPlaylistUrl,
                 cookie: 'unique_id=resolver-cookie',
                 userAgent: 'resolver-agent',

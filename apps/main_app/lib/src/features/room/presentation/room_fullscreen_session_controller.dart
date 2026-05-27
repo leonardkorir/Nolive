@@ -51,6 +51,7 @@ class RoomFullscreenSessionBindings {
     required this.resolvePipAspectRatio,
     required this.resolveScreenSize,
     required this.resolvePlaybackSourceForLifecycleRestore,
+    required this.resolveIsVerticalVideo,
   });
 
   final RoomFullscreenRuntimeContext runtime;
@@ -68,6 +69,7 @@ class RoomFullscreenSessionBindings {
   final Size Function() resolveScreenSize;
   final Future<PlaybackSource?> Function()
       resolvePlaybackSourceForLifecycleRestore;
+  final bool Function() resolveIsVerticalVideo;
 }
 
 class RoomFullscreenSessionController extends ChangeNotifier {
@@ -158,8 +160,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   RoomViewUiState get viewUiState => _viewUiState;
   RoomGestureUiState get gestureUiState => _gestureUiState;
   bool get preserveRoomTransitionOnDispose => _preserveRoomTransitionOnDispose;
-  bool get fullscreenSessionActive =>
-      _viewUiState.isFullscreen || _viewUiState.fullscreenBootstrapPending;
+  bool get fullscreenSessionActive => _viewUiState.fullscreenSessionActive;
   bool get supportsDesktopMiniWindow => platforms.desktopWindow.isSupported;
   bool get desktopMiniWindowActive => _viewUiState.desktopMiniWindowActive;
 
@@ -172,10 +173,23 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   }
 
   Future<void> initialize({required bool startInFullscreen}) async {
+    _chromeController.cancelAutoHideTimers();
+    _replaceGestureUiState(const RoomGestureUiState());
+    _replaceViewUiState(
+      _viewUiState.copyWith(
+        isFullscreen: false,
+        fullscreenBootstrapPending: startInFullscreen,
+        fullscreenBootstrapScheduled: false,
+        showInlinePlayerChrome: !startInFullscreen,
+        showFullscreenChrome: true,
+        showFullscreenLockButton: true,
+        lockFullscreenControls: false,
+        showFullscreenFollowDrawer: false,
+      ),
+    );
+    _chromeController.clearGestureTip(rescheduleChrome: false);
     if (startInFullscreen) {
-      _replaceViewUiState(
-        _viewUiState.copyWith(fullscreenBootstrapPending: true),
-      );
+      _chromeController.scheduleFullscreenChromeAutoHide();
     }
     await setScreenAwake(true);
     await _pipCoordinator.primeRuntimeState();
@@ -189,6 +203,9 @@ class RoomFullscreenSessionController extends ChangeNotifier {
 
   void prepareForFollowRoomTransition() {
     _preserveRoomTransitionOnDispose = fullscreenSessionActive;
+    _chromeController.cancelAutoHideTimers();
+    _replaceGestureUiState(const RoomGestureUiState());
+    _chromeController.clearGestureTip(rescheduleChrome: false);
     _chromeController.hideFullscreenFollowDrawer();
   }
 
@@ -259,7 +276,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   }
 
   Future<void> enterFullscreen() async {
-    if (_viewUiState.isFullscreen) {
+    if (_disposed || _viewUiState.isFullscreen) {
       return;
     }
     bindings.trace('enter fullscreen');
@@ -269,6 +286,9 @@ class RoomFullscreenSessionController extends ChangeNotifier {
             _chromeController.scheduleInlineChromeAutoHide,
         scheduleInlineChromeAfterExit: false,
       );
+      if (_disposed || _viewUiState.isFullscreen) {
+        return;
+      }
     }
     _chromeController.cancelAutoHideTimers();
     _replaceViewUiState(
@@ -277,6 +297,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
         showInlinePlayerChrome: false,
         showFullscreenChrome: true,
         showFullscreenLockButton: true,
+        lockFullscreenControls: false,
         showFullscreenFollowDrawer: false,
       ),
     );
@@ -286,7 +307,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   }
 
   Future<void> exitFullscreen() async {
-    if (!_viewUiState.isFullscreen) {
+    if (_disposed || !_viewUiState.isFullscreen) {
       return;
     }
     bindings.trace('exit fullscreen');
@@ -307,33 +328,74 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   }
 
   Future<void> applyFullscreenSystemUi() async {
-    await _applyOverlayStyle(darkBackground: true);
-    if (platforms.androidPlaybackBridge.isSupported) {
-      await platforms.androidPlaybackBridge.lockLandscape();
-      await platforms.systemUi.setEnabledSystemUIMode(
-        SystemUiMode.immersiveSticky,
-      );
+    if (_disposed) {
       return;
     }
-    await platforms.systemUi.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    try {
+      await _applyOverlayStyle(darkBackground: true);
+      if (_disposed) {
+        return;
+      }
+      final verticalVideo = bindings.resolveIsVerticalVideo();
+      if (platforms.androidPlaybackBridge.isSupported) {
+        if (verticalVideo) {
+          await platforms.androidPlaybackBridge.lockPortraitFullscreen();
+        } else {
+          await platforms.androidPlaybackBridge.lockLandscape();
+        }
+        if (_disposed) {
+          return;
+        }
+        await platforms.systemUi.setEnabledSystemUIMode(
+          SystemUiMode.immersiveSticky,
+        );
+        return;
+      }
+      if (verticalVideo) {
+        await platforms.systemUi.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+        ]);
+      } else {
+        await platforms.systemUi.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      }
+    } catch (error) {
+      bindings.trace('apply fullscreen system ui failed: $error');
+      bindings.showMessage('切换全屏失败：$error');
+    }
   }
 
   Future<void> restoreSystemUi() async {
-    if (platforms.androidPlaybackBridge.isSupported) {
-      await platforms.androidPlaybackBridge.lockPortrait();
-    } else {
-      await platforms.systemUi.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-      ]);
+    if (_disposed) {
+      return;
     }
-    await _applyOverlayStyle(
-      darkBackground: bindings.resolveDarkThemeActive(),
-    );
-    if (platforms.androidPlaybackBridge.isSupported) {
-      await platforms.systemUi.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    try {
+      if (platforms.androidPlaybackBridge.isSupported) {
+        await platforms.androidPlaybackBridge.lockPortrait();
+      } else {
+        await platforms.systemUi.setPreferredOrientations(
+          DeviceOrientation.values,
+        );
+      }
+      if (_disposed) {
+        return;
+      }
+      await _applyOverlayStyle(
+        darkBackground: bindings.resolveDarkThemeActive(),
+      );
+      if (_disposed) {
+        return;
+      }
+      if (platforms.androidPlaybackBridge.isSupported) {
+        await platforms.systemUi.setEnabledSystemUIMode(
+          SystemUiMode.edgeToEdge,
+        );
+      }
+    } catch (error) {
+      bindings.trace('restore system ui failed: $error');
+      bindings.showMessage('恢复界面失败：$error');
     }
   }
 
@@ -348,7 +410,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   }
 
   Future<void> toggleDesktopMiniWindow() async {
-    if (!platforms.desktopWindow.isSupported) {
+    if (_disposed || !platforms.desktopWindow.isSupported) {
       return;
     }
     try {
@@ -364,28 +426,46 @@ class RoomFullscreenSessionController extends ChangeNotifier {
               _chromeController.scheduleInlineChromeAutoHide,
         );
       }
+      if (_disposed) {
+        return;
+      }
     } catch (error) {
+      if (_disposed) {
+        return;
+      }
       bindings.showMessage('桌面小窗切换失败：$error');
     }
   }
 
-  Future<void> exitDesktopMiniWindow() {
-    return _desktopMiniWindowCoordinator.exitDesktopMiniWindow(
+  Future<void> exitDesktopMiniWindow() async {
+    if (_disposed) {
+      return;
+    }
+    await _desktopMiniWindowCoordinator.exitDesktopMiniWindow(
       scheduleInlineChromeAutoHide:
           _chromeController.scheduleInlineChromeAutoHide,
     );
   }
 
-  Future<void> enterPictureInPicture() {
-    return _pipCoordinator.enterPictureInPicture();
+  Future<void> enterPictureInPicture() async {
+    if (_disposed) {
+      return;
+    }
+    await _pipCoordinator.enterPictureInPicture();
   }
 
-  Future<void> restoreAfterFailedPictureInPicture() {
-    return _pipCoordinator.restoreAfterFailedPictureInPicture();
+  Future<void> restoreAfterFailedPictureInPicture() async {
+    if (_disposed) {
+      return;
+    }
+    await _pipCoordinator.restoreAfterFailedPictureInPicture();
   }
 
-  Future<void> handleLifecycleState(AppLifecycleState state) {
-    return _pipCoordinator.handleLifecycleState(state);
+  Future<void> handleLifecycleState(AppLifecycleState state) async {
+    if (_disposed) {
+      return;
+    }
+    await _pipCoordinator.handleLifecycleState(state);
   }
 
   Future<void> cleanupPlaybackOnLeave() {
@@ -405,7 +485,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
         !playbackAvailable ||
         !autoFullscreenEnabled ||
         _viewUiState.fullscreenAutoApplied ||
-        _viewUiState.isFullscreen) {
+        _viewUiState.fullscreenSessionActive) {
       return;
     }
     final status = playerState?.status ?? PlaybackStatus.idle;
@@ -418,7 +498,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
       _viewUiState.copyWith(fullscreenAutoApplied: true),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_disposed || _viewUiState.isFullscreen) {
+      if (_disposed || _viewUiState.fullscreenSessionActive) {
         return;
       }
       unawaited(enterFullscreen());
@@ -440,6 +520,9 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   Future<void> cancelPendingFullscreenBootstrap({
     required bool scheduleInlineChrome,
   }) async {
+    if (_disposed) {
+      return;
+    }
     if (!_viewUiState.fullscreenBootstrapPending &&
         !_viewUiState.fullscreenBootstrapScheduled) {
       return;
@@ -519,6 +602,8 @@ class RoomFullscreenSessionController extends ChangeNotifier {
           isFullscreen: true,
           showInlinePlayerChrome: false,
           showFullscreenChrome: true,
+          showFullscreenLockButton: true,
+          lockFullscreenControls: false,
           showFullscreenFollowDrawer: false,
         ),
       );

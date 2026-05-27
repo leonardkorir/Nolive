@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
+import '../provider_runtime_support.dart';
 import 'douyu_quickjs_signer.dart';
 import 'douyu_transport.dart';
 
@@ -52,20 +55,22 @@ class HttpDouyuSignService implements DouyuSignService {
     DouyuSignExecutor? signExecutor,
     Random? random,
     void Function()? scheduleSignerWarmUp,
+    void Function(String message)? diagnostics,
   })  : _transport = transport,
         _signExecutor = signExecutor ?? _defaultSignExecutor,
+        _diagnostics = diagnostics,
         _random = random ?? Random.secure() {
     (scheduleSignerWarmUp ?? DouyuQuickJsSigner.scheduleWarmUp).call();
   }
 
   static const String defaultUserAgent =
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0';
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
   static const String _searchReferer = 'https://www.douyu.com/search/';
-  static const String _defaultDeviceId = '10000000000000000000000000001501';
 
   final DouyuTransport _transport;
   final DouyuSignExecutor _signExecutor;
+  final void Function(String message)? _diagnostics;
   final Random _random;
 
   @override
@@ -110,10 +115,10 @@ class HttpDouyuSignService implements DouyuSignService {
     final data = _asMap(response['data']);
     final script = data['room$roomId']?.toString() ?? '';
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final deviceId = _defaultDeviceId;
+    final deviceId = _generateDeviceId();
 
     final body = script.isNotEmpty
-        ? await _signExecutor(
+        ? await _buildSignedBody(
             script: script,
             roomId: roomId,
             deviceId: deviceId,
@@ -154,7 +159,7 @@ class HttpDouyuSignService implements DouyuSignService {
     return buffer.toString();
   }
 
-  String _buildFallbackBody({
+  static String _buildFallbackBody({
     required String roomId,
     required String deviceId,
     required int timestamp,
@@ -163,6 +168,36 @@ class HttpDouyuSignService implements DouyuSignService {
         .convert(utf8.encode('$roomId|$deviceId|$timestamp|simplelive-douyu'))
         .toString();
     return 'rid=$roomId&did=$deviceId&tt=$timestamp&sign=$signature';
+  }
+
+  Future<String> _buildSignedBody({
+    required String script,
+    required String roomId,
+    required String deviceId,
+    required int timestamp,
+  }) async {
+    try {
+      return await _signExecutor(
+        script: script,
+        roomId: roomId,
+        deviceId: deviceId,
+        timestamp: timestamp,
+      );
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.douyu,
+        scope: 'douyu.sign',
+        message: 'sign executor failed; using fallback body',
+        error: error,
+        stackTrace: stackTrace,
+        diagnostics: _diagnostics,
+      );
+      return _buildFallbackBody(
+        roomId: roomId,
+        deviceId: deviceId,
+        timestamp: timestamp,
+      );
+    }
   }
 
   static Future<String> _defaultSignExecutor({
@@ -179,17 +214,15 @@ class HttpDouyuSignService implements DouyuSignService {
         timestamp: timestamp,
       ).trim();
     } catch (_) {
-      return 'rid=$roomId&did=$deviceId&tt=$timestamp';
+      return _buildFallbackBody(
+        roomId: roomId,
+        deviceId: deviceId,
+        timestamp: timestamp,
+      );
     }
   }
 
   static Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 }

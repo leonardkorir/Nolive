@@ -11,43 +11,86 @@ import 'package:nolive_app/src/features/settings/application/secure_snapshot_imp
 import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 void main() {
-  test('updating provider accounts invalidates cached live providers',
-      () async {
-    var created = 0;
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: DouyinProvider.kDescriptor,
-          builder: () {
-            created += 1;
-            return DouyinProvider.preview();
-          },
+  test(
+    'updating provider accounts invalidates cached live providers',
+    () async {
+      var created = 0;
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: DouyinProvider.kDescriptor,
+            builder: () {
+              created += 1;
+              return DouyinProvider.preview();
+            },
+          ),
+        );
+      final settingsRepository = InMemorySettingsRepository();
+      final secureCredentialStore = InMemorySecureCredentialStore();
+      final useCase = UpdateProviderAccountSettingsUseCase(
+        settingsRepository,
+        secureCredentialStore,
+        providerRegistry: registry,
+      );
+
+      final first = registry.create(ProviderId.douyin);
+      await useCase(
+        const ProviderAccountSettings(
+          bilibiliCookie: '',
+          bilibiliUserId: 0,
+          chaturbateCookie: '',
+          douyinCookie: 'fresh-cookie',
+          twitchCookie: '',
+          youtubeCookie: '',
         ),
       );
-    final settingsRepository = InMemorySettingsRepository();
-    final secureCredentialStore = InMemorySecureCredentialStore();
-    final useCase = UpdateProviderAccountSettingsUseCase(
-      settingsRepository,
-      secureCredentialStore,
-      providerRegistry: registry,
-    );
+      final second = registry.create(ProviderId.douyin);
 
-    final first = registry.create(ProviderId.douyin);
-    await useCase(
-      const ProviderAccountSettings(
-        bilibiliCookie: '',
-        bilibiliUserId: 0,
-        chaturbateCookie: '',
-        douyinCookie: 'fresh-cookie',
-        twitchCookie: '',
-        youtubeCookie: '',
-      ),
-    );
-    final second = registry.create(ProviderId.douyin);
+      expect(created, 2);
+      expect(identical(first, second), isFalse);
+    },
+  );
 
-    expect(created, 2);
-    expect(identical(first, second), isFalse);
-  });
+  test(
+    'updating stripchat account also invalidates cached live provider',
+    () async {
+      var created = 0;
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: StripchatProvider.kDescriptor,
+            builder: () {
+              created += 1;
+              return StripchatProvider.preview();
+            },
+          ),
+        );
+      final settingsRepository = InMemorySettingsRepository();
+      final secureCredentialStore = InMemorySecureCredentialStore();
+      final useCase = UpdateProviderAccountSettingsUseCase(
+        settingsRepository,
+        secureCredentialStore,
+        providerRegistry: registry,
+      );
+
+      final first = registry.create(ProviderId.stripchat);
+      await useCase(
+        const ProviderAccountSettings(
+          bilibiliCookie: '',
+          bilibiliUserId: 0,
+          chaturbateCookie: '',
+          douyinCookie: '',
+          stripchatCookie: 'fresh-cookie',
+          twitchCookie: '',
+          youtubeCookie: '',
+        ),
+      );
+      final second = registry.create(ProviderId.stripchat);
+
+      expect(created, 2);
+      expect(identical(first, second), isFalse);
+    },
+  );
 
   test('importing snapshot clears cached provider instances', () async {
     var created = 0;

@@ -45,11 +45,14 @@ void main() {
 
   test('layout preferences defaults keep providers enabled by default', () {
     expect(LayoutPreferences.defaultProviderOrder, contains('chaturbate'));
+    expect(LayoutPreferences.defaultProviderOrder, contains('stripchat'));
     expect(LayoutPreferences.defaultEnabledProviderIds, contains('youtube'));
+    expect(LayoutPreferences.defaultEnabledProviderIds, contains('stripchat'));
     expect(
-      LoadLayoutPreferencesUseCase.normalizeProviderOrder(
-        const ['douyu', 'bilibili'],
-      ),
+      LoadLayoutPreferencesUseCase.normalizeProviderOrder(const [
+        'douyu',
+        'bilibili',
+      ]),
       contains('chaturbate'),
     );
     expect(
@@ -58,18 +61,50 @@ void main() {
     );
   });
 
+  test(
+    'legacy default enabled providers are migrated to include stripchat',
+    () {
+      final migrated = LoadLayoutPreferencesUseCase.normalizeEnabledProviderIds(
+        const [
+          'bilibili',
+          'chaturbate',
+          'douyu',
+          'huya',
+          'douyin',
+          'twitch',
+          'youtube',
+        ],
+      );
+
+      expect(migrated, contains('stripchat'));
+    },
+  );
+
+  test(
+    'custom enabled providers stay unchanged when stripchat is disabled',
+    () {
+      final normalized =
+          LoadLayoutPreferencesUseCase.normalizeEnabledProviderIds(const [
+            'douyin',
+            'huya',
+          ]);
+
+      expect(normalized, ['douyin', 'huya']);
+    },
+  );
+
   test('live provider list hides chaturbate until browser cookie exists', () {
     final useCase = ListAvailableProvidersUseCase(
-      ReferenceProviderCatalog.buildLiveRegistry(
-        stringSetting: (key) => '',
-      ),
+      ReferenceProviderCatalog.buildLiveRegistry(stringSetting: (key) => ''),
       ValueNotifier(LayoutPreferences.defaults()),
       stringSetting: (key) => '',
     );
 
     final providers = useCase();
     expect(
-        providers.map((item) => item.id.value), isNot(contains('chaturbate')));
+      providers.map((item) => item.id.value),
+      isNot(contains('chaturbate')),
+    );
   });
 
   test('live provider list shows chaturbate after browser cookie exists', () {

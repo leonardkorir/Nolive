@@ -22,13 +22,39 @@ class SecureSnapshotImportCoordinator {
     final sanitized = await sanitizeAndPersist(
       snapshot,
       persistSecureSettings: persistSecureSettings,
-      clearExistingSecureSettings: persistSecureSettings && clearExisting,
+      clearExistingSecureSettings: false,
     );
     await snapshotService.importCategory(
       category,
       sanitized,
       clearExisting: clearExisting,
     );
+  }
+
+  Future<void> restoreCategoryBackup(
+    SyncDataCategory category,
+    SyncSnapshot snapshot,
+  ) async {
+    final persistSecureSettings = category == SyncDataCategory.settings;
+    await secureCredentialStore.ensureReady();
+    final settingsBackedSecureValues =
+        persistSecureSettings &&
+            !secureCredentialStore.storesSecureValuesSeparately
+        ? await secureCredentialStore.readAll()
+        : const <String, String>{};
+    final sanitized = await sanitizeAndPersist(
+      snapshot,
+      persistSecureSettings: persistSecureSettings,
+      clearExistingSecureSettings: false,
+    );
+    await snapshotService.importCategory(
+      category,
+      sanitized,
+      clearExisting: true,
+    );
+    if (settingsBackedSecureValues.isNotEmpty) {
+      await secureCredentialStore.writeAll(settingsBackedSecureValues);
+    }
   }
 
   Future<void> importSnapshot(
@@ -38,7 +64,7 @@ class SecureSnapshotImportCoordinator {
     final sanitized = await sanitizeAndPersist(
       snapshot,
       persistSecureSettings: true,
-      clearExistingSecureSettings: clearExisting,
+      clearExistingSecureSettings: false,
     );
     await snapshotService.importSnapshot(
       sanitized,
@@ -78,9 +104,7 @@ class SecureSnapshotImportCoordinator {
       final rawValue = entry.value;
       if (SensitiveSettingKeys.isSecureCredentialKey(key)) {
         final normalized = rawValue?.toString().trim() ?? '';
-        if (normalized.isNotEmpty) {
-          secureValues[key] = normalized;
-        }
+        secureValues[key] = normalized;
         continue;
       }
       if (SensitiveSettingKeys.isSnapshotExcludedKey(key)) {
@@ -90,13 +114,16 @@ class SecureSnapshotImportCoordinator {
     }
 
     if (persistSecureSettings) {
-      if (clearExistingSecureSettings) {
-        await secureCredentialStore.deleteAll(
-          SensitiveSettingKeys.secureCredentialKeys,
-        );
-      }
-      if (secureValues.isNotEmpty) {
-        await secureCredentialStore.writeAll(secureValues);
+      final keysToClear = clearExistingSecureSettings
+          ? SensitiveSettingKeys.secureCredentialKeys
+          : secureValues.keys;
+      for (final key in keysToClear) {
+        final val = secureValues[key] ?? '';
+        if (val.isEmpty) {
+          await secureCredentialStore.delete(key);
+        } else {
+          await secureCredentialStore.write(key, val);
+        }
       }
     }
 

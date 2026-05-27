@@ -2,13 +2,7 @@ import 'package:live_player/live_player.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
-enum PlayerScaleMode {
-  contain,
-  cover,
-  fill,
-  fitWidth,
-  fitHeight,
-}
+enum PlayerScaleMode { contain, cover, fill, fitWidth, fitHeight }
 
 const String kDefaultMpvVideoOutputDriver = 'gpu-next';
 const String kDefaultMpvHardwareDecoder = 'auto-safe';
@@ -113,11 +107,12 @@ class PlayerPreferences {
           mdkAndroidTunnelEnabled ?? this.mdkAndroidTunnelEnabled,
       mdkAndroidHardwareVideoDecoderEnabled:
           mdkAndroidHardwareVideoDecoderEnabled ??
-              this.mdkAndroidHardwareVideoDecoderEnabled,
+          this.mdkAndroidHardwareVideoDecoderEnabled,
       forceHttpsEnabled: forceHttpsEnabled ?? this.forceHttpsEnabled,
       androidAutoFullscreenEnabled:
           androidAutoFullscreenEnabled ?? this.androidAutoFullscreenEnabled,
-      androidBackgroundAutoPauseEnabled: androidBackgroundAutoPauseEnabled ??
+      androidBackgroundAutoPauseEnabled:
+          androidBackgroundAutoPauseEnabled ??
           this.androidBackgroundAutoPauseEnabled,
       androidPipHideDanmakuEnabled:
           androidPipHideDanmakuEnabled ?? this.androidPipHideDanmakuEnabled,
@@ -134,56 +129,76 @@ class LoadPlayerPreferencesUseCase {
   Future<PlayerPreferences> call() async {
     final autoPlay =
         await settingsRepository.readValue<bool>('player_auto_play') ?? true;
-    final preferHighestQuality = await settingsRepository
-            .readValue<bool>('player_prefer_highest_quality') ??
+    final preferHighestQuality =
+        await settingsRepository.readValue<bool>(
+          'player_prefer_highest_quality',
+        ) ??
         false;
-    final backendRaw =
-        await settingsRepository.readValue<String>('player_backend');
+    final backendRaw = await settingsRepository.readValue<String>(
+      'player_backend',
+    );
     final volume =
         await settingsRepository.readValue<double>('player_volume') ?? 1.0;
-    final mpvHardwareAccelerationEnabled = await settingsRepository
-            .readValue<bool>('player_mpv_hardware_acceleration') ??
+    final mpvHardwareAccelerationEnabled =
+        await settingsRepository.readValue<bool>(
+          'player_mpv_hardware_acceleration',
+        ) ??
         true;
     final mpvCompatModeEnabled =
         await settingsRepository.readValue<bool>('player_mpv_compat_mode') ??
-            false;
-    final mpvDoubleBufferingEnabled = await settingsRepository
-            .readValue<bool>('player_mpv_double_buffering') ??
+        false;
+    final mpvDoubleBufferingEnabled =
+        await settingsRepository.readValue<bool>(
+          'player_mpv_double_buffering',
+        ) ??
         false;
     final mpvCustomOutputEnabled =
         await settingsRepository.readValue<bool>('player_mpv_custom_output') ??
-            false;
-    final mpvVideoOutputDriver = await settingsRepository
-            .readValue<String>('player_mpv_video_output_driver') ??
+        false;
+    final mpvVideoOutputDriver =
+        await settingsRepository.readValue<String>(
+          'player_mpv_video_output_driver',
+        ) ??
         kDefaultMpvVideoOutputDriver;
-    final mpvHardwareDecoder = await settingsRepository
-            .readValue<String>('player_mpv_hardware_decoder') ??
+    final mpvHardwareDecoder =
+        await settingsRepository.readValue<String>(
+          'player_mpv_hardware_decoder',
+        ) ??
         kDefaultMpvHardwareDecoder;
     final mpvLogEnabled =
         await settingsRepository.readValue<bool>('player_mpv_log_enable') ??
-            false;
+        false;
     final mdkLowLatencyEnabled =
         await settingsRepository.readValue<bool>('player_mdk_low_latency') ??
-            true;
+        true;
     final mdkAndroidTunnelEnabled =
         await settingsRepository.readValue<bool>('player_mdk_android_tunnel') ??
-            false;
-    final mdkAndroidHardwareVideoDecoderEnabled = await settingsRepository
-            .readValue<bool>('player_mdk_android_hardware_video_decoder') ??
+        false;
+    final mdkAndroidHardwareVideoDecoderEnabled =
+        await settingsRepository.readValue<bool>(
+          'player_mdk_android_hardware_video_decoder',
+        ) ??
         true;
     final forceHttpsEnabled =
         await settingsRepository.readValue<bool>('player_force_https') ?? false;
-    final androidAutoFullscreenEnabled = await settingsRepository
-            .readValue<bool>('player_android_auto_fullscreen') ??
+    final androidAutoFullscreenEnabled =
+        await settingsRepository.readValue<bool>(
+          'player_android_auto_fullscreen',
+        ) ??
         true;
-    final androidBackgroundAutoPauseEnabled = await settingsRepository
-            .readValue<bool>('player_android_background_auto_pause') ??
+    final androidBackgroundAutoPauseEnabled =
+        await settingsRepository.readValue<bool>(
+          'player_android_background_auto_pause',
+        ) ??
         true;
-    final androidPipHideDanmakuEnabled = await settingsRepository
-            .readValue<bool>('player_android_pip_hide_danmaku') ??
+    final androidPipHideDanmakuEnabled =
+        await settingsRepository.readValue<bool>(
+          'player_android_pip_hide_danmaku',
+        ) ??
         true;
-    final scaleModeRaw =
-        await settingsRepository.readValue<String>('player_scale_mode');
+    final scaleModeRaw = await settingsRepository.readValue<String>(
+      'player_scale_mode',
+    );
     return PlayerPreferences(
       autoPlayEnabled: autoPlay,
       preferHighestQuality: preferHighestQuality,
@@ -323,9 +338,15 @@ class UpdatePlayerPreferencesUseCase {
 }
 
 class ApplyPlayerPreferencesToRuntimeUseCase {
-  const ApplyPlayerPreferencesToRuntimeUseCase(this.playerRuntime);
+  const ApplyPlayerPreferencesToRuntimeUseCase(
+    this.playerRuntime, {
+    this.usesSystemMediaVolume = _defaultUsesSystemMediaVolume,
+    this.setSystemMediaVolume,
+  });
 
   final PlayerRuntimeController playerRuntime;
+  final bool Function() usesSystemMediaVolume;
+  final Future<bool> Function(double value)? setSystemMediaVolume;
 
   Future<void> call({
     required PlayerPreferences current,
@@ -336,9 +357,17 @@ class ApplyPlayerPreferencesToRuntimeUseCase {
     } else if (_requiresPlayerRuntimeRefresh(current: current, next: next)) {
       await playerRuntime.refreshBackend();
     }
-    await playerRuntime.setVolume(next.volume);
+    final volume = next.volume.clamp(0.0, 1.0).toDouble();
+    if (usesSystemMediaVolume()) {
+      await playerRuntime.setVolume(1.0);
+      await setSystemMediaVolume?.call(volume);
+      return;
+    }
+    await playerRuntime.setVolume(volume);
   }
 }
+
+bool _defaultUsesSystemMediaVolume() => false;
 
 bool _requiresPlayerRuntimeRefresh({
   required PlayerPreferences current,

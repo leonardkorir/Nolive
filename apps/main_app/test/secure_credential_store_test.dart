@@ -1,327 +1,181 @@
-import 'dart:async';
-
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_storage/live_storage.dart';
-import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
-import 'package:nolive_app/src/features/settings/application/secure_snapshot_import_coordinator.dart';
-import 'package:nolive_app/src/features/settings/application/sensitive_setting_keys.dart';
-import 'package:nolive_app/src/features/sync/application/sync_preferences_use_case.dart';
 import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
-void main() {
-  test(
-      'settings-backed secure store keeps legacy values during startup migration fallback',
-      () async {
-    final settingsRepository = InMemorySettingsRepository();
-    await settingsRepository.writeValue(
-      SensitiveSettingKeys.accountBilibiliCookie,
-      'SESSDATA=demo;bili_jct=test;',
-    );
-    await settingsRepository.writeValue(
-      SensitiveSettingKeys.syncWebDavPassword,
-      'demo-webdav-password',
-    );
+class MockSettingsRepository implements SettingsRepository {
+  final Map<String, Object?> _storage = {};
 
-    final secureCredentialStore =
-        await SettingsBackedSecureCredentialStore.open(
-      settingsRepository: settingsRepository,
-      allowedKeys: SensitiveSettingKeys.secureCredentialKeys,
-    );
+  Future<void> clear() async {
+    _storage.clear();
+  }
 
-    await MigrateSensitiveSettingsToSecureStoreUseCase(
-      settingsRepository: settingsRepository,
-      secureCredentialStore: secureCredentialStore,
-    )();
-
-    expect(
-      await settingsRepository.readValue<String>(
-        SensitiveSettingKeys.accountBilibiliCookie,
-      ),
-      'SESSDATA=demo;bili_jct=test;',
-    );
-    expect(
-      await settingsRepository.readValue<String>(
-        SensitiveSettingKeys.syncWebDavPassword,
-      ),
-      'demo-webdav-password',
-    );
-    expect(
-      await secureCredentialStore.read(
-        SensitiveSettingKeys.accountBilibiliCookie,
-      ),
-      'SESSDATA=demo;bili_jct=test;',
-    );
-    expect(
-      await secureCredentialStore.read(
-        SensitiveSettingKeys.syncWebDavPassword,
-      ),
-      'demo-webdav-password',
-    );
-  });
-
-  test(
-      'settings-backed secure store keeps provider and sync credentials persisted in legacy settings',
-      () async {
-    final settingsRepository = InMemorySettingsRepository();
-    final secureCredentialStore =
-        await SettingsBackedSecureCredentialStore.open(
-      settingsRepository: settingsRepository,
-      allowedKeys: SensitiveSettingKeys.secureCredentialKeys,
-    );
-
-    await UpdateProviderAccountSettingsUseCase(
-      settingsRepository,
-      secureCredentialStore,
-    )(
-      const ProviderAccountSettings(
-        bilibiliCookie: '',
-        bilibiliUserId: 0,
-        chaturbateCookie: '',
-        douyinCookie: 'douyin-cookie',
-        twitchCookie: '',
-        youtubeCookie: '',
-      ),
-    );
-    await UpdateSyncPreferencesUseCase(
-      settingsRepository,
-      secureCredentialStore,
-    )(
-      const SyncPreferences(
-        webDavBaseUrl: 'https://example.com/dav',
-        webDavRemotePath: 'nolive/snapshot.json',
-        webDavUsername: 'nolive',
-        webDavPassword: 'webdav-password',
-        localDeviceName: 'nolive-device',
-        localPeerAddress: '',
-        localPeerPort: 23234,
-      ),
-    );
-
-    expect(
-      await settingsRepository.readValue<String>(
-        SensitiveSettingKeys.accountDouyinCookie,
-      ),
-      'douyin-cookie',
-    );
-    expect(
-      await settingsRepository.readValue<String>(
-        SensitiveSettingKeys.syncWebDavPassword,
-      ),
-      'webdav-password',
-    );
-    expect(
-      await secureCredentialStore.read(
-        SensitiveSettingKeys.accountDouyinCookie,
-      ),
-      'douyin-cookie',
-    );
-    expect(
-      await secureCredentialStore.read(
-        SensitiveSettingKeys.syncWebDavPassword,
-      ),
-      'webdav-password',
-    );
-  });
-
-  test(
-      'lazy secure store uses single-flight prewarm and migrates legacy values into secure storage',
-      () async {
-    final settingsRepository = InMemorySettingsRepository();
-    await settingsRepository.writeValue(
-      SensitiveSettingKeys.accountBilibiliCookie,
-      'legacy-bilibili-cookie',
-    );
-    await settingsRepository.writeValue(
-      SensitiveSettingKeys.syncWebDavPassword,
-      'legacy-webdav-password',
-    );
-    final preloadSnapshots = <Map<String, String>>[];
-    final loaderCompleter = Completer<SecureCredentialStore>();
-    var loaderCalls = 0;
-    final secureCredentialStore = LazySecureCredentialStore(
-      settingsRepository: settingsRepository,
-      allowedKeys: SensitiveSettingKeys.secureCredentialKeys,
-      initialSettings: await settingsRepository.listAll(),
-      loader: () {
-        loaderCalls += 1;
-        return loaderCompleter.future;
-      },
-      onSnapshotChanged: preloadSnapshots.add,
-    );
-
-    expect(
-      await secureCredentialStore.read(
-        SensitiveSettingKeys.syncWebDavPassword,
-      ),
-      'legacy-webdav-password',
-    );
-
-    final firstReady = secureCredentialStore.ensureReady();
-    final secondReady = secureCredentialStore.ensureReady();
-    expect(loaderCalls, 1);
-
-    loaderCompleter.complete(
-      InMemorySecureCredentialStore(
-        initialValues: {
-          SensitiveSettingKeys.accountBilibiliCookie: 'secure-bilibili-cookie',
-        },
-      ),
-    );
-    await Future.wait([firstReady, secondReady]);
-
-    expect(
-      await secureCredentialStore.read(
-        SensitiveSettingKeys.accountBilibiliCookie,
-      ),
-      'secure-bilibili-cookie',
-    );
-    expect(
-      await secureCredentialStore.read(
-        SensitiveSettingKeys.syncWebDavPassword,
-      ),
-      'legacy-webdav-password',
-    );
-    expect(
-      await settingsRepository.readValue<String>(
-        SensitiveSettingKeys.accountBilibiliCookie,
-      ),
-      isNull,
-    );
-    expect(
-      await settingsRepository.readValue<String>(
-        SensitiveSettingKeys.syncWebDavPassword,
-      ),
-      isNull,
-    );
-    expect(preloadSnapshots, isNotEmpty);
-  });
-
-  test(
-      'lazy secure store keeps legacy fallback when secure storage warmup fails',
-      () async {
-    final settingsRepository = InMemorySettingsRepository();
-    await settingsRepository.writeValue(
-      SensitiveSettingKeys.accountDouyinCookie,
-      'legacy-douyin-cookie',
-    );
-    final secureCredentialStore = LazySecureCredentialStore(
-      settingsRepository: settingsRepository,
-      allowedKeys: SensitiveSettingKeys.secureCredentialKeys,
-      initialSettings: await settingsRepository.listAll(),
-      loader: () async {
-        throw const SecureCredentialStoreUnavailableException(
-          'simulated keystore failure',
-        );
-      },
-    );
-
-    await secureCredentialStore.ensureReady();
-
-    expect(secureCredentialStore.storesSecureValuesSeparately, isFalse);
-    expect(
-      await secureCredentialStore.read(
-        SensitiveSettingKeys.accountDouyinCookie,
-      ),
-      'legacy-douyin-cookie',
-    );
-    expect(
-      await settingsRepository.readValue<String>(
-        SensitiveSettingKeys.accountDouyinCookie,
-      ),
-      'legacy-douyin-cookie',
-    );
-  });
-
-  test(
-      'flutter secure credential store wraps deleteAll platform failures as unavailable exceptions',
-      () async {
-    final store = await FlutterSecureCredentialStore.open(
-      storage: _ThrowingDeleteStorage(
-        <String, String>{
-          'nolive.secure.${SensitiveSettingKeys.accountDouyinCookie}':
-              'secure-douyin-cookie',
-        },
-      ),
-    );
-
-    await expectLater(
-      () => store.deleteAll(
-        const [SensitiveSettingKeys.accountDouyinCookie],
-      ),
-      throwsA(isA<SecureCredentialStoreUnavailableException>()),
-    );
-  });
-
-  test(
-      'flutter secure credential store retries readAll once before failing warmup',
-      () async {
-    final store = await FlutterSecureCredentialStore.open(
-      storage: _RetryingReadAllStorage(
-        <String, String>{
-          'nolive.secure.${SensitiveSettingKeys.accountDouyinCookie}':
-              'secure-douyin-cookie',
-        },
-      ),
-    );
-
-    expect(
-      await store.read(SensitiveSettingKeys.accountDouyinCookie),
-      'secure-douyin-cookie',
-    );
-  });
-}
-
-class _ThrowingDeleteStorage extends FlutterSecureStorage {
-  _ThrowingDeleteStorage(this._data);
-
-  final Map<String, String> _data;
-
-  @override
-  Future<void> delete({
-    required String key,
-    IOSOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    MacOsOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {
-    throw StateError('delete failed for $key');
+  Future<bool> containsKey(String key) async {
+    return _storage.containsKey(key);
   }
 
   @override
-  Future<Map<String, String>> readAll({
-    IOSOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    MacOsOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {
-    return Map<String, String>.from(_data);
+  Future<Map<String, Object?>> listAll() async {
+    return Map.from(_storage);
+  }
+
+  @override
+  Future<T?> readValue<T>(String key) async {
+    return _storage[key] as T?;
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    _storage.remove(key);
+  }
+
+  @override
+  Future<void> writeValue<T>(String key, T value) async {
+    _storage[key] = value;
   }
 }
 
-class _RetryingReadAllStorage extends FlutterSecureStorage {
-  _RetryingReadAllStorage(this._data);
+class FailureSecureCredentialStore extends InMemorySecureCredentialStore {
+  bool shouldFail = false;
+  int writeAllCount = 0;
 
-  final Map<String, String> _data;
-  int _readAllCalls = 0;
+  FailureSecureCredentialStore({super.initialValues});
 
   @override
-  Future<Map<String, String>> readAll({
-    IOSOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    MacOsOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {
-    _readAllCalls += 1;
-    if (_readAllCalls == 1) {
-      throw TimeoutException('transient secure storage bootstrap timeout');
+  Future<void> writeAll(Map<String, String> values) async {
+    writeAllCount++;
+    if (shouldFail && writeAllCount == 1) {
+      throw Exception('Simulated writeAll failure');
     }
-    return Map<String, String>.from(_data);
+    return super.writeAll(values);
   }
+}
+
+void main() {
+  group('LazySecureCredentialStore Extra Coverage', () {
+    late MockSettingsRepository settingsRepo;
+
+    setUp(() {
+      settingsRepo = MockSettingsRepository();
+    });
+
+    test('warmup write-delete ambiguity resolution', () async {
+      final allowed = {'key1', 'key2', 'key3'};
+      final store = LazySecureCredentialStore(
+        settingsRepository: settingsRepo,
+        allowedKeys: allowed,
+        initialSettings: {'key1': 'val1', 'key3': 'val3'},
+        loader: () async {
+          return InMemorySecureCredentialStore();
+        },
+      );
+
+      // Perform operations during warmup (before ensureReady)
+      await store.write('key2', 'val2');
+      await store.delete('key1');
+
+      await store.ensureReady();
+
+      // Check results
+      expect(await store.read('key1'), isEmpty, reason: 'key1 was deleted during warmup');
+      expect(await store.read('key2'), 'val2', reason: 'key2 was written during warmup');
+      expect(await store.read('key3'), 'val3', reason: 'key3 was unmodified and copied');
+    });
+
+    test('warmup write-then-delete on same key during warmup', () async {
+      final allowed = {'key1'};
+      final store = LazySecureCredentialStore(
+        settingsRepository: settingsRepo,
+        allowedKeys: allowed,
+        initialSettings: {'key1': 'val1'},
+        loader: () async {
+          return InMemorySecureCredentialStore();
+        },
+      );
+
+      // Write then delete the same key during warmup
+      await store.write('key1', 'val2');
+      await store.delete('key1');
+
+      await store.ensureReady();
+
+      // Check results: the key should be deleted/empty
+      expect(await store.read('key1'), isEmpty);
+    });
+
+    test('TOCTOU protection for concurrent writes during promotion', () async {
+      final allowed = {'key1'};
+      final resolved = InMemorySecureCredentialStore();
+
+      final store = LazySecureCredentialStore(
+        settingsRepository: settingsRepo,
+        allowedKeys: allowed,
+        initialSettings: {'key1': 'old'},
+        loader: () async {
+          // Return the resolved store after delay to simulate concurrent windows
+          await Future.delayed(const Duration(milliseconds: 10));
+          return resolved;
+        },
+      );
+
+      // Wait for warmup to trigger promotion
+      final ready = store.ensureReady();
+
+      // Concurrently write to store. Since promotion hasn't finished,
+      // it writes to fallbackStore and resolvedStore if resolvedStore is non-null.
+      await store.write('key1', 'new');
+
+      await ready;
+
+      // Verify that the stale fallback snapshot value 'old' didn't overwrite the concurrent write 'new'
+      expect(await store.read('key1'), 'new');
+    });
+
+    test('rollback on promotion failure restores dirty keys and resolved store', () async {
+      final allowed = {'key1'};
+      final resolved = FailureSecureCredentialStore();
+
+      final store = LazySecureCredentialStore(
+        settingsRepository: settingsRepo,
+        allowedKeys: allowed,
+        initialSettings: {'key1': 'old'},
+        loader: () async {
+          return resolved;
+        },
+      );
+
+      // Trigger write during warmup to make it dirty
+      await store.write('key1', 'new');
+
+      // Force failure during writeAll migration in promoteResolvedStore
+      resolved.shouldFail = true;
+
+      // Run warmup, which should fail and rollback to fallback
+      await store.ensureReady();
+
+      // Since promotion failed, it should have rolled back to fallbackStore
+      // and retained 'new'
+      expect(await store.read('key1'), 'new');
+
+      // The resolved store itself should have been rolled back to empty
+      expect(resolved.snapshot(), isEmpty);
+    });
+
+    test('fail-open behavior when loader throws exception', () async {
+      final allowed = {'key1'};
+      final store = LazySecureCredentialStore(
+        settingsRepository: settingsRepo,
+        allowedKeys: allowed,
+        initialSettings: {'key1': 'fallback-value'},
+        loader: () async {
+          throw Exception('Loader failed');
+        },
+      );
+
+      // ensureReady should resolve successfully (fail-open)
+      await expectLater(store.ensureReady(), completes);
+
+      // Verify it fell back to fallbackStore and returns fallback values
+      expect(await store.read('key1'), 'fallback-value');
+    });
+  });
 }

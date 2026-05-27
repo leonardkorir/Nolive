@@ -18,8 +18,11 @@ class HuyaProvider extends LiveProvider
         SupportsPlayQualities,
         SupportsPlayUrls,
         SupportsDanmaku {
-  HuyaProvider({HuyaDataSource? dataSource})
-      : _dataSource = dataSource ?? const HuyaPreviewDataSource();
+  HuyaProvider({
+    HuyaDataSource? dataSource,
+    void Function()? disposeOwnedResources,
+  })  : _dataSource = dataSource ?? const HuyaPreviewDataSource(),
+        _disposeOwnedResources = disposeOwnedResources;
 
   factory HuyaProvider.preview() => HuyaProvider();
 
@@ -27,13 +30,15 @@ class HuyaProvider extends LiveProvider
     HuyaTransport? transport,
     HuyaSignService? signService,
   }) {
-    final resolvedTransport = transport ?? HttpHuyaTransport();
+    final ownedTransport = transport == null ? HttpHuyaTransport() : null;
+    final resolvedTransport = transport ?? ownedTransport!;
     final resolvedSignService = signService ?? HttpHuyaSignService();
     return HuyaProvider(
       dataSource: HuyaLiveDataSource(
         transport: resolvedTransport,
         signService: resolvedSignService,
       ),
+      disposeOwnedResources: ownedTransport?.close,
     );
   }
 
@@ -62,9 +67,15 @@ class HuyaProvider extends LiveProvider
   );
 
   final HuyaDataSource _dataSource;
+  final void Function()? _disposeOwnedResources;
 
   @override
   ProviderDescriptor get descriptor => kDescriptor;
+
+  @override
+  void dispose() {
+    _disposeOwnedResources?.call();
+  }
 
   @override
   Future<List<LiveCategory>> fetchCategories() {
@@ -118,35 +129,25 @@ class HuyaProvider extends LiveProvider
   Future<DanmakuSession> createDanmakuSession(LiveRoomDetail detail) async {
     requireCapability(ProviderCapability.danmaku);
     final token = detail.danmakuToken;
-    if (token is Map && token['mode']?.toString() == 'preview') {
+    if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
         providerId: descriptor.id.value,
         detail: detail,
       );
     }
-    final ayyuid = _toInt(token is Map ? token['ayyuid'] : null);
-    final topSid = _toInt(token is Map ? token['topSid'] : null);
-    final subSid = _toInt(token is Map ? token['subSid'] : null);
-    if (ayyuid > 0 && topSid > 0 && subSid > 0) {
+    if (token is HuyaDanmakuToken &&
+        token.ayyuid > 0 &&
+        token.topSid > 0 &&
+        token.subSid > 0) {
       return HuyaDanmakuSession(
-        ayyuid: ayyuid,
-        topSid: topSid,
-        subSid: subSid,
+        ayyuid: token.ayyuid,
+        topSid: token.topSid,
+        subSid: token.subSid,
       );
     }
     return ProviderTickerDanmakuSession(
       providerId: descriptor.id.value,
       detail: detail,
     );
-  }
-
-  int _toInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is num) {
-      return value.toInt();
-    }
-    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 }

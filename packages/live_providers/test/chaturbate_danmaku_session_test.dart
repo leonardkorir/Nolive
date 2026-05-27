@@ -137,10 +137,8 @@ void main() {
           },
         },
         history: const [],
-        historyError: ProviderParseException(
-          providerId: ProviderId.chaturbate,
-          message:
-              'Chaturbate /push_service/room_history/ request failed with status 403.',
+        historyError: ChaturbateRoomHistoryUnavailableException(
+          statusCode: 403,
         ),
       ),
       socketClientFactory: (_) => socket,
@@ -173,17 +171,159 @@ void main() {
     await subscription.cancel();
     await session.disconnect();
   });
+
+  test('chaturbate danmaku session evicts old dedupe ids', () async {
+    final session = ChaturbateDanmakuSession(
+      roomId: 'realcest',
+      broadcasterUid: 'EZ8KVAC',
+      csrfToken: 'fixture-csrf',
+      backend: 'a',
+      apiClient: _FixtureDanmakuApiClient(
+        authResponse: const {},
+        history: const [],
+      ),
+      presenceId: '+fixture',
+    );
+
+    final collected = <LiveMessage>[];
+    final subscription = session.messages.listen(collected.add);
+    addTearDown(subscription.cancel);
+    addTearDown(session.disconnect);
+
+    for (var index = 0; index < 2050; index += 1) {
+      session.debugIngestPayload({
+        'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': {
+          'id': 'message-$index',
+          'message': 'hello $index',
+          'from_user': const {'username': 'tester'},
+        },
+      });
+    }
+    await Future<void>.delayed(Duration.zero);
+    final beforeRepeat = collected.length;
+    session.debugIngestPayload({
+      'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': {
+        'id': 'message-0',
+        'message': 'hello again',
+        'from_user': const {'username': 'tester'},
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.debugSeenMessageCount, lessThanOrEqualTo(2048));
+    expect(collected.length, beforeRepeat + 1);
+  });
+
+  test(
+      'chaturbate danmaku session clears state on WebSocket error and allows reconnect',
+      () async {
+    final errorController = StreamController<dynamic>();
+    var connectCallCount = 0;
+    late _ErrorSocketClient firstSocket;
+    final session = ChaturbateDanmakuSession(
+      roomId: 'realcest',
+      broadcasterUid: 'EZ8KVAC',
+      csrfToken: 'fixture-csrf',
+      backend: 'a',
+      apiClient: _FixtureDanmakuApiClient(
+        authResponse: {
+          'token': 'fixture-token',
+          'channels': {
+            'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': 'room:message',
+          },
+          'settings': {'host': 'realtime-primary.example'},
+        },
+        history: const [],
+      ),
+      socketClientFactory: (_) {
+        connectCallCount++;
+        if (connectCallCount == 1) {
+          firstSocket = _ErrorSocketClient(errorController);
+          return firstSocket;
+        }
+        return _FixtureSocketClient(incomingFrames: const ['{"action":4}']);
+      },
+      presenceId: '+fixture',
+    );
+
+    final notices = <String>[];
+    session.messages.listen((msg) {
+      if (msg.type == LiveMessageType.notice) notices.add(msg.content);
+    });
+
+    await session.connect();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(connectCallCount, 1);
+
+    // Simulate WebSocket error — zombie fix clears _connected
+    errorController.addError(StateError('unexpected disconnect'));
+    await Future<void>.delayed(Duration.zero);
+    expect(firstSocket.closed, isTrue);
+
+    // Should allow reconnect (not blocked by _connected == true)
+    await session.connect();
+    expect(connectCallCount, 2);
+    expect(notices.any((n) => n.contains('Chaturbate 弹幕连接异常')), isTrue);
+
+    await session.disconnect();
+    await errorController.close();
+  });
+
+  test('chaturbate danmaku session closes owned api client on disconnect',
+      () async {
+    final apiClient = _ClosableDanmakuApiClient(
+      authResponse: const {},
+      history: const [],
+    );
+    final session = ChaturbateDanmakuSession(
+      roomId: 'realcest',
+      broadcasterUid: 'EZ8KVAC',
+      csrfToken: 'fixture-csrf',
+      backend: 'a',
+      apiClient: apiClient,
+      disposeOwnedApiClient: apiClient.close,
+      presenceId: '+fixture',
+    );
+
+    await session.disconnect();
+
+    expect(apiClient.closeCount, 1);
+  });
+
+  test(
+      'chaturbate danmaku session closes owned api client after connect failure',
+      () async {
+    final apiClient = _ClosableDanmakuApiClient(
+      authResponse: const {},
+      history: const [],
+      authError: StateError('auth failed'),
+    );
+    final session = ChaturbateDanmakuSession(
+      roomId: 'realcest',
+      broadcasterUid: 'EZ8KVAC',
+      csrfToken: 'fixture-csrf',
+      backend: 'a',
+      apiClient: apiClient,
+      disposeOwnedApiClient: apiClient.close,
+      presenceId: '+fixture',
+    );
+
+    await expectLater(session.connect, throwsStateError);
+    expect(apiClient.closeCount, 1);
+  });
 }
 
 class _FixtureDanmakuApiClient implements ChaturbateApiClient {
   _FixtureDanmakuApiClient({
     required this.authResponse,
     required this.history,
+    this.authError,
     this.historyError,
   });
 
   final Map<String, dynamic> authResponse;
   final List<Map<String, dynamic>> history;
+  final Object? authError;
   final Object? historyError;
 
   @override
@@ -199,6 +339,9 @@ class _FixtureDanmakuApiClient implements ChaturbateApiClient {
     expect(backend, 'a');
     expect(presenceId, '+fixture');
     expect(topics, contains('RoomMessageTopic#RoomMessageTopic:EZ8KVAC'));
+    if (authError != null) {
+      throw authError!;
+    }
     return authResponse;
   }
 
@@ -261,6 +404,24 @@ class _FixtureDanmakuApiClient implements ChaturbateApiClient {
       'url=$url referer=${referer ?? ''} cookie=${cookie ?? ''}',
     );
   }
+
+  @override
+  void close() {}
+}
+
+class _ClosableDanmakuApiClient extends _FixtureDanmakuApiClient {
+  _ClosableDanmakuApiClient({
+    required super.authResponse,
+    required super.history,
+    super.authError,
+  });
+
+  int closeCount = 0;
+
+  @override
+  void close() {
+    closeCount += 1;
+  }
 }
 
 class _FixtureSocketClient implements ChaturbateSocketClient {
@@ -302,6 +463,29 @@ class _FixtureSocketClient implements ChaturbateSocketClient {
 
   @override
   Future<void> close() async {
+    if (!_controller.isClosed) {
+      await _controller.close();
+    }
+  }
+}
+
+class _ErrorSocketClient implements ChaturbateSocketClient {
+  _ErrorSocketClient(this._controller);
+  final StreamController<dynamic> _controller;
+  bool closed = false;
+
+  @override
+  Stream<dynamic> get stream => _controller.stream;
+
+  @override
+  Future<void> get ready => Future<void>.value();
+
+  @override
+  void add(dynamic data) {}
+
+  @override
+  Future<void> close() async {
+    closed = true;
     if (!_controller.isClosed) {
       await _controller.close();
     }

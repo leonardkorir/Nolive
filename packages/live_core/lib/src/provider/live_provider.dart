@@ -12,6 +12,8 @@ import 'provider_descriptor.dart';
 abstract class LiveProvider {
   ProviderDescriptor get descriptor;
 
+  void dispose() {}
+
   bool supports(ProviderCapability capability) {
     return descriptor.supports(capability);
   }
@@ -93,3 +95,9 @@ abstract class DanmakuSession {
 abstract class SupportsDanmaku {
   Future<DanmakuSession> createDanmakuSession(LiveRoomDetail detail);
 }
+
+abstract class SupportsLogin {}
+
+abstract class SupportsSuperChat {}
+
+abstract class SupportsBackupSync {}

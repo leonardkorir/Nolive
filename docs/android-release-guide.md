@@ -165,7 +165,9 @@ GitHub Actions workflow: `.github/workflows/android-release.yml`
 建议至少在一台真实 Android 设备上完成以下检查：
 
 - 安装、冷启动和前后台切换正常
-- `scripts/run_main_app_android_smoke.sh` 能通过；如果工作区已有 release APK，脚本结束后设备上应恢复为 release 构建
+- `scripts/run_main_app_android_smoke.sh` 能通过；独立执行时默认会在 smoke 后恢复为普通 debug 构建
+- 如需在独立 smoke 后恢复 release，使用 `ANDROID_SMOKE_RESTORE_RELEASE=1 ANDROID_DEVICE_ID=<device-id> scripts/run_main_app_android_smoke.sh`
+- `scripts/build_main_app.sh android-release-acceptance` 会显式恢复 release，并在结束后保留 release 构建
 - 首页、关注页、房间页主链路正常
 - 播放、切线、切画质、切播放器后端正常
 - 弹幕显示、关注、历史、标签和本地快照正常

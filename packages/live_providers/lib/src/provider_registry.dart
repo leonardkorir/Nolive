@@ -12,8 +12,9 @@ class ProviderRegistry {
 
   void register(ProviderRegistration registration) {
     final providerId = registration.descriptor.id.value;
+    final existing = _instances.remove(providerId);
+    existing?.dispose();
     _registrations[providerId] = registration;
-    _instances.remove(providerId);
   }
 
   ProviderRegistration? findRegistration(ProviderId providerId) {
@@ -50,10 +51,13 @@ class ProviderRegistry {
   }
 
   void invalidate(ProviderId providerId) {
-    _instances.remove(providerId.value);
+    _instances.remove(providerId.value)?.dispose();
   }
 
   void clearCache() {
+    for (final provider in _instances.values) {
+      provider.dispose();
+    }
     _instances.clear();
   }
 }

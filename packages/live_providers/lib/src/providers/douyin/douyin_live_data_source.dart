@@ -3,8 +3,10 @@ import 'dart:async';
 
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
 import 'douyin_data_source.dart';
 import 'douyin_mapper.dart';
+import 'douyin_request_params.dart';
 import 'douyin_sign_service.dart';
 import 'douyin_transport.dart';
 
@@ -27,34 +29,46 @@ class DouyinLiveDataSource implements DouyinDataSource {
   final Duration _roomDetailApiTimeout;
   final Duration _roomDetailHtmlTimeout;
 
-  static final RegExp _kRiskControlStatusPattern =
-      RegExp(r'status (444|403|429)');
+  static final RegExp _kRiskControlStatusPattern = RegExp(
+    r'(status|statusCode|http)\D*(444|403|429)|风控|验证|too many requests|forbidden',
+    caseSensitive: false,
+  );
+  static final RegExp _kCategoryPayloadPattern = RegExp(
+    r'\{\\"pathname\\":\\"/\\",\s*\\"categoryData.*?\],',
+    dotAll: true,
+  );
 
   Future<_DouyinRequestResult<T>> _requestWithRetry<T>({
     required Future<T> Function(Map<String, String> headers) request,
     String? refererPath,
     Map<String, String> headerOverrides = const {},
   }) async {
-    var baseHeaders = await _signService.buildHeaders(refererPath: refererPath);
-    var headers = {...baseHeaders, ...headerOverrides};
-
-    try {
-      final data = await request(headers);
-      return _DouyinRequestResult(data: data, headers: headers);
-    } on ProviderParseException catch (error) {
-      if (!_kRiskControlStatusPattern.hasMatch(error.message)) {
-        rethrow;
-      }
-
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-      baseHeaders = await _signService.buildHeaders(
+    ProviderParseException? lastRiskControlError;
+    for (var attempt = 0; attempt < 2; attempt += 1) {
+      final baseHeaders = await _signService.buildHeaders(
         refererPath: refererPath,
-        forceRefreshCookie: true,
+        forceRefreshCookie: attempt > 0,
       );
-      headers = {...baseHeaders, ...headerOverrides};
-      final data = await request(headers);
-      return _DouyinRequestResult(data: data, headers: headers);
+      final headers = {...baseHeaders, ...headerOverrides};
+
+      try {
+        final data = await request(headers);
+        return _DouyinRequestResult(data: data, headers: headers);
+      } on ProviderParseException catch (error) {
+        if (!_kRiskControlStatusPattern.hasMatch(error.message) ||
+            attempt > 0) {
+          rethrow;
+        }
+        lastRiskControlError = error;
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+      }
     }
+
+    throw lastRiskControlError ??
+        ProviderParseException(
+          providerId: ProviderId.douyin,
+          message: 'Douyin retry exhausted without a retryable error cause.',
+        );
   }
 
   @override
@@ -66,10 +80,8 @@ class DouyinLiveDataSource implements DouyinDataSource {
       ),
     );
     final html = htmlResult.data;
-    final renderData = RegExp(r'\{\\"pathname\\":\\"/\\",\\"categoryData.*?\],')
-            .firstMatch(html)
-            ?.group(0) ??
-        '';
+    final renderData =
+        _kCategoryPayloadPattern.firstMatch(html)?.group(0) ?? '';
     if (renderData.isEmpty) {
       throw ProviderParseException(
         providerId: ProviderId.douyin,
@@ -170,9 +182,9 @@ class DouyinLiveDataSource implements DouyinDataSource {
         'screen_width': '1980',
         'screen_height': '1080',
         'browser_language': 'zh-CN',
-        'browser_platform': 'Win32',
-        'browser_name': 'Edge',
-        'browser_version': '125.0.0.0',
+        'browser_platform': DouyinRequestParams.browserPlatformValue,
+        'browser_name': DouyinRequestParams.browserNameValue,
+        'browser_version': DouyinRequestParams.browserVersionValue,
         'browser_online': 'true',
         'count': '$_kCategoryPageSize',
         'offset': '$requestOffset',
@@ -226,13 +238,13 @@ class DouyinLiveDataSource implements DouyinDataSource {
         'screen_width': '1980',
         'screen_height': '1080',
         'browser_language': 'zh-CN',
-        'browser_platform': 'Win32',
-        'browser_name': 'Edge',
-        'browser_version': '125.0.0.0',
+        'browser_platform': DouyinRequestParams.browserPlatformValue,
+        'browser_name': DouyinRequestParams.browserNameValue,
+        'browser_version': DouyinRequestParams.browserVersionValue,
         'browser_online': 'true',
         'engine_name': 'Blink',
-        'engine_version': '125.0.0.0',
-        'os_name': 'Windows',
+        'engine_version': DouyinRequestParams.browserVersionValue,
+        'os_name': DouyinRequestParams.osNameValue,
         'os_version': '10',
         'cpu_core_num': '12',
         'device_memory': '8',
@@ -477,7 +489,8 @@ class DouyinLiveDataSource implements DouyinDataSource {
     }
     return ProviderParseException(
       providerId: ProviderId.douyin,
-      message: 'Douyin room detail request failed at $stage for web_rid=$webRid: $error',
+      message:
+          'Douyin room detail request failed at $stage for web_rid=$webRid: $error',
     );
   }
 
@@ -564,50 +577,15 @@ class DouyinLiveDataSource implements DouyinDataSource {
   }
 
   Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is double) {
-      return value.round();
-    }
-    final raw = value?.toString().trim() ?? '';
-    if (raw.isEmpty) {
-      return null;
-    }
-    final normalized = raw.replaceAll(',', '');
-    final match =
-        RegExp(r'^([0-9]+(?:\.[0-9]+)?)([万亿]?)$').firstMatch(normalized);
-    if (match != null) {
-      final number = double.tryParse(match.group(1) ?? '');
-      if (number == null) {
-        return null;
-      }
-      final unit = match.group(2);
-      final multiplier = switch (unit) {
-        '万' => 10000,
-        '亿' => 100000000,
-        _ => 1,
-      };
-      return (number * multiplier).round();
-    }
-    return int.tryParse(normalized);
+    return ProviderJson.asLocalizedCountInt(value);
   }
 
   List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   String? _firstUrl(Map<String, dynamic> value) {

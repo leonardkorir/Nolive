@@ -212,7 +212,7 @@ class _DecodedImportPayload {
 }
 
 _DecodedImportPayload _decodeImportedSnapshot(String rawJson) {
-  final decoded = jsonDecode(rawJson);
+  final decoded = _decodeImportedJson(rawJson);
 
   if (decoded is List && _isLegacyFollowListPayload(decoded)) {
     return _DecodedImportPayload(
@@ -242,6 +242,14 @@ _DecodedImportPayload _decodeImportedSnapshot(String rawJson) {
   throw const FormatException(
     '不支持的导入 JSON 格式。请粘贴当前项目导出的快照 JSON、当前项目导出的 nolive_config.json、旧版兼容配置 JSON，或旧版兼容关注列表 JSON。',
   );
+}
+
+Object _decodeImportedJson(String rawJson) {
+  try {
+    return jsonDecode(rawJson);
+  } on FormatException catch (error) {
+    throw FormatException('导入 JSON 解析失败：${error.message}');
+  }
 }
 
 bool _isLegacyConfigPayload(Map<String, dynamic> json) {

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import '../model/sync_snapshot.dart';
 import '../model/sync_snapshot_codec.dart';
+import '../network/cleartext_policy.dart';
 
 abstract class WebDavBackupService {
   Future<void> testConnection();
@@ -11,6 +12,8 @@ abstract class WebDavBackupService {
   Future<void> uploadSnapshot(SyncSnapshot snapshot);
 
   Future<SyncSnapshot?> restoreLatest();
+
+  Future<void> close({bool force = false});
 }
 
 class WebDavBackupConfig {
@@ -18,29 +21,45 @@ class WebDavBackupConfig {
     required this.baseUrl,
     required this.remotePath,
     this.username = '',
-    this.password = '',
+    this.passwordResolver,
   });
 
   final String baseUrl;
   final String remotePath;
   final String username;
-  final String password;
+  final FutureOr<String> Function()? passwordResolver;
 
   bool get isConfigured =>
       baseUrl.trim().isNotEmpty && remotePath.trim().isNotEmpty;
+
+  Future<String> resolvePassword() async {
+    final resolved = await passwordResolver?.call();
+    return resolved?.trim() ?? '';
+  }
 }
 
 class HttpWebDavBackupService implements WebDavBackupService {
   HttpWebDavBackupService({required this.config, HttpClient? client})
-      : _client = client ?? HttpClient() {
-    _client.connectionTimeout = _kRequestTimeout;
-    _client.idleTimeout = _kRequestTimeout;
+      : _client = client ?? HttpClient(),
+        _ownsClient = client == null {
+    if (_ownsClient) {
+      _client.connectionTimeout = _kRequestTimeout;
+      _client.idleTimeout = _kRequestTimeout;
+    }
   }
 
   static const Duration _kRequestTimeout = Duration(seconds: 10);
 
   final WebDavBackupConfig config;
   final HttpClient _client;
+  final bool _ownsClient;
+
+  @override
+  Future<void> close({bool force = false}) async {
+    if (_ownsClient) {
+      _client.close(force: force);
+    }
+  }
 
   @override
   Future<void> testConnection() async {
@@ -180,7 +199,7 @@ class HttpWebDavBackupService implements WebDavBackupService {
     try {
       final request =
           await _client.openUrl(method, uri).timeout(_kRequestTimeout);
-      _applyHeaders(request);
+      await _applyHeaders(request);
       return request;
     } on TimeoutException {
       throw HttpException('WebDAV 请求超时。', uri: uri);
@@ -236,6 +255,7 @@ class HttpWebDavBackupService implements WebDavBackupService {
 
   Uri _baseUri() {
     final base = Uri.parse(config.baseUrl.trim());
+    _assertSecureBaseUri(base);
     final normalizedPath =
         base.path.endsWith('/') ? base.path : '${base.path}/';
     return base.replace(path: normalizedPath, query: null, fragment: null);
@@ -281,8 +301,8 @@ class HttpWebDavBackupService implements WebDavBackupService {
     return segments.sublist(0, segments.length - 1);
   }
 
-  void _applyHeaders(HttpClientRequest request) {
-    final auth = _buildAuthorizationHeader();
+  Future<void> _applyHeaders(HttpClientRequest request) async {
+    final auth = await _buildAuthorizationHeader();
     if (auth != null) {
       request.headers.set(HttpHeaders.authorizationHeader, auth);
     }
@@ -290,12 +310,12 @@ class HttpWebDavBackupService implements WebDavBackupService {
         .set(HttpHeaders.acceptHeader, 'application/json, text/xml, */*');
   }
 
-  String? _buildAuthorizationHeader() {
-    if (config.username.isEmpty && config.password.isEmpty) {
+  Future<String?> _buildAuthorizationHeader() async {
+    final password = await config.resolvePassword();
+    if (config.username.isEmpty && password.isEmpty) {
       return null;
     }
-    final token =
-        base64Encode(utf8.encode('${config.username}:${config.password}'));
+    final token = base64Encode(utf8.encode('${config.username}:$password'));
     return 'Basic $token';
   }
 
@@ -304,5 +324,17 @@ class HttpWebDavBackupService implements WebDavBackupService {
       return;
     }
     throw const FormatException('请先填写 WebDAV Base URL 和远端文件路径。');
+  }
+
+  void _assertSecureBaseUri(Uri base) {
+    if (base.scheme == 'https') {
+      return;
+    }
+    if (base.scheme != 'http') {
+      throw FormatException('不支持的 WebDAV URL Scheme：${base.scheme}');
+    }
+    if (!isLoopbackHost(base.host)) {
+      throw const FormatException('WebDAV 远端地址必须使用 HTTPS。');
+    }
   }
 }

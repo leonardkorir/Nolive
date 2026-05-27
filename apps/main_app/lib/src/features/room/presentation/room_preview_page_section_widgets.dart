@@ -44,8 +44,10 @@ BoxFit fitForRoomScaleMode(PlayerScaleMode scaleMode) {
   };
 }
 
-class RoomChaturbateStatusPresentation {
-  const RoomChaturbateStatusPresentation({
+/// Renders status information for a room, such as a custom status badge or error description.
+/// Kept [RoomChaturbateStatusPresentation] name as a typedef alias for backwards compatibility.
+class RoomStatusPresentation {
+  const RoomStatusPresentation({
     required this.label,
     required this.description,
   });
@@ -54,9 +56,18 @@ class RoomChaturbateStatusPresentation {
   final String description;
 }
 
-RoomChaturbateStatusPresentation? resolveRoomChaturbateStatusPresentation(
-  LiveRoomDetail room,
-) {
+typedef RoomChaturbateStatusPresentation = RoomStatusPresentation;
+
+RoomStatusPresentation? resolveRoomChaturbateStatusPresentation(
+  LiveRoomDetail room, {
+  bool hasPdkeyHealthAlert = false,
+}) {
+  if (room.providerId == ProviderId.stripchat.value && hasPdkeyHealthAlert) {
+    return const RoomStatusPresentation(
+      label: '解密密钥耗尽',
+      description: 'Stripchat 播放解密失败：pdkey 可能已失效或耗尽。请在"设置 -> 账户设置"中更新 Mouflon 密钥。',
+    );
+  }
   if (room.providerId != ProviderId.chaturbate.value) {
     return null;
   }
@@ -66,30 +77,30 @@ RoomChaturbateStatusPresentation? resolveRoomChaturbateStatusPresentation(
   }
   final normalized = rawStatus.toLowerCase();
   if (normalized.contains('private show')) {
-    return const RoomChaturbateStatusPresentation(
+    return const RoomStatusPresentation(
       label: '私密表演中',
       description: '主播当前正在 Private Show 中，暂时没有公开播放流。等表演结束后刷新即可恢复正常播放。',
     );
   }
   if (normalized.contains('group show')) {
-    return const RoomChaturbateStatusPresentation(
+    return const RoomStatusPresentation(
       label: '群组表演中',
       description: '主播当前正在 Group Show 中，暂时没有公开播放流。结束后刷新即可恢复正常播放。',
     );
   }
   if (normalized == 'away') {
-    return const RoomChaturbateStatusPresentation(
+    return const RoomStatusPresentation(
       label: '暂时离开',
       description: '主播暂时离开，当前没有公开播放流。返回公开状态后刷新即可恢复。',
     );
   }
   if (normalized == 'offline') {
-    return const RoomChaturbateStatusPresentation(
+    return const RoomStatusPresentation(
       label: '未开播',
       description: '当前房间未处于公开直播状态，后续如果恢复开播，刷新即可恢复正常播放。',
     );
   }
-  return RoomChaturbateStatusPresentation(
+  return RoomStatusPresentation(
     label: rawStatus,
     description: '当前房间状态为 "$rawStatus"，暂时没有公开播放流。请稍后刷新重试。',
   );

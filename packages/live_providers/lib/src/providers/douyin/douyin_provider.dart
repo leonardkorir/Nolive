@@ -21,8 +21,10 @@ class DouyinProvider extends LiveProvider
   DouyinProvider({
     DouyinDataSource? dataSource,
     DouyinWebsocketSignatureBuilder? websocketSignatureBuilder,
+    void Function()? disposeOwnedResources,
   })  : _dataSource = dataSource ?? const DouyinPreviewDataSource(),
-        _websocketSignatureBuilder = websocketSignatureBuilder;
+        _websocketSignatureBuilder = websocketSignatureBuilder,
+        _disposeOwnedResources = disposeOwnedResources;
 
   factory DouyinProvider.preview() => DouyinProvider();
 
@@ -32,15 +34,21 @@ class DouyinProvider extends LiveProvider
     DouyinSignService? signService,
     DouyinWebsocketSignatureBuilder? websocketSignatureBuilder,
   }) {
-    final resolvedTransport = transport ?? HttpDouyinTransport();
-    final resolvedSignService =
-        signService ?? HttpDouyinSignService(cookie: cookie);
+    final ownedTransport = transport == null ? HttpDouyinTransport() : null;
+    final resolvedTransport = transport ?? ownedTransport!;
+    final ownedSignService =
+        signService == null ? HttpDouyinSignService(cookie: cookie) : null;
+    final resolvedSignService = signService ?? ownedSignService!;
     return DouyinProvider(
       dataSource: DouyinLiveDataSource(
         transport: resolvedTransport,
         signService: resolvedSignService,
       ),
       websocketSignatureBuilder: websocketSignatureBuilder,
+      disposeOwnedResources: () {
+        ownedSignService?.close();
+        ownedTransport?.close();
+      },
     );
   }
 
@@ -70,9 +78,15 @@ class DouyinProvider extends LiveProvider
 
   final DouyinDataSource _dataSource;
   final DouyinWebsocketSignatureBuilder? _websocketSignatureBuilder;
+  final void Function()? _disposeOwnedResources;
 
   @override
   ProviderDescriptor get descriptor => kDescriptor;
+
+  @override
+  void dispose() {
+    _disposeOwnedResources?.call();
+  }
 
   @override
   Future<List<LiveCategory>> fetchCategories() {
@@ -126,24 +140,22 @@ class DouyinProvider extends LiveProvider
   Future<DanmakuSession> createDanmakuSession(LiveRoomDetail detail) async {
     requireCapability(ProviderCapability.danmaku);
     final token = detail.danmakuToken;
-    if (token is Map && token['mode']?.toString() == 'preview') {
+    if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
         providerId: descriptor.id.value,
         detail: detail,
       );
     }
-    final roomId = token is Map ? token['roomId']?.toString() ?? '' : '';
-    final userUniqueId =
-        token is Map ? token['userUniqueId']?.toString() ?? '' : '';
-    final cookie = token is Map ? token['cookie']?.toString() ?? '' : '';
-    if (roomId.isNotEmpty &&
-        userUniqueId.isNotEmpty &&
+    if (token is DouyinDanmakuToken &&
+        token.roomId.isNotEmpty &&
+        token.userUniqueId.isNotEmpty &&
         _websocketSignatureBuilder != null) {
       return DouyinDanmakuSession(
-        roomId: roomId,
-        userUniqueId: userUniqueId,
-        cookie: cookie,
+        roomId: token.roomId,
+        userUniqueId: token.userUniqueId,
+        cookie: token.cookie,
         signatureBuilder: _websocketSignatureBuilder,
+        serverUris: token.websocketUris.isEmpty ? null : token.websocketUris,
       );
     }
     return ProviderTickerDanmakuSession(

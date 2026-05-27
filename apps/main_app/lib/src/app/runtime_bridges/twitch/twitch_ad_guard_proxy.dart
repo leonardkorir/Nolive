@@ -6,15 +6,19 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 
 class TwitchAdGuardProxy {
   TwitchAdGuardProxy({
     HttpClient? client,
     Duration sessionTtl = const Duration(minutes: 12),
     bool? enabledOverride,
-  })  : _client = client ?? HttpClient(),
-        _sessionTtl = sessionTtl,
-        _enabledOverride = enabledOverride {
+    AppPlatformCapabilities? platformCapabilities,
+  }) : _client = client ?? HttpClient(),
+       _sessionTtl = sessionTtl,
+       _enabledOverride = enabledOverride,
+       _platformCapabilities =
+           platformCapabilities ?? AppPlatformCapabilities.current() {
     _client.connectionTimeout = const Duration(seconds: 8);
     _client.idleTimeout = const Duration(seconds: 8);
   }
@@ -22,10 +26,15 @@ class TwitchAdGuardProxy {
   static const String _routePrefix = 'twitch-ad-guard';
   static const int _maxPlaylistProbeAttempts = 3;
   static const Duration _playlistProbeRetryDelay = Duration(milliseconds: 350);
+  static const Duration _playlistCandidateProbeTimeout = Duration(seconds: 2);
+  static const Duration _playlistPlayableSelectionHedgeDelay = Duration(
+    milliseconds: 150,
+  );
 
   final HttpClient _client;
   final Duration _sessionTtl;
   final bool? _enabledOverride;
+  final AppPlatformCapabilities _platformCapabilities;
   final Map<String, _TwitchAdGuardSession> _sessions =
       <String, _TwitchAdGuardSession>{};
 
@@ -131,29 +140,29 @@ class TwitchAdGuardProxy {
       final preferredPlayerType =
           preferredUrl.metadata?['playerType']?.toString().trim() ?? '';
       final groups = autoGroups
-          .map(
-            (group) {
-              final orderedCandidates = _orderedCandidates(
-                candidates: group.candidates,
-                preferredPlayerType: preferredPlayerType,
-                preferCompatibleCodecs:
-                    _hasMixedHevcCompatibility(group.candidates),
-              );
-              final manifestCandidate =
-                  _manifestCandidateForGroup(orderedCandidates);
-              return _TwitchAdGuardVariantGroup(
-                id: _sanitizeKey(group.id),
-                label: group.label,
-                sortOrder: group.sortOrder,
-                bandwidth: manifestCandidate?.bandwidth ?? group.bandwidth,
-                width: manifestCandidate?.width ?? group.width,
-                height: manifestCandidate?.height ?? group.height,
-                frameRate: manifestCandidate?.frameRate ?? group.frameRate,
-                codecs: manifestCandidate?.codecs ?? group.codecs,
-                candidates: orderedCandidates,
-              );
-            },
-          )
+          .map((group) {
+            final orderedCandidates = _orderedCandidates(
+              candidates: group.candidates,
+              preferredPlayerType: preferredPlayerType,
+              preferCompatibleCodecs: _hasMixedHevcCompatibility(
+                group.candidates,
+              ),
+            );
+            final manifestCandidate = _manifestCandidateForGroup(
+              orderedCandidates,
+            );
+            return _TwitchAdGuardVariantGroup(
+              id: _sanitizeKey(group.id),
+              label: group.label,
+              sortOrder: group.sortOrder,
+              bandwidth: manifestCandidate?.bandwidth ?? group.bandwidth,
+              width: manifestCandidate?.width ?? group.width,
+              height: manifestCandidate?.height ?? group.height,
+              frameRate: manifestCandidate?.frameRate ?? group.frameRate,
+              codecs: manifestCandidate?.codecs ?? group.codecs,
+              candidates: orderedCandidates,
+            );
+          })
           .where((group) => group.candidates.isNotEmpty)
           .toList(growable: false);
       return _TwitchAdGuardSession.auto(
@@ -167,7 +176,8 @@ class TwitchAdGuardProxy {
     final fixedGroup = TwitchPlaybackQualityGroup.fromJson(
       quality.metadata?['twitchPlaybackGroup'],
     );
-    final fixedCandidates = fixedGroup?.candidates ??
+    final fixedCandidates =
+        fixedGroup?.candidates ??
         playUrls
             .map(
               (item) => TwitchPlaybackCandidate(
@@ -205,23 +215,27 @@ class TwitchAdGuardProxy {
     final ordered = List<TwitchPlaybackCandidate>.from(candidates);
     ordered.sort((left, right) {
       if (preferCompatibleCodecs) {
-        final codecCompare =
-            _codecPriority(left.codecs).compareTo(_codecPriority(right.codecs));
+        final codecCompare = _codecPriority(
+          left.codecs,
+        ).compareTo(_codecPriority(right.codecs));
         if (codecCompare != 0) {
           return codecCompare;
         }
       }
-      final leftPreferred = left.playlistUrl == preferredUrl ||
+      final leftPreferred =
+          left.playlistUrl == preferredUrl ||
           (preferredPlayerType.isNotEmpty &&
               left.playerType == preferredPlayerType);
-      final rightPreferred = right.playlistUrl == preferredUrl ||
+      final rightPreferred =
+          right.playlistUrl == preferredUrl ||
           (preferredPlayerType.isNotEmpty &&
               right.playerType == preferredPlayerType);
       if (leftPreferred != rightPreferred) {
         return leftPreferred ? -1 : 1;
       }
-      final playerTypeCompare = _playerTypePriority(left.playerType)
-          .compareTo(_playerTypePriority(right.playerType));
+      final playerTypeCompare = _playerTypePriority(
+        left.playerType,
+      ).compareTo(_playerTypePriority(right.playerType));
       if (playerTypeCompare != 0) {
         return playerTypeCompare;
       }
@@ -238,14 +252,15 @@ class TwitchAdGuardProxy {
     }
     final ordered = List<TwitchPlaybackCandidate>.from(candidates);
     ordered.sort((left, right) {
-      final codecCompare =
-          _codecPriority(left.codecs).compareTo(_codecPriority(right.codecs));
+      final codecCompare = _codecPriority(
+        left.codecs,
+      ).compareTo(_codecPriority(right.codecs));
       if (codecCompare != 0) {
         return codecCompare;
       }
-      final playerTypeCompare = _playerTypePriority(left.playerType).compareTo(
-        _playerTypePriority(right.playerType),
-      );
+      final playerTypeCompare = _playerTypePriority(
+        left.playerType,
+      ).compareTo(_playerTypePriority(right.playerType));
       if (playerTypeCompare != 0) {
         return playerTypeCompare;
       }
@@ -353,8 +368,11 @@ class TwitchAdGuardProxy {
       );
       buffer.writeln(variantUri.toString());
     }
-    response.headers.contentType =
-        ContentType('application', 'vnd.apple.mpegurl', charset: 'utf-8');
+    response.headers.contentType = ContentType(
+      'application',
+      'vnd.apple.mpegurl',
+      charset: 'utf-8',
+    );
     response.write(buffer.toString());
     await response.close();
   }
@@ -386,8 +404,11 @@ class TwitchAdGuardProxy {
       text: selected.text,
       stripPrefetch: selected.hadAds,
     );
-    response.headers.contentType =
-        ContentType('application', 'vnd.apple.mpegurl', charset: 'utf-8');
+    response.headers.contentType = ContentType(
+      'application',
+      'vnd.apple.mpegurl',
+      charset: 'utf-8',
+    );
     response.write(playlist);
     await response.close();
   }
@@ -396,22 +417,69 @@ class TwitchAdGuardProxy {
     List<TwitchPlaybackCandidate> candidates,
   ) async {
     for (var attempt = 0; attempt < _maxPlaylistProbeAttempts; attempt += 1) {
-      final loaded = (await Future.wait(
-        List.generate(
-          candidates.length,
-          (index) => _loadCandidatePlaylist(
+      final pending = <int, Future<_TwitchPlaylistProbeEvent>>{
+        for (var index = 0; index < candidates.length; index += 1)
+          index: _loadCandidatePlaylist(
             candidates[index],
             candidateIndex: index,
-          ),
-        ),
-      ))
-          .whereType<_TwitchLoadedPlaylist>()
-          .toList(growable: false);
-      for (final playlist in loaded) {
-        if (!playlist.hadAds && playlist.segmentCount > 0) {
-          return playlist;
+          )
+              .timeout(_playlistCandidateProbeTimeout, onTimeout: () => null)
+              .then(
+                (playlist) => _TwitchPlaylistProbeEvent.playlist(
+                  index: index,
+                  playlist: playlist,
+                ),
+              ),
+      };
+      final loadedByIndex = List<_TwitchLoadedPlaylist?>.filled(
+        candidates.length,
+        null,
+      );
+      var hedgeSequence = 0;
+      int? activeHedgeSequence;
+      int? hedgeTargetIndex;
+      Future<_TwitchPlaylistProbeEvent>? hedgeFuture;
+      while (pending.isNotEmpty || hedgeFuture != null) {
+        final event = await Future.any<_TwitchPlaylistProbeEvent>([
+          ...pending.values,
+          if (hedgeFuture != null) hedgeFuture,
+        ]);
+        if (event.index != null) {
+          pending.remove(event.index);
+          final playlist = event.playlist;
+          if (playlist != null) {
+            loadedByIndex[event.index!] = playlist;
+          }
+        } else if (event.hedgeSequence != activeHedgeSequence) {
+          continue;
+        }
+        final bestPlayable = _bestPlayableLoadedPlaylist(loadedByIndex);
+        if (bestPlayable == null) {
+          continue;
+        }
+        final hasHigherPriorityPending = pending.keys.any(
+          (index) => index < bestPlayable.candidateIndex,
+        );
+        if (!hasHigherPriorityPending) {
+          return bestPlayable;
+        }
+        if (event.hedgeSequence == activeHedgeSequence &&
+            hedgeTargetIndex == bestPlayable.candidateIndex) {
+          return bestPlayable;
+        }
+        if (hedgeTargetIndex != bestPlayable.candidateIndex) {
+          hedgeTargetIndex = bestPlayable.candidateIndex;
+          activeHedgeSequence = ++hedgeSequence;
+          final sequence = activeHedgeSequence;
+          hedgeFuture = Future.delayed(
+            _playlistPlayableSelectionHedgeDelay,
+          ).then((_) => _TwitchPlaylistProbeEvent.hedge(sequence));
         }
       }
+      final loaded = [
+        for (final playlist in loadedByIndex)
+          if (playlist != null) playlist,
+      ];
       final fallback = _selectBestAdFallback(loaded);
       if (fallback != null) {
         if (fallback.segmentCount > 0 ||
@@ -421,6 +489,20 @@ class TwitchAdGuardProxy {
       }
       if (attempt < _maxPlaylistProbeAttempts - 1) {
         await Future<void>.delayed(_playlistProbeRetryDelay);
+      }
+    }
+    return null;
+  }
+
+  _TwitchLoadedPlaylist? _bestPlayableLoadedPlaylist(
+    List<_TwitchLoadedPlaylist?> loadedByIndex,
+  ) {
+    for (final playlist in loadedByIndex) {
+      if (playlist == null) {
+        continue;
+      }
+      if (!playlist.hadAds && playlist.segmentCount > 0) {
+        return playlist;
       }
     }
     return null;
@@ -478,16 +560,15 @@ class TwitchAdGuardProxy {
     }
     final ordered = List<_TwitchLoadedPlaylist>.from(loaded);
     ordered.sort((left, right) {
-      final liveSegmentCompare =
-          right.segmentCount.compareTo(left.segmentCount);
+      final liveSegmentCompare = right.segmentCount.compareTo(
+        left.segmentCount,
+      );
       if (liveSegmentCompare != 0) {
         return liveSegmentCompare;
       }
       final playerTypeCompare = _adFallbackPlayerTypePriority(
         left.candidate.playerType,
-      ).compareTo(
-        _adFallbackPlayerTypePriority(right.candidate.playerType),
-      );
+      ).compareTo(_adFallbackPlayerTypePriority(right.candidate.playerType));
       if (playerTypeCompare != 0) {
         return playerTypeCompare;
       }
@@ -497,14 +578,20 @@ class TwitchAdGuardProxy {
       if (codecCompare != 0) {
         return codecCompare;
       }
-      final bandwidthCompare =
-          left.candidate.bandwidth.compareTo(right.candidate.bandwidth);
+      final bandwidthCompare = left.candidate.bandwidth.compareTo(
+        right.candidate.bandwidth,
+      );
       if (bandwidthCompare != 0) {
         return bandwidthCompare;
       }
       return left.candidateIndex.compareTo(right.candidateIndex);
     });
-    return ordered.first;
+    for (final playlist in ordered) {
+      if (playlist.segmentCount > 0) {
+        return playlist;
+      }
+    }
+    return null;
   }
 
   Future<String> _fetchText(
@@ -556,12 +643,8 @@ class TwitchAdGuardProxy {
         rewritten.add(
           line.replaceAllMapped(
             RegExp(r'URI="([^"]+)"'),
-            (match) => 'URI="${_registerAssetUrl(
-              session: session,
-              baseUrl: sourceUrl,
-              rawUrl: match.group(1) ?? '',
-              headers: headers,
-            )}"',
+            (match) =>
+                'URI="${_registerAssetUrl(session: session, baseUrl: sourceUrl, rawUrl: match.group(1) ?? '', headers: headers)}"',
           ),
         );
         continue;
@@ -582,14 +665,9 @@ class TwitchAdGuardProxy {
       return rawUrl;
     }
     final absoluteUrl = Uri.parse(baseUrl).resolve(rawUrl).toString();
-    final assetId = session.registerAsset(
-      url: absoluteUrl,
-      headers: headers,
-    );
+    final assetId = session.registerAsset(url: absoluteUrl, headers: headers);
     return endpoint
-        .replace(
-          path: '${endpoint.path}/${session.id}/asset/$assetId',
-        )
+        .replace(path: '${endpoint.path}/${session.id}/asset/$assetId')
         .toString();
   }
 
@@ -728,8 +806,9 @@ class TwitchAdGuardProxy {
       if (bandwidthCompare != 0) {
         return bandwidthCompare;
       }
-      return _codecPriority(left.codecs)
-          .compareTo(_codecPriority(right.codecs));
+      return _codecPriority(
+        left.codecs,
+      ).compareTo(_codecPriority(right.codecs));
     });
     return ordered;
   }
@@ -740,13 +819,15 @@ class TwitchAdGuardProxy {
     if (groups.length <= 1) {
       return groups;
     }
-    final starterGroups = groups.where((group) {
-      final height = group.height;
-      if (height != null) {
-        return height <= 480;
-      }
-      return group.sortOrder <= 480;
-    }).toList(growable: false);
+    final starterGroups = groups
+        .where((group) {
+          final height = group.height;
+          if (height != null) {
+            return height <= 480;
+          }
+          return group.sortOrder <= 480;
+        })
+        .toList(growable: false);
     if (starterGroups.isNotEmpty) {
       return starterGroups.take(3).toList(growable: false);
     }
@@ -853,10 +934,7 @@ class TwitchAdGuardProxy {
     if (override != null) {
       return override;
     }
-    if (kIsWeb) {
-      return false;
-    }
-    return Platform.isAndroid || Platform.isIOS;
+    return _platformCapabilities.isMobile;
   }
 }
 
@@ -876,6 +954,26 @@ class _TwitchLoadedPlaylist {
   final bool hasPrefetch;
   final int segmentCount;
   final int candidateIndex;
+}
+
+class _TwitchPlaylistProbeEvent {
+  const _TwitchPlaylistProbeEvent._({
+    this.index,
+    this.playlist,
+    this.hedgeSequence,
+  });
+
+  const _TwitchPlaylistProbeEvent.playlist({
+    required int index,
+    required _TwitchLoadedPlaylist? playlist,
+  }) : this._(index: index, playlist: playlist);
+
+  const _TwitchPlaylistProbeEvent.hedge(int hedgeSequence)
+    : this._(hedgeSequence: hedgeSequence);
+
+  final int? index;
+  final _TwitchLoadedPlaylist? playlist;
+  final int? hedgeSequence;
 }
 
 class _TwitchSanitizedPlaylist {
@@ -900,20 +998,18 @@ class _TwitchAdGuardSession {
   _TwitchAdGuardSession.fixed({
     required this.id,
     required List<TwitchPlaybackCandidate> candidates,
-  })  : mode = _TwitchAdGuardMode.fixed,
-        fixedCandidates = candidates,
-        autoGroups = const [],
-        groupsById = const {};
+  }) : mode = _TwitchAdGuardMode.fixed,
+       fixedCandidates = candidates,
+       autoGroups = const [],
+       groupsById = const {};
 
   _TwitchAdGuardSession.auto({
     required this.id,
     required List<_TwitchAdGuardVariantGroup> groups,
-  })  : mode = _TwitchAdGuardMode.auto,
-        fixedCandidates = const [],
-        autoGroups = groups,
-        groupsById = {
-          for (final group in groups) group.id: group,
-        };
+  }) : mode = _TwitchAdGuardMode.auto,
+       fixedCandidates = const [],
+       autoGroups = groups,
+       groupsById = {for (final group in groups) group.id: group};
 
   final String id;
   final _TwitchAdGuardMode mode;
@@ -970,10 +1066,7 @@ class _TwitchAdGuardVariantGroup {
 }
 
 class _TwitchAdGuardAsset {
-  const _TwitchAdGuardAsset({
-    required this.url,
-    required this.headers,
-  });
+  const _TwitchAdGuardAsset({required this.url, required this.headers});
 
   final String url;
   final Map<String, String> headers;

@@ -11,6 +11,12 @@ abstract class LocalDiscoveryService {
   Future<void> start();
 
   Future<void> stop();
+
+  Future<void> dispose();
+
+  void addOrReplacePeer(DiscoveredPeer peer);
+
+  void removePeer(String deviceId);
 }
 
 class ManualLocalDiscoveryService implements LocalDiscoveryService {
@@ -33,11 +39,18 @@ class ManualLocalDiscoveryService implements LocalDiscoveryService {
     updatePeers(const []);
   }
 
+  @override
+  Future<void> dispose() async {
+    await stop();
+    await _controller.close();
+  }
+
   void updatePeers(List<DiscoveredPeer> peers) {
     _peers = List<DiscoveredPeer>.unmodifiable(peers);
     _emit();
   }
 
+  @override
   void addOrReplacePeer(DiscoveredPeer peer) {
     final next = [..._peers]
       ..removeWhere((item) => item.deviceId == peer.deviceId)
@@ -45,6 +58,7 @@ class ManualLocalDiscoveryService implements LocalDiscoveryService {
     updatePeers(next);
   }
 
+  @override
   void removePeer(String deviceId) {
     updatePeers(
       _peers.where((item) => item.deviceId != deviceId).toList(growable: false),
@@ -84,11 +98,13 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
   @override
   Stream<List<DiscoveredPeer>> watchPeers() => _controller.stream;
 
+  @override
   void addOrReplacePeer(DiscoveredPeer peer) {
     _manualPeers[peer.deviceId] = peer.copyWith(lastSeenAt: DateTime.now());
     _emit();
   }
 
+  @override
   void removePeer(String deviceId) {
     _manualPeers.remove(deviceId);
     _networkPeers.remove(deviceId);
@@ -138,6 +154,12 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
     _emit();
   }
 
+  @override
+  Future<void> dispose() async {
+    await stop();
+    await _controller.close();
+  }
+
   Future<void> _broadcastHello() async {
     final socket = _socket;
     if (socket == null) {
@@ -182,7 +204,13 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
     Map<String, dynamic> payload, {
     required String senderAddress,
   }) {
+    if (!_isTrustedSender(senderAddress)) {
+      return;
+    }
     final type = payload['type']?.toString();
+    if (type != 'hello' && type != 'info') {
+      return;
+    }
     final info = LocalSyncPeerInfo.fromJson(payload);
     if (info.deviceId == _safeSelfDeviceId) {
       return;
@@ -194,6 +222,7 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
       address: senderAddress,
       port: port,
       platform: info.platform,
+      accessToken: info.accessToken,
       lastSeenAt: DateTime.now(),
     );
     _networkPeers[peer.deviceId] = peer;
@@ -257,6 +286,38 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
 
   String get _safeSelfDeviceId {
     return _selfDeviceId ?? '';
+  }
+
+  bool _isTrustedSender(String senderAddress) {
+    final address = InternetAddress.tryParse(senderAddress);
+    if (address == null) {
+      return false;
+    }
+    if (address.isLoopback) {
+      return true;
+    }
+    if (address.type != InternetAddressType.IPv4) {
+      return false;
+    }
+    final octets = address.rawAddress;
+    if (octets.length < 4) {
+      return false;
+    }
+    final first = octets[0];
+    final second = octets[1];
+    if (first == 10 || first == 127) {
+      return true;
+    }
+    if (first == 172 && second >= 16 && second <= 31) {
+      return true;
+    }
+    if (first == 192 && second == 168) {
+      return true;
+    }
+    if (first == 169 && second == 254) {
+      return true;
+    }
+    return false;
   }
 
   void _emit() {

@@ -25,7 +25,9 @@ class FileFollowRepository implements FollowRepository {
 
   @override
   Future<List<FollowRecord>> listAll() {
-    return store.read((snapshot) => List<FollowRecord>.from(snapshot.follows));
+    return store.read(
+      (snapshot) => List<FollowRecord>.unmodifiable(snapshot.follows),
+    );
   }
 
   @override

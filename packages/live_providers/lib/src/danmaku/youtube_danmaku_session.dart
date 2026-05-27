@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:live_core/live_core.dart';
 
+import 'danmaku_activity_watchdog.dart';
 import '../providers/youtube/youtube_api_client.dart';
 
 class YouTubeDanmakuSession implements DanmakuSession {
@@ -12,7 +13,10 @@ class YouTubeDanmakuSession implements DanmakuSession {
     required this.visitorData,
     required this.referer,
     this.clientVersion = YouTubeApiClient.defaultWebClientVersion,
-  });
+    FutureOr<void> Function()? disposeResources,
+    Duration inactivityTimeout = const Duration(minutes: 1),
+  })  : _disposeResources = disposeResources,
+        _inactivityTimeout = inactivityTimeout;
 
   final YouTubeApiClient apiClient;
   final String apiKey;
@@ -20,6 +24,8 @@ class YouTubeDanmakuSession implements DanmakuSession {
   final String visitorData;
   final String referer;
   final String clientVersion;
+  final FutureOr<void> Function()? _disposeResources;
+  final Duration _inactivityTimeout;
 
   final StreamController<LiveMessage> _controller =
       StreamController<LiveMessage>.broadcast();
@@ -27,8 +33,11 @@ class YouTubeDanmakuSession implements DanmakuSession {
 
   bool _connected = false;
   bool _announcedReady = false;
+  bool _resourcesDisposed = false;
   Future<void>? _pumpFuture;
   String? _nextContinuation;
+  DanmakuActivityWatchdog? _activityWatchdog;
+  Completer<void>? _disconnectCompleter;
 
   @override
   Stream<LiveMessage> get messages => _controller.stream;
@@ -40,18 +49,35 @@ class YouTubeDanmakuSession implements DanmakuSession {
     }
     _connected = true;
     _announcedReady = false;
+    _disconnectCompleter = Completer<void>();
     _nextContinuation = continuation;
+    _activityWatchdog = DanmakuActivityWatchdog(
+      timeout: _inactivityTimeout,
+      onTimeout: _handleActivityTimeout,
+    )..start();
     _pumpFuture = _pump();
   }
 
   @override
   Future<void> disconnect() async {
     _connected = false;
+    _completeDisconnectSignal();
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
     await _pumpFuture;
     _pumpFuture = null;
+    await _disposeResourcesOnce();
     if (!_controller.isClosed) {
       await _controller.close();
     }
+  }
+
+  Future<void> _disposeResourcesOnce() async {
+    if (_resourcesDisposed) {
+      return;
+    }
+    _resourcesDisposed = true;
+    await _disposeResources?.call();
   }
 
   Future<void> _pump() async {
@@ -72,6 +98,7 @@ class YouTubeDanmakuSession implements DanmakuSession {
         if (!_connected) {
           break;
         }
+        _activityWatchdog?.ping();
         if (!_announcedReady) {
           _announcedReady = true;
           _emitNotice('YouTube 实时聊天已连接');
@@ -188,6 +215,17 @@ class YouTubeDanmakuSession implements DanmakuSession {
         payload: renderer,
       ),
     );
+  }
+
+  Future<void> _handleActivityTimeout() async {
+    if (!_connected) {
+      return;
+    }
+    _connected = false;
+    _completeDisconnectSignal();
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    _emitNotice('YouTube 实时聊天连接活动超时');
   }
 
   LiveMessage? _buildPaidMessage(Map<String, dynamic> renderer) {
@@ -422,17 +460,24 @@ class YouTubeDanmakuSession implements DanmakuSession {
   }
 
   Future<void> _waitFor(Duration delay) async {
-    final deadline = DateTime.now().add(delay);
-    while (_connected) {
-      final remaining = deadline.difference(DateTime.now());
-      if (remaining <= Duration.zero) {
-        return;
-      }
-      await Future<void>.delayed(
-        remaining > const Duration(milliseconds: 200)
-            ? const Duration(milliseconds: 200)
-            : remaining,
-      );
+    if (!_connected) {
+      return;
+    }
+    final disconnectFuture = _disconnectCompleter?.future;
+    if (disconnectFuture == null) {
+      await Future<void>.delayed(delay);
+      return;
+    }
+    await Future.any([
+      Future<void>.delayed(delay),
+      disconnectFuture,
+    ]);
+  }
+
+  void _completeDisconnectSignal() {
+    final completer = _disconnectCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
     }
   }
 

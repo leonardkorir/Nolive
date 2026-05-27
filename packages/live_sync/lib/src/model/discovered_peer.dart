@@ -5,6 +5,7 @@ class DiscoveredPeer {
     required this.address,
     required this.port,
     this.platform = 'unknown',
+    this.accessToken,
     required this.lastSeenAt,
   });
 
@@ -13,6 +14,7 @@ class DiscoveredPeer {
   final String address;
   final int port;
   final String platform;
+  final String? accessToken;
   final DateTime lastSeenAt;
 
   DiscoveredPeer copyWith({
@@ -21,6 +23,7 @@ class DiscoveredPeer {
     String? address,
     int? port,
     String? platform,
+    String? accessToken,
     DateTime? lastSeenAt,
   }) {
     return DiscoveredPeer(
@@ -29,6 +32,7 @@ class DiscoveredPeer {
       address: address ?? this.address,
       port: port ?? this.port,
       platform: platform ?? this.platform,
+      accessToken: accessToken ?? this.accessToken,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
     );
   }

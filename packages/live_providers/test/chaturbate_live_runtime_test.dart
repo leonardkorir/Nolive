@@ -50,7 +50,7 @@ void main() {
           expect(detail.title, "Kittengirlxo's room");
           expect(detail.sourceUrl, 'https://chaturbate.com/kittengirlxo/');
           expect(detail.isLive, isTrue);
-          expect(detail.danmakuToken, isA<Map>());
+          expect(detail.danmakuToken, isA<ChaturbateDanmakuToken>());
 
           final qualities = await provider.fetchPlayQualities(detail);
           expect(qualities, hasLength(5));
@@ -129,6 +129,18 @@ void main() {
           stopwatch.elapsed,
           lessThan(const Duration(milliseconds: 150)),
         );
+      });
+
+      test('playback bootstrap cache is capped', () {
+        final dataSource = ChaturbateLiveDataSource(
+          apiClient: _FixtureChaturbateApiClient(),
+        );
+
+        for (var index = 0; index < 72; index += 1) {
+          dataSource.debugRememberPlaybackBootstrap('room-$index');
+        }
+
+        expect(dataSource.debugPlaybackBootstrapCacheSize, 64);
       });
 
       test('empty carousel response returns an empty recommend page', () async {
@@ -390,7 +402,7 @@ void main() {
 
         final urls = await dataSource.fetchPlayUrls(
           detail: detail,
-          quality: const LivePlayQuality(
+          quality: LivePlayQuality(
             id: 'auto',
             label: 'Auto',
             isDefault: true,
@@ -738,6 +750,9 @@ class _FixtureChaturbateApiClient implements ChaturbateApiClient {
   }) async {
     fail('Unexpected room_history request in runtime fixture test');
   }
+
+  @override
+  void close() {}
 }
 
 String _discoverKey(String genders, String carouselId) =>

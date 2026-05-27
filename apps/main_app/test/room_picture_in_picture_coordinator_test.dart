@@ -68,61 +68,65 @@ void main() {
     expect(harness.messages, contains('进入画中画失败，请稍后重试'));
   });
 
-  testWidgets('pip disabled status restores prior ui and reapplies fullscreen',
-      (tester) async {
-    final harness = _PipHarness();
-    addTearDown(harness.dispose);
-    await harness.coordinator.primeRuntimeState();
-    harness.viewUiState = const RoomViewUiState(
-      isFullscreen: true,
-      showFullscreenChrome: true,
-      showFullscreenFollowDrawer: true,
-    );
-    harness.pipHost.emitStatusOnEnable = false;
+  testWidgets(
+    'pip disabled status restores prior ui and reapplies fullscreen',
+    (tester) async {
+      final harness = _PipHarness();
+      addTearDown(harness.dispose);
+      await harness.coordinator.primeRuntimeState();
+      harness.viewUiState = const RoomViewUiState(
+        isFullscreen: true,
+        showFullscreenChrome: true,
+        showFullscreenFollowDrawer: true,
+      );
+      harness.pipHost.emitStatusOnEnable = false;
 
-    await harness.coordinator.enterPictureInPicture();
-    harness.pipHost.emitStatus(PiPStatus.disabled);
-    await tester.pump();
+      await harness.coordinator.enterPictureInPicture();
+      harness.pipHost.emitStatus(PiPStatus.disabled);
+      await tester.pump();
 
-    expect(harness.viewUiState.showFullscreenChrome, isTrue);
-    expect(harness.viewUiState.showFullscreenFollowDrawer, isTrue);
-    expect(harness.applyFullscreenSystemUiCount, 1);
-  });
+      expect(harness.viewUiState.showFullscreenChrome, isTrue);
+      expect(harness.viewUiState.showFullscreenFollowDrawer, isTrue);
+      expect(harness.applyFullscreenSystemUiCount, 1);
+    },
+  );
 
   testWidgets(
-      'lifecycle pause and resume suspend and restore playback outside pip', (
-    tester,
-  ) async {
-    final harness = _PipHarness();
-    addTearDown(harness.dispose);
-    harness.player.emit(
-      PlayerState(
-        backend: PlayerBackend.mpv,
-        status: PlaybackStatus.playing,
-        source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
-      ),
-    );
-    harness.viewUiState = const RoomViewUiState(
-      showInlinePlayerChrome: false,
-      showFullscreenChrome: true,
-    );
+    'lifecycle pause and resume suspend and restore playback outside pip',
+    (tester) async {
+      final harness = _PipHarness();
+      addTearDown(harness.dispose);
+      harness.player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          source: PlaybackSource(
+            url: Uri.parse('https://example.com/live.m3u8'),
+          ),
+        ),
+      );
+      harness.viewUiState = const RoomViewUiState(
+        showInlinePlayerChrome: false,
+        showFullscreenChrome: true,
+      );
 
-    await harness.coordinator.handleLifecycleState(AppLifecycleState.paused);
-    expect(harness.player.events, contains('stop'));
-    expect(harness.viewUiState.pausedByLifecycle, isFalse);
+      await harness.coordinator.handleLifecycleState(AppLifecycleState.paused);
+      expect(harness.player.events, contains('stop'));
+      expect(harness.viewUiState.pausedByLifecycle, isFalse);
 
-    await harness.coordinator.handleLifecycleState(AppLifecycleState.resumed);
-    expect(harness.resolvePlaybackSourceForLifecycleRestoreCalls, 1);
-    expect(
-      harness.player.events,
-      containsAllInOrder(<String>['stop', 'setSource', 'play']),
-    );
-    expect(harness.viewUiState.pausedByLifecycle, isFalse);
-    expect(
-      harness.player.currentState.source?.url.toString(),
-      'https://example.com/restored.m3u8',
-    );
-  });
+      await harness.coordinator.handleLifecycleState(AppLifecycleState.resumed);
+      expect(harness.resolvePlaybackSourceForLifecycleRestoreCalls, 1);
+      expect(
+        harness.player.events,
+        containsAllInOrder(<String>['stop', 'setSource', 'play']),
+      );
+      expect(harness.viewUiState.pausedByLifecycle, isFalse);
+      expect(
+        harness.player.currentState.source?.url.toString(),
+        'https://example.com/restored.m3u8',
+      );
+    },
+  );
 
   testWidgets('prepare for picture-in-picture failure restores ui state', (
     tester,
@@ -148,6 +152,27 @@ void main() {
     expect(harness.applyFullscreenSystemUiCount, 1);
     expect(harness.messages, contains('进入画中画失败，请稍后重试'));
   });
+
+  testWidgets(
+    'lifecycle resume during fullscreen bootstrap reschedules fullscreen auto hide',
+    (tester) async {
+      final harness = _PipHarness();
+      addTearDown(harness.dispose);
+      harness.viewUiState = const RoomViewUiState(
+        fullscreenBootstrapPending: true,
+        showFullscreenChrome: true,
+        fullscreenChromeBeforeLifecycle: true,
+        showInlinePlayerChrome: false,
+        inlineChromeBeforeLifecycle: false,
+      );
+
+      await harness.coordinator.handleLifecycleState(AppLifecycleState.resumed);
+
+      expect(harness.applyFullscreenSystemUiCount, 1);
+      expect(harness.scheduleFullscreenChromeAutoHideCount, 1);
+      expect(harness.scheduleInlineChromeAutoHideCount, 0);
+    },
+  );
 }
 
 class _PipHarness {
@@ -211,8 +236,9 @@ class _PipHarness {
   bool backgroundAutoPauseEnabled = true;
   bool danmakuVisible = true;
   double volume = 0.6;
-  PlaybackSource restoredPlaybackSource =
-      PlaybackSource(url: Uri.parse('https://example.com/restored.m3u8'));
+  PlaybackSource restoredPlaybackSource = PlaybackSource(
+    url: Uri.parse('https://example.com/restored.m3u8'),
+  );
   int resolvePlaybackSourceForLifecycleRestoreCalls = 0;
   int applyFullscreenSystemUiCount = 0;
   int scheduleFullscreenChromeAutoHideCount = 0;

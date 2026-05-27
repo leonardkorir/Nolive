@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:live_core/live_core.dart';
 import 'package:web_socket_channel/io.dart';
 
+import 'danmaku_activity_watchdog.dart';
 import 'danmaku_web_socket.dart';
 import 'tars/codec/tars_input_stream.dart';
 import 'tars/codec/tars_output_stream.dart';
@@ -15,7 +16,8 @@ class HuyaDanmakuSession implements DanmakuSession {
     required this.ayyuid,
     required this.topSid,
     required this.subSid,
-  });
+    Duration inactivityTimeout = const Duration(minutes: 3),
+  }) : _inactivityTimeout = inactivityTimeout;
 
   static const _serverUrl = 'wss://cdnws.api.huya.com';
   static final Uint8List _heartbeatData =
@@ -24,6 +26,7 @@ class HuyaDanmakuSession implements DanmakuSession {
   final int ayyuid;
   final int topSid;
   final int subSid;
+  final Duration _inactivityTimeout;
 
   final StreamController<LiveMessage> _controller =
       StreamController<LiveMessage>.broadcast();
@@ -31,6 +34,7 @@ class HuyaDanmakuSession implements DanmakuSession {
   IOWebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
   Timer? _heartbeatTimer;
+  DanmakuActivityWatchdog? _activityWatchdog;
   bool _connected = false;
 
   @override
@@ -45,30 +49,34 @@ class HuyaDanmakuSession implements DanmakuSession {
     try {
       _channel = channel;
       _connected = true;
-      _subscription = _channel!.stream.listen(
+      _activityWatchdog = DanmakuActivityWatchdog(
+        timeout: _inactivityTimeout,
+        onTimeout: _handleActivityTimeout,
+      )..start();
+      StreamSubscription<dynamic>? subscription;
+      subscription = channel.stream.listen(
         _handleRawMessage,
         onError: (error) {
-          _emit(
-            LiveMessage(
-              type: LiveMessageType.notice,
-              content: '虎牙弹幕连接异常：$error',
-              timestamp: DateTime.now(),
+          unawaited(
+            _teardownRemoteDisconnect(
+              channel: channel,
+              subscription: subscription,
+              notice: '虎牙弹幕连接异常：$error',
             ),
           );
         },
         onDone: () {
-          if (_connected) {
-            _emit(
-              LiveMessage(
-                type: LiveMessageType.notice,
-                content: '虎牙弹幕连接已断开',
-                timestamp: DateTime.now(),
-              ),
-            );
-          }
+          unawaited(
+            _teardownRemoteDisconnect(
+              channel: channel,
+              subscription: subscription,
+              notice: '虎牙弹幕连接已断开',
+            ),
+          );
         },
         cancelOnError: false,
       );
+      _subscription = subscription;
       _channel?.sink.add(_buildJoinData());
       _heartbeatTimer = Timer.periodic(
         const Duration(seconds: 60),
@@ -83,6 +91,8 @@ class HuyaDanmakuSession implements DanmakuSession {
       );
     } catch (_) {
       _connected = false;
+      _activityWatchdog?.stop();
+      _activityWatchdog = null;
       await _subscription?.cancel();
       _subscription = null;
       await channel.sink.close();
@@ -98,6 +108,8 @@ class HuyaDanmakuSession implements DanmakuSession {
     _connected = false;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
     await _subscription?.cancel();
     _subscription = null;
     await _channel?.sink.close();
@@ -105,6 +117,37 @@ class HuyaDanmakuSession implements DanmakuSession {
     if (!_controller.isClosed) {
       await _controller.close();
     }
+  }
+
+  Future<void> _teardownRemoteDisconnect({
+    required IOWebSocketChannel channel,
+    required StreamSubscription<dynamic>? subscription,
+    required String notice,
+  }) async {
+    if (!identical(_channel, channel) ||
+        !identical(_subscription, subscription)) {
+      return;
+    }
+    _connected = false;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    _subscription = null;
+    _channel = null;
+    _emit(
+      LiveMessage(
+        type: LiveMessageType.notice,
+        content: notice,
+        timestamp: DateTime.now(),
+      ),
+    );
+    try {
+      await subscription?.cancel();
+    } catch (_) {}
+    try {
+      await channel.sink.close();
+    } catch (_) {}
   }
 
   List<int> _buildJoinData() {
@@ -134,6 +177,7 @@ class HuyaDanmakuSession implements DanmakuSession {
     if (bytes.isEmpty) {
       return;
     }
+    _activityWatchdog?.ping();
     try {
       var input = TarsInputStream(bytes);
       final type = input.read(0, 0, false);
@@ -186,5 +230,27 @@ class HuyaDanmakuSession implements DanmakuSession {
       return;
     }
     _controller.add(message);
+  }
+
+  Future<void> _handleActivityTimeout() async {
+    if (!_connected) {
+      return;
+    }
+    _connected = false;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    await _subscription?.cancel();
+    _subscription = null;
+    await _channel?.sink.close();
+    _channel = null;
+    _emit(
+      LiveMessage(
+        type: LiveMessageType.notice,
+        content: '虎牙弹幕连接活动超时',
+        timestamp: DateTime.now(),
+      ),
+    );
   }
 }

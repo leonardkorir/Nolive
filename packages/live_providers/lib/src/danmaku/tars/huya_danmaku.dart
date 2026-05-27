@@ -43,7 +43,7 @@ class HYSender extends TarsStruct {
   @override
   void readFrom(TarsInputStream _is) {
     uid = _is.read(uid, 0, false);
-    lMid = _is.read(lMid, 0, false);
+    lMid = _is.read(lMid, 1, false);
     nickName = _is.read(nickName, 2, false);
     gender = _is.read(gender, 3, false);
   }

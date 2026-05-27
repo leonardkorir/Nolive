@@ -44,6 +44,9 @@ class SwitchablePlayer implements BasePlayer {
   StreamSubscription<PlayerState>? _delegateSubscription;
   StreamSubscription<PlayerDiagnostics>? _delegateDiagnosticsSubscription;
   bool _initialized = false;
+  bool _disposed = false;
+  Future<void>? _disposeFuture;
+  Future<void> _pendingDelegateReplacement = Future<void>.value();
 
   List<PlayerBackend> get supportedBackends =>
       _builders.keys.toList(growable: false);
@@ -70,29 +73,43 @@ class SwitchablePlayer implements BasePlayer {
   bool get supportsScreenshot => _delegate.supportsScreenshot;
 
   Future<void> switchBackend(PlayerBackend nextBackend) async {
-    if (nextBackend == _activeBackend) {
-      return;
-    }
-    await _replaceDelegate(nextBackend);
+    await _serializeDelegateReplacement(() async {
+      if (_disposed) {
+        return;
+      }
+      if (nextBackend == _activeBackend) {
+        return;
+      }
+      await _replaceDelegate(nextBackend);
+    });
   }
 
   Future<void> switchBackendWithoutPlaybackState(
     PlayerBackend nextBackend,
   ) async {
-    if (nextBackend == _activeBackend) {
-      return;
-    }
-    await _replaceDelegate(
-      nextBackend,
-      preservePlaybackState: false,
-    );
+    await _serializeDelegateReplacement(() async {
+      if (_disposed) {
+        return;
+      }
+      if (nextBackend == _activeBackend) {
+        return;
+      }
+      await _replaceDelegate(
+        nextBackend,
+        preservePlaybackState: false,
+      );
+    });
   }
 
-  Future<void> refreshBackend() => _replaceDelegate(_activeBackend);
+  Future<void> refreshBackend() =>
+      _serializeDelegateReplacement(() => _replaceDelegate(_activeBackend));
 
-  Future<void> refreshBackendWithoutPlaybackState() => _replaceDelegate(
-        _activeBackend,
-        preservePlaybackState: false,
+  Future<void> refreshBackendWithoutPlaybackState() =>
+      _serializeDelegateReplacement(
+        () => _replaceDelegate(
+          _activeBackend,
+          preservePlaybackState: false,
+        ),
       );
 
   @override
@@ -100,8 +117,8 @@ class SwitchablePlayer implements BasePlayer {
     if (_initialized) {
       return;
     }
-    _initialized = true;
     await _delegate.initialize();
+    _initialized = true;
   }
 
   @override
@@ -141,18 +158,31 @@ class SwitchablePlayer implements BasePlayer {
 
   @override
   Future<void> dispose() async {
-    await _delegateSubscription?.cancel();
-    await _delegateDiagnosticsSubscription?.cancel();
-    await _stopDelegateBestEffort(_delegate);
-    await _delegate.dispose();
-    await _stateController.close();
-    await _diagnosticsController.close();
+    final existing = _disposeFuture;
+    if (existing != null) {
+      return existing;
+    }
+    _disposed = true;
+    final teardown = () async {
+      await _pendingDelegateReplacement.catchError((_) {});
+      await _delegateSubscription?.cancel();
+      await _delegateDiagnosticsSubscription?.cancel();
+      await _stopDelegateBestEffort(_delegate);
+      await _delegate.dispose();
+      await _stateController.close();
+      await _diagnosticsController.close();
+    }();
+    _disposeFuture = teardown;
+    return teardown;
   }
 
   Future<void> _replaceDelegate(
     PlayerBackend nextBackend, {
     bool preservePlaybackState = true,
   }) async {
+    if (_disposed) {
+      return;
+    }
     final previousState = currentState;
     final source = preservePlaybackState ? previousState.source : null;
     final status =
@@ -162,6 +192,9 @@ class SwitchablePlayer implements BasePlayer {
     await _delegateDiagnosticsSubscription?.cancel();
     await _stopDelegateBestEffort(_delegate);
     await _delegate.dispose();
+    if (_disposed) {
+      return;
+    }
     _activeBackend = nextBackend;
     _delegate = _builders[nextBackend]!();
     _attachDelegate();
@@ -216,5 +249,13 @@ class SwitchablePlayer implements BasePlayer {
         );
       }
     });
+  }
+
+  Future<void> _serializeDelegateReplacement(
+    Future<void> Function() action,
+  ) {
+    final scheduled = _pendingDelegateReplacement.then((_) => action());
+    _pendingDelegateReplacement = scheduled.catchError((_) {});
+    return scheduled;
   }
 }

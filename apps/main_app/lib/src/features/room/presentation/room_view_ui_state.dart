@@ -40,6 +40,9 @@ class RoomViewUiState {
   final bool inlineChromeBeforeLifecycle;
   final bool fullscreenChromeBeforeLifecycle;
 
+  bool get fullscreenSessionActive =>
+      isFullscreen || fullscreenBootstrapPending;
+
   RoomViewUiState copyWith({
     bool? isFullscreen,
     bool? fullscreenBootstrapPending,

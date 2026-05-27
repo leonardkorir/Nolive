@@ -1,6 +1,15 @@
 import 'dart:async';
 
 import 'package:web_socket_channel/io.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+
+typedef WebSocketChannelConnector =
+    Future<WebSocketChannel> Function(
+      Uri uri, {
+      Map<String, dynamic>? headers,
+      Iterable<String>? protocols,
+      Duration connectTimeout,
+    });
 
 const Duration defaultDanmakuWebSocketConnectTimeout = Duration(seconds: 10);
 

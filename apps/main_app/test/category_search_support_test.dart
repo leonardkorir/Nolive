@@ -24,11 +24,7 @@ void main() {
   List<LiveSubCategory> childrenOf(LiveCategory category) => category.children;
 
   test('empty query returns every category group', () {
-    final result = filterCategoryGroups(
-      categories,
-      '',
-      childrenOf: childrenOf,
-    );
+    final result = filterCategoryGroups(categories, '', childrenOf: childrenOf);
 
     expect(result, hasLength(2));
     expect(result.first.items, hasLength(2));

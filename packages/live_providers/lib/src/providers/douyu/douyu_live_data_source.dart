@@ -1,5 +1,6 @@
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
 import 'douyu_data_source.dart';
 import 'douyu_mapper.dart';
 import 'douyu_sign_service.dart';
@@ -7,6 +8,9 @@ import 'douyu_transport.dart';
 
 class DouyuLiveDataSource implements DouyuDataSource {
   static const int _recommendPageSize = 40;
+  static const int _playRequestMaxAttempts = 2;
+  static const Duration _playRequestRetryBackoff = Duration(milliseconds: 1);
+  static const Duration _cachedPlayContextMaxAge = Duration(seconds: 60);
 
   DouyuLiveDataSource({
     required DouyuTransport transport,
@@ -154,7 +158,9 @@ class DouyuLiveDataSource implements DouyuDataSource {
     );
     final roomInfo = DouyuMapper.extractRoomInfo(roomResponse);
     final realRoomId = roomInfo['room_id']?.toString() ?? roomId;
-    final playContext = await _signService.buildPlayContext(realRoomId);
+    final playContext = await _runPlayRequestWithRetry(
+      () => _signService.buildPlayContext(realRoomId),
+    );
 
     return DouyuMapper.mapRoomDetail(
       roomInfo: roomInfo,
@@ -168,16 +174,18 @@ class DouyuLiveDataSource implements DouyuDataSource {
     LiveRoomDetail detail,
   ) async {
     final playContext = await _resolvePlayContext(detail);
-    final response = await _transport.postJson(
-      'https://www.douyu.com/lapi/live/getH5Play/${detail.roomId}',
-      body: _signService.extendPlayBody(
-        playContext.body,
-        cdn: '',
-        rate: '-1',
-      ),
-      headers: _signService.buildPlayHeaders(
-        detail.roomId,
-        deviceId: playContext.deviceId,
+    final response = await _runPlayRequestWithRetry(
+      () => _transport.postJson(
+        'https://www.douyu.com/lapi/live/getH5Play/${detail.roomId}',
+        body: _signService.extendPlayBody(
+          playContext.body,
+          cdn: '',
+          rate: '-1',
+        ),
+        headers: _signService.buildPlayHeaders(
+          detail.roomId,
+          deviceId: playContext.deviceId,
+        ),
       ),
     );
 
@@ -199,14 +207,16 @@ class DouyuLiveDataSource implements DouyuDataSource {
     );
 
     for (final cdn in cdns) {
-      final response = await _transport.postJson(
-        'https://www.douyu.com/lapi/live/getH5Play/${detail.roomId}',
-        body: _signService.extendPlayBody(
-          playContext.body,
-          cdn: cdn,
-          rate: rate,
+      final response = await _runPlayRequestWithRetry(
+        () => _transport.postJson(
+          'https://www.douyu.com/lapi/live/getH5Play/${detail.roomId}',
+          body: _signService.extendPlayBody(
+            playContext.body,
+            cdn: cdn,
+            rate: rate,
+          ),
+          headers: headers,
         ),
-        headers: headers,
       );
       urls.addAll(
         DouyuMapper.mapPlayUrls(
@@ -231,15 +241,23 @@ class DouyuLiveDataSource implements DouyuDataSource {
     final body = metadata['playBody']?.toString() ?? '';
     final deviceId = metadata['deviceId']?.toString() ?? '';
     final timestamp = _asInt(metadata['signatureTimestamp']);
-    if (body.isNotEmpty && deviceId.isNotEmpty) {
+    if (body.isNotEmpty &&
+        deviceId.isNotEmpty &&
+        timestamp != null &&
+        _isFreshPlayContext(timestamp)) {
       return DouyuSignedPlayContext(
         body: body,
         deviceId: deviceId,
-        timestamp: timestamp ?? 0,
+        timestamp: timestamp,
         script: metadata['signScript']?.toString() ?? '',
       );
     }
     return _signService.buildPlayContext(detail.roomId);
+  }
+
+  bool _isFreshPlayContext(int timestampSeconds) {
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return nowSeconds - timestampSeconds <= _cachedPlayContextMaxAge.inSeconds;
   }
 
   List<String> _extractCdns(LivePlayQuality quality) {
@@ -251,6 +269,26 @@ class DouyuLiveDataSource implements DouyuDataSource {
           .toList(growable: false);
     }
     return const [''];
+  }
+
+  Future<T> _runPlayRequestWithRetry<T>(
+    Future<T> Function() operation,
+  ) async {
+    Object? lastError;
+    StackTrace? lastStackTrace;
+    for (var attempt = 0; attempt < _playRequestMaxAttempts; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+        if (attempt + 1 >= _playRequestMaxAttempts) {
+          rethrow;
+        }
+        await Future<void>.delayed(_playRequestRetryBackoff);
+      }
+    }
+    Error.throwWithStackTrace(lastError!, lastStackTrace!);
   }
 
   LiveRoom _mapCategoryRoom(Map<String, dynamic> item) {
@@ -279,26 +317,14 @@ class DouyuLiveDataSource implements DouyuDataSource {
   }
 
   Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    return int.tryParse(value?.toString() ?? '');
+    return ProviderJson.asInt(value);
   }
 }

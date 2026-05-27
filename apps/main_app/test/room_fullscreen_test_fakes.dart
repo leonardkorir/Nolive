@@ -9,9 +9,9 @@ class TestRecordingPlayer implements BasePlayer {
   TestRecordingPlayer({
     this.playerBackend = PlayerBackend.mpv,
     PlayerDiagnostics? currentDiagnostics,
-  })  : _currentDiagnostics =
-            currentDiagnostics ?? PlayerDiagnostics(backend: playerBackend),
-        _currentState = PlayerState(backend: playerBackend);
+  }) : _currentDiagnostics =
+           currentDiagnostics ?? PlayerDiagnostics(backend: playerBackend),
+       _currentState = PlayerState(backend: playerBackend);
 
   final List<String> events = <String>[];
   final List<Key?> viewKeys = <Key?>[];
@@ -79,10 +79,7 @@ class TestRecordingPlayer implements BasePlayer {
   Future<void> stop() async {
     events.add('stop');
     emit(
-      _currentState.copyWith(
-        status: PlaybackStatus.ready,
-        clearSource: true,
-      ),
+      _currentState.copyWith(status: PlaybackStatus.ready, clearSource: true),
     );
   }
 
@@ -134,8 +131,12 @@ class TestRoomAndroidPlaybackBridgeFacade
     implements RoomAndroidPlaybackBridgeFacade {
   bool supported = true;
   bool inPictureInPictureMode = false;
+  Completer<bool>? inPictureInPictureModeCompleter;
   double? mediaVolume = 0.6;
   Object? prepareForPictureInPictureError;
+  Object? lockPortraitError;
+  Object? lockLandscapeError;
+  Object? lockPortraitFullscreenError;
   final List<String> events = <String>[];
 
   @override
@@ -150,18 +151,40 @@ class TestRoomAndroidPlaybackBridgeFacade
   @override
   Future<bool> isInPictureInPictureMode() async {
     events.add('isInPictureInPictureMode');
+    final completer = inPictureInPictureModeCompleter;
+    if (completer != null) {
+      return completer.future;
+    }
     return inPictureInPictureMode;
   }
 
   @override
   Future<bool> lockPortrait() async {
     events.add('lockPortrait');
+    final error = lockPortraitError;
+    if (error != null) {
+      throw error;
+    }
     return true;
   }
 
   @override
   Future<bool> lockLandscape() async {
     events.add('lockLandscape');
+    final error = lockLandscapeError;
+    if (error != null) {
+      throw error;
+    }
+    return true;
+  }
+
+  @override
+  Future<bool> lockPortraitFullscreen() async {
+    events.add('lockPortraitFullscreen');
+    final error = lockPortraitFullscreenError;
+    if (error != null) {
+      throw error;
+    }
     return true;
   }
 
@@ -189,13 +212,16 @@ class TestRoomPipHostFacade implements RoomPipHostFacade {
   bool pipAvailable = true;
   bool switcherEnabled = false;
   PiPStatus nextEnableStatus = PiPStatus.enabled;
+  Completer<PiPStatus>? enablePipCompleter;
   bool emitStatusOnEnable = true;
   Rational? lastAspectRatio;
 
   @override
   Future<PiPStatus> enablePip({required Rational aspectRatio}) async {
     lastAspectRatio = aspectRatio;
-    final status = nextEnableStatus;
+    final status = enablePipCompleter != null
+        ? await enablePipCompleter!.future
+        : nextEnableStatus;
     if (emitStatusOnEnable) {
       _status.add(status);
     }
@@ -282,9 +308,16 @@ class TestRoomSystemUiFacade implements RoomSystemUiFacade {
   SystemUiMode? lastMode;
   List<DeviceOrientation>? lastOrientations;
   SystemUiOverlayStyle? lastOverlayStyle;
+  Object? modeError;
+  Object? orientationError;
+  Object? overlayError;
 
   @override
   Future<void> setEnabledSystemUIMode(SystemUiMode mode) async {
+    final error = modeError;
+    if (error != null) {
+      throw error;
+    }
     lastMode = mode;
     events.add('mode:${mode.name}');
   }
@@ -293,12 +326,20 @@ class TestRoomSystemUiFacade implements RoomSystemUiFacade {
   Future<void> setPreferredOrientations(
     List<DeviceOrientation> orientations,
   ) async {
+    final error = orientationError;
+    if (error != null) {
+      throw error;
+    }
     lastOrientations = List<DeviceOrientation>.of(orientations);
     events.add('orientations:${orientations.map((it) => it.name).join(",")}');
   }
 
   @override
   Future<void> setSystemUIOverlayStyle(SystemUiOverlayStyle style) async {
+    final error = overlayError;
+    if (error != null) {
+      throw error;
+    }
     lastOverlayStyle = style;
     events.add('overlay');
   }

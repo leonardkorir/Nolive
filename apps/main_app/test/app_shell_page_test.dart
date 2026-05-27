@@ -7,15 +7,20 @@ import 'package:nolive_app/src/app/shell/app_shell_page.dart';
 import 'test_feature_dependencies.dart';
 
 void main() {
-  testWidgets('app shell opens the first configured bottom tab by default',
-      (tester) async {
+  testWidgets('app shell opens the first configured bottom tab by default', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
     await tester.pumpWidget(
       MaterialApp(
-        home: AppShellPage(
-          dependencies: buildAppShellDependencies(bootstrap),
-        ),
+        home: AppShellPage(dependencies: buildAppShellDependencies(bootstrap)),
       ),
     );
     await tester.pumpAndSettle();
@@ -24,8 +29,15 @@ void main() {
     expect(find.byKey(const Key('shell-tab-library')), findsOneWidget);
   });
 
-  testWidgets('app shell keeps library page alive across tab switches',
-      (tester) async {
+  testWidgets('app shell keeps library page alive across tab switches', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     var detailCalls = 0;
 
@@ -57,9 +69,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: AppShellPage(
-          dependencies: buildAppShellDependencies(bootstrap),
-        ),
+        home: AppShellPage(dependencies: buildAppShellDependencies(bootstrap)),
       ),
     );
     await tester.pumpAndSettle();

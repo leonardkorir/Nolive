@@ -34,8 +34,10 @@ void main() {
     expect(find.text('标签管理'), findsOneWidget);
     expect(find.text('直播状态更新'), findsOneWidget);
     expect(find.text('自动更新关注直播状态'), findsOneWidget);
-    expect(find.byKey(const Key('follow-settings-add-tag-button')),
-        findsOneWidget);
+    expect(
+      find.byKey(const Key('follow-settings-add-tag-button')),
+      findsOneWidget,
+    );
     expect(find.text('夜班'), findsWidgets);
     await tester.scrollUntilVisible(
       find.text('列表显示'),
@@ -130,13 +132,7 @@ class _FollowSettingsTestProvider extends LiveProvider
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    return const [
-      LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-      ),
-    ];
+    return [LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true)];
   }
 
   @override
@@ -144,8 +140,6 @@ class _FollowSettingsTestProvider extends LiveProvider
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    return const [
-      LivePlayUrl(url: 'https://example.com/live.m3u8'),
-    ];
+    return [LivePlayUrl(url: 'https://example.com/live.m3u8')];
   }
 }

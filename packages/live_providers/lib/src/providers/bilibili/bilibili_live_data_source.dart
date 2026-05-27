@@ -1,5 +1,7 @@
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
+import '../provider_runtime_support.dart';
 import 'bilibili_auth_context.dart';
 import 'bilibili_data_source.dart';
 import 'bilibili_mapper.dart';
@@ -35,12 +37,12 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
       operation: 'fetch categories',
     );
 
-    return _asList(response['data']).map((item) {
-      final category = _asMap(item);
+    return ProviderJson.asList(response['data']).map((item) {
+      final category = ProviderJson.asMap(item);
       final id = category['id']?.toString() ?? '';
-      final children = _asList(category['list'])
+      final children = ProviderJson.asList(category['list'])
           .map((subItem) {
-            final subCategory = _asMap(subItem);
+            final subCategory = ProviderJson.asMap(subItem);
             return LiveSubCategory(
               id: subCategory['id']?.toString() ?? '',
               parentId: subCategory['parent_id']?.toString() ?? id,
@@ -82,12 +84,12 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
         headers: await _signService.buildHeaders(),
       );
 
-      final data = _asMap(response['data']);
-      final items = _asList(data['list'])
-          .map((item) => _mapCategoryRoom(_asMap(item)))
+      final data = ProviderJson.asMap(response['data']);
+      final items = ProviderJson.asList(data['list'])
+          .map((item) => _mapCategoryRoom(ProviderJson.asMap(item)))
           .where((item) => item.roomId.isNotEmpty)
           .toList(growable: false);
-      final responseCode = _asInt(response['code']) ?? 0;
+      final responseCode = ProviderJson.asInt(response['code']) ?? 0;
 
       if (responseCode == -352 || (responseCode == 0 && items.isEmpty)) {
         return _fallbackCategoryRooms(category, page: page);
@@ -96,7 +98,7 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
 
       return PagedResponse(
         items: items,
-        hasMore: (_asInt(data['has_more']) ?? 0) == 1,
+        hasMore: (ProviderJson.asInt(data['has_more']) ?? 0) == 1,
         page: page,
       );
     } on ProviderParseException catch (error) {
@@ -120,10 +122,10 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
         queryParameters: queryParameters,
         headers: await _signService.buildHeaders(),
       );
-      final data = _asMap(response['data']);
+      final data = ProviderJson.asMap(response['data']);
       final responseCode = bilibiliResponseCode(response);
-      final items = _asList(data['list'])
-          .map((item) => _mapCategoryRoom(_asMap(item)))
+      final items = ProviderJson.asList(data['list'])
+          .map((item) => _mapCategoryRoom(ProviderJson.asMap(item)))
           .where((item) => item.roomId.isNotEmpty)
           .toList(growable: false);
       if (responseCode == -352 || (responseCode == 0 && items.isEmpty)) {
@@ -146,28 +148,59 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
   @override
   Future<PagedResponse<LiveRoom>> searchRooms(String query,
       {int page = 1}) async {
+    const baseUrl = 'https://api.bilibili.com/x/web-interface/search/type';
+    final unsignedParameters = {
+      'context': '',
+      'search_type': 'live',
+      'cover_type': 'user_cover',
+      'order': '',
+      'keyword': query,
+      'category_id': '',
+      '__refresh__': '',
+      '_extra': '',
+      'highlight': '0',
+      'single_column': '0',
+      'page': page.toString(),
+    };
+    final queryParameters = await _signSearchParameters(
+      unsignedParameters,
+      query: query,
+    );
     final response = ensureBilibiliSuccess(
       await _transport.getJson(
-        'https://api.bilibili.com/x/web-interface/search/type',
-        queryParameters: {
-          'context': '',
-          'search_type': 'live',
-          'cover_type': 'user_cover',
-          'order': '',
-          'keyword': query,
-          'category_id': '',
-          '__refresh__': '',
-          '_extra': '',
-          'highlight': '0',
-          'single_column': '0',
-          'page': page.toString(),
-        },
+        baseUrl,
+        queryParameters: queryParameters,
         headers: await _signService.buildHeaders(),
       ),
       operation: 'search rooms',
     );
 
     return BilibiliMapper.mapSearchResponse(response, page: page);
+  }
+
+  Future<Map<String, String>> _signSearchParameters(
+    Map<String, String> unsignedParameters, {
+    required String query,
+  }) async {
+    try {
+      return await _signService.signUrl(
+        Uri(
+          scheme: 'https',
+          host: 'api.bilibili.com',
+          path: '/x/web-interface/search/type',
+          queryParameters: unsignedParameters,
+        ).toString(),
+      );
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.bilibili,
+        scope: 'bilibili search WBI signing',
+        message: 'failed for query="$query", falling back to unsigned search',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return unsignedParameters;
+    }
   }
 
   Future<PagedResponse<LiveRoom>> _fallbackRecommendRooms({
@@ -191,12 +224,25 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
           if (merged.length >= _recommendFallbackRoomTarget) {
             break;
           }
-        } catch (_) {
+        } catch (error, stackTrace) {
+          reportProviderDiagnostic(
+            providerId: ProviderId.bilibili,
+            scope: 'bilibili recommend fallback category probe',
+            message: 'failed for category=${category.id}',
+            error: error,
+            stackTrace: stackTrace,
+          );
           continue;
         }
       }
-    } catch (_) {
-      // Ignore and continue to the final search fallback below.
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.bilibili,
+        scope: 'bilibili recommend fallback bootstrap',
+        message: 'failed to load fallback categories',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
 
     if (merged.isNotEmpty) {
@@ -223,7 +269,14 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
         if (response.items.isNotEmpty) {
           return response;
         }
-      } catch (_) {
+      } catch (error, stackTrace) {
+        reportProviderDiagnostic(
+          providerId: ProviderId.bilibili,
+          scope: 'bilibili recommend fallback search',
+          message: 'failed for query="$query"',
+          error: error,
+          stackTrace: stackTrace,
+        );
         continue;
       }
     }
@@ -255,7 +308,15 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
           return response;
         }
         genericCandidate ??= response;
-      } catch (_) {
+      } catch (error, stackTrace) {
+        reportProviderDiagnostic(
+          providerId: ProviderId.bilibili,
+          scope: 'bilibili category fallback search',
+          message:
+              'failed for category=${category.id} query="${query.isEmpty ? '<empty>' : query}"',
+          error: error,
+          stackTrace: stackTrace,
+        );
         continue;
       }
     }
@@ -286,18 +347,11 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
 
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
-    final roomInfoHeaders = await _signService.buildHeaders();
-
     const roomInfoBaseUrl =
         'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom';
-    final roomInfoResponse = ensureBilibiliSuccess(
-      await _transport.getJson(
-        roomInfoBaseUrl,
-        queryParameters:
-            await _signService.signUrl('$roomInfoBaseUrl?room_id=$roomId'),
-        headers: roomInfoHeaders,
-      ),
-      operation: 'fetch room detail',
+    final roomInfoResponse = await _fetchRoomInfo(
+      roomInfoBaseUrl: roomInfoBaseUrl,
+      roomId: roomId,
     );
     final roomInfoData =
         (roomInfoResponse['data'] as Map?)?.cast<String, dynamic>() ?? const {};
@@ -307,7 +361,14 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
     Map<String, dynamic> danmakuData;
     try {
       danmakuData = await _fetchDanmakuInfo(realRoomId);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.bilibili,
+        scope: 'bilibili danmaku bootstrap',
+        message: 'failed for roomId=$realRoomId, marking danmaku unavailable',
+        error: error,
+        stackTrace: stackTrace,
+      );
       danmakuData = {
         'mode': 'unavailable',
         'reason': '哔哩哔哩当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',
@@ -322,6 +383,48 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
       buvid3: _signService.buvid3,
       cookie: _signService.cookie,
       userId: _signService.userId,
+    );
+  }
+
+  Future<Map<String, dynamic>> _fetchRoomInfo({
+    required String roomInfoBaseUrl,
+    required String roomId,
+  }) async {
+    try {
+      return ensureBilibiliSuccess(
+        await _transport.getJson(
+          roomInfoBaseUrl,
+          queryParameters:
+              await _signService.signUrl('$roomInfoBaseUrl?room_id=$roomId'),
+          headers: await _signService.buildHeaders(),
+        ),
+        operation: 'fetch room detail',
+      );
+    } on ProviderParseException catch (error, stackTrace) {
+      if (!_shouldRetryRoomDetailStateless(error)) {
+        rethrow;
+      }
+      reportProviderDiagnostic(
+        providerId: ProviderId.bilibili,
+        scope: 'bilibili room detail stateless retry',
+        message: 'signed room detail failed for roomId=$roomId '
+            '${_signService.browserFingerprintDiagnostics} has_w_rid=true '
+            'account_cookie_present=${_signService.cookie.trim().isNotEmpty}',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return ensureBilibiliSuccess(
+      await _transport.getJson(
+        roomInfoBaseUrl,
+        queryParameters: {'room_id': roomId},
+        headers: const {
+          'user-agent': BilibiliSignService.defaultUserAgent,
+          'referer': BilibiliSignService.defaultReferer,
+        },
+      ),
+      operation: 'fetch room detail',
     );
   }
 
@@ -365,17 +468,45 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
     Map<String, dynamic>? fallbackResponse;
     var fallbackQn = -1;
     var allowAccountHeaders = _signService.cookie.trim().isNotEmpty;
+    ProviderParseException? lastError;
 
     for (final queryParameters in queryCandidates) {
-      final result = await _requestRoomPlayInfo(
-        endpoint: endpoint,
-        operation: operation,
-        queryParameters: queryParameters,
-        allowAccountHeaders: allowAccountHeaders,
-      );
+      late final ({bool authRejected, Map<String, dynamic> response}) result;
+      try {
+        result = await _requestRoomPlayInfo(
+          endpoint: endpoint,
+          operation: operation,
+          queryParameters: queryParameters,
+          allowAccountHeaders: allowAccountHeaders,
+        );
+      } on ProviderParseException catch (error, stackTrace) {
+        lastError = error;
+        reportProviderDiagnostic(
+          providerId: ProviderId.bilibili,
+          scope: 'bilibili room play info candidate',
+          message:
+              'failed operation=$operation platform=${queryParameters['platform'] ?? '-'} '
+              'format=${queryParameters['format'] ?? '-'} codec=${queryParameters['codec'] ?? '-'}',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        continue;
+      }
       allowAccountHeaders = allowAccountHeaders && !result.authRejected;
-      if (requestedQn == null ||
-          _responseHasExactRequestedQn(result.response, requestedQn)) {
+      if (requestedQn == null) {
+        if (_responseHasPlayablePayload(result.response)) {
+          return result.response;
+        }
+        reportProviderDiagnostic(
+          providerId: ProviderId.bilibili,
+          scope: 'bilibili room play info candidate',
+          message:
+              'empty play payload operation=$operation platform=${queryParameters['platform'] ?? '-'} '
+              'format=${queryParameters['format'] ?? '-'} codec=${queryParameters['codec'] ?? '-'}',
+        );
+        continue;
+      }
+      if (_responseHasExactRequestedQn(result.response, requestedQn)) {
         return result.response;
       }
       final bestReturnedQn = _bestReturnedPlayInfoQn(result.response);
@@ -385,7 +516,13 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
       }
     }
 
-    return fallbackResponse ?? const <String, dynamic>{};
+    if (fallbackResponse != null) {
+      return fallbackResponse;
+    }
+    if (lastError != null) {
+      throw lastError;
+    }
+    return const <String, dynamic>{};
   }
 
   LiveRoom _mapCategoryRoom(Map<String, dynamic> item) {
@@ -398,33 +535,9 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
       keyframeUrl: item['system_cover']?.toString(),
       areaName: normalizeDisplayText(item['area_name']?.toString()),
       streamerAvatarUrl: item['face']?.toString(),
-      viewerCount: _asInt(item['online']),
-      isLive: (_asInt(item['live_status']) ?? 1) == 1,
+      viewerCount: ProviderJson.asInt(item['online']),
+      isLive: (ProviderJson.asInt(item['live_status']) ?? 1) == 1,
     );
-  }
-
-  Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
-  }
-
-  List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
-  }
-
-  int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    return int.tryParse(value?.toString() ?? '');
   }
 
   bool _shouldFallbackSignedRoomLists(ProviderParseException error) {
@@ -442,6 +555,13 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
         message.contains('not login');
   }
 
+  bool _shouldRetryRoomDetailStateless(ProviderParseException error) {
+    final message = error.message.toLowerCase();
+    return message.contains('code -352') ||
+        message.contains('risk') ||
+        message.contains('风控');
+  }
+
   Future<Map<String, dynamic>> _fetchDanmakuInfo(String roomId) async {
     const endpoint =
         'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo';
@@ -457,7 +577,7 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
           ),
           operation: 'fetch danmaku info',
         );
-        return _asMap(response['data']);
+        return ProviderJson.asMap(response['data']);
       } on ProviderParseException catch (error) {
         if (!_shouldRetryDanmakuInfoAnonymously(error)) {
           rethrow;
@@ -473,13 +593,23 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
       ),
       operation: 'fetch danmaku info',
     );
-    return _asMap(response['data']);
+    return ProviderJson.asMap(response['data']);
   }
 
   List<Map<String, String>> _buildRoomPlayInfoQueryCandidates({
     required String roomId,
     String? qualityId,
   }) {
+    final broadWeb = <String, String>{
+      'room_id': roomId,
+      'protocol': '0,1',
+      'format': '0,1,2',
+      'codec': '0,1',
+      'platform': 'web',
+      'dolby': '5',
+      'web_location': _roomPlayInfoWebLocation,
+      if (qualityId != null) 'qn': qualityId,
+    };
     final broadHtml5 = <String, String>{
       'room_id': roomId,
       'protocol': '0,1',
@@ -490,29 +620,21 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
       'web_location': _roomPlayInfoWebLocation,
       if (qualityId != null) 'qn': qualityId,
     };
+    final webFlvAvc = <String, String>{
+      'room_id': roomId,
+      'protocol': '0,1',
+      'format': '0,2',
+      'codec': '0',
+      'platform': 'web',
+      if (qualityId != null) 'qn': qualityId,
+    };
     if (qualityId == null) {
-      return [broadHtml5];
+      return [broadWeb, broadHtml5, webFlvAvc];
     }
     return [
+      broadWeb,
       broadHtml5,
-      <String, String>{
-        'room_id': roomId,
-        'protocol': '0,1',
-        'format': '0,1,2',
-        'codec': '0,1',
-        'platform': 'web',
-        'dolby': '5',
-        'web_location': _roomPlayInfoWebLocation,
-        'qn': qualityId,
-      },
-      <String, String>{
-        'room_id': roomId,
-        'protocol': '0,1',
-        'format': '0,2',
-        'codec': '0',
-        'platform': 'web',
-        'qn': qualityId,
-      },
+      webFlvAvc,
     ];
   }
 
@@ -557,8 +679,8 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
     int requestedQn,
   ) {
     for (final item in BilibiliMapper.mapPlayUrls(response)) {
-      final effectiveQn =
-          _asInt(item.metadata?['expectedQn']) ?? _asInt(item.metadata?['qn']);
+      final effectiveQn = ProviderJson.asInt(item.metadata?['expectedQn']) ??
+          ProviderJson.asInt(item.metadata?['qn']);
       if (effectiveQn == requestedQn) {
         return true;
       }
@@ -566,11 +688,16 @@ class BilibiliLiveDataSource implements BilibiliDataSource {
     return false;
   }
 
+  bool _responseHasPlayablePayload(Map<String, dynamic> response) {
+    return BilibiliMapper.mapPlayQualities(response).isNotEmpty ||
+        BilibiliMapper.mapPlayUrls(response).isNotEmpty;
+  }
+
   int _bestReturnedPlayInfoQn(Map<String, dynamic> response) {
     var best = -1;
     for (final item in BilibiliMapper.mapPlayUrls(response)) {
-      final effectiveQn =
-          _asInt(item.metadata?['expectedQn']) ?? _asInt(item.metadata?['qn']);
+      final effectiveQn = ProviderJson.asInt(item.metadata?['expectedQn']) ??
+          ProviderJson.asInt(item.metadata?['qn']);
       if (effectiveQn != null && effectiveQn > best) {
         best = effectiveQn;
       }

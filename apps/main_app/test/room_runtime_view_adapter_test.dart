@@ -34,11 +34,7 @@ void main() {
 
     final diagnostics = adapter.diagnosticsStream.first;
     player.emitDiagnostics(
-      PlayerDiagnostics(
-        backend: PlayerBackend.mpv,
-        width: 1280,
-        height: 720,
-      ),
+      PlayerDiagnostics(backend: PlayerBackend.mpv, width: 1280, height: 720),
     );
 
     await tester.pumpWidget(

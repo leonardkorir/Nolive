@@ -8,70 +8,101 @@ import 'package:nolive_app/src/features/settings/application/manage_player_prefe
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 void main() {
-  test('apply player preferences refreshes active mpv backend when runtime knobs change', () async {
-    final harness = _SwitchableHarness(initialBackend: PlayerBackend.mpv);
-    addTearDown(harness.dispose);
-    final useCase = ApplyPlayerPreferencesToRuntimeUseCase(
-      PlayerRuntimeController(harness.player),
-    );
+  test(
+    'apply player preferences refreshes active mpv backend when runtime knobs change',
+    () async {
+      final harness = _SwitchableHarness(initialBackend: PlayerBackend.mpv);
+      addTearDown(harness.dispose);
+      final useCase = ApplyPlayerPreferencesToRuntimeUseCase(
+        PlayerRuntimeController(harness.player),
+      );
 
-    final current = _preferences();
-    final next = current.copyWith(
-      mpvLogEnabled: true,
-      volume: 0.4,
-    );
+      final current = _preferences();
+      final next = current.copyWith(mpvLogEnabled: true, volume: 0.4);
 
-    await useCase(current: current, next: next);
+      await useCase(current: current, next: next);
 
-    expect(harness.instances(PlayerBackend.mpv), hasLength(2));
-    expect(harness.player.backend, PlayerBackend.mpv);
-    expect(
-      harness.latest(PlayerBackend.mpv).events,
-      contains('setVolume:0.40'),
-    );
-  });
+      expect(harness.instances(PlayerBackend.mpv), hasLength(2));
+      expect(harness.player.backend, PlayerBackend.mpv);
+      expect(
+        harness.latest(PlayerBackend.mpv).events,
+        contains('setVolume:0.40'),
+      );
+    },
+  );
 
-  test('apply player preferences switches backend and applies volume', () async {
-    final harness = _SwitchableHarness(initialBackend: PlayerBackend.mpv);
-    addTearDown(harness.dispose);
-    final runtime = PlayerRuntimeController(harness.player);
-    final useCase = ApplyPlayerPreferencesToRuntimeUseCase(runtime);
+  test(
+    'apply player preferences switches backend and applies volume',
+    () async {
+      final harness = _SwitchableHarness(initialBackend: PlayerBackend.mpv);
+      addTearDown(harness.dispose);
+      final runtime = PlayerRuntimeController(harness.player);
+      final useCase = ApplyPlayerPreferencesToRuntimeUseCase(runtime);
 
-    final current = _preferences();
-    final next = current.copyWith(
-      backend: PlayerBackend.mdk,
-      volume: 0.35,
-    );
+      final current = _preferences();
+      final next = current.copyWith(backend: PlayerBackend.mdk, volume: 0.35);
 
-    await useCase(current: current, next: next);
+      await useCase(current: current, next: next);
 
-    expect(runtime.backend, PlayerBackend.mdk);
-    expect(harness.instances(PlayerBackend.mpv), hasLength(1));
-    expect(harness.instances(PlayerBackend.mdk), hasLength(1));
-    expect(
-      harness.latest(PlayerBackend.mdk).events,
-      contains('setVolume:0.35'),
-    );
-  });
+      expect(runtime.backend, PlayerBackend.mdk);
+      expect(harness.instances(PlayerBackend.mpv), hasLength(1));
+      expect(harness.instances(PlayerBackend.mdk), hasLength(1));
+      expect(
+        harness.latest(PlayerBackend.mdk).events,
+        contains('setVolume:0.35'),
+      );
+    },
+  );
 
-  test('apply player preferences refreshes active mdk backend when decoder knob changes',
-      () async {
-    final harness = _SwitchableHarness(initialBackend: PlayerBackend.mdk);
-    addTearDown(harness.dispose);
-    final useCase = ApplyPlayerPreferencesToRuntimeUseCase(
-      PlayerRuntimeController(harness.player),
-    );
+  test(
+    'apply player preferences keeps runtime gain neutral for system volume',
+    () async {
+      final harness = _SwitchableHarness(initialBackend: PlayerBackend.mpv);
+      addTearDown(harness.dispose);
+      final systemVolumes = <double>[];
+      final runtime = PlayerRuntimeController(harness.player);
+      final useCase = ApplyPlayerPreferencesToRuntimeUseCase(
+        runtime,
+        usesSystemMediaVolume: () => true,
+        setSystemMediaVolume: (value) async {
+          systemVolumes.add(value);
+          return true;
+        },
+      );
 
-    final current = _preferences(backend: PlayerBackend.mdk);
-    final next = current.copyWith(
-      mdkAndroidHardwareVideoDecoderEnabled: false,
-    );
+      final current = _preferences();
+      final next = current.copyWith(volume: 0.35);
 
-    await useCase(current: current, next: next);
+      await useCase(current: current, next: next);
 
-    expect(harness.instances(PlayerBackend.mdk), hasLength(2));
-    expect(harness.player.backend, PlayerBackend.mdk);
-  });
+      expect(
+        harness.latest(PlayerBackend.mpv).events,
+        contains('setVolume:1.00'),
+      );
+      expect(systemVolumes, <double>[0.35]);
+    },
+  );
+
+  test(
+    'apply player preferences refreshes active mdk backend when decoder knob changes',
+    () async {
+      final harness = _SwitchableHarness(initialBackend: PlayerBackend.mdk);
+      addTearDown(harness.dispose);
+      final useCase = ApplyPlayerPreferencesToRuntimeUseCase(
+        PlayerRuntimeController(harness.player),
+      );
+
+      final current = _preferences(backend: PlayerBackend.mdk);
+      final next = current.copyWith(
+        mdkAndroidHardwareVideoDecoderEnabled: false,
+      );
+
+      await useCase(current: current, next: next);
+
+      expect(harness.instances(PlayerBackend.mdk), hasLength(2));
+      expect(harness.player.backend, PlayerBackend.mdk);
+    },
+  );
 }
 
 PlayerPreferences _preferences({
@@ -104,23 +135,19 @@ PlayerPreferences _preferences({
 
 class _SwitchableHarness {
   _SwitchableHarness({required PlayerBackend initialBackend})
-      : player = SwitchablePlayer(
-          initialBackend: initialBackend,
-          builders: {
-            PlayerBackend.mpv: () => _buildPlayer(
-                  backend: PlayerBackend.mpv,
-                  sink: _mpvInstances,
-                ),
-            PlayerBackend.mdk: () => _buildPlayer(
-                  backend: PlayerBackend.mdk,
-                  sink: _mdkInstances,
-                ),
-            PlayerBackend.memory: () => _buildPlayer(
-                  backend: PlayerBackend.memory,
-                  sink: _memoryInstances,
-                ),
-          },
-        );
+    : player = SwitchablePlayer(
+        initialBackend: initialBackend,
+        builders: {
+          PlayerBackend.mpv: () =>
+              _buildPlayer(backend: PlayerBackend.mpv, sink: _mpvInstances),
+          PlayerBackend.mdk: () =>
+              _buildPlayer(backend: PlayerBackend.mdk, sink: _mdkInstances),
+          PlayerBackend.memory: () => _buildPlayer(
+            backend: PlayerBackend.memory,
+            sink: _memoryInstances,
+          ),
+        },
+      );
 
   static final List<_TestPlayer> _mpvInstances = <_TestPlayer>[];
   static final List<_TestPlayer> _mdkInstances = <_TestPlayer>[];
@@ -157,8 +184,8 @@ class _SwitchableHarness {
 
 class _TestPlayer implements BasePlayer {
   _TestPlayer(this._backend)
-      : _currentDiagnostics = PlayerDiagnostics(backend: _backend),
-        _currentState = PlayerState(backend: _backend);
+    : _currentDiagnostics = PlayerDiagnostics(backend: _backend),
+      _currentState = PlayerState(backend: _backend);
 
   final PlayerBackend _backend;
   final List<String> events = <String>[];

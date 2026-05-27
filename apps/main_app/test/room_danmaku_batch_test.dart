@@ -6,17 +6,13 @@ void main() {
   test('mergeRoomDanmakuBatch partitions and trims incoming messages', () {
     final currentMessages = List<LiveMessage>.generate(
       63,
-      (index) => LiveMessage(
-        type: LiveMessageType.chat,
-        content: 'message-$index',
-      ),
+      (index) =>
+          LiveMessage(type: LiveMessageType.chat, content: 'message-$index'),
     );
     final currentSuperChats = List<LiveMessage>.generate(
       23,
-      (index) => LiveMessage(
-        type: LiveMessageType.superChat,
-        content: 'super-$index',
-      ),
+      (index) =>
+          LiveMessage(type: LiveMessageType.superChat, content: 'super-$index'),
     );
 
     final result = mergeRoomDanmakuBatch(

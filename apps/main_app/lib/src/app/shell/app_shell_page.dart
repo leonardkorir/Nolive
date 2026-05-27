@@ -91,7 +91,9 @@ class _AppShellPageState extends State<AppShellPage> {
         );
         final size = MediaQuery.sizeOf(context);
         final shortestSide = size.shortestSide;
-        final isWide = shortestSide >= 840;
+        final orientation = MediaQuery.orientationOf(context);
+        final isWide = shortestSide >= 840 ||
+            orientation == Orientation.landscape;
         final useExtendedRail = shortestSide >= 1280;
         _pageAt(selectedTab);
         final content = IndexedStack(

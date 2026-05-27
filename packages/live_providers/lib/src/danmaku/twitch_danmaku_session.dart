@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:live_core/live_core.dart';
 import 'package:web_socket_channel/io.dart';
 
+import 'danmaku_activity_watchdog.dart';
 import 'danmaku_web_socket.dart';
 
 abstract interface class TwitchSocketClient {
@@ -23,19 +24,26 @@ class TwitchDanmakuSession implements DanmakuSession {
     required this.roomId,
     TwitchSocketClientFactory? socketClientFactory,
     String? nick,
+    String? oauthToken,
+    Duration inactivityTimeout = const Duration(minutes: 2),
   })  : _socketClientFactory =
             socketClientFactory ?? _defaultSocketClientFactory,
-        _nick = nick ?? _buildAnonymousNick();
+        _nick = nick ?? _buildAnonymousNick(),
+        _oauthToken = oauthToken?.trim() ?? '',
+        _inactivityTimeout = inactivityTimeout;
 
   final String roomId;
 
   final TwitchSocketClientFactory _socketClientFactory;
   final String _nick;
+  final String _oauthToken;
+  final Duration _inactivityTimeout;
   final StreamController<LiveMessage> _controller =
       StreamController<LiveMessage>.broadcast();
 
   TwitchSocketClient? _socket;
   StreamSubscription<dynamic>? _subscription;
+  DanmakuActivityWatchdog? _activityWatchdog;
   bool _connected = false;
   bool _announcedReady = false;
 
@@ -53,38 +61,44 @@ class TwitchDanmakuSession implements DanmakuSession {
       await waitForDanmakuSocketReady(socket.ready);
       _socket = socket;
       _connected = true;
-      _subscription = _socket!.stream.listen(
+      _activityWatchdog = DanmakuActivityWatchdog(
+        timeout: _inactivityTimeout,
+        onTimeout: _handleActivityTimeout,
+      )..start();
+      StreamSubscription<dynamic>? subscription;
+      subscription = socket.stream.listen(
         _handleRawMessage,
         onError: (error) {
-          _emit(
-            LiveMessage(
-              type: LiveMessageType.notice,
-              content: 'Twitch 弹幕连接异常：$error',
-              timestamp: DateTime.now(),
+          unawaited(
+            _teardownRemoteDisconnect(
+              socket: socket,
+              subscription: subscription,
+              notice: 'Twitch 弹幕连接异常：$error',
             ),
           );
         },
         onDone: () {
-          if (_connected) {
-            _emit(
-              LiveMessage(
-                type: LiveMessageType.notice,
-                content: 'Twitch 弹幕连接已断开',
-                timestamp: DateTime.now(),
-              ),
-            );
-          }
+          unawaited(
+            _teardownRemoteDisconnect(
+              socket: socket,
+              subscription: subscription,
+              notice: 'Twitch 弹幕连接已断开',
+            ),
+          );
         },
         cancelOnError: false,
       );
+      _subscription = subscription;
 
       _send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');
-      _send('PASS SCHMOOPIIE');
+      _send(_buildPassCommand());
       _send('NICK $_nick');
       _send('USER $_nick 8 * :$_nick');
       _send('JOIN #${roomId.trim().toLowerCase()}');
     } catch (_) {
       _connected = false;
+      _activityWatchdog?.stop();
+      _activityWatchdog = null;
       await _subscription?.cancel();
       _subscription = null;
       await socket.close();
@@ -99,6 +113,8 @@ class TwitchDanmakuSession implements DanmakuSession {
   Future<void> disconnect() async {
     _connected = false;
     _announcedReady = false;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
     await _subscription?.cancel();
     _subscription = null;
     await _socket?.close();
@@ -106,6 +122,36 @@ class TwitchDanmakuSession implements DanmakuSession {
     if (!_controller.isClosed) {
       await _controller.close();
     }
+  }
+
+  Future<void> _teardownRemoteDisconnect({
+    required TwitchSocketClient socket,
+    required StreamSubscription<dynamic>? subscription,
+    required String notice,
+  }) async {
+    if (!identical(_socket, socket) ||
+        !identical(_subscription, subscription)) {
+      return;
+    }
+    _connected = false;
+    _announcedReady = false;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    _subscription = null;
+    _socket = null;
+    _emit(
+      LiveMessage(
+        type: LiveMessageType.notice,
+        content: notice,
+        timestamp: DateTime.now(),
+      ),
+    );
+    try {
+      await subscription?.cancel();
+    } catch (_) {}
+    try {
+      await socket.close();
+    } catch (_) {}
   }
 
   void _handleRawMessage(dynamic raw) {
@@ -117,6 +163,7 @@ class TwitchDanmakuSession implements DanmakuSession {
     if (text.trim().isEmpty) {
       return;
     }
+    _activityWatchdog?.ping();
     final lines = text
         .split(RegExp(r'\r?\n'))
         .map((line) => line.trim())
@@ -126,15 +173,43 @@ class TwitchDanmakuSession implements DanmakuSession {
     }
   }
 
+  Future<void> _handleActivityTimeout() async {
+    if (!_connected) {
+      return;
+    }
+    _connected = false;
+    _announcedReady = false;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    await _subscription?.cancel();
+    _subscription = null;
+    await _socket?.close();
+    _socket = null;
+    _emit(
+      LiveMessage(
+        type: LiveMessageType.notice,
+        content: 'Twitch 弹幕连接活动超时',
+        timestamp: DateTime.now(),
+      ),
+    );
+  }
+
+  String _buildPassCommand() {
+    if (_oauthToken.isEmpty) {
+      return 'PASS SCHMOOPIIE';
+    }
+    return _oauthToken.startsWith('oauth:')
+        ? 'PASS $_oauthToken'
+        : 'PASS oauth:$_oauthToken';
+  }
+
   void _handleLine(String line) {
     if (line.startsWith('PING')) {
       _send(line.replaceFirst('PING', 'PONG'));
       return;
     }
 
-    if (!_announcedReady &&
-        (line.contains(' JOIN #${roomId.trim().toLowerCase()}') ||
-            line.contains(' ROOMSTATE #${roomId.trim().toLowerCase()}'))) {
+    if (!_announcedReady && _isReadyCommand(line)) {
       _announcedReady = true;
       _emit(
         LiveMessage(
@@ -220,6 +295,20 @@ class TwitchDanmakuSession implements DanmakuSession {
         ),
       );
     }
+  }
+
+  bool _isReadyCommand(String line) {
+    final taglessLine =
+        line.startsWith('@') ? line.substring(line.indexOf(' ') + 1) : line;
+    final parts = taglessLine.split(' ');
+    final channel = '#${roomId.trim().toLowerCase()}';
+    if (parts.length >= 3 && parts[1] == 'JOIN' && parts[2] == channel) {
+      return true;
+    }
+    if (parts.length >= 3 && parts[1] == 'ROOMSTATE' && parts[2] == channel) {
+      return true;
+    }
+    return false;
   }
 
   Map<String, String> _parseTags(String line) {

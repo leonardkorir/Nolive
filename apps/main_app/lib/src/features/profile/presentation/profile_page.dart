@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:nolive_app/src/features/settings/application/github_app_update_service.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -107,7 +108,13 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() {
         _currentVersion = version;
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLog.instance.error(
+        'profile',
+        'installed version load failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) {
         return;
       }
@@ -118,12 +125,13 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _openHomepage() async {
-    final opened =
-        await widget.urlLauncher(widget.updateService.repoHomepageUri);
+    final opened = await widget.urlLauncher(
+      widget.updateService.repoHomepageUri,
+    );
     if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法打开开源主页。')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('无法打开开源主页。')));
     }
   }
 
@@ -148,14 +156,13 @@ class _ProfilePageState extends State<ProfilePage> {
 
       if (!result.hasUpdate) {
         messenger.showSnackBar(
-          SnackBar(
-            content: Text('当前已经是最新版本 v${result.currentVersion}'),
-          ),
+          SnackBar(content: Text('当前已经是最新版本 v${result.currentVersion}')),
         );
         return;
       }
 
-      final openRelease = await showDialog<bool>(
+      final openRelease =
+          await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
               title: Text('发现新版本 v${result.latestRelease.version}'),
@@ -182,14 +189,19 @@ class _ProfilePageState extends State<ProfilePage> {
 
       final opened = await widget.urlLauncher(result.latestRelease.releaseUri);
       if (!opened && mounted) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('无法打开更新页面。')),
-        );
+        messenger.showSnackBar(const SnackBar(content: Text('无法打开更新页面。')));
       }
-    } catch (error) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('检查更新失败：$error')),
+    } catch (error, stackTrace) {
+      AppLog.instance.error(
+        'profile',
+        'update check failed',
+        error: error,
+        stackTrace: stackTrace,
       );
+      if (!mounted) {
+        return;
+      }
+      messenger.showSnackBar(SnackBar(content: Text('检查更新失败：$error')));
     } finally {
       if (mounted) {
         setState(() {
@@ -235,10 +247,8 @@ class _ProfilePageState extends State<ProfilePage> {
                             ? 'Ver -'
                             : 'Ver ${_currentVersion!}',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                       const SizedBox(width: 4),
                       const Icon(Icons.chevron_right_rounded),
@@ -343,9 +353,9 @@ class _ActionProfileEntryTile extends StatelessWidget {
       leading: Icon(icon, color: colorScheme.onSurfaceVariant, size: 30),
       title: Text(
         title,
-        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w500,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w500),
       ),
       trailing: trailing,
       onTap: () {

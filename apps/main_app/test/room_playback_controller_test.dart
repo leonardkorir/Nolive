@@ -10,419 +10,516 @@ import 'package:nolive_app/src/features/room/presentation/room_playback_controll
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 void main() {
-  PlaybackSource source(String path) => PlaybackSource(
-        url: Uri.parse('https://example.com/$path.m3u8'),
+  PlaybackSource source(String path) =>
+      PlaybackSource(url: Uri.parse('https://example.com/$path.m3u8'));
+
+  test(
+    'room playback controller pre-refreshes MDK on same-source rebind',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.ready,
+          source: source('same'),
+        ),
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      final resetLabels = <String>[];
+      final controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.bilibili,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => source('same'),
+        resetEmbeddedPlayerViewAfterBackendRefresh: (label) async {
+          resetLabels.add(label);
+        },
+        schedulePostFrame: scheduler.schedule,
+        delay: (_) async {},
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
+
+      final bound = await controller.bindPlaybackSource(
+        playbackSource: source('same'),
+        label: 'same-source rebind',
+        autoPlay: true,
+        currentPlaybackSource: source('same'),
       );
 
-  test('room playback controller pre-refreshes MDK on same-source rebind',
-      () async {
-    final scheduler = _TestPlaybackScheduler();
-    final player = _TestPlaybackPlayer(
-      initialState: PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.ready,
-        source: source('same'),
-      ),
-    );
-    final runtime = _RefreshTrackingRuntime(player);
-    final resetLabels = <String>[];
-    final controller = RoomPlaybackController(
-      playerRuntime: runtime,
-      providerId: ProviderId.bilibili,
-      trace: (_) {},
-      isMounted: () => true,
-      resolveCurrentPlaybackSource: () => source('same'),
-      resetEmbeddedPlayerViewAfterBackendRefresh: (label) async {
-        resetLabels.add(label);
-      },
-      schedulePostFrame: scheduler.schedule,
-      delay: (_) async {},
-      waitForEndOfFrame: () async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
-
-    final bound = await controller.bindPlaybackSource(
-      playbackSource: source('same'),
-      label: 'same-source rebind',
-      autoPlay: true,
-      currentPlaybackSource: source('same'),
-    );
-
-    expect(bound, isTrue);
-    expect(
-      player.events,
-      containsAllInOrder(<String>['refreshBackend', 'setSource', 'play']),
-    );
-    expect(runtime.refreshCount, 1);
-    expect(resetLabels, <String>['same-source rebind']);
-  });
-
-  test('room playback controller performs staged MDK texture recovery',
-      () async {
-    final scheduler = _TestPlaybackScheduler();
-    final player = _TestPlaybackPlayer(
-      initialState: const PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.ready,
-      ),
-      pendingSetSourceFailures: 2,
-    );
-    final runtime = _RefreshTrackingRuntime(player);
-    final controller = RoomPlaybackController(
-      playerRuntime: runtime,
-      providerId: ProviderId.bilibili,
-      trace: (_) {},
-      isMounted: () => true,
-      resolveCurrentPlaybackSource: () => null,
-      resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
-      schedulePostFrame: scheduler.schedule,
-      delay: (_) async {},
-      waitForEndOfFrame: () async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
-
-    final bound = await controller.bindPlaybackSource(
-      playbackSource: source('retry'),
-      label: 'retry source',
-      autoPlay: true,
-    );
-
-    expect(bound, isTrue);
-    expect(
-      player.events,
-      containsAllInOrder(<String>[
-        'setSource',
-        'stop',
-        'setSource',
-        'stop',
-        'refreshBackend',
-        'setSource',
-        'play',
-      ]),
-    );
-    expect(runtime.refreshCount, 1);
-    expect(runtime.currentState.status, PlaybackStatus.playing);
-  });
+      expect(bound, isTrue);
+      expect(
+        player.events,
+        containsAllInOrder(<String>['refreshBackend', 'setSource', 'play']),
+      );
+      expect(runtime.refreshCount, 1);
+      expect(resetLabels, <String>['same-source rebind']);
+    },
+  );
 
   test(
-      'room playback controller aborts stale retry after pending target changes',
-      () async {
-    final scheduler = _TestPlaybackScheduler();
-    final player = _TestPlaybackPlayer(
-      initialState: const PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.ready,
-      ),
-      pendingSetSourceFailures: 1,
-    );
-    final runtime = _RefreshTrackingRuntime(player);
-    late final RoomPlaybackController controller;
-    var switchedTarget = false;
-    controller = RoomPlaybackController(
-      playerRuntime: runtime,
-      providerId: ProviderId.bilibili,
-      trace: (_) {},
-      isMounted: () => true,
-      resolveCurrentPlaybackSource: () => null,
-      resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
-      schedulePostFrame: scheduler.schedule,
-      delay: (_) async {
-        if (!switchedTarget) {
-          switchedTarget = true;
-          controller.schedulePlaybackBootstrap(
-            playbackSource: source('next'),
-            hasPlayback: true,
-            autoPlay: true,
-          );
-        }
-      },
-      waitForEndOfFrame: () async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
+    'room playback controller performs staged MDK texture recovery',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.ready,
+        ),
+        pendingSetSourceFailures: 2,
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      final controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.bilibili,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => null,
+        resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+        schedulePostFrame: scheduler.schedule,
+        delay: (_) async {},
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
 
-    controller.schedulePlaybackBootstrap(
-      playbackSource: source('old'),
-      hasPlayback: true,
-      autoPlay: true,
-    );
-    await scheduler.flush();
+      final bound = await controller.bindPlaybackSource(
+        playbackSource: source('retry'),
+        label: 'retry source',
+        autoPlay: true,
+      );
 
-    expect(player.boundSources.map((value) => value.url.toString()).last,
-        'https://example.com/next.m3u8');
-    expect(
-      player.events,
-      containsAllInOrder(<String>['setSource', 'stop', 'setSource', 'play']),
-    );
-  });
+      expect(bound, isTrue);
+      expect(
+        player.events,
+        containsAllInOrder(<String>[
+          'setSource',
+          'stop',
+          'setSource',
+          'stop',
+          'refreshBackend',
+          'setSource',
+          'play',
+        ]),
+      );
+      expect(runtime.refreshCount, 1);
+      expect(runtime.currentState.status, PlaybackStatus.playing);
+    },
+  );
 
   test(
-      'room playback controller stops current runtime when target becomes unavailable',
-      () async {
-    final scheduler = _TestPlaybackScheduler();
-    final player = _TestPlaybackPlayer(
-      initialState: PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.playing,
-        source: source('current'),
-      ),
-    );
-    final runtime = _RefreshTrackingRuntime(player);
-    final controller = RoomPlaybackController(
-      playerRuntime: runtime,
-      providerId: ProviderId.bilibili,
-      trace: (_) {},
-      isMounted: () => true,
-      resolveCurrentPlaybackSource: () => source('current'),
-      resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
-      schedulePostFrame: scheduler.schedule,
-      delay: (_) async {},
-      waitForEndOfFrame: () async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
+    'room playback controller aborts stale retry after pending target changes',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.ready,
+        ),
+        pendingSetSourceFailures: 1,
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      late final RoomPlaybackController controller;
+      var switchedTarget = false;
+      controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.bilibili,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => null,
+        resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+        schedulePostFrame: scheduler.schedule,
+        delay: (_) async {
+          if (!switchedTarget) {
+            switchedTarget = true;
+            controller.schedulePlaybackBootstrap(
+              playbackSource: source('next'),
+              hasPlayback: true,
+              autoPlay: true,
+            );
+          }
+        },
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
 
-    controller.schedulePlaybackBootstrap(
-      playbackSource: null,
-      hasPlayback: false,
-      autoPlay: false,
-    );
-    await scheduler.flush();
+      controller.schedulePlaybackBootstrap(
+        playbackSource: source('old'),
+        hasPlayback: true,
+        autoPlay: true,
+      );
+      await scheduler.flush();
 
-    expect(player.events, contains('stop'));
-    expect(runtime.currentState.source, isNull);
-  });
-
-  test(
-      'room playback controller rebinds same target after runtime source was cleared',
-      () async {
-    final scheduler = _TestPlaybackScheduler();
-    final player = _TestPlaybackPlayer(
-      initialState: const PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.ready,
-      ),
-    );
-    final runtime = _RefreshTrackingRuntime(player);
-    final controller = RoomPlaybackController(
-      playerRuntime: runtime,
-      providerId: ProviderId.bilibili,
-      trace: (_) {},
-      isMounted: () => true,
-      resolveCurrentPlaybackSource: () => source('same'),
-      resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
-      schedulePostFrame: scheduler.schedule,
-      delay: (_) async {},
-      waitForEndOfFrame: () async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
-
-    controller.schedulePlaybackBootstrap(
-      playbackSource: source('same'),
-      hasPlayback: true,
-      autoPlay: true,
-    );
-    await scheduler.flush();
-    await runtime.stop();
-    player.events.clear();
-
-    controller.schedulePlaybackBootstrap(
-      playbackSource: source('same'),
-      hasPlayback: true,
-      autoPlay: true,
-    );
-    await scheduler.flush();
-
-    expect(
-      player.events,
-      containsAllInOrder(<String>['setSource', 'play']),
-    );
-    expect(runtime.currentState.status, PlaybackStatus.playing);
-  });
+      expect(
+        player.boundSources.map((value) => value.url.toString()).last,
+        'https://example.com/next.m3u8',
+      );
+      expect(
+        player.events,
+        containsAllInOrder(<String>['setSource', 'stop', 'setSource', 'play']),
+      );
+    },
+  );
 
   test(
-      'room playback controller resumes same target when autoplay target is paused',
-      () async {
-    final scheduler = _TestPlaybackScheduler();
-    final player = _TestPlaybackPlayer(
-      initialState: const PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.ready,
-      ),
-    );
-    final runtime = _RefreshTrackingRuntime(player);
-    final controller = RoomPlaybackController(
-      playerRuntime: runtime,
-      providerId: ProviderId.bilibili,
-      trace: (_) {},
-      isMounted: () => true,
-      resolveCurrentPlaybackSource: () => source('same'),
-      resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
-      schedulePostFrame: scheduler.schedule,
-      delay: (_) async {},
-      waitForEndOfFrame: () async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
+    'room playback controller stops current runtime when target becomes unavailable',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.playing,
+          source: source('current'),
+        ),
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      final controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.bilibili,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => source('current'),
+        resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+        schedulePostFrame: scheduler.schedule,
+        delay: (_) async {},
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
 
-    controller.schedulePlaybackBootstrap(
-      playbackSource: source('same'),
-      hasPlayback: true,
-      autoPlay: true,
-    );
-    await scheduler.flush();
-    await runtime.pause();
-    player.events.clear();
+      controller.schedulePlaybackBootstrap(
+        playbackSource: null,
+        hasPlayback: false,
+        autoPlay: false,
+      );
+      await scheduler.flush();
 
-    controller.schedulePlaybackBootstrap(
-      playbackSource: source('same'),
-      hasPlayback: true,
-      autoPlay: true,
-    );
-    await scheduler.flush();
-
-    expect(player.events, contains('play'));
-    expect(runtime.currentState.status, PlaybackStatus.playing);
-  });
+      expect(player.events, contains('stop'));
+      expect(runtime.currentState.source, isNull);
+    },
+  );
 
   test(
-      'room playback controller restore uses recovery path before resuming playback',
-      () async {
-    final scheduler = _TestPlaybackScheduler();
-    final player = _TestPlaybackPlayer(
-      initialState: const PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.ready,
-      ),
-      pendingSetSourceFailures: 1,
-    );
-    final runtime = _RefreshTrackingRuntime(player);
-    final controller = RoomPlaybackController(
-      playerRuntime: runtime,
-      providerId: ProviderId.bilibili,
-      trace: (_) {},
-      isMounted: () => true,
-      resolveCurrentPlaybackSource: () => source('restore'),
-      resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
-      schedulePostFrame: scheduler.schedule,
-      delay: (_) async {},
-      waitForEndOfFrame: () async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
+    'room playback controller ignores rebind completion after dispose',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _DelayedSetSourcePlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.ready,
+        ),
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      final controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.bilibili,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => null,
+        resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+        schedulePostFrame: scheduler.schedule,
+        delay: (_) async {},
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(player.dispose);
 
-    await controller.restorePlaybackState(
-      previousState: PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.playing,
-        source: source('restore'),
-      ),
-      label: 'follow transition',
-    );
+      final bindFuture = controller.bindPlaybackSource(
+        playbackSource: source('dispose'),
+        label: 'dispose',
+        autoPlay: false,
+      );
+      controller.dispose();
+      player.releaseSetSource();
 
-    expect(
-      player.events,
-      containsAllInOrder(<String>['setSource', 'stop', 'setSource', 'play']),
-    );
-    expect(runtime.currentState.status, PlaybackStatus.playing);
-  });
+      await expectLater(bindFuture, completes);
+    },
+  );
 
   test(
-      'room playback controller skips stale twitch bootstrap target after wait-surface',
-      () async {
-    final scheduler = _TestPlaybackScheduler();
-    final player = _TestPlaybackPlayer(
-      initialState: const PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.ready,
-      ),
-    );
-    final runtime = _RefreshTrackingRuntime(player);
-    late final RoomPlaybackController controller;
-    var initialWaitConsumed = false;
-    controller = RoomPlaybackController(
-      playerRuntime: runtime,
-      providerId: ProviderId.twitch,
-      trace: (_) {},
-      isMounted: () => true,
-      resolveCurrentPlaybackSource: () => null,
-      resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
-      schedulePostFrame: scheduler.schedule,
-      delay: (duration) async {
-        if (!initialWaitConsumed &&
-            duration == const Duration(milliseconds: 220)) {
-          initialWaitConsumed = true;
-          controller.schedulePlaybackBootstrap(
-            playbackSource: source('fresh'),
-            hasPlayback: true,
-            autoPlay: true,
-          );
-        }
-      },
-      waitForEndOfFrame: () async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
+    'room playback controller rebinds same target after runtime source was cleared',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.ready,
+        ),
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      final controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.bilibili,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => source('same'),
+        resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+        schedulePostFrame: scheduler.schedule,
+        delay: (_) async {},
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
 
-    controller.schedulePlaybackBootstrap(
-      playbackSource: source('stale'),
-      hasPlayback: true,
-      autoPlay: true,
-    );
-    await scheduler.flush();
+      controller.schedulePlaybackBootstrap(
+        playbackSource: source('same'),
+        hasPlayback: true,
+        autoPlay: true,
+      );
+      await scheduler.flush();
+      await runtime.stop();
+      player.events.clear();
 
-    expect(
-      player.boundSources.map((value) => value.url.toString()),
-      <String>['https://example.com/fresh.m3u8'],
-    );
-    expect(player.events, containsAllInOrder(<String>['setSource', 'play']));
-  });
+      controller.schedulePlaybackBootstrap(
+        playbackSource: source('same'),
+        hasPlayback: true,
+        autoPlay: true,
+      );
+      await scheduler.flush();
+
+      expect(player.events, containsAllInOrder(<String>['setSource', 'play']));
+      expect(runtime.currentState.status, PlaybackStatus.playing);
+    },
+  );
 
   test(
-      'room playback controller waits initial embedded surface bootstrap on android mpv',
-      () async {
-    final scheduler = _TestPlaybackScheduler();
-    final player = _TestPlaybackPlayer(
-      initialState: const PlayerState(
-        backend: PlayerBackend.mpv,
-        status: PlaybackStatus.ready,
-      ),
-    );
-    final runtime = _RefreshTrackingRuntime(player);
-    final waitDurations = <Duration>[];
-    final controller = RoomPlaybackController(
-      playerRuntime: runtime,
-      providerId: ProviderId.bilibili,
-      trace: (_) {},
-      isMounted: () => true,
-      resolveCurrentPlaybackSource: () => null,
-      resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
-      waitForInitialEmbeddedSurfaceBootstrap: true,
-      schedulePostFrame: scheduler.schedule,
-      delay: (duration) async {
-        waitDurations.add(duration);
-      },
-      waitForEndOfFrame: () async {},
-    );
-    addTearDown(controller.dispose);
-    addTearDown(player.dispose);
+    'room playback controller resumes same target when autoplay target is paused',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.ready,
+        ),
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      final controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.bilibili,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => source('same'),
+        resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+        schedulePostFrame: scheduler.schedule,
+        delay: (_) async {},
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
 
-    controller.schedulePlaybackBootstrap(
-      playbackSource: source('initial'),
-      hasPlayback: true,
-      autoPlay: true,
-    );
-    await scheduler.flush();
+      controller.schedulePlaybackBootstrap(
+        playbackSource: source('same'),
+        hasPlayback: true,
+        autoPlay: true,
+      );
+      await scheduler.flush();
+      await runtime.pause();
+      player.events.clear();
 
-    expect(
-      waitDurations,
-      contains(const Duration(milliseconds: 220)),
-    );
-    expect(player.events, containsAllInOrder(<String>['setSource', 'play']));
-  });
+      controller.schedulePlaybackBootstrap(
+        playbackSource: source('same'),
+        hasPlayback: true,
+        autoPlay: true,
+      );
+      await scheduler.flush();
+
+      expect(player.events, contains('play'));
+      expect(runtime.currentState.status, PlaybackStatus.playing);
+    },
+  );
+
+  test(
+    'room playback controller restore uses recovery path before resuming playback',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.ready,
+        ),
+        pendingSetSourceFailures: 1,
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      final controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.bilibili,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => source('restore'),
+        resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+        schedulePostFrame: scheduler.schedule,
+        delay: (_) async {},
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
+
+      await controller.restorePlaybackState(
+        previousState: PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.playing,
+          source: source('restore'),
+        ),
+        label: 'follow transition',
+      );
+
+      expect(
+        player.events,
+        containsAllInOrder(<String>['setSource', 'stop', 'setSource', 'play']),
+      );
+      expect(runtime.currentState.status, PlaybackStatus.playing);
+    },
+  );
+
+  test(
+    'room playback controller skips stale twitch bootstrap target after wait-surface',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.ready,
+        ),
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      late final RoomPlaybackController controller;
+      var initialWaitConsumed = false;
+      controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.twitch,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => null,
+        resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+        schedulePostFrame: scheduler.schedule,
+        delay: (duration) async {
+          if (!initialWaitConsumed &&
+              duration == const Duration(milliseconds: 220)) {
+            initialWaitConsumed = true;
+            controller.schedulePlaybackBootstrap(
+              playbackSource: source('fresh'),
+              hasPlayback: true,
+              autoPlay: true,
+            );
+          }
+        },
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
+
+      controller.schedulePlaybackBootstrap(
+        playbackSource: source('stale'),
+        hasPlayback: true,
+        autoPlay: true,
+      );
+      await scheduler.flush();
+
+      expect(player.boundSources.map((value) => value.url.toString()), <String>[
+        'https://example.com/fresh.m3u8',
+      ]);
+      expect(player.events, containsAllInOrder(<String>['setSource', 'play']));
+    },
+  );
+
+  test(
+    'room playback controller waits initial embedded surface bootstrap on android mpv',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.ready,
+        ),
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      final waitDurations = <Duration>[];
+      final controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.bilibili,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => null,
+        resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+        waitForInitialEmbeddedSurfaceBootstrap: true,
+        schedulePostFrame: scheduler.schedule,
+        delay: (duration) async {
+          waitDurations.add(duration);
+        },
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
+
+      controller.schedulePlaybackBootstrap(
+        playbackSource: source('initial'),
+        hasPlayback: true,
+        autoPlay: true,
+      );
+      await scheduler.flush();
+
+      expect(waitDurations, contains(const Duration(milliseconds: 220)));
+      expect(player.events, containsAllInOrder(<String>['setSource', 'play']));
+    },
+  );
+
+  test(
+    'room playback controller coalesces repeated bootstrap requests while initial surface wait is in flight',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.ready,
+        ),
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      late final RoomPlaybackController controller;
+      var duplicateScheduled = false;
+      controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.bilibili,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => null,
+        resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
+        waitForInitialEmbeddedSurfaceBootstrap: true,
+        schedulePostFrame: scheduler.schedule,
+        delay: (duration) async {
+          if (!duplicateScheduled &&
+              duration == const Duration(milliseconds: 220)) {
+            duplicateScheduled = true;
+            controller.schedulePlaybackBootstrap(
+              playbackSource: source('initial'),
+              hasPlayback: true,
+              autoPlay: true,
+            );
+          }
+        },
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
+
+      controller.schedulePlaybackBootstrap(
+        playbackSource: source('initial'),
+        hasPlayback: true,
+        autoPlay: true,
+      );
+      await scheduler.flush();
+
+      expect(
+        player.events.where((event) => event == 'setSource'),
+        hasLength(1),
+      );
+      expect(player.events.where((event) => event == 'play'), hasLength(1));
+      expect(player.boundSources.map((value) => value.url.toString()), <String>[
+        'https://example.com/initial.m3u8',
+      ]);
+    },
+  );
 }
 
 class _TestPlaybackScheduler {
@@ -522,10 +619,7 @@ class _TestPlaybackPlayer implements BasePlayer {
   Future<void> stop() async {
     events.add('stop');
     _emit(
-      _currentState.copyWith(
-        status: PlaybackStatus.ready,
-        clearSource: true,
-      ),
+      _currentState.copyWith(status: PlaybackStatus.ready, clearSource: true),
     );
   }
 
@@ -568,6 +662,32 @@ class _TestPlaybackPlayer implements BasePlayer {
     if (!_states.isClosed) {
       _states.add(_currentState);
     }
+  }
+}
+
+class _DelayedSetSourcePlaybackPlayer extends _TestPlaybackPlayer {
+  _DelayedSetSourcePlaybackPlayer({required super.initialState});
+
+  final Completer<void> _setSourceGate = Completer<void>();
+
+  void releaseSetSource() {
+    if (!_setSourceGate.isCompleted) {
+      _setSourceGate.complete();
+    }
+  }
+
+  @override
+  Future<void> setSource(PlaybackSource source) async {
+    events.add('setSource');
+    boundSources.add(source);
+    await _setSourceGate.future;
+    _emit(
+      currentState.copyWith(
+        status: PlaybackStatus.ready,
+        source: source,
+        clearErrorMessage: true,
+      ),
+    );
   }
 }
 

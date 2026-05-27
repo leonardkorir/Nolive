@@ -22,12 +22,12 @@ class RoomDanmakuState {
   });
 
   const RoomDanmakuState.initial()
-      : session = null,
-        blockedKeywords = const <String>[],
-        usingNativeBatchMask = false,
-        reconnectInFlight = false,
-        reconnectAttempt = 0,
-        reconnectScheduled = false;
+    : session = null,
+      blockedKeywords = const <String>[],
+      usingNativeBatchMask = false,
+      reconnectInFlight = false,
+      reconnectAttempt = 0,
+      reconnectScheduled = false;
 
   final DanmakuSession? session;
   final List<String> blockedKeywords;
@@ -60,7 +60,11 @@ class RoomDanmakuState {
 bool shouldRetryDanmakuConnectionError({
   required ProviderId providerId,
   required Object error,
+  int reconnectAttempt = 0,
 }) {
+  if (providerId == ProviderId.stripchat && error is TimeoutException) {
+    return reconnectAttempt < 2;
+  }
   if (providerId != ProviderId.chaturbate) {
     return true;
   }
@@ -69,7 +73,8 @@ bool shouldRetryDanmakuConnectionError({
   }
   final message = error.message.toLowerCase();
   final blockedByCloudflare = message.contains('cloudflare challenge');
-  final chaturbate403 = message.contains('status 403') &&
+  final chaturbate403 =
+      message.contains('status 403') &&
       (message.contains('/push_service/auth/') ||
           message.contains('/push_service/room_history/'));
   return !(blockedByCloudflare || chaturbate403);
@@ -79,20 +84,22 @@ class RoomDanmakuController {
   static const Duration _defaultConnectTimeout = Duration(seconds: 6);
   static const Duration _douyuConnectTimeout = Duration(seconds: 20);
   static const Duration _chaturbateConnectTimeout = Duration(seconds: 20);
+  static const Duration _stripchatConnectTimeout = Duration(seconds: 20);
 
   RoomDanmakuController({
     required this.dependencies,
     required this.providerId,
     this.trace,
     this.connectTimeout = _defaultConnectTimeout,
-  })  : _state = ValueNotifier<RoomDanmakuState>(
-          const RoomDanmakuState.initial(),
-        ),
-        _messages = ValueNotifier<List<LiveMessage>>(const <LiveMessage>[]),
-        _superChats = ValueNotifier<List<LiveMessage>>(const <LiveMessage>[]),
-        _playerSuperChats = ValueNotifier<List<LiveMessage>>(
-          const <LiveMessage>[],
-        ) {
+    this.reconnectDelayBuilder,
+  }) : _state = ValueNotifier<RoomDanmakuState>(
+         const RoomDanmakuState.initial(),
+       ),
+       _messages = ValueNotifier<List<LiveMessage>>(const <LiveMessage>[]),
+       _superChats = ValueNotifier<List<LiveMessage>>(const <LiveMessage>[]),
+       _playerSuperChats = ValueNotifier<List<LiveMessage>>(
+         const <LiveMessage>[],
+       ) {
     _updateBatchMask(preferNative: false);
   }
 
@@ -102,22 +109,25 @@ class RoomDanmakuController {
     '连接已断开',
     '连接异常',
     '连接失败',
+    '活动超时',
   ];
 
   final RoomDanmakuDependencies dependencies;
   final ProviderId providerId;
   final void Function(String message)? trace;
   final Duration connectTimeout;
+  final Duration Function(int attempt)? reconnectDelayBuilder;
   final ValueNotifier<RoomDanmakuState> _state;
   final ValueNotifier<List<LiveMessage>> _messages;
   final ValueNotifier<List<LiveMessage>> _superChats;
   final ValueNotifier<List<LiveMessage>> _playerSuperChats;
+  Future<void>? _disposeFuture;
 
   final List<LiveMessage> _pendingDanmakuMessages = <LiveMessage>[];
 
-  DanmakuBatchMask _danmakuBatchMask = WindowedDanmakuBatchMask();
+  DanmakuBatchMask? _danmakuBatchMask;
   DanmakuFilterService _filter = DanmakuFilterService(
-    config: const DanmakuFilterConfig(blockedKeywords: <String>{}),
+    config: DanmakuFilterConfig(blockedKeywords: <String>{}),
   );
   LiveRoomDetail? _activeRoomDetail;
   Timer? _danmakuFlushTimer;
@@ -150,9 +160,7 @@ class RoomDanmakuController {
     }
     _playerSuperChatDisplaySeconds = playerSuperChatDisplaySeconds;
     _filter = DanmakuFilterService(
-      config: DanmakuFilterConfig(
-        blockedKeywords: blockedKeywords.toSet(),
-      ),
+      config: DanmakuFilterConfig(blockedKeywords: blockedKeywords.toSet()),
     );
     final usingNative = _updateBatchMask(preferNative: preferNativeBatchMask);
     _emit(
@@ -185,10 +193,7 @@ class RoomDanmakuController {
       'danmaku bind start room=${activeRoomDetail.roomId} '
       'bind=$bindGeneration session=${_describeSession(session)}',
     );
-    await _disposeSessionInternal(
-      clearSession: true,
-      reason: 'bind start',
-    );
+    await _disposeSessionInternal(clearSession: true, reason: 'bind start');
     resetReconnectState();
     if (_disposed || bindGeneration != _bindGeneration) {
       _trace(
@@ -211,32 +216,43 @@ class RoomDanmakuController {
     _danmakuFlushTimer = Timer.periodic(_danmakuFlushInterval, (_) {
       _flushPendingDanmaku();
     });
-    _danmakuSubscription = session.messages.listen((message) {
-      if (_disposed) {
-        return;
-      }
-      if (_shouldReconnectDanmaku(message)) {
-        _trace(
-          'danmaku reconnect trigger room=${_describeRoom(_activeRoomDetail)} '
-          'notice=${_summarizeReconnectCause(message.content)}',
-        );
-        _scheduleDanmakuReconnect(cause: message.content);
-      }
-      _pendingDanmakuMessages.add(message);
-      if (_pendingDanmakuMessages.length >= _danmakuFlushBurstLimit) {
+    _danmakuSubscription = session.messages.listen(
+      (message) {
+        if (_disposed) {
+          return;
+        }
+        if (_shouldReconnectDanmaku(message)) {
+          _trace(
+            'danmaku reconnect trigger room=${_describeRoom(_activeRoomDetail)} '
+            'notice=${_summarizeReconnectCause(message.content)}',
+          );
+          _scheduleDanmakuReconnect(cause: message.content);
+        }
+        _pendingDanmakuMessages.add(message);
+        if (_pendingDanmakuMessages.length >= _danmakuFlushBurstLimit) {
+          _flushPendingDanmaku();
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (_disposed) {
+          return;
+        }
+        _trace('danmaku stream error: $error');
+        _pendingDanmakuMessages.add(_buildDanmakuNotice('弹幕连接异常：$error'));
         _flushPendingDanmaku();
-      }
-    }, onError: (Object error, StackTrace stackTrace) {
-      if (_disposed) {
-        return;
-      }
-      _trace('danmaku stream error: $error');
-      _pendingDanmakuMessages.add(
-        _buildDanmakuNotice('弹幕连接异常：$error'),
-      );
-      _flushPendingDanmaku();
-      _scheduleDanmakuReconnect(cause: 'stream-error=$error');
-    });
+        _scheduleDanmakuReconnect(cause: 'stream-error=$error');
+      },
+      onDone: () {
+        if (_disposed) {
+          return;
+        }
+        _trace('danmaku stream closed unexpectedly');
+        _pendingDanmakuMessages.add(_buildDanmakuNotice('弹幕连接已断开'));
+        _flushPendingDanmaku();
+        _scheduleDanmakuReconnect(cause: 'stream-done');
+      },
+      cancelOnError: false,
+    );
 
     try {
       final effectiveConnectTimeout = _resolveConnectTimeout();
@@ -260,13 +276,21 @@ class RoomDanmakuController {
       );
       _flushPendingDanmaku();
     } catch (error) {
+      final staleAfterFailure = _disposed || bindGeneration != _bindGeneration;
+      if (staleAfterFailure) {
+        _trace(
+          'danmaku connect stale after failure room=${activeRoomDetail.roomId} '
+          'bind=$bindGeneration disposed=$_disposed stale=${bindGeneration != _bindGeneration} '
+          'error=$error',
+        );
+        await session.disconnect();
+        return;
+      }
       _trace(
         'danmaku connect failed room=${activeRoomDetail.roomId} '
         'bind=$bindGeneration session=${_describeSession(session)} error=$error',
       );
-      _pendingDanmakuMessages.add(
-        _buildDanmakuNotice('弹幕连接失败：$error'),
-      );
+      _pendingDanmakuMessages.add(_buildDanmakuNotice('弹幕连接失败：$error'));
       _flushPendingDanmaku();
       if (!_disposed && bindGeneration == _bindGeneration) {
         await _disposeSessionInternal(
@@ -276,6 +300,7 @@ class RoomDanmakuController {
         if (shouldRetryDanmakuConnectionError(
           providerId: providerId,
           error: error,
+          reconnectAttempt: current.reconnectAttempt,
         )) {
           _scheduleDanmakuReconnect(cause: 'connect-failed=$error');
         } else {
@@ -305,10 +330,7 @@ class RoomDanmakuController {
       'session=${_describeSession(current.session)}',
     );
     resetReconnectState();
-    await _disposeSessionInternal(
-      clearSession: true,
-      reason: 'close session',
-    );
+    await _disposeSessionInternal(clearSession: true, reason: 'close session');
   }
 
   Future<void> handleLifecycleState({
@@ -366,7 +388,21 @@ class RoomDanmakuController {
     );
   }
 
-  void dispose() {
+  Future<void> dispose() {
+    return disposeAsync();
+  }
+
+  Future<void> disposeAsync() async {
+    final pendingDispose = _disposeFuture;
+    if (pendingDispose != null) {
+      return pendingDispose;
+    }
+    final future = _disposeAsync();
+    _disposeFuture = future;
+    return future;
+  }
+
+  Future<void> _disposeAsync() async {
     if (_disposed) {
       return;
     }
@@ -393,12 +429,20 @@ class RoomDanmakuController {
     final disconnectFuture = session?.disconnect();
 
     if (subscription != null) {
-      unawaited(subscription.cancel());
+      try {
+        await subscription.cancel();
+      } catch (error) {
+        _trace('danmaku subscription cancel failed error=$error');
+      }
     }
     if (disconnectFuture != null) {
-      unawaited(disconnectFuture);
+      try {
+        await disconnectFuture;
+      } catch (error) {
+        _trace('danmaku session disconnect failed error=$error');
+      }
     }
-    _danmakuBatchMask.dispose();
+    _danmakuBatchMask?.dispose();
     _state.dispose();
     _messages.dispose();
     _superChats.dispose();
@@ -406,7 +450,7 @@ class RoomDanmakuController {
   }
 
   bool _updateBatchMask({required bool preferNative}) {
-    _danmakuBatchMask.dispose();
+    _danmakuBatchMask?.dispose();
     final resolution = resolveAppDanmakuBatchMask(preferNative: preferNative);
     _danmakuBatchMask = resolution.mask;
     return resolution.usingNative;
@@ -419,8 +463,9 @@ class RoomDanmakuController {
     if (message.type != LiveMessageType.notice) {
       return false;
     }
-    return _danmakuReconnectSignals
-        .any((signal) => message.content.contains(signal));
+    return _danmakuReconnectSignals.any(
+      (signal) => message.content.contains(signal),
+    );
   }
 
   void _scheduleDanmakuReconnect({String? cause}) {
@@ -438,18 +483,14 @@ class RoomDanmakuController {
       return;
     }
     final attempt = current.reconnectAttempt + 1;
-    final delay = Duration(
-      seconds: math.min(12, math.max(2, attempt * 2)),
-    );
+    final delay = reconnectDelayBuilder?.call(attempt) ??
+        Duration(seconds: math.min(12, math.max(2, attempt * 2)));
     _emit(
-      current.copyWith(
-        reconnectAttempt: attempt,
-        reconnectScheduled: true,
-      ),
+      current.copyWith(reconnectAttempt: attempt, reconnectScheduled: true),
     );
     _trace(
       'danmaku reconnect scheduled attempt=$attempt '
-      'delay=${delay.inSeconds}s room=${_describeRoom(_activeRoomDetail)} '
+      'delay=${delay.inMilliseconds}ms room=${_describeRoom(_activeRoomDetail)} '
       'cause=${_summarizeReconnectCause(cause)}',
     );
     final reconnectGeneration = _reconnectGeneration;
@@ -504,10 +545,7 @@ class RoomDanmakuController {
         'room=${_describeRoom(detail)} '
         'session=${_describeSession(nextSession)}',
       );
-      await bindSession(
-        activeRoomDetail: detail,
-        session: nextSession,
-      );
+      await bindSession(activeRoomDetail: detail, session: nextSession);
     } catch (error) {
       if (_disposed || reconnectGeneration != _reconnectGeneration) {
         return;
@@ -517,6 +555,7 @@ class RoomDanmakuController {
       if (shouldRetryDanmakuConnectionError(
         providerId: providerId,
         error: error,
+        reconnectAttempt: current.reconnectAttempt,
       )) {
         _scheduleDanmakuReconnect(cause: 'reconnect-failed=$error');
       } else {
@@ -549,13 +588,17 @@ class RoomDanmakuController {
     if (!_disposed && clearSession) {
       _emit(current.copyWith(clearSession: true));
     }
-    await subscription?.cancel();
+    try {
+      await subscription?.cancel();
+    } catch (error) {
+      _trace('danmaku subscription cancel failed: $error');
+    }
     if (disconnectFuture != null) {
-      unawaited(
-        disconnectFuture.catchError((Object error, StackTrace stackTrace) {
-          _trace('danmaku disconnect failed: $error');
-        }),
-      );
+      try {
+        await disconnectFuture;
+      } catch (error) {
+        _trace('danmaku disconnect failed: $error');
+      }
     }
   }
 
@@ -570,16 +613,16 @@ class RoomDanmakuController {
     if (detail == null || current.session != null) {
       return;
     }
+    final bindGeneration = _bindGeneration;
     try {
-      _trace(
-        'danmaku lifecycle resume open room=${_describeRoom(detail)}',
-      );
+      _trace('danmaku lifecycle resume open room=${_describeRoom(detail)}');
       final nextSession = await dependencies.openRoomDanmaku(
         providerId: providerId,
         detail: detail,
       );
       if (_disposed ||
           _suspendedByLifecycle ||
+          bindGeneration != _bindGeneration ||
           !_sameRoom(detail, _activeRoomDetail)) {
         await nextSession?.disconnect();
         return;
@@ -588,10 +631,7 @@ class RoomDanmakuController {
         'danmaku lifecycle resume bind room=${_describeRoom(detail)} '
         'session=${_describeSession(nextSession)}',
       );
-      await bindSession(
-        activeRoomDetail: detail,
-        session: nextSession,
-      );
+      await bindSession(activeRoomDetail: detail, session: nextSession);
     } catch (error) {
       if (_disposed) {
         return;
@@ -629,7 +669,12 @@ class RoomDanmakuController {
     final batch = List<LiveMessage>.from(_pendingDanmakuMessages);
     _pendingDanmakuMessages.clear();
     final filtered = _filter.apply(batch);
-    final allowListed = _danmakuBatchMask.allowListBatch(filtered);
+    final batchMask = _danmakuBatchMask;
+    if (batchMask == null) {
+      _trace('danmaku batch mask unavailable, dropping pending batch');
+      return;
+    }
+    final allowListed = batchMask.allowListBatch(filtered);
     if (allowListed.isEmpty) {
       return;
     }
@@ -704,6 +749,9 @@ Duration resolveDanmakuConnectTimeout({
   }
   if (providerId == ProviderId.douyu) {
     return RoomDanmakuController._douyuConnectTimeout;
+  }
+  if (providerId == ProviderId.stripchat) {
+    return RoomDanmakuController._stripchatConnectTimeout;
   }
   if (providerId == ProviderId.chaturbate) {
     return RoomDanmakuController._chaturbateConnectTimeout;

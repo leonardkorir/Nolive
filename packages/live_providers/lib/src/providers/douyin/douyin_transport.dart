@@ -61,6 +61,10 @@ class HttpDouyinTransport extends DouyinTransport {
 
   final http.Client _client;
 
+  void close() {
+    _client.close();
+  }
+
   @override
   Future<DouyinHttpResponse> getResponse(
     String url, {

@@ -18,8 +18,11 @@ class DouyuProvider extends LiveProvider
         SupportsPlayQualities,
         SupportsPlayUrls,
         SupportsDanmaku {
-  DouyuProvider({DouyuDataSource? dataSource})
-      : _dataSource = dataSource ?? const DouyuPreviewDataSource();
+  DouyuProvider({
+    DouyuDataSource? dataSource,
+    void Function()? disposeOwnedResources,
+  })  : _dataSource = dataSource ?? const DouyuPreviewDataSource(),
+        _disposeOwnedResources = disposeOwnedResources;
 
   factory DouyuProvider.preview() => DouyuProvider();
 
@@ -27,7 +30,8 @@ class DouyuProvider extends LiveProvider
     DouyuTransport? transport,
     DouyuSignService? signService,
   }) {
-    final resolvedTransport = transport ?? HttpDouyuTransport();
+    final ownedTransport = transport == null ? HttpDouyuTransport() : null;
+    final resolvedTransport = transport ?? ownedTransport!;
     final resolvedSignService =
         signService ?? HttpDouyuSignService(transport: resolvedTransport);
     return DouyuProvider(
@@ -35,6 +39,7 @@ class DouyuProvider extends LiveProvider
         transport: resolvedTransport,
         signService: resolvedSignService,
       ),
+      disposeOwnedResources: ownedTransport?.close,
     );
   }
 
@@ -63,9 +68,15 @@ class DouyuProvider extends LiveProvider
   );
 
   final DouyuDataSource _dataSource;
+  final void Function()? _disposeOwnedResources;
 
   @override
   ProviderDescriptor get descriptor => kDescriptor;
+
+  @override
+  void dispose() {
+    _disposeOwnedResources?.call();
+  }
 
   @override
   Future<List<LiveCategory>> fetchCategories() {
@@ -119,15 +130,20 @@ class DouyuProvider extends LiveProvider
   Future<DanmakuSession> createDanmakuSession(LiveRoomDetail detail) async {
     requireCapability(ProviderCapability.danmaku);
     final token = detail.danmakuToken;
-    if (token is Map && token['mode']?.toString() == 'preview') {
+    if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
         providerId: descriptor.id.value,
         detail: detail,
       );
     }
-    final roomId = token is Map ? token['roomId']?.toString() : detail.roomId;
-    if (roomId != null && roomId.isNotEmpty) {
-      return DouyuDanmakuSession(roomId: roomId);
+    final roomId = token is DouyuDanmakuToken ? token.roomId : detail.roomId;
+    if (roomId.isNotEmpty) {
+      return DouyuDanmakuSession(
+        roomId: roomId,
+        socketUrls: token is DouyuDanmakuToken && token.socketUrls.isNotEmpty
+            ? token.socketUrls
+            : null,
+      );
     }
     return ProviderTickerDanmakuSession(
       providerId: descriptor.id.value,

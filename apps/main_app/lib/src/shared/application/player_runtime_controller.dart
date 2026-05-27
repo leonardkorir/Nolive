@@ -7,6 +7,8 @@ import 'package:live_player/live_player.dart';
 class PlayerRuntimeController {
   PlayerRuntimeController(this._delegate);
 
+  static final Object _roomTeardownZoneKey = Object();
+
   final BasePlayer _delegate;
   Future<void> _pendingRoomTeardown = Future<void>.value();
   int _queuedRoomTeardowns = 0;
@@ -111,15 +113,17 @@ class PlayerRuntimeController {
 
   Future<void> waitForPendingRoomTeardown() => _pendingRoomTeardown;
 
+  Future<void> dispose() => _delegate.dispose();
+
   Future<void> serializeRoomTeardown(Future<void> Function() action) {
     final previous = _pendingRoomTeardown;
-    final hadPendingRoomTeardown = hasPendingRoomTeardown;
+    final activeRoomTeardown = Zone.current[_roomTeardownZoneKey];
     final completer = Completer<void>();
     _queuedRoomTeardowns += 1;
     _pendingRoomTeardown = completer.future;
-    return (() async {
+    return runZoned(() async {
       try {
-        if (hadPendingRoomTeardown) {
+        if (!identical(activeRoomTeardown, previous)) {
           await previous;
         }
         await action();
@@ -129,7 +133,7 @@ class PlayerRuntimeController {
           completer.complete();
         }
       }
-    })();
+    }, zoneValues: <Object?, Object?>{_roomTeardownZoneKey: completer.future});
   }
 
   Widget buildView({

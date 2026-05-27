@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:math';
 
@@ -7,6 +8,8 @@ import 'package:web_socket_channel/io.dart';
 
 import '../providers/chaturbate/chaturbate_api_client.dart';
 import '../providers/chaturbate/chaturbate_mapper.dart';
+import '../providers/provider_runtime_support.dart';
+import 'danmaku_activity_watchdog.dart';
 import 'danmaku_web_socket.dart';
 
 abstract interface class ChaturbateSocketClient {
@@ -29,29 +32,40 @@ class ChaturbateDanmakuSession implements DanmakuSession {
     required this.csrfToken,
     required this.backend,
     required this.apiClient,
+    void Function()? disposeOwnedApiClient,
     ChaturbateSocketClientFactory? socketClientFactory,
     String? presenceId,
+    Duration inactivityTimeout = const Duration(minutes: 2),
   })  : _socketClientFactory =
             socketClientFactory ?? _defaultSocketClientFactory,
-        _presenceId = presenceId ?? _buildPresenceId();
+        _disposeOwnedApiClient = disposeOwnedApiClient,
+        _presenceId = presenceId ?? _buildPresenceId(),
+        _inactivityTimeout = inactivityTimeout;
 
   final String roomId;
   final String broadcasterUid;
   final String csrfToken;
   final String backend;
   final ChaturbateApiClient apiClient;
+  final void Function()? _disposeOwnedApiClient;
 
   final ChaturbateSocketClientFactory _socketClientFactory;
   final String _presenceId;
+  final Duration _inactivityTimeout;
 
   final StreamController<LiveMessage> _controller =
       StreamController<LiveMessage>.broadcast();
+  static const int _maxSeenMessageIds = 2048;
+  static const int _maxRealtimePayloadBytes = 1024 * 1024;
   final Set<String> _seenMessageIds = <String>{};
+  final Queue<String> _seenMessageOrder = Queue<String>();
 
   ChaturbateSocketClient? _socket;
   StreamSubscription<dynamic>? _subscription;
+  DanmakuActivityWatchdog? _activityWatchdog;
   bool _connected = false;
   bool _attached = false;
+  bool _ownedApiClientDisposed = false;
   List<String> _channels = const [];
 
   static const List<String> _authTopicNames = [
@@ -126,32 +140,38 @@ class ChaturbateDanmakuSession implements DanmakuSession {
       try {
         _socket = socket;
         _connected = true;
-        _subscription = _socket!.stream.listen(
+        _activityWatchdog = DanmakuActivityWatchdog(
+          timeout: _inactivityTimeout,
+          onTimeout: _handleActivityTimeout,
+        )..start();
+        StreamSubscription<dynamic>? subscription;
+        subscription = socket.stream.listen(
           _handleRawMessage,
           onError: (error) {
-            _emit(
-              LiveMessage(
-                type: LiveMessageType.notice,
-                content: 'Chaturbate 弹幕连接异常：$error',
-                timestamp: DateTime.now(),
+            unawaited(
+              _teardownRemoteDisconnect(
+                socket: socket,
+                subscription: subscription,
+                notice: 'Chaturbate 弹幕连接异常：$error',
               ),
             );
           },
           onDone: () {
-            if (_connected) {
-              _emit(
-                LiveMessage(
-                  type: LiveMessageType.notice,
-                  content: 'Chaturbate 弹幕连接已断开',
-                  timestamp: DateTime.now(),
-                ),
-              );
-            }
+            unawaited(
+              _teardownRemoteDisconnect(
+                socket: socket,
+                subscription: subscription,
+                notice: 'Chaturbate 弹幕连接已断开',
+              ),
+            );
           },
           cancelOnError: false,
         );
+        _subscription = subscription;
       } catch (_) {
         _connected = false;
+        _activityWatchdog?.stop();
+        _activityWatchdog = null;
         await _subscription?.cancel();
         _subscription = null;
         await socket.close();
@@ -162,10 +182,13 @@ class ChaturbateDanmakuSession implements DanmakuSession {
       }
     } catch (_) {
       _connected = false;
+      _activityWatchdog?.stop();
+      _activityWatchdog = null;
       await _subscription?.cancel();
       _subscription = null;
       await _socket?.close();
       _socket = null;
+      _disposeOwnedApiClientIfNeeded();
       rethrow;
     }
   }
@@ -177,10 +200,18 @@ class ChaturbateDanmakuSession implements DanmakuSession {
         csrfToken: csrfToken,
         topics: _buildTopics(_historyTopicNames),
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!_shouldIgnoreRoomHistoryFailure(error)) {
         rethrow;
       }
+      reportProviderDiagnostic(
+        providerId: ProviderId.chaturbate,
+        scope: 'chaturbate room history',
+        message:
+            'non-fatal room_history status=${_roomHistoryStatusCode(error)}; continuing with realtime danmaku only',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _emit(
         LiveMessage(
           type: LiveMessageType.notice,
@@ -196,13 +227,54 @@ class ChaturbateDanmakuSession implements DanmakuSession {
   Future<void> disconnect() async {
     _connected = false;
     _attached = false;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
     await _subscription?.cancel();
     _subscription = null;
     await _socket?.close();
     _socket = null;
+    _disposeOwnedApiClientIfNeeded();
     if (!_controller.isClosed) {
       await _controller.close();
     }
+  }
+
+  Future<void> _teardownRemoteDisconnect({
+    required ChaturbateSocketClient socket,
+    required StreamSubscription<dynamic>? subscription,
+    required String notice,
+  }) async {
+    if (!identical(_socket, socket) ||
+        !identical(_subscription, subscription)) {
+      return;
+    }
+    _connected = false;
+    _attached = false;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    _subscription = null;
+    _socket = null;
+    _emit(
+      LiveMessage(
+        type: LiveMessageType.notice,
+        content: notice,
+        timestamp: DateTime.now(),
+      ),
+    );
+    try {
+      await subscription?.cancel();
+    } catch (_) {}
+    try {
+      await socket.close();
+    } catch (_) {}
+  }
+
+  void _disposeOwnedApiClientIfNeeded() {
+    if (_ownedApiClientDisposed) {
+      return;
+    }
+    _ownedApiClientDisposed = true;
+    _disposeOwnedApiClient?.call();
   }
 
   Future<ChaturbateSocketClient> _connectRealtimeSocket({
@@ -237,6 +309,16 @@ class ChaturbateDanmakuSession implements DanmakuSession {
   }
 
   void _handleRawMessage(dynamic raw) {
+    if (raw is List<int> && raw.length > _maxRealtimePayloadBytes) {
+      _emit(
+        LiveMessage(
+          type: LiveMessageType.notice,
+          content: 'Chaturbate 弹幕消息过大，已忽略。',
+          timestamp: DateTime.now(),
+        ),
+      );
+      return;
+    }
     final text = switch (raw) {
       String value => value,
       List<int> value => utf8.decode(value),
@@ -245,6 +327,17 @@ class ChaturbateDanmakuSession implements DanmakuSession {
     if (text.trim().isEmpty) {
       return;
     }
+    if (utf8.encode(text).length > _maxRealtimePayloadBytes) {
+      _emit(
+        LiveMessage(
+          type: LiveMessageType.notice,
+          content: 'Chaturbate 弹幕消息过大，已忽略。',
+          timestamp: DateTime.now(),
+        ),
+      );
+      return;
+    }
+    _activityWatchdog?.ping();
     try {
       final decoded = jsonDecode(text);
       if (decoded is! Map) {
@@ -312,8 +405,16 @@ class ChaturbateDanmakuSession implements DanmakuSession {
 
   void _emitMapped(Map<String, dynamic> payload) {
     final dedupeKey = ChaturbateMapper.dedupeKeyForDanmakuPayload(payload);
-    if (dedupeKey != null && !_seenMessageIds.add(dedupeKey)) {
-      return;
+    if (dedupeKey != null) {
+      if (_seenMessageIds.contains(dedupeKey)) {
+        return;
+      }
+      _seenMessageIds.add(dedupeKey);
+      _seenMessageOrder.addLast(dedupeKey);
+      while (_seenMessageOrder.length > _maxSeenMessageIds) {
+        final expired = _seenMessageOrder.removeFirst();
+        _seenMessageIds.remove(expired);
+      }
     }
     final message = ChaturbateMapper.mapDanmakuPayload(payload);
     if (message == null || message.content.trim().isEmpty) {
@@ -393,13 +494,43 @@ class ChaturbateDanmakuSession implements DanmakuSession {
     _controller.add(message);
   }
 
-  bool _shouldIgnoreRoomHistoryFailure(Object error) {
-    if (error is! ProviderParseException) {
-      return false;
+  Future<void> _handleActivityTimeout() async {
+    if (!_connected) {
+      return;
     }
-    final message = error.message.toLowerCase();
-    return message.contains('/push_service/room_history/') &&
-        message.contains('status 403');
+    _connected = false;
+    _attached = false;
+    _activityWatchdog?.stop();
+    _activityWatchdog = null;
+    await _subscription?.cancel();
+    _subscription = null;
+    await _socket?.close();
+    _socket = null;
+    _emit(
+      LiveMessage(
+        type: LiveMessageType.notice,
+        content: 'Chaturbate 弹幕连接活动超时',
+        timestamp: DateTime.now(),
+      ),
+    );
+  }
+
+  int get debugSeenMessageCount => _seenMessageIds.length;
+
+  void debugIngestPayload(Map<String, dynamic> payload) {
+    _emitMapped(payload);
+  }
+
+  bool _shouldIgnoreRoomHistoryFailure(Object error) {
+    return error is ChaturbateRoomHistoryUnavailableException &&
+        error.statusCode == 403;
+  }
+
+  String _roomHistoryStatusCode(Object error) {
+    if (error is ChaturbateRoomHistoryUnavailableException) {
+      return '${error.statusCode}';
+    }
+    return '-';
   }
 
   static ChaturbateSocketClient _defaultSocketClientFactory(Uri uri) {

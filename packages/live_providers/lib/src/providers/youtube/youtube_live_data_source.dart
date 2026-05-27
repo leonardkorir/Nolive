@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
+import '../provider_runtime_support.dart';
 import 'youtube_api_client.dart';
 import 'youtube_data_source.dart';
 import 'youtube_hls_master_playlist_parser.dart';
@@ -24,6 +26,8 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
   final Map<String, List<YouTubeHlsVariant>> _hlsVariantCache =
       <String, List<YouTubeHlsVariant>>{};
   final Map<String, bool> _hlsUsabilityCache = <String, bool>{};
+  static const int _maxHlsCacheEntries = 64;
+  static const int _maxContextMergeDepth = 64;
   static const List<YouTubePlayerClientProfile> _playbackProfiles = [
     YouTubePlayerClientProfile.webSafari,
     YouTubePlayerClientProfile.mweb,
@@ -292,12 +296,26 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
         query: query,
         rooms: response.items,
       );
-    } on ProviderParseException catch (error) {
+    } on ProviderParseException catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.youtube,
+        scope: 'youtube category query load',
+        message: 'search failed for query="$query"',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return _YouTubeCategoryQueryResult(
         query: query,
         error: error,
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.youtube,
+        scope: 'youtube category query load',
+        message: 'unexpected search failure for query="$query"',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return _YouTubeCategoryQueryResult(
         query: query,
         error: ProviderParseException(
@@ -422,28 +440,16 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
           manifestUrl: source.url,
           headers: source.headers,
         );
-      } catch (_) {
+      } catch (error, stackTrace) {
+        reportProviderDiagnostic(
+          providerId: ProviderId.youtube,
+          scope: 'youtube HLS quality probe',
+          message: 'failed for source=${source.url}',
+          error: error,
+          stackTrace: stackTrace,
+        );
         continue;
       }
-    }
-
-    final directQualities = _buildDirectPlayQualities(
-      playbackSources.where((item) => item.isDirect).toList(),
-    );
-    if (directQualities.isNotEmpty) {
-      return directQualities;
-    }
-
-    final dashSources = playbackSources.where((item) => item.isDash).toList();
-    if (dashSources.isNotEmpty) {
-      return const [
-        LivePlayQuality(
-          id: 'auto',
-          label: 'Auto',
-          isDefault: true,
-          metadata: {'playbackMode': 'dash'},
-        ),
-      ];
     }
 
     for (final source in allHlsSources) {
@@ -457,9 +463,35 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
           manifestUrl: source.url,
           headers: source.headers,
         );
-      } catch (_) {
+      } catch (error, stackTrace) {
+        reportProviderDiagnostic(
+          providerId: ProviderId.youtube,
+          scope: 'youtube HLS quality fallback probe',
+          message: 'failed for source=${source.url}',
+          error: error,
+          stackTrace: stackTrace,
+        );
         continue;
       }
+    }
+
+    final directQualities = _buildDirectPlayQualities(
+      playbackSources.where((item) => item.isDirect).toList(),
+    );
+    if (directQualities.isNotEmpty) {
+      return directQualities;
+    }
+
+    final dashSources = playbackSources.where((item) => item.isDash).toList();
+    if (dashSources.isNotEmpty) {
+      return [
+        LivePlayQuality(
+          id: 'auto',
+          label: 'Auto',
+          isDefault: true,
+          metadata: {'playbackMode': 'dash'},
+        ),
+      ];
     }
 
     final manifestUrl = await _resolveManifestUrl(detail);
@@ -502,13 +534,8 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
     final seen = <String>{};
     final allHlsSources = playbackSources.where((item) => item.isHls).toList();
     final usableHlsSources = await _selectUsableHlsSources(allHlsSources);
-    final hasAlternativeSources =
-        playbackSources.any((item) => item.isDirect || item.isDash);
-    final hlsSources = usableHlsSources.isNotEmpty
-        ? usableHlsSources
-        : hasAlternativeSources
-            ? const <_YouTubePlaybackSource>[]
-            : allHlsSources;
+    final hlsSources =
+        usableHlsSources.isNotEmpty ? usableHlsSources : allHlsSources;
 
     if (mode != 'direct' && mode != 'dash') {
       if (quality.id == 'auto') {
@@ -562,7 +589,14 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
                 },
               ),
             );
-          } catch (_) {
+          } catch (error, stackTrace) {
+            reportProviderDiagnostic(
+              providerId: ProviderId.youtube,
+              scope: 'youtube HLS play url resolve',
+              message: 'failed for source=${source.url} quality=${quality.id}',
+              error: error,
+              stackTrace: stackTrace,
+            );
             continue;
           }
         }
@@ -737,7 +771,14 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
             ),
           ),
         );
-      } catch (error) {
+      } catch (error, stackTrace) {
+        reportProviderDiagnostic(
+          providerId: ProviderId.youtube,
+          scope: 'youtube player profile request',
+          message: 'failed for profile=${profile.id}',
+          error: error,
+          stackTrace: stackTrace,
+        );
         firstError ??= error;
       }
     }
@@ -837,16 +878,25 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
 
   Map<String, dynamic> _mergeMaps(
     Map<String, dynamic> base,
-    Map<String, dynamic> overlay,
-  ) {
+    Map<String, dynamic> overlay, {
+    int depth = 0,
+  }) {
     final merged = <String, dynamic>{...base};
     for (final entry in overlay.entries) {
       final baseValue = merged[entry.key];
       final overlayValue = entry.value;
       if (baseValue is Map && overlayValue is Map) {
+        if (depth >= _maxContextMergeDepth) {
+          merged[entry.key] = <String, dynamic>{
+            ..._asMap(baseValue),
+            ..._asMap(overlayValue),
+          };
+          continue;
+        }
         merged[entry.key] = _mergeMaps(
           _asMap(baseValue),
           _asMap(overlayValue),
+          depth: depth + 1,
         );
         continue;
       }
@@ -1047,6 +1097,7 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
   ) async {
     final cached = _hlsVariantCache[source.url];
     if (cached != null) {
+      _rememberCachedValue(_hlsVariantCache, source.url, cached);
       return cached;
     }
     final playlistText = await _apiClient.fetchText(
@@ -1057,7 +1108,7 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
       playlistUrl: source.url,
       source: playlistText,
     );
-    _hlsVariantCache[source.url] = variants;
+    _rememberCachedValue(_hlsVariantCache, source.url, variants);
     return variants;
   }
 
@@ -1078,12 +1129,13 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
   Future<bool> _isHlsSourceUsable(_YouTubePlaybackSource source) async {
     final cached = _hlsUsabilityCache[source.url];
     if (cached != null) {
+      _rememberCachedValue(_hlsUsabilityCache, source.url, cached);
       return cached;
     }
     try {
       final variants = await _loadHlsVariants(source);
       if (variants.isEmpty) {
-        _hlsUsabilityCache[source.url] = false;
+        _rememberCachedValue(_hlsUsabilityCache, source.url, false);
         return false;
       }
       final mediaPlaylistUrl = variants.first.url;
@@ -1096,7 +1148,7 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
         source: mediaPlaylist,
       );
       if (segmentUrl.isEmpty) {
-        _hlsUsabilityCache[source.url] = false;
+        _rememberCachedValue(_hlsUsabilityCache, source.url, false);
         return false;
       }
       final status = await _apiClient.probeStatus(
@@ -1104,12 +1156,50 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
         headers: source.headers,
       );
       final usable = status >= 200 && status < 300;
-      _hlsUsabilityCache[source.url] = usable;
+      _rememberCachedValue(_hlsUsabilityCache, source.url, usable);
       return usable;
-    } catch (_) {
-      _hlsUsabilityCache[source.url] = false;
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.youtube,
+        scope: 'youtube HLS source usability probe',
+        message: 'failed for source=${source.url}',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      _rememberCachedValue(_hlsUsabilityCache, source.url, false);
       return false;
     }
+  }
+
+  void _rememberCachedValue<T>(Map<String, T> cache, String key, T value) {
+    cache.remove(key);
+    cache[key] = value;
+    if (cache.length <= _maxHlsCacheEntries) {
+      return;
+    }
+    cache.remove(cache.keys.first);
+  }
+
+  int get debugHlsVariantCacheSize => _hlsVariantCache.length;
+
+  int get debugHlsUsabilityCacheSize => _hlsUsabilityCache.length;
+
+  void debugRememberHlsVariantCache(
+    String url,
+    List<YouTubeHlsVariant> variants,
+  ) {
+    _rememberCachedValue(_hlsVariantCache, url, variants);
+  }
+
+  void debugRememberHlsUsabilityCache(String url, bool usable) {
+    _rememberCachedValue(_hlsUsabilityCache, url, usable);
+  }
+
+  Map<String, dynamic> debugMergeContextMaps(
+    Map<String, dynamic> base,
+    Map<String, dynamic> overlay,
+  ) {
+    return _mergeMaps(base, overlay);
   }
 
   String _extractFirstHlsSegmentUrl({
@@ -1494,20 +1584,11 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
   }
 
   int? _asInt(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is num) {
-      return value.toInt();
-    }
-    return int.tryParse(value?.toString() ?? '');
+    return ProviderJson.asInt(value, allowNum: true);
   }
 
   List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   void _debugLog(String message) {
@@ -1532,7 +1613,14 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
         html: html,
         fallbackApiKey: fallbackApiKey,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.youtube,
+        scope: 'youtube live chat bootstrap',
+        message: 'failed for videoId=$videoId',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -1549,13 +1637,7 @@ class YouTubeLiveDataSource implements YouTubeDataSource {
   }
 
   Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 }
 

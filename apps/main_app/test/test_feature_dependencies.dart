@@ -31,7 +31,8 @@ HomeFeatureDependencies buildHomeFeatureDependencies(AppBootstrap bootstrap) {
 }
 
 BrowseFeatureDependencies buildBrowseFeatureDependencies(
-    AppBootstrap bootstrap) {
+  AppBootstrap bootstrap,
+) {
   return BrowseFeatureDependencies(
     layoutPreferences: bootstrap.layoutPreferences,
     providerCatalogRevision: bootstrap.providerCatalogRevision,

@@ -98,6 +98,24 @@ String? validateProviderSmokeResult(ProviderSmokeResult result) {
   return null;
 }
 
+bool providerSmokeStrictAuthEnabled(Map<String, String> environment) {
+  final raw = environment['NOLIVE_PROVIDER_SMOKE_STRICT_AUTH'];
+  return raw == '1' || raw?.toLowerCase() == 'true';
+}
+
+bool isKnownProviderSmokeAuthPreconditionFailure(
+  ProviderSmokeCase smokeCase,
+  Object error,
+) {
+  if (smokeCase.provider.descriptor.id != ProviderId.bilibili) {
+    return false;
+  }
+  final message = error.toString();
+  return message.contains('账号未登录') ||
+      message.contains('code -101') ||
+      message.contains('-101');
+}
+
 Future<PagedResponse<LiveRoom>> _loadSmokeRooms(
   LiveProvider provider,
   ProviderSmokeCase smokeCase,

@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:live_core/live_core.dart';
 
+import '../provider_json.dart';
+import '../provider_runtime_support.dart';
 import 'twitch_api_client.dart';
 import 'twitch_data_source.dart';
 import 'twitch_hls_master_playlist_parser.dart';
@@ -22,6 +24,8 @@ class TwitchLiveDataSource implements TwitchDataSource {
     Duration bootstrapResolverTimeout = const Duration(seconds: 6),
     Duration bootstrapResolverGraceTimeout = const Duration(milliseconds: 1500),
     String supportedCodecs = 'h264',
+    ProviderBrowserProfile browserProfile =
+        ProviderBrowserProfile.chromiumDesktop,
   })  : _apiClient = apiClient,
         _hlsMasterPlaylistParser = hlsMasterPlaylistParser,
         _clientIntegrity = clientIntegrity.trim(),
@@ -30,6 +34,7 @@ class TwitchLiveDataSource implements TwitchDataSource {
         _alternateSurfaceTimeout = alternateSurfaceTimeout,
         _bootstrapResolverTimeout = bootstrapResolverTimeout,
         _bootstrapResolverGraceTimeout = bootstrapResolverGraceTimeout,
+        _browserProfile = browserProfile,
         _supportedCodecs =
             supportedCodecs.trim().isEmpty ? 'h264' : supportedCodecs.trim();
 
@@ -84,6 +89,8 @@ class TwitchLiveDataSource implements TwitchDataSource {
   static const int _categoryPageSize = 30;
   static const int _maxDirectoryCategoryLimit = 100;
   static const int _maxCategoryRoomLimit = 100;
+  static const Duration _alternateSurfacePreferredGrace =
+      Duration(milliseconds: 250);
   static const int _maxCategoryRoomWindows =
       (_maxCategoryRoomLimit + _categoryPageSize - 1) ~/ _categoryPageSize;
   static const List<_TwitchPlayerSurface> _playerSurfaces = [
@@ -121,6 +128,7 @@ class TwitchLiveDataSource implements TwitchDataSource {
   final Duration _alternateSurfaceTimeout;
   final Duration _bootstrapResolverTimeout;
   final Duration _bootstrapResolverGraceTimeout;
+  final ProviderBrowserProfile _browserProfile;
   final String _supportedCodecs;
   Future<List<LiveSubCategory>>? _topDirectoryCategoriesFuture;
 
@@ -419,7 +427,16 @@ class TwitchLiveDataSource implements TwitchDataSource {
           variants: preferredVariants,
         ),
     ];
-    final alternates = await Future.wait(futures);
+    final alternates = await Future.wait(
+      futures.map(
+        (future) => future.timeout(
+          candidates.isNotEmpty
+              ? _alternateSurfacePreferredGrace
+              : _alternateSurfaceTimeout,
+          onTimeout: () => null,
+        ),
+      ),
+    );
     for (final item in alternates) {
       if (item == null || item.variants.isEmpty) {
         continue;
@@ -479,7 +496,14 @@ class TwitchLiveDataSource implements TwitchDataSource {
           source: playlistText,
         ),
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.twitch,
+        scope: 'twitch playback surface candidate',
+        message: 'failed for surface ${surface.playerType}/${surface.platform}',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -906,16 +930,18 @@ class TwitchLiveDataSource implements TwitchDataSource {
       {
         'acmb': _defaultAcmb,
         'allow_source': 'true',
-        'browser_family': 'chrome',
-        'browser_version': '146.0',
+        'browser_family': _browserProfile.browserName.toLowerCase(),
+        'browser_version': _browserProfile.browserVersion,
         'cdm': 'wv',
         'enable_score': 'true',
         'fast_bread': 'true',
         'include_unavailable': 'true',
         'lang': 'zh-cn',
         'multigroup_video': 'false',
-        'os_name': 'Linux',
-        'os_version': 'undefined',
+        'os_name': _browserProfile.osName,
+        'os_version': _browserProfile.osVersion.isEmpty
+            ? 'undefined'
+            : _browserProfile.osVersion,
         'p': '${Random().nextInt(900000) + 100000}',
         'platform': platform,
         'play_session_id': sessionId,
@@ -945,7 +971,7 @@ class TwitchLiveDataSource implements TwitchDataSource {
           : 'https://www.twitch.tv/$roomId',
       'user-agent': userAgent?.trim().isNotEmpty == true
           ? userAgent!.trim()
-          : TwitchApiClient.browserUserAgent,
+          : _browserProfile.userAgent,
     };
     final normalizedCookie = cookie?.trim() ?? '';
     if (normalizedCookie.isNotEmpty) {
@@ -1049,7 +1075,14 @@ class TwitchLiveDataSource implements TwitchDataSource {
     try {
       final bootstrap = await _requestPlaybackBootstrap(roomId);
       return bootstrap.isUsable ? bootstrap : null;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.twitch,
+        scope: 'twitch direct playback bootstrap',
+        message: 'failed for roomId=$roomId',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -1065,7 +1098,14 @@ class TwitchLiveDataSource implements TwitchDataSource {
       return bootstrap?.isUsable == true ? bootstrap : null;
     } on TimeoutException {
       return null;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportProviderDiagnostic(
+        providerId: ProviderId.twitch,
+        scope: 'twitch playback bootstrap resolver',
+        message: 'custom resolver failed for roomId=${detail.roomId}',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -1234,20 +1274,11 @@ class TwitchLiveDataSource implements TwitchDataSource {
   }
 
   Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.cast<String, dynamic>();
-    }
-    return const {};
+    return ProviderJson.asMap(value);
   }
 
   List<dynamic> _asList(Object? value) {
-    if (value is List) {
-      return value;
-    }
-    return const [];
+    return ProviderJson.asList(value);
   }
 
   String _randomHex(int length) {

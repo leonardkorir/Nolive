@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:path_provider/path_provider.dart';
 
 class AppLog {
@@ -12,10 +13,16 @@ class AppLog {
 
   static const int _maxLogFiles = 7;
   static const int _maxLogFileBytes = 8 * 1024 * 1024;
+  static const int _maxPendingWrites = 2048;
+  static const int _maxConsecutiveWriteFailures = 3;
   static const String _logFilePrefix = 'nolive-mobile';
   static const Duration _flushDebounce = Duration(milliseconds: 250);
   static final RegExp _sensitiveUrlParameterPattern = RegExp(
-    r'([?&](?:token|sig|signature|session|auth|authorization|wsauth|cookie|csrfmiddlewaretoken|cf_clearance|__cf_bm)=)([^&#\s]+)',
+    r'([?&](?:token|sig|lsig|upsig|signature|sign|sk|session|auth|auth_key|authorization|wsauth|cookie|csrfmiddlewaretoken|cf_clearance|__cf_bm)=)([^&#\s]+)',
+    caseSensitive: false,
+  );
+  static final RegExp _sensitiveUrlPathSegmentPattern = RegExp(
+    r'(/(?:token|sig|lsig|signature|sign|sk|session|auth|auth_key|authorization|wsauth)/)([^/\s?#]+)',
     caseSensitive: false,
   );
   static final RegExp _quotedSensitiveHeaderPattern = RegExp(
@@ -39,6 +46,9 @@ class AppLog {
 
   Future<void>? _initializeFuture;
   Future<void> _writeChain = Future<void>.value();
+  int _pendingWrites = 0;
+  int _consecutiveWriteFailures = 0;
+  bool _reportedWriteChainFailure = false;
   IOSink? _sink;
   Directory? _logDirectory;
   Timer? _flushTimer;
@@ -101,7 +111,7 @@ class AppLog {
   }
 
   Future<Directory> _resolveLogDirectory() async {
-    if (!kIsWeb && Platform.isAndroid) {
+    if (AppPlatformCapabilities.current().isAndroid) {
       final externalDirectory = await getExternalStorageDirectory();
       if (externalDirectory != null) {
         return Directory(
@@ -139,18 +149,39 @@ class AppLog {
     String message, {
     StackTrace? stackTrace,
   }) {
-    final run = _writeChain.then((_) async {
-      await ensureInitialized();
-      await _ensureWritableSink();
-      _writeUnlocked(level, tag, message, stackTrace: stackTrace);
-      if (shouldFlushAppLogRecord(level: level, tag: tag)) {
-        _cancelScheduledFlush();
-        await _sink?.flush();
-      } else {
-        _scheduleFlush();
+    if (_pendingWrites >= _maxPendingWrites) {
+      _reportInternalFailure('dropping record because pending queue is full.');
+      return;
+    }
+    _pendingWrites += 1;
+    final run = _writeChain
+        .then((_) async {
+          await ensureInitialized();
+          await _ensureWritableSink();
+          _writeUnlocked(level, tag, message, stackTrace: stackTrace);
+          _consecutiveWriteFailures = 0;
+          if (shouldFlushAppLogRecord(level: level, tag: tag)) {
+            _cancelScheduledFlush();
+            await _sink?.flush();
+          } else {
+            _scheduleFlush();
+          }
+        })
+        .whenComplete(() {
+          if (_pendingWrites > 0) {
+            _pendingWrites -= 1;
+          }
+        });
+    _writeChain = run.catchError((Object error, StackTrace stackTrace) {
+      _consecutiveWriteFailures += 1;
+      if (_consecutiveWriteFailures >= _maxConsecutiveWriteFailures) {
+        _reportInternalFailure(
+          'write chain reset after repeated failures (${error.runtimeType})',
+        );
+        _writeChain = Future<void>.value();
+        _pendingWrites = 0;
       }
     });
-    _writeChain = run.catchError((Object _, StackTrace __) {});
   }
 
   Future<void> _ensureWritableSink({DateTime? timestamp}) async {
@@ -227,8 +258,9 @@ class AppLog {
     }
     final stamp = (timestamp ?? DateTime.now()).toIso8601String();
     final normalized = sanitizeMessageForPersistence(message).trimRight();
-    final lines =
-        normalized.isEmpty ? const <String>[''] : normalized.split('\n');
+    final lines = normalized.isEmpty
+        ? const <String>['']
+        : normalized.split('\n');
     for (final line in lines) {
       final record = '$stamp [$level] [$tag] $line';
       sink.writeln(record);
@@ -259,8 +291,9 @@ class AppLog {
     String dateStamp,
     int segmentIndex,
   ) {
-    final suffix =
-        segmentIndex == 0 ? '' : '-${segmentIndex.toString().padLeft(2, '0')}';
+    final suffix = segmentIndex == 0
+        ? ''
+        : '-${segmentIndex.toString().padLeft(2, '0')}';
     return '${directory.path}${Platform.pathSeparator}'
         '$_logFilePrefix-$dateStamp$suffix.log';
   }
@@ -280,22 +313,33 @@ class AppLog {
     if (level == 'ERROR') {
       return true;
     }
-    return tag == 'room' || tag == 'player' || tag.startsWith('player/');
+    return tag == 'room' ||
+        tag == 'player' ||
+        tag.startsWith('player/') ||
+        tag.startsWith('chaturbate/');
   }
 
   @visibleForTesting
   static String sanitizeMessageForPersistence(String message) {
-    return message.replaceAllMapped(_sensitiveUrlParameterPattern, (match) {
-      return '${match.group(1)}<redacted>';
-    }).replaceAllMapped(_sensitiveJsonFieldPattern, (match) {
-      return '${match.group(1)}<redacted>${match.group(3)}';
-    }).replaceAllMapped(_quotedSensitiveHeaderPattern, (match) {
-      return '"${match.group(1)}<redacted>"';
-    }).replaceAllMapped(_inlineSensitiveHeaderPattern, (match) {
-      return '${match.group(1)}<redacted>';
-    }).replaceAllMapped(_sensitiveHeaderAssignmentPattern, (match) {
-      return '${match.group(1)}<redacted>';
-    });
+    return message
+        .replaceAllMapped(_sensitiveUrlParameterPattern, (match) {
+          return '${match.group(1)}<redacted>';
+        })
+        .replaceAllMapped(_sensitiveUrlPathSegmentPattern, (match) {
+          return '${match.group(1)}<redacted>';
+        })
+        .replaceAllMapped(_sensitiveJsonFieldPattern, (match) {
+          return '${match.group(1)}<redacted>${match.group(3)}';
+        })
+        .replaceAllMapped(_quotedSensitiveHeaderPattern, (match) {
+          return '"${match.group(1)}<redacted>"';
+        })
+        .replaceAllMapped(_inlineSensitiveHeaderPattern, (match) {
+          return '${match.group(1)}<redacted>';
+        })
+        .replaceAllMapped(_sensitiveHeaderAssignmentPattern, (match) {
+          return '${match.group(1)}<redacted>';
+        });
   }
 
   void _scheduleFlush() {
@@ -307,7 +351,16 @@ class AppLog {
       final run = _writeChain.then((_) async {
         await _sink?.flush();
       });
-      _writeChain = run.catchError((Object _, StackTrace __) {});
+      _writeChain = run.catchError((Object error, StackTrace stackTrace) {
+        _consecutiveWriteFailures += 1;
+        if (_consecutiveWriteFailures >= _maxConsecutiveWriteFailures) {
+          _reportInternalFailure(
+            'flush chain reset after repeated failures (${error.runtimeType})',
+          );
+          _writeChain = Future<void>.value();
+          _pendingWrites = 0;
+        }
+      });
     });
   }
 
@@ -315,13 +368,18 @@ class AppLog {
     _flushTimer?.cancel();
     _flushTimer = null;
   }
+
+  void _reportInternalFailure(String message) {
+    if (_reportedWriteChainFailure) {
+      return;
+    }
+    _reportedWriteChainFailure = true;
+    stderr.writeln('AppLog $message');
+  }
 }
 
 class _WritableLogTarget {
-  const _WritableLogTarget({
-    required this.file,
-    required this.segmentIndex,
-  });
+  const _WritableLogTarget({required this.file, required this.segmentIndex});
 
   final File file;
   final int segmentIndex;

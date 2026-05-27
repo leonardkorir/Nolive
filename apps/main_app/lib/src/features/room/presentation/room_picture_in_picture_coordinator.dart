@@ -70,16 +70,18 @@ class RoomPictureInPictureCoordinator {
   bool _fullscreenChromeBeforePip = true;
   bool _fullscreenLockButtonBeforePip = true;
   bool _followDrawerBeforePip = false;
+  bool _restoringPictureInPictureUi = false;
+  Future<void> _lifecycleOperation = Future<void>.value();
 
   Future<void> primeRuntimeState() async {
-    if (context.isDisposed()) {
+    if (_isDisposed) {
       return;
     }
     _pipStatusSubscription ??=
         context.pipHost.statusStream.listen(_handlePipStatusChanged);
     final pipSupported = await context.pipHost.isPipAvailable();
     final mediaVolume = await context.androidPlaybackBridge.getMediaVolume();
-    if (context.isDisposed()) {
+    if (_isDisposed) {
       return;
     }
     if (mediaVolume != null) {
@@ -91,6 +93,9 @@ class RoomPictureInPictureCoordinator {
   }
 
   Future<void> enterPictureInPicture() async {
+    if (_isDisposed) {
+      return;
+    }
     if (!context.androidPlaybackBridge.isSupported) {
       return;
     }
@@ -132,16 +137,28 @@ class RoomPictureInPictureCoordinator {
       final status = await context.pipHost.enablePip(
         aspectRatio: context.resolvePipAspectRatio(),
       );
+      if (_isDisposed) {
+        return;
+      }
       if (status == PiPStatus.enabled) {
         return;
       }
     } catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       context.trace('enter picture-in-picture failed error=$error');
       await _restoreFromPictureInPictureFailure();
+      if (_isDisposed) {
+        return;
+      }
       context.showMessage('进入画中画失败，请稍后重试');
       return;
     }
     await restoreAfterFailedPictureInPicture();
+    if (_isDisposed) {
+      return;
+    }
     context.showMessage('进入画中画失败，请稍后重试');
   }
 
@@ -149,7 +166,24 @@ class RoomPictureInPictureCoordinator {
     await _restoreFromPictureInPictureFailure();
   }
 
-  Future<void> handleLifecycleState(AppLifecycleState state) async {
+  Future<void> handleLifecycleState(AppLifecycleState state) {
+    final operation = _lifecycleOperation.then(
+      (_) => _handleLifecycleState(state),
+    );
+    _lifecycleOperation = operation.catchError(
+      (Object error, StackTrace stackTrace) {
+        if (!_isDisposed) {
+          context.trace('lifecycle state=${state.name} failed error=$error');
+        }
+      },
+    );
+    return _lifecycleOperation;
+  }
+
+  Future<void> _handleLifecycleState(AppLifecycleState state) async {
+    if (_isDisposed) {
+      return;
+    }
     if (!context.androidPlaybackBridge.isSupported) {
       return;
     }
@@ -157,6 +191,9 @@ class RoomPictureInPictureCoordinator {
     if (state == AppLifecycleState.resumed) {
       final inPip =
           await context.androidPlaybackBridge.isInPictureInPictureMode();
+      if (_isDisposed) {
+        return;
+      }
       final lifecycleViewState = context.readViewUiState();
       context.updateViewUiState(
         (current) => current.copyWith(
@@ -177,8 +214,11 @@ class RoomPictureInPictureCoordinator {
         );
         currentViewState = context.readViewUiState();
       }
-      if (!inPip && currentViewState.isFullscreen) {
+      if (!inPip && currentViewState.fullscreenSessionActive) {
         await context.applyFullscreenSystemUi();
+        if (_isDisposed) {
+          return;
+        }
       }
       _scheduleChromeAutoHide(currentViewState);
       final stoppedPlaybackState = _lifecycleStoppedPlaybackState;
@@ -205,6 +245,9 @@ class RoomPictureInPictureCoordinator {
     }
     final inPip =
         await context.androidPlaybackBridge.isInPictureInPictureMode();
+    if (_isDisposed) {
+      return;
+    }
     if (inPip || !context.resolveBackgroundAutoPauseEnabled()) {
       return;
     }
@@ -256,8 +299,16 @@ class RoomPictureInPictureCoordinator {
       return;
     }
     if (status == PiPStatus.disabled) {
-      _restoreUiAfterPictureInPictureExit(
-        reapplyFullscreenSystemUi: true,
+      unawaited(
+        _restoreUiAfterPictureInPictureExit(
+          reapplyFullscreenSystemUi: true,
+        ).catchError((Object error, StackTrace stackTrace) {
+          if (!_isDisposed) {
+            context.trace(
+              'picture-in-picture exit restore failed error=$error',
+            );
+          }
+        }),
       );
     }
   }
@@ -271,37 +322,49 @@ class RoomPictureInPictureCoordinator {
   Future<void> _restoreUiAfterPictureInPictureExit({
     required bool reapplyFullscreenSystemUi,
   }) async {
-    context.updateViewUiState(
-      (current) => current.copyWith(
-        enteringPictureInPicture: false,
-        showInlinePlayerChrome: _inlineChromeBeforePip,
-        showFullscreenChrome: _fullscreenChromeBeforePip,
-        showFullscreenLockButton: _fullscreenLockButtonBeforePip,
-        showFullscreenFollowDrawer: _followDrawerBeforePip,
-      ),
-    );
-    var currentViewState = context.readViewUiState();
-    if (currentViewState.restoreDanmakuAfterPip) {
-      context.updateDanmakuOverlayVisible(
-        currentViewState.danmakuVisibleBeforePip,
-      );
+    if (_restoringPictureInPictureUi) {
+      return;
+    }
+    _restoringPictureInPictureUi = true;
+    try {
       context.updateViewUiState(
-        (current) => current.copyWith(restoreDanmakuAfterPip: false),
+        (current) => current.copyWith(
+          enteringPictureInPicture: false,
+          showInlinePlayerChrome: _inlineChromeBeforePip,
+          showFullscreenChrome: _fullscreenChromeBeforePip,
+          showFullscreenLockButton: _fullscreenLockButtonBeforePip,
+          showFullscreenFollowDrawer: _followDrawerBeforePip,
+        ),
       );
-      currentViewState = context.readViewUiState();
+      var currentViewState = context.readViewUiState();
+      if (currentViewState.restoreDanmakuAfterPip) {
+        context.updateDanmakuOverlayVisible(
+          currentViewState.danmakuVisibleBeforePip,
+        );
+        context.updateViewUiState(
+          (current) => current.copyWith(restoreDanmakuAfterPip: false),
+        );
+        currentViewState = context.readViewUiState();
+      }
+      if (reapplyFullscreenSystemUi &&
+          currentViewState.fullscreenSessionActive &&
+          context.androidPlaybackBridge.isSupported) {
+        await context.applyFullscreenSystemUi();
+        if (_isDisposed) {
+          return;
+        }
+      }
+      _scheduleChromeAutoHide(currentViewState);
+    } finally {
+      _restoringPictureInPictureUi = false;
     }
-    if (reapplyFullscreenSystemUi &&
-        currentViewState.isFullscreen &&
-        context.androidPlaybackBridge.isSupported) {
-      await context.applyFullscreenSystemUi();
-    }
-    _scheduleChromeAutoHide(currentViewState);
   }
 
   void _scheduleChromeAutoHide(RoomViewUiState viewState) {
-    if (viewState.isFullscreen && viewState.showFullscreenChrome) {
+    if (viewState.fullscreenSessionActive && viewState.showFullscreenChrome) {
       context.scheduleFullscreenChromeAutoHide();
-    } else if (!viewState.isFullscreen && viewState.showInlinePlayerChrome) {
+    } else if (!viewState.fullscreenSessionActive &&
+        viewState.showInlinePlayerChrome) {
       context.scheduleInlineChromeAutoHide();
     }
   }
@@ -342,6 +405,9 @@ class RoomPictureInPictureCoordinator {
     );
     try {
       await context.runtime.stop();
+      if (_isDisposed) {
+        return;
+      }
       if (!_shouldRefreshBackendAfterLifecycleStop(state)) {
         return;
       }
@@ -362,10 +428,16 @@ class RoomPictureInPictureCoordinator {
     );
     try {
       final source = await context.resolvePlaybackSourceForLifecycleRestore();
+      if (_isDisposed) {
+        return;
+      }
       if (source == null) {
         return;
       }
       await context.runtime.setSource(source);
+      if (_isDisposed) {
+        return;
+      }
       final status = previousState.status;
       if (status == PlaybackStatus.paused) {
         await context.runtime.pause();
@@ -380,4 +452,6 @@ class RoomPictureInPictureCoordinator {
       context.trace('lifecycle restore playback failed error=$error');
     }
   }
+
+  bool get _isDisposed => context.isDisposed();
 }

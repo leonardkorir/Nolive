@@ -24,8 +24,35 @@ double resolveResponsivePageTarget({
       fractionalPage <= (1 - settlePageThresholdFraction)
           ? basePage
           : basePage + 1.0,
-    ScrollDirection.idle => fractionalPage >= 0.5 ? basePage + 1.0 : basePage,
+    ScrollDirection.idle => _resolveIdlePageTarget(
+        basePage: basePage,
+        fractionalPage: fractionalPage,
+        settlePageThresholdFraction: settlePageThresholdFraction,
+      ),
   };
+}
+
+double _resolveIdlePageTarget({
+  required double basePage,
+  required double fractionalPage,
+  required double settlePageThresholdFraction,
+}) {
+  if (settlePageThresholdFraction >= 0.5) {
+    return fractionalPage >= 0.5 ? basePage + 1.0 : basePage;
+  }
+  if (fractionalPage < settlePageThresholdFraction) {
+    return basePage;
+  }
+  if (fractionalPage > 1 - settlePageThresholdFraction) {
+    return basePage + 1.0;
+  }
+  if (fractionalPage < 0.5) {
+    return basePage + 1.0;
+  }
+  if (fractionalPage > 0.5) {
+    return basePage;
+  }
+  return basePage + 1.0;
 }
 
 class ResponsivePageSwipePhysics extends PageScrollPhysics {
@@ -35,18 +62,22 @@ class ResponsivePageSwipePhysics extends PageScrollPhysics {
     this.flingDistanceThreshold = 12,
     this.flingVelocityThreshold = 240,
     this.settlePageThresholdFraction = 0.5,
+    this.resolveUserScrollDirection,
   });
 
-  const ResponsivePageSwipePhysics.topLevel({super.parent})
-      : dragStartThreshold = 1,
+  const ResponsivePageSwipePhysics.topLevel({
+    super.parent,
+    this.resolveUserScrollDirection,
+  })  : dragStartThreshold = 1,
         flingDistanceThreshold = 4,
         flingVelocityThreshold = 80,
-        settlePageThresholdFraction = 0.18;
+        settlePageThresholdFraction = 0.12;
 
   final double dragStartThreshold;
   final double flingDistanceThreshold;
   final double flingVelocityThreshold;
   final double settlePageThresholdFraction;
+  final ScrollDirection Function()? resolveUserScrollDirection;
 
   @override
   ResponsivePageSwipePhysics applyTo(ScrollPhysics? ancestor) {
@@ -56,6 +87,7 @@ class ResponsivePageSwipePhysics extends PageScrollPhysics {
       flingDistanceThreshold: flingDistanceThreshold,
       flingVelocityThreshold: flingVelocityThreshold,
       settlePageThresholdFraction: settlePageThresholdFraction,
+      resolveUserScrollDirection: resolveUserScrollDirection,
     );
   }
 
@@ -82,6 +114,16 @@ class ResponsivePageSwipePhysics extends PageScrollPhysics {
     return page * position.viewportDimension;
   }
 
+  ScrollDirection _resolveScrollDirection(ScrollMetrics position) {
+    final positionDirection = position is ScrollPosition
+        ? position.userScrollDirection
+        : ScrollDirection.idle;
+    if (positionDirection != ScrollDirection.idle) {
+      return positionDirection;
+    }
+    return resolveUserScrollDirection?.call() ?? ScrollDirection.idle;
+  }
+
   @override
   Simulation? createBallisticSimulation(
       ScrollMetrics position, double velocity) {
@@ -100,9 +142,7 @@ class ResponsivePageSwipePhysics extends PageScrollPhysics {
       velocity: velocity,
       velocityThreshold: effectiveVelocityThreshold,
       settlePageThresholdFraction: settlePageThresholdFraction,
-      direction: position is ScrollPosition
-          ? position.userScrollDirection
-          : ScrollDirection.idle,
+      direction: _resolveScrollDirection(position),
     );
     final unclampedTarget = _getPixels(position, targetPage);
     final target = unclampedTarget

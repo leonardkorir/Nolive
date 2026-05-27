@@ -8,11 +8,7 @@ void main() {
       const MaterialApp(
         home: Scaffold(
           body: Center(
-            child: StreamerAvatar(
-              size: 40,
-              fallbackText: '主播',
-              isLive: true,
-            ),
+            child: StreamerAvatar(size: 40, fallbackText: '主播', isLive: true),
           ),
         ),
       ),
@@ -31,12 +27,7 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: Center(
-            child: StreamerAvatar(
-              size: 40,
-              fallbackText: '主播',
-            ),
-          ),
+          body: Center(child: StreamerAvatar(size: 40, fallbackText: '主播')),
         ),
       ),
     );
@@ -53,12 +44,7 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: Center(
-            child: StreamerAvatar(
-              size: 40,
-              fallbackText: '主播',
-            ),
-          ),
+          body: Center(child: StreamerAvatar(size: 40, fallbackText: '主播')),
         ),
       ),
     );
@@ -83,10 +69,7 @@ void main() {
       const MaterialApp(
         home: Scaffold(
           body: Center(
-            child: StreamerAvatar(
-              size: 40,
-              fallbackText: 'milabunny_',
-            ),
+            child: StreamerAvatar(size: 40, fallbackText: 'milabunny_'),
           ),
         ),
       ),
@@ -96,22 +79,20 @@ void main() {
   });
 
   testWidgets(
-      'fallback avatar strips malformed UTF-16 before initial extraction',
-      (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: StreamerAvatar(
-              size: 40,
-              fallbackText: 'A\uD800',
+    'fallback avatar strips malformed UTF-16 before initial extraction',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: StreamerAvatar(size: 40, fallbackText: 'A\uD800'),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(tester.takeException(), isNull);
-    expect(find.text('A'), findsOneWidget);
-  });
+      expect(tester.takeException(), isNull);
+      expect(find.text('A'), findsOneWidget);
+    },
+  );
 }

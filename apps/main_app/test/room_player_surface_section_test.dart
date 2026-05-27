@@ -41,62 +41,67 @@ void main() {
   }
 
   testWidgets(
-      'player surface renders embedded player view when playback is available',
-      (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: RoomPlayerSurfaceSection(
-            data: buildViewData(
-              hasPlayback: true,
-              fullscreen: false,
-              supportsEmbeddedView: true,
+    'player surface renders embedded player view when playback is available',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RoomPlayerSurfaceSection(
+              data: buildViewData(
+                hasPlayback: true,
+                fullscreen: false,
+                supportsEmbeddedView: true,
+              ),
+              buildEmbeddedPlayerView: (_) => const ColoredBox(
+                key: Key('embedded-player-view'),
+                color: Colors.blue,
+              ),
+              onToggleInlineChrome: () {},
             ),
-            buildEmbeddedPlayerView: (_) => const ColoredBox(
-              key: Key('embedded-player-view'),
-              color: Colors.blue,
-            ),
-            onToggleInlineChrome: () {},
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.byKey(const Key('embedded-player-view')), findsOneWidget);
-    expect(
-        find.byKey(const Key('room-inline-player-tap-target')), findsOneWidget);
-  });
+      expect(find.byKey(const Key('embedded-player-view')), findsOneWidget);
+      expect(
+        find.byKey(const Key('room-inline-player-tap-target')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets(
-      'player surface shows poster and unavailable overlay when playback is missing',
-      (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: RoomPlayerSurfaceSection(
-            data: buildViewData(
-              hasPlayback: false,
-              fullscreen: false,
-              supportsEmbeddedView: false,
-              statusPresentation: const RoomChaturbateStatusPresentation(
-                label: '私密表演中',
-                description: '主播当前正在 Private Show 中，暂时没有公开播放流。',
+    'player surface shows poster and unavailable overlay when playback is missing',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RoomPlayerSurfaceSection(
+              data: buildViewData(
+                hasPlayback: false,
+                fullscreen: false,
+                supportsEmbeddedView: false,
+                statusPresentation: const RoomChaturbateStatusPresentation(
+                  label: '私密表演中',
+                  description: '主播当前正在 Private Show 中，暂时没有公开播放流。',
+                ),
               ),
+              buildEmbeddedPlayerView: (_) => const SizedBox.shrink(),
+              onToggleInlineChrome: () {},
             ),
-            buildEmbeddedPlayerView: (_) => const SizedBox.shrink(),
-            onToggleInlineChrome: () {},
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.byType(PersistedNetworkImage), findsOneWidget);
-    expect(find.text('私密表演中'), findsOneWidget);
-    expect(find.text('主播当前正在 Private Show 中，暂时没有公开播放流。'), findsOneWidget);
-  });
+      expect(find.byType(PersistedNetworkImage), findsOneWidget);
+      expect(find.text('私密表演中'), findsOneWidget);
+      expect(find.text('主播当前正在 Private Show 中，暂时没有公开播放流。'), findsOneWidget);
+    },
+  );
 
-  testWidgets('player surface renders fullscreen overlays when provided',
-      (tester) async {
+  testWidgets('player surface renders fullscreen overlays when provided', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(

@@ -63,7 +63,7 @@ class HuyaPreviewDataSource implements HuyaDataSource {
       sourceUrl: 'https://www.huya.com/yy/880123',
       isLive: true,
       viewerCount: 54321,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
     ),
     'yy/990456': LiveRoomDetail(
       providerId: 'huya',
@@ -78,14 +78,14 @@ class HuyaPreviewDataSource implements HuyaDataSource {
       sourceUrl: 'https://www.huya.com/yy/990456',
       isLive: true,
       viewerCount: 65432,
-      danmakuToken: {'mode': 'preview'},
+      danmakuToken: PreviewDanmakuToken(),
     ),
   };
 
-  static const List<LivePlayQuality> _qualities = [
+  static final List<LivePlayQuality> _qualities = List.unmodifiable([
     LivePlayQuality(id: '0', label: '原画', isDefault: true, sortOrder: 0),
     LivePlayQuality(id: '2000', label: '高清', sortOrder: 2000),
-  ];
+  ]);
 
   @override
   Future<List<LiveCategory>> fetchCategories() async {
@@ -156,7 +156,9 @@ class HuyaPreviewDataSource implements HuyaDataSource {
     return [
       LivePlayUrl(
         url: 'https://mock.huya.local/live/${detail.roomId}/${quality.id}.m3u8',
-        headers: const {'user-agent': HttpHuyaSignService.playerUserAgent},
+        headers: const {
+          'user-agent': HttpHuyaSignService.defaultPlayerUserAgent,
+        },
         lineLabel: 'mock-primary',
       ),
     ];

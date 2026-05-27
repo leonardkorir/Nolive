@@ -68,21 +68,11 @@ class TarsOutputStream {
   void writeHead(int type, int tag) {
     if (tag < 15) {
       var b = ((tag << 4) | type);
-      try {
-        bw.writeInt(b, 1);
-      } catch (e) {
-        print(e.toString());
-      }
+      bw.writeInt(b, 1);
     } else if (tag < 256) {
-      try {
-        var b = ((15 << 4) | type);
-        {
-          bw.writeInt(b, 1);
-          bw.writeInt(tag, 1);
-        }
-      } catch (e) {
-        print('${toString()} writeHead: $e');
-      }
+      var b = ((15 << 4) | type);
+      bw.writeInt(b, 1);
+      bw.writeInt(tag, 1);
     } else {
       throw TarsEncodeException('tag is too large: $tag');
     }
@@ -124,11 +114,7 @@ class TarsOutputStream {
       writeHead(TarsStructType.ZERO_TAG.index, tag);
     } else {
       writeHead(TarsStructType.BYTE.index, tag);
-      try {
-        bw.writeInt(b, 1);
-      } catch (e) {
-        print(e);
-      }
+      bw.writeInt(b, 1);
     }
   }
 
@@ -162,6 +148,7 @@ class TarsOutputStream {
       bw.writeInt(n, 8);
       return;
     }
+    throw TarsEncodeException('int out of int64 range: $n');
   }
 
   /// 写入浮点数

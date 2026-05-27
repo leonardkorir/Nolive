@@ -4,9 +4,10 @@ import 'package:nolive_app/src/features/room/presentation/room_chat_viewport_coo
 import 'package:nolive_app/src/features/room/presentation/room_panel_controller.dart';
 
 void main() {
-  Future<void> pumpScrollableHarness(
+  Future<void> pumpScrollableHarnessWithCount(
     WidgetTester tester,
     RoomChatViewportCoordinator coordinator,
+    int itemCount,
   ) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -16,13 +17,20 @@ void main() {
             child: ListView.builder(
               controller: coordinator.controller,
               itemExtent: 40,
-              itemCount: 40,
+              itemCount: itemCount,
               itemBuilder: (context, index) => Text('row-$index'),
             ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> pumpScrollableHarness(
+    WidgetTester tester,
+    RoomChatViewportCoordinator coordinator,
+  ) async {
+    await pumpScrollableHarnessWithCount(tester, coordinator, 40);
   }
 
   testWidgets('entering chat panel scrolls to bottom forcibly', (tester) async {
@@ -41,8 +49,9 @@ void main() {
     );
   });
 
-  testWidgets('new messages do not steal scroll when user is far from bottom',
-      (tester) async {
+  testWidgets('new messages do not steal scroll when user is far from bottom', (
+    tester,
+  ) async {
     final coordinator = RoomChatViewportCoordinator();
     addTearDown(coordinator.dispose);
 
@@ -56,8 +65,31 @@ void main() {
     expect(coordinator.controller.position.pixels, 0);
   });
 
-  testWidgets('disposed viewport coordinator ignores pending scroll work',
-      (tester) async {
+  testWidgets('near-bottom burst rechecks bottom after follow-up layout', (
+    tester,
+  ) async {
+    final coordinator = RoomChatViewportCoordinator();
+    addTearDown(coordinator.dispose);
+
+    await pumpScrollableHarnessWithCount(tester, coordinator, 40);
+    coordinator.controller.jumpTo(
+      coordinator.controller.position.maxScrollExtent,
+    );
+
+    coordinator.handleMessagesChanged(selectedPanel: RoomPanel.chat);
+    await tester.pump();
+    await pumpScrollableHarnessWithCount(tester, coordinator, 45);
+    await tester.pump();
+
+    expect(
+      coordinator.controller.position.pixels,
+      coordinator.controller.position.maxScrollExtent,
+    );
+  });
+
+  testWidgets('disposed viewport coordinator ignores pending scroll work', (
+    tester,
+  ) async {
     final coordinator = RoomChatViewportCoordinator();
 
     await pumpScrollableHarness(tester, coordinator);

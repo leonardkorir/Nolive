@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:live_core/live_core.dart';
+import 'package:live_providers/src/providers/provider_runtime_support.dart';
 import 'package:live_providers/src/providers/youtube/youtube_api_client.dart';
 import 'package:test/test.dart';
 
@@ -48,6 +51,59 @@ void main() {
     );
 
     expect(html, '<html>ok</html>');
+    expect(requestCount, 2);
+  });
+
+  test('youtube api client times out live chat polling requests', () async {
+    final client = HttpYouTubeApiClient(
+      client: _FakeBaseClient((request) {
+        return Completer<http.StreamedResponse>().future;
+      }),
+    );
+
+    expect(
+      () => client.postLiveChat(
+        apiKey: 'AIzaTest',
+        continuation: 'continuation',
+        visitorData: 'visitor',
+        referer: 'https://www.youtube.com/live_chat?continuation=1',
+        timeout: const Duration(milliseconds: 50),
+      ),
+      throwsA(
+        isA<ProviderParseException>().having(
+          (error) => error.message,
+          'message',
+          contains('timed out'),
+        ),
+      ),
+    );
+  });
+
+  test('youtube api client retries transient document failures once', () async {
+    var requestCount = 0;
+    final client = HttpYouTubeApiClient(
+      browserProfile: const ProviderBrowserProfile(
+        userAgent: 'SimpleLive-YT-UA',
+        acceptLanguage: 'fr-FR',
+        browserName: 'Chrome',
+        browserVersion: '146.0.0.0',
+        osName: 'Linux',
+        osVersion: '',
+      ),
+      client: _FakeBaseClient((request) async {
+        requestCount += 1;
+        expect(request.headers['user-agent'], 'SimpleLive-YT-UA');
+        expect(request.headers['accept-language'], 'fr-FR');
+        if (requestCount == 1) {
+          return _streamedResponse(request, 503, 'busy');
+        }
+        return _streamedResponse(request, 200, '<html>retry-ok</html>');
+      }),
+    );
+
+    final html = await client.fetchText('https://www.youtube.com/watch?v=test');
+
+    expect(html, '<html>retry-ok</html>');
     expect(requestCount, 2);
   });
 }

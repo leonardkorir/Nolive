@@ -13,7 +13,6 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.LocaleList
 import android.os.SystemClock
 import android.util.Log
 import android.util.Rational
@@ -23,7 +22,6 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import java.util.Locale
 import kotlin.math.roundToInt
 
 class MainActivity : FlutterActivity() {
@@ -56,19 +54,10 @@ class MainActivity : FlutterActivity() {
     private var fullscreenLandscapeSensorTrackingEnabled = false
     private var lastKnownLandscapeSensorOrientation: Int? = null
 
-    override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(newBase.createConfigurationContext(createZhHansConfiguration(newBase.resources.configuration)))
-    }
-
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler(::handlePlaybackMethod)
-    }
-
-    override fun applyOverrideConfiguration(overrideConfiguration: Configuration?) {
-        val baseConfiguration = overrideConfiguration ?: Configuration()
-        super.applyOverrideConfiguration(createZhHansConfiguration(baseConfiguration))
     }
 
     override fun onResume() {
@@ -83,25 +72,12 @@ class MainActivity : FlutterActivity() {
         super.onPause()
     }
 
-    private fun createZhHansConfiguration(configuration: Configuration): Configuration {
-        val locale = Locale.Builder()
-            .setLanguage("zh")
-            .setScript("Hans")
-            .setRegion("CN")
-            .build()
-        return Configuration(configuration).apply {
-            setLocale(locale)
-            setLocales(LocaleList(locale))
-            fontScale = 1.0f
-        }
-    }
-
     private fun handlePlaybackMethod(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "isPictureInPictureSupported" -> {
+            AndroidPlaybackMethodContract.isPictureInPictureSupported -> {
                 result.success(isPictureInPictureSupported())
             }
-            "isInPictureInPictureMode" -> {
+            AndroidPlaybackMethodContract.isInPictureInPictureMode -> {
                 result.success(
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         isInPictureInPictureMode
@@ -110,22 +86,25 @@ class MainActivity : FlutterActivity() {
                     }
                 )
             }
-            "enterPictureInPicture" -> {
+            AndroidPlaybackMethodContract.enterPictureInPicture -> {
                 result.success(enterPictureInPicture(call))
             }
-            "getMediaVolume" -> {
+            AndroidPlaybackMethodContract.getMediaVolume -> {
                 result.success(getMediaVolume())
             }
-            "setMediaVolume" -> {
+            AndroidPlaybackMethodContract.setMediaVolume -> {
                 result.success(setMediaVolume(call))
             }
-            "lockPortrait" -> {
+            AndroidPlaybackMethodContract.lockPortrait -> {
                 result.success(lockPortrait())
             }
-            "lockLandscape" -> {
+            AndroidPlaybackMethodContract.lockLandscape -> {
                 result.success(lockLandscape())
             }
-            "prepareForPictureInPicture" -> {
+            AndroidPlaybackMethodContract.lockPortraitFullscreen -> {
+                result.success(lockPortraitFullscreen())
+            }
+            AndroidPlaybackMethodContract.prepareForPictureInPicture -> {
                 result.success(prepareForPictureInPicture())
             }
             else -> result.notImplemented()
@@ -196,6 +175,10 @@ class MainActivity : FlutterActivity() {
         clearFullscreenLandscapeManagement()
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         return true
+    }
+
+    private fun lockPortraitFullscreen(): Boolean {
+        return lockPortrait()
     }
 
     private fun prepareForPictureInPicture(): Boolean {

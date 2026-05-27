@@ -5,26 +5,24 @@ void main() {
   group('shouldFlushAppLogRecord', () {
     test('flushes errors immediately', () {
       expect(
-        AppLog.shouldFlushAppLogRecord(
-          level: 'ERROR',
-          tag: 'misc',
-        ),
+        AppLog.shouldFlushAppLogRecord(level: 'ERROR', tag: 'misc'),
         isTrue,
       );
     });
 
     test('flushes room and player diagnostics immediately', () {
       expect(
-        AppLog.shouldFlushAppLogRecord(
-          level: 'INFO',
-          tag: 'room',
-        ),
+        AppLog.shouldFlushAppLogRecord(level: 'INFO', tag: 'room'),
+        isTrue,
+      );
+      expect(
+        AppLog.shouldFlushAppLogRecord(level: 'INFO', tag: 'player/mdk-log'),
         isTrue,
       );
       expect(
         AppLog.shouldFlushAppLogRecord(
           level: 'INFO',
-          tag: 'player/mdk-log',
+          tag: 'chaturbate/webview',
         ),
         isTrue,
       );
@@ -32,10 +30,7 @@ void main() {
 
     test('keeps generic info logs debounced', () {
       expect(
-        AppLog.shouldFlushAppLogRecord(
-          level: 'INFO',
-          tag: 'app',
-        ),
+        AppLog.shouldFlushAppLogRecord(level: 'INFO', tag: 'app'),
         isFalse,
       );
     });
@@ -56,23 +51,47 @@ void main() {
       expect(sanitized, isNot(contains('cf_clearance=demo')));
     });
 
-    test('redacts full quoted cookie headers without dropping sibling fields',
-        () {
+    test('redacts signed playback URL path segments and query params', () {
       final sanitized = AppLog.sanitizeMessageForPersistence(
-        'http-header-fields=["referer: https://chaturbate.com/test/",'
-        '"cookie: affkey=demo; cf_clearance=secret; '
-        r'tbu_room={\"source\":\"df\",\"index\":3}",'
-        '"content-type: application/x-www-form-urlencoded"]',
+        'playback=https://manifest.googlevideo.com/api/manifest/hls_playlist/'
+        'sparams/expire,ip,itag/sig/AHEqSecret/lsparams/hls_chunk_host/'
+        'lsig/APaTSecret/playlist/index.m3u8 '
+        'source=https://cn.example.com/live.flv?upsig=biliSecret&sk=biliSk'
+        '&sign=plainSign&expires=1777642300',
       );
 
-      expect(sanitized, contains('"cookie: <redacted>"'));
-      expect(
-        sanitized,
-        contains('"content-type: application/x-www-form-urlencoded"'),
-      );
-      expect(sanitized, isNot(contains('cf_clearance=secret')));
-      expect(sanitized, isNot(contains('tbu_room')));
+      expect(sanitized, contains('/sig/<redacted>/'));
+      expect(sanitized, contains('/lsig/<redacted>/'));
+      expect(sanitized, contains('upsig=<redacted>'));
+      expect(sanitized, contains('sk=<redacted>'));
+      expect(sanitized, contains('sign=<redacted>'));
+      expect(sanitized, contains('expires=1777642300'));
+      expect(sanitized, isNot(contains('AHEqSecret')));
+      expect(sanitized, isNot(contains('APaTSecret')));
+      expect(sanitized, isNot(contains('biliSecret')));
+      expect(sanitized, isNot(contains('biliSk')));
+      expect(sanitized, isNot(contains('plainSign')));
     });
+
+    test(
+      'redacts full quoted cookie headers without dropping sibling fields',
+      () {
+        final sanitized = AppLog.sanitizeMessageForPersistence(
+          'http-header-fields=["referer: https://chaturbate.com/test/",'
+          '"cookie: affkey=demo; cf_clearance=secret; '
+          r'tbu_room={\"source\":\"df\",\"index\":3}",'
+          '"content-type: application/x-www-form-urlencoded"]',
+        );
+
+        expect(sanitized, contains('"cookie: <redacted>"'));
+        expect(
+          sanitized,
+          contains('"content-type: application/x-www-form-urlencoded"'),
+        );
+        expect(sanitized, isNot(contains('cf_clearance=secret')));
+        expect(sanitized, isNot(contains('tbu_room')));
+      },
+    );
 
     test('redacts plain lavf cookie diagnostics through end of line', () {
       final sanitized = AppLog.sanitizeMessageForPersistence(

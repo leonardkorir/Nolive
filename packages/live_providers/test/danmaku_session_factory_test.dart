@@ -7,6 +7,7 @@ import 'package:live_providers/src/danmaku/douyu_danmaku_session.dart';
 import 'package:live_providers/src/danmaku/huya_danmaku_session.dart';
 import 'package:live_providers/src/danmaku/provider_ticker_danmaku_session.dart';
 import 'package:live_providers/src/danmaku/provider_unavailable_danmaku_session.dart';
+import 'package:live_providers/src/danmaku/stripchat_danmaku_session.dart';
 import 'package:live_providers/src/danmaku/twitch_danmaku_session.dart';
 import 'package:live_providers/src/danmaku/youtube_danmaku_session.dart';
 import 'package:live_providers/src/providers/youtube/youtube_api_client.dart';
@@ -30,14 +31,14 @@ void main() {
       roomId: '1234',
       title: 'test',
       streamerName: 'tester',
-      danmakuToken: {
-        'roomId': 1234,
-        'uid': 0,
-        'token': 'mock-token',
-        'serverHost': 'broadcastlv.chat.bilibili.com',
-        'buvid': 'mock-buvid',
-        'cookie': '',
-      },
+      danmakuToken: const BilibiliDanmakuToken(
+        roomId: 1234,
+        uid: 0,
+        token: 'mock-token',
+        serverHost: 'broadcastlv.chat.bilibili.com',
+        buvid: 'mock-buvid',
+        cookie: '',
+      ),
     );
 
     final session = await provider.createDanmakuSession(detail);
@@ -54,10 +55,9 @@ void main() {
       roomId: '1234',
       title: 'test',
       streamerName: 'tester',
-      danmakuToken: {
-        'mode': 'unavailable',
-        'reason': '暂未拿到可用弹幕连接参数',
-      },
+      danmakuToken: const UnavailableDanmakuToken(
+        reason: '暂未拿到可用弹幕连接参数',
+      ),
     );
 
     final session = await provider.createDanmakuSession(detail);
@@ -68,24 +68,24 @@ void main() {
   test('bilibili danmaku session prefers cookie uid and drops bare stored uid',
       () {
     final anonymousSession = BilibiliDanmakuSession(
-      tokenData: {
-        'roomId': 1234,
-        'uid': 998877,
-        'token': 'mock-token',
-        'serverHost': 'broadcastlv.chat.bilibili.com',
-        'buvid': 'mock-buvid',
-        'cookie': '',
-      },
+      danmakuToken: const BilibiliDanmakuToken(
+        roomId: 1234,
+        uid: 998877,
+        token: 'mock-token',
+        serverHost: 'broadcastlv.chat.bilibili.com',
+        buvid: 'mock-buvid',
+        cookie: '',
+      ),
     );
     final cookieBoundSession = BilibiliDanmakuSession(
-      tokenData: {
-        'roomId': 1234,
-        'uid': 998877,
-        'token': 'mock-token',
-        'serverHost': 'broadcastlv.chat.bilibili.com',
-        'buvid': 'mock-buvid',
-        'cookie': 'SESSDATA=test; DedeUserID=445566;',
-      },
+      danmakuToken: const BilibiliDanmakuToken(
+        roomId: 1234,
+        uid: 998877,
+        token: 'mock-token',
+        serverHost: 'broadcastlv.chat.bilibili.com',
+        buvid: 'mock-buvid',
+        cookie: 'SESSDATA=test; DedeUserID=445566;',
+      ),
     );
 
     expect(anonymousSession.uid, 0);
@@ -110,11 +110,13 @@ void main() {
       roomId: 'kittengirlxo',
       title: 'test',
       streamerName: 'tester',
-      danmakuToken: {
-        'broadcasterUid': 'P7746ZL',
-        'csrfToken': 'mock-csrf',
-        'backend': 'a',
-      },
+      danmakuToken: const ChaturbateDanmakuToken(
+        roomId: 'kittengirlxo',
+        roomUid: '',
+        broadcasterUid: 'P7746ZL',
+        csrfToken: 'mock-csrf',
+        backend: 'a',
+      ),
     );
 
     final session = await provider.createDanmakuSession(detail);
@@ -130,7 +132,7 @@ void main() {
       roomId: 'consuelabrasington',
       title: 'test',
       streamerName: 'tester',
-      danmakuToken: const <String, dynamic>{},
+      danmakuToken: null,
     );
 
     final session = await provider.createDanmakuSession(detail);
@@ -154,7 +156,7 @@ void main() {
       roomId: '3125893',
       title: 'test',
       streamerName: 'tester',
-      danmakuToken: {'roomId': '3125893'},
+      danmakuToken: const DouyuDanmakuToken(roomId: '3125893'),
     );
 
     final session = await provider.createDanmakuSession(detail);
@@ -169,11 +171,11 @@ void main() {
       roomId: 'yy/123456',
       title: 'test',
       streamerName: 'tester',
-      danmakuToken: {
-        'ayyuid': 123456,
-        'topSid': 111,
-        'subSid': 222,
-      },
+      danmakuToken: const HuyaDanmakuToken(
+        ayyuid: 123456,
+        topSid: 111,
+        subSid: 222,
+      ),
     );
 
     final session = await provider.createDanmakuSession(detail);
@@ -191,11 +193,12 @@ void main() {
       roomId: '416144012050',
       title: 'test',
       streamerName: 'tester',
-      danmakuToken: {
-        'roomId': '7376429659866598196',
-        'cookie': 'ttwid=test-cookie',
-        'userUniqueId': '123456789012',
-      },
+      danmakuToken: const DouyinDanmakuToken(
+        webRid: '416144012050',
+        roomId: '7376429659866598196',
+        cookie: 'ttwid=test-cookie',
+        userUniqueId: '123456789012',
+      ),
     );
 
     final session = await provider.createDanmakuSession(detail);
@@ -219,9 +222,7 @@ void main() {
       roomId: 'xqc',
       title: 'test',
       streamerName: 'tester',
-      danmakuToken: {
-        'roomId': 'xqc',
-      },
+      danmakuToken: const TwitchDanmakuToken(roomId: 'xqc'),
     );
 
     final session = await provider.createDanmakuSession(detail);
@@ -245,18 +246,64 @@ void main() {
       roomId: '@demo/live',
       title: 'test',
       streamerName: 'tester',
-      danmakuToken: {
-        'apiKey': 'AIzaTest',
-        'clientVersion': YouTubeApiClient.defaultWebClientVersion,
-        'continuation': 'test-continuation',
-        'liveChatPageUrl': 'https://www.youtube.com/live_chat?continuation=1',
-        'visitorData': 'visitor-data',
-      },
+      danmakuToken: const YouTubeDanmakuToken(
+        apiKey: 'AIzaTest',
+        clientVersion: YouTubeApiClient.defaultWebClientVersion,
+        continuation: 'test-continuation',
+        liveChatPageUrl: 'https://www.youtube.com/live_chat?continuation=1',
+        visitorData: 'visitor-data',
+      ),
     );
 
     final session = await provider.createDanmakuSession(detail);
 
     expect(session, isA<YouTubeDanmakuSession>());
+  });
+
+  test('stripchat preview detail uses ticker danmaku', () async {
+    final provider = StripchatProvider.preview();
+    final detail = await provider.fetchRoomDetail('alice_demo');
+
+    final session = await provider.createDanmakuSession(detail);
+
+    expect(session, isA<ProviderTickerDanmakuSession>());
+  });
+
+  test('stripchat live-like detail uses real stripchat danmaku session',
+      () async {
+    final provider = StripchatProvider.preview();
+    final detail = LiveRoomDetail(
+      providerId: ProviderId.stripchat.value,
+      roomId: 'test_model',
+      title: 'test',
+      streamerName: 'tester',
+      danmakuToken: const StripchatDanmakuToken(
+        modelId: '12345',
+        websocketUrl: 'wss://ws.stripchat.com/connection/websocket',
+        jwt: 'mock-jwt-token',
+      ),
+    );
+
+    final session = await provider.createDanmakuSession(detail);
+
+    expect(session, isA<StripchatDanmakuSession>());
+  });
+
+  test('stripchat unavailable token uses unavailable session', () async {
+    final provider = StripchatProvider.preview();
+    final detail = LiveRoomDetail(
+      providerId: ProviderId.stripchat.value,
+      roomId: 'test',
+      title: 'test',
+      streamerName: 'tester',
+      danmakuToken: const UnavailableDanmakuToken(
+        reason: 'test reason',
+      ),
+    );
+
+    final session = await provider.createDanmakuSession(detail);
+
+    expect(session, isA<ProviderUnavailableDanmakuSession>());
   });
 }
 
@@ -284,6 +331,7 @@ class _NoopYouTubeApiClient implements YouTubeApiClient {
     required String visitorData,
     required String referer,
     String clientVersion = YouTubeApiClient.defaultWebClientVersion,
+    Duration timeout = YouTubeApiClient.liveChatRequestTimeout,
   }) async {
     return const {};
   }

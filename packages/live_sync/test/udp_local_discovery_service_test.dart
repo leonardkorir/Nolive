@@ -86,4 +86,81 @@ void main() {
       12000,
     );
   });
+
+  test('udp local discovery ignores announcements from non-local addresses',
+      () async {
+    final service = UdpLocalDiscoveryService(
+      readInfo: () async => const LocalSyncPeerInfo(
+        displayName: '本机',
+        deviceId: 'self-device',
+        platform: 'android',
+      ),
+      broadcastPort: 28238,
+      broadcastInterval: const Duration(minutes: 1),
+    );
+    final events = <List<DiscoveredPeer>>[];
+    final subscription = service.watchPeers().listen(events.add);
+    addTearDown(() async {
+      await subscription.cancel();
+      await service.stop();
+    });
+
+    await service.start();
+    service.ingestAnnouncement(
+      <String, dynamic>{
+        'type': 'info',
+        'deviceId': 'public-peer',
+        'displayName': '公网端',
+        'platform': 'linux',
+        'port': 23234,
+      },
+      senderAddress: '8.8.8.8',
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      events
+          .expand((peers) => peers)
+          .any((peer) => peer.deviceId == 'public-peer'),
+      isFalse,
+    );
+  });
+
+  test('udp local discovery ignores unsupported announcement types', () async {
+    final service = UdpLocalDiscoveryService(
+      readInfo: () async => const LocalSyncPeerInfo(
+        displayName: '本机',
+        deviceId: 'self-device',
+        platform: 'android',
+      ),
+      broadcastPort: 28239,
+      broadcastInterval: const Duration(minutes: 1),
+    );
+    final events = <List<DiscoveredPeer>>[];
+    final subscription = service.watchPeers().listen(events.add);
+    addTearDown(() async {
+      await subscription.cancel();
+      await service.stop();
+    });
+
+    await service.start();
+    service.ingestAnnouncement(
+      <String, dynamic>{
+        'type': 'probe',
+        'deviceId': 'unknown-peer',
+        'displayName': '未知端',
+        'platform': 'linux',
+        'port': 23234,
+      },
+      senderAddress: '192.168.1.21',
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      events
+          .expand((peers) => peers)
+          .any((peer) => peer.deviceId == 'unknown-peer'),
+      isFalse,
+    );
+  });
 }

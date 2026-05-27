@@ -8,6 +8,9 @@ import 'youtube_data_source.dart';
 import 'youtube_live_data_source.dart';
 import 'youtube_preview_data_source.dart';
 
+typedef YouTubeApiClientBuilder = YouTubeApiClient Function();
+typedef YouTubeApiClientDisposer = void Function(YouTubeApiClient apiClient);
+
 class YouTubeProvider extends LiveProvider
     implements
         SupportsCategories,
@@ -21,18 +24,36 @@ class YouTubeProvider extends LiveProvider
   YouTubeProvider({
     YouTubeDataSource? dataSource,
     YouTubeApiClient? danmakuApiClient,
+    YouTubeApiClientBuilder? createOwnedDanmakuApiClient,
+    YouTubeApiClientDisposer? disposeOwnedDanmakuApiClient,
+    void Function()? disposeOwnedResources,
   })  : _dataSource = dataSource ?? const YouTubePreviewDataSource(),
-        _danmakuApiClient = danmakuApiClient;
+        _danmakuApiClient = danmakuApiClient,
+        _createOwnedDanmakuApiClient = createOwnedDanmakuApiClient,
+        _disposeOwnedDanmakuApiClient = disposeOwnedDanmakuApiClient,
+        _disposeOwnedResources = disposeOwnedResources;
 
   factory YouTubeProvider.preview() => YouTubeProvider();
 
-  factory YouTubeProvider.live({YouTubeApiClient? apiClient}) {
-    final resolvedApiClient = apiClient ?? HttpYouTubeApiClient();
+  factory YouTubeProvider.live({
+    YouTubeApiClient? apiClient,
+    YouTubeApiClientBuilder apiClientBuilder = _defaultYouTubeApiClientBuilder,
+    YouTubeApiClientDisposer apiClientDisposer =
+        _defaultYouTubeApiClientDisposer,
+  }) {
+    final ownedApiClient = apiClient == null ? apiClientBuilder() : null;
+    final resolvedApiClient = apiClient ?? ownedApiClient!;
     return YouTubeProvider(
       dataSource: YouTubeLiveDataSource(
         apiClient: resolvedApiClient,
       ),
-      danmakuApiClient: resolvedApiClient,
+      danmakuApiClient: apiClient,
+      createOwnedDanmakuApiClient: apiClient == null ? apiClientBuilder : null,
+      disposeOwnedDanmakuApiClient:
+          apiClient == null ? apiClientDisposer : null,
+      disposeOwnedResources: ownedApiClient == null
+          ? null
+          : () => apiClientDisposer(ownedApiClient),
     );
   }
 
@@ -66,9 +87,17 @@ class YouTubeProvider extends LiveProvider
 
   final YouTubeDataSource _dataSource;
   final YouTubeApiClient? _danmakuApiClient;
+  final YouTubeApiClientBuilder? _createOwnedDanmakuApiClient;
+  final YouTubeApiClientDisposer? _disposeOwnedDanmakuApiClient;
+  final void Function()? _disposeOwnedResources;
 
   @override
   ProviderDescriptor get descriptor => kDescriptor;
+
+  @override
+  void dispose() {
+    _disposeOwnedResources?.call();
+  }
 
   @override
   Future<List<LiveCategory>> fetchCategories() {
@@ -122,39 +151,45 @@ class YouTubeProvider extends LiveProvider
   Future<DanmakuSession> createDanmakuSession(LiveRoomDetail detail) async {
     requireCapability(ProviderCapability.danmaku);
     final token = detail.danmakuToken;
-    if (token is Map && token['mode']?.toString() == 'preview') {
+    if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
         providerId: descriptor.id.value,
         detail: detail,
       );
     }
-    final apiKey = token is Map ? token['apiKey']?.toString().trim() ?? '' : '';
-    final continuation =
-        token is Map ? token['continuation']?.toString().trim() ?? '' : '';
-    final visitorData =
-        token is Map ? token['visitorData']?.toString().trim() ?? '' : '';
-    final clientVersion =
-        token is Map ? token['clientVersion']?.toString().trim() ?? '' : '';
-    final referer =
-        token is Map ? token['liveChatPageUrl']?.toString().trim() ?? '' : '';
-    if (_danmakuApiClient != null &&
-        apiKey.isNotEmpty &&
-        continuation.isNotEmpty &&
-        visitorData.isNotEmpty &&
-        referer.isNotEmpty) {
+    final sessionApiClient =
+        _danmakuApiClient ?? _createOwnedDanmakuApiClient?.call();
+    if (token is YouTubeDanmakuToken &&
+        sessionApiClient != null &&
+        token.apiKey.isNotEmpty &&
+        token.continuation.isNotEmpty &&
+        token.visitorData.isNotEmpty &&
+        token.liveChatPageUrl.isNotEmpty) {
       return YouTubeDanmakuSession(
-        apiClient: _danmakuApiClient,
-        apiKey: apiKey,
-        continuation: continuation,
-        visitorData: visitorData,
-        referer: referer,
-        clientVersion: clientVersion.isNotEmpty
-            ? clientVersion
+        apiClient: sessionApiClient,
+        apiKey: token.apiKey,
+        continuation: token.continuation,
+        visitorData: token.visitorData,
+        referer: token.liveChatPageUrl,
+        clientVersion: token.clientVersion.isNotEmpty
+            ? token.clientVersion
             : YouTubeApiClient.defaultWebClientVersion,
+        disposeResources: _danmakuApiClient == null
+            ? () => (_disposeOwnedDanmakuApiClient ??
+                _defaultYouTubeApiClientDisposer)(sessionApiClient)
+            : null,
       );
     }
     return ProviderUnavailableDanmakuSession(
-      reason: 'YouTube 当前房间暂未拿到可用直播聊天参数，请稍后刷新重试。',
+      reason: 'YouTube 当前房间未返回可用直播聊天入口，可能是未开启聊天、登录/地区限制或页面结构变更；视频播放不受影响。',
     );
+  }
+}
+
+YouTubeApiClient _defaultYouTubeApiClientBuilder() => HttpYouTubeApiClient();
+
+void _defaultYouTubeApiClientDisposer(YouTubeApiClient apiClient) {
+  if (apiClient is HttpYouTubeApiClient) {
+    apiClient.close();
   }
 }

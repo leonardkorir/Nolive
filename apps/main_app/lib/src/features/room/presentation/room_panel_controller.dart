@@ -21,7 +21,11 @@ bool shouldSynchronizeRoomPanelPage({
   if (controllerPage == null) {
     return true;
   }
-  return (controllerPage - selectedPanelIndex).abs() > 0.01;
+  final nearestPage = controllerPage.roundToDouble();
+  if ((controllerPage - nearestPage).abs() > 0.01) {
+    return false;
+  }
+  return (nearestPage - selectedPanelIndex).abs() > 0.01;
 }
 
 class RoomPanelController extends ChangeNotifier {

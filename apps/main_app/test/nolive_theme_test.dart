@@ -7,10 +7,7 @@ void main() {
   const removedFontFamilies = <String>{'NotoSansCJKSC'};
 
   test('light and dark theme use lightweight zh font and locale', () {
-    for (final theme in <ThemeData>[
-      NoliveTheme.light(),
-      NoliveTheme.dark(),
-    ]) {
+    for (final theme in <ThemeData>[NoliveTheme.light(), NoliveTheme.dark()]) {
       final bodyMedium = theme.textTheme.bodyMedium;
       expect(bodyMedium, isNotNull);
       expect(removedFontFamilies, isNot(contains(bodyMedium?.fontFamily)));
@@ -38,8 +35,8 @@ void main() {
       expect(theme.tabBarTheme.unselectedLabelStyle?.fontFamily, kZhFontFamily);
       expect(theme.tabBarTheme.unselectedLabelStyle?.locale, kZhHansCnLocale);
 
-      final navigationLabelStyle =
-          theme.navigationBarTheme.labelTextStyle?.resolve(<WidgetState>{});
+      final navigationLabelStyle = theme.navigationBarTheme.labelTextStyle
+          ?.resolve(<WidgetState>{});
       expect(
         removedFontFamilies,
         isNot(contains(navigationLabelStyle?.fontFamily)),
