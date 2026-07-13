@@ -23,6 +23,25 @@ class ProviderId {
     stripchat,
   };
 
+  factory ProviderId.from(Object? value) {
+    if (value is ProviderId) {
+      return value;
+    }
+    final rawValue = value?.toString() ?? '';
+    for (final providerId in knownValues) {
+      if (providerId.value == rawValue) {
+        return providerId;
+      }
+    }
+    return ProviderId(rawValue);
+  }
+
+  bool get isEmpty => value.isEmpty;
+
+  bool get isNotEmpty => value.isNotEmpty;
+
+  String toJson() => value;
+
   @override
   bool operator ==(Object other) {
     return other is ProviderId && other.value == value;

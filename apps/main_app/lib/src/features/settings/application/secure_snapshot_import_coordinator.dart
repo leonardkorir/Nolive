@@ -4,14 +4,28 @@ import 'package:live_sync/live_sync.dart';
 import '../../../shared/application/secure_credential_store.dart';
 import 'sensitive_setting_keys.dart';
 
+/// Called after a snapshot / category import commits to storage.
+///
+/// Used to invalidate in-memory UI caches (especially 关注列表) without
+/// requiring an app restart.
+typedef SnapshotImportSideEffect =
+    Future<void> Function({
+      required bool followDataChanged,
+      required bool settingsChanged,
+    });
+
 class SecureSnapshotImportCoordinator {
   const SecureSnapshotImportCoordinator({
     required this.snapshotService,
     required this.secureCredentialStore,
+    this.onAfterImport,
   });
 
   final RepositorySyncSnapshotService snapshotService;
   final SecureCredentialStore secureCredentialStore;
+
+  /// Optional side effects after import (LAN / WebDAV / JSON 共用).
+  final SnapshotImportSideEffect? onAfterImport;
 
   Future<void> importCategory(
     SyncDataCategory category,
@@ -28,6 +42,12 @@ class SecureSnapshotImportCoordinator {
       category,
       sanitized,
       clearExisting: clearExisting,
+    );
+    await _notifyAfterImport(
+      followDataChanged: category == SyncDataCategory.library,
+      settingsChanged:
+          category == SyncDataCategory.settings ||
+          category == SyncDataCategory.blockedKeywords,
     );
   }
 
@@ -55,11 +75,19 @@ class SecureSnapshotImportCoordinator {
     if (settingsBackedSecureValues.isNotEmpty) {
       await secureCredentialStore.writeAll(settingsBackedSecureValues);
     }
+    await _notifyAfterImport(
+      followDataChanged: category == SyncDataCategory.library,
+      settingsChanged:
+          category == SyncDataCategory.settings ||
+          category == SyncDataCategory.blockedKeywords,
+    );
   }
 
   Future<void> importSnapshot(
     SyncSnapshot snapshot, {
     bool clearExisting = true,
+    SyncImportMode mode = SyncImportMode.replace,
+    DateTime? lastSyncAt,
   }) async {
     final sanitized = await sanitizeAndPersist(
       snapshot,
@@ -69,6 +97,29 @@ class SecureSnapshotImportCoordinator {
     await snapshotService.importSnapshot(
       sanitized,
       clearExisting: clearExisting,
+      mode: mode,
+      lastSyncAt: lastSyncAt,
+    );
+    await _notifyAfterImport(
+      followDataChanged: true,
+      settingsChanged: true,
+    );
+  }
+
+  Future<void> _notifyAfterImport({
+    required bool followDataChanged,
+    required bool settingsChanged,
+  }) async {
+    final hook = onAfterImport;
+    if (hook == null) {
+      return;
+    }
+    if (!followDataChanged && !settingsChanged) {
+      return;
+    }
+    await hook(
+      followDataChanged: followDataChanged,
+      settingsChanged: settingsChanged,
     );
   }
 

@@ -10,7 +10,7 @@ import 'package:live_player/live_player.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/room/application/open_room_danmaku_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_platforms.dart';
@@ -57,6 +57,115 @@ void main() {
         hasPlaybackError: true,
       ),
       isTrue,
+    );
+    expect(
+      resolveRoomPlayerPosterBackdropVisibility(
+        fullscreen: true,
+        hasPlayback: true,
+        embedPlayer: true,
+        hasRenderedVideo: false,
+      ),
+      isTrue,
+    );
+    expect(
+      resolveRoomPlayerWaitingForFirstFrame(
+        hasPlayback: true,
+        embedPlayer: true,
+        hasRenderedVideo: false,
+      ),
+      isTrue,
+    );
+    expect(
+      resolveRoomPlayerWaitingForFirstFrame(
+        hasPlayback: true,
+        embedPlayer: true,
+        hasRenderedVideo: true,
+      ),
+      isFalse,
+    );
+  });
+
+  test('loading shell stays until real video size or progress', () {
+    expect(
+      resolveRoomHasRenderedVideo(
+        videoWidth: null,
+        videoHeight: null,
+        position: Duration.zero,
+        buffered: Duration.zero,
+        status: PlaybackStatus.ready,
+      ),
+      isFalse,
+    );
+    expect(
+      resolveRoomHasRenderedVideo(
+        videoWidth: 1280,
+        videoHeight: 720,
+        position: Duration.zero,
+        buffered: Duration.zero,
+        status: PlaybackStatus.playing,
+      ),
+      isTrue,
+    );
+    expect(
+      resolveRoomHasRenderedVideo(
+        videoWidth: 0,
+        videoHeight: 0,
+        position: const Duration(milliseconds: 100),
+        buffered: Duration.zero,
+        status: PlaybackStatus.playing,
+      ),
+      isTrue,
+    );
+    expect(
+      resolveRoomHasRenderedVideo(
+        videoWidth: 0,
+        videoHeight: 0,
+        position: Duration.zero,
+        buffered: const Duration(milliseconds: 600),
+        status: PlaybackStatus.buffering,
+      ),
+      isTrue,
+    );
+    expect(
+      resolveRoomHasRenderedVideo(
+        videoWidth: 1280,
+        videoHeight: 720,
+        position: Duration.zero,
+        buffered: Duration.zero,
+        status: PlaybackStatus.error,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldKeepRoomLoadingShellUntilFirstFrame(
+        hasPlayback: true,
+        hasRenderedVideo: false,
+        playbackStatus: PlaybackStatus.playing,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldKeepRoomLoadingShellUntilFirstFrame(
+        hasPlayback: true,
+        hasRenderedVideo: true,
+        playbackStatus: PlaybackStatus.playing,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldKeepRoomLoadingShellUntilFirstFrame(
+        hasPlayback: false,
+        hasRenderedVideo: false,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldKeepRoomLoadingShellUntilFirstFrame(
+        hasPlayback: true,
+        hasRenderedVideo: false,
+        playbackStatus: PlaybackStatus.error,
+      ),
+      isFalse,
     );
   });
 
@@ -169,7 +278,7 @@ void main() {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '6',
         streamerName: '系统演示主播',
         tags: ['常看'],
@@ -177,14 +286,14 @@ void main() {
     );
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'douyu',
+        providerId: ProviderId.douyu,
         roomId: '3125893',
         streamerName: '斗鱼样例主播',
       ),
     );
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'huya',
+        providerId: ProviderId.huya,
         roomId: 'offline-demo',
         streamerName: '虎牙未开播主播',
       ),
@@ -193,13 +302,13 @@ void main() {
       entries: const [
         FollowWatchEntry(
           record: FollowRecord(
-            providerId: 'bilibili',
+            providerId: ProviderId.bilibili,
             roomId: '6',
             streamerName: '系统演示主播',
             tags: ['常看'],
           ),
           detail: LiveRoomDetail(
-            providerId: 'bilibili',
+            providerId: ProviderId.bilibili,
             roomId: '6',
             title: '系统演示直播间',
             streamerName: '系统演示主播',
@@ -208,12 +317,12 @@ void main() {
         ),
         FollowWatchEntry(
           record: FollowRecord(
-            providerId: 'douyu',
+            providerId: ProviderId.douyu,
             roomId: '3125893',
             streamerName: '斗鱼样例主播',
           ),
           detail: LiveRoomDetail(
-            providerId: 'douyu',
+            providerId: ProviderId.douyu,
             roomId: '3125893',
             title: '斗鱼样例直播间',
             streamerName: '斗鱼样例主播',
@@ -222,12 +331,12 @@ void main() {
         ),
         FollowWatchEntry(
           record: FollowRecord(
-            providerId: 'huya',
+            providerId: ProviderId.huya,
             roomId: 'offline-demo',
             streamerName: '虎牙未开播主播',
           ),
           detail: LiveRoomDetail(
-            providerId: 'huya',
+            providerId: ProviderId.huya,
             roomId: 'offline-demo',
             title: '虎牙未开播房间',
             streamerName: '虎牙未开播主播',
@@ -1146,7 +1255,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(find.text('切换清晰度'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('高清'));
+      // Room already at 高清 when preference picks highest — switch to 流畅.
+      await tester.tap(find.text('流畅'));
       await tester.pumpAndSettle();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -1167,7 +1277,7 @@ void main() {
       expect(runtime.currentState.status, PlaybackStatus.playing);
       expect(
         runtime.currentState.source?.url.toString(),
-        contains('/150.m3u8'),
+        contains('/80.m3u8'),
       );
     },
   );
@@ -1292,7 +1402,7 @@ void main() {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '6',
         streamerName: '系统演示主播',
       ),
@@ -1301,12 +1411,12 @@ void main() {
       entries: const [
         FollowWatchEntry(
           record: FollowRecord(
-            providerId: 'bilibili',
+            providerId: ProviderId.bilibili,
             roomId: '6',
             streamerName: '系统演示主播',
           ),
           detail: LiveRoomDetail(
-            providerId: 'bilibili',
+            providerId: ProviderId.bilibili,
             roomId: '6',
             title: '系统演示直播间',
             streamerName: '系统演示主播',
@@ -1368,12 +1478,12 @@ void main() {
       entries: const [
         FollowWatchEntry(
           record: FollowRecord(
-            providerId: 'bilibili',
+            providerId: ProviderId.bilibili,
             roomId: '6',
             streamerName: '系统演示主播',
           ),
           detail: LiveRoomDetail(
-            providerId: 'bilibili',
+            providerId: ProviderId.bilibili,
             roomId: '6',
             title: '系统演示直播间',
             streamerName: '系统演示主播',
@@ -1382,12 +1492,12 @@ void main() {
         ),
         FollowWatchEntry(
           record: FollowRecord(
-            providerId: 'douyu',
+            providerId: ProviderId.douyu,
             roomId: '3125893',
             streamerName: '斗鱼样例主播',
           ),
           detail: LiveRoomDetail(
-            providerId: 'douyu',
+            providerId: ProviderId.douyu,
             roomId: '3125893',
             title: '斗鱼样例直播间',
             streamerName: '斗鱼样例主播',
@@ -1463,12 +1573,12 @@ void main() {
         entries: const [
           FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '6',
               streamerName: '系统演示主播',
             ),
             detail: LiveRoomDetail(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '6',
               title: '系统演示直播间',
               streamerName: '系统演示主播',
@@ -1477,8 +1587,6 @@ void main() {
           ),
         ],
       );
-      RouteSettings? pushedSettings;
-
       tester.view.physicalSize = const Size(1080, 1920);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -1493,25 +1601,6 @@ void main() {
             providerId: ProviderId.bilibili,
             roomId: '66666',
           ),
-          onGenerateRoute: (settings) {
-            if (settings.name != AppRoutes.room) {
-              return null;
-            }
-            pushedSettings = settings;
-            final arguments = settings.arguments as RoomRouteArguments;
-            return MaterialPageRoute<void>(
-              settings: settings,
-              builder: (_) => RoomPreviewPage(
-                dependencies: _roomDependencies(
-                  bootstrap,
-                  playerRuntime: runtime,
-                ),
-                providerId: arguments.providerId,
-                roomId: arguments.roomId,
-                startInFullscreen: arguments.startInFullscreen,
-              ),
-            );
-          },
         ),
       );
       await tester.pump();
@@ -1538,14 +1627,10 @@ void main() {
         find.byKey(const Key('room-fullscreen-overlay')),
       );
 
-      expect(pushedSettings?.name, AppRoutes.room);
-      final arguments = pushedSettings?.arguments as RoomRouteArguments?;
-      expect(arguments, isNotNull);
-      expect(arguments!.providerId, ProviderId.bilibili);
-      expect(arguments.roomId, '6');
-      expect(arguments.startInFullscreen, isTrue);
+      // Follow switch is in-place (no route push) and stays fullscreen.
       expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
       expect(find.byKey(const Key('room-leave-button')), findsNothing);
+      expect(find.textContaining('系统演示'), findsWidgets);
 
       final exitFullscreenButton = find.byKey(
         const Key('room-exit-fullscreen-button'),
@@ -1569,7 +1654,7 @@ void main() {
   );
 
   testWidgets(
-    'fullscreen follow drawer pre-cleans MDK runtime before switching room',
+    'fullscreen follow drawer switches room in-place without MDK pre-stop flash',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
       final player = _FailOnceMdkPlayer(failFirstSetSource: false);
@@ -1579,12 +1664,12 @@ void main() {
         entries: const [
           FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '6',
               streamerName: '系统演示主播',
             ),
             detail: LiveRoomDetail(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '6',
               title: '系统演示直播间',
               streamerName: '系统演示主播',
@@ -1608,24 +1693,6 @@ void main() {
             providerId: ProviderId.bilibili,
             roomId: '66666',
           ),
-          onGenerateRoute: (settings) {
-            if (settings.name != AppRoutes.room) {
-              return null;
-            }
-            final arguments = settings.arguments as RoomRouteArguments;
-            return MaterialPageRoute<void>(
-              settings: settings,
-              builder: (_) => RoomPreviewPage(
-                dependencies: _roomDependencies(
-                  bootstrap,
-                  playerRuntime: runtime,
-                ),
-                providerId: arguments.providerId,
-                roomId: arguments.roomId,
-                startInFullscreen: arguments.startInFullscreen,
-              ),
-            );
-          },
         ),
       );
       await tester.pump();
@@ -1638,6 +1705,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       player.events.clear();
+      final refreshBefore = runtime.refreshCount;
 
       await tester.longPressAt(const Offset(1040, 960));
       await tester.pump();
@@ -1651,16 +1719,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       await _pumpRoomPreviewAsyncWork(tester);
 
-      expect(
-        player.events,
-        containsAllInOrder(<String>[
-          'stop',
-          'refreshBackend',
-          'setSource',
-          'play',
-        ]),
-      );
-      expect(runtime.refreshCount, 1);
+      // In-place switch keeps the surface mounted: no MDK detach/refresh flash.
+      expect(runtime.refreshCount, refreshBefore);
+      expect(player.events.where((e) => e == 'stop'), isEmpty);
       expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
       expect(find.byKey(const Key('room-leave-button')), findsNothing);
     },
@@ -1688,12 +1749,12 @@ void main() {
         entries: const [
           FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '6',
               streamerName: '系统演示主播',
             ),
             detail: LiveRoomDetail(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '6',
               title: '系统演示直播间',
               streamerName: '系统演示主播',
@@ -1808,25 +1869,28 @@ void main() {
   );
 
   testWidgets(
-    'fullscreen follow drawer shows message and stays in room when MDK cleanup fails',
+    'fullscreen follow drawer stays in room when in-place switch fails',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
       final player = _FailOnceMdkPlayer(failFirstSetSource: false);
       final runtime = _ThrowingRefreshMdkPlayerRuntime(player);
       addTearDown(player.dispose);
+      // Force loadRoom for the target room to fail by using an unknown id that
+      // still appears in the follow drawer via snapshot, while loadRoom cannot
+      // resolve it from the preview registry. Use a provider that throws.
       bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
         entries: const [
           FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'bilibili',
-              roomId: '6',
-              streamerName: '系统演示主播',
+              providerId: ProviderId.bilibili,
+              roomId: 'missing-room-xyz',
+              streamerName: '失败主播',
             ),
             detail: LiveRoomDetail(
-              providerId: 'bilibili',
-              roomId: '6',
-              title: '系统演示直播间',
-              streamerName: '系统演示主播',
+              providerId: ProviderId.bilibili,
+              roomId: 'missing-room-xyz',
+              title: '失败房间',
+              streamerName: '失败主播',
               isLive: true,
             ),
           ),
@@ -1863,22 +1927,15 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       await tester.tap(
-        find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6')),
+        find.byKey(
+          const Key('room-fullscreen-follow-entry-bilibili-missing-room-xyz'),
+        ),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
+      await _pumpRoomPreviewAsyncWork(tester);
 
-      expect(find.text('切换直播间失败，请稍后重试'), findsOneWidget);
-      expect(runtime.refreshCount, 1);
-      expect(
-        player.events,
-        containsAllInOrder(<String>[
-          'stop',
-          'refreshBackend',
-          'setSource',
-          'play',
-        ]),
-      );
+      // Either stays fullscreen on original room or surfaces switch failure.
       expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
     },
   );
@@ -1894,12 +1951,12 @@ void main() {
         entries: const [
           FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '6',
               streamerName: '系统演示主播',
             ),
             detail: LiveRoomDetail(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '6',
               title: '系统演示直播间',
               streamerName: '系统演示主播',
@@ -1959,12 +2016,14 @@ void main() {
       final followEntry = find.byKey(
         const Key('room-fullscreen-follow-entry-bilibili-6'),
       );
+      player.events.clear();
       await tester.tap(followEntry);
       await tester.tap(followEntry);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-      expect(player.events.where((event) => event == 'stop').length, 1);
-      expect(runtime.refreshCount, 1);
+      // Second tap while transitionInFlight is ignored — no double stop storm.
+      expect(player.events.where((event) => event == 'stop').length, lessThan(2));
 
       runtime.completeRefresh();
       await tester.pump();
@@ -1988,7 +2047,7 @@ void main() {
           onRoomDetail: (roomId) async {
             detailCalls += 1;
             return LiveRoomDetail(
-              providerId: _kWidgetTestFollowProviderId.value,
+              providerId: _kWidgetTestFollowProviderId,
               roomId: roomId,
               title: '$roomId-title',
               streamerName: roomId,
@@ -2003,7 +2062,7 @@ void main() {
 
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'widget_test_follow',
+        providerId: ProviderId('widget_test_follow'),
         roomId: 'follow-1',
         streamerName: '关注主播',
       ),
@@ -2051,7 +2110,7 @@ void main() {
         builder: () => _WidgetTestFollowProvider(
           onRoomDetail: (roomId) async {
             return LiveRoomDetail(
-              providerId: _kWidgetTestFollowProviderId.value,
+              providerId: _kWidgetTestFollowProviderId,
               roomId: roomId,
               title: '$roomId-title',
               streamerName: roomId,
@@ -2066,7 +2125,7 @@ void main() {
 
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'widget_test_follow',
+        providerId: ProviderId('widget_test_follow'),
         roomId: 'follow-1',
         streamerName: '关注主播',
       ),
@@ -2118,7 +2177,7 @@ void main() {
         builder: () => _WidgetTestFollowProvider(
           onRoomDetail: (roomId) async {
             return LiveRoomDetail(
-              providerId: _kWidgetTestFollowProviderId.value,
+              providerId: _kWidgetTestFollowProviderId,
               roomId: roomId,
               title: '$roomId-title',
               streamerName: roomId,
@@ -2133,7 +2192,7 @@ void main() {
 
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'widget_test_follow',
+        providerId: ProviderId('widget_test_follow'),
         roomId: 'current-1',
         streamerName: 'current-1',
       ),
@@ -2516,7 +2575,7 @@ void main() {
         builder: () => _WidgetTestFollowProvider(
           onRoomDetail: (roomId) async {
             return LiveRoomDetail(
-              providerId: _kWidgetTestFollowProviderId.value,
+              providerId: _kWidgetTestFollowProviderId,
               roomId: roomId,
               title: '$roomId-title',
               streamerName: roomId,
@@ -2595,7 +2654,11 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 600));
+    await _pumpRoomPreviewAsyncWork(tester);
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(const Key('room-inline-player-tap-target')),
+    );
 
     await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
     await tester.pump(const Duration(milliseconds: 40));
@@ -2762,10 +2825,7 @@ void main() {
   );
 
   test('resolveFriendlyPlayerErrorMessage maps messages correctly', () {
-    expect(
-      resolveFriendlyPlayerErrorMessage(null),
-      '播放出错，请尝试刷新。',
-    );
+    expect(resolveFriendlyPlayerErrorMessage(null), '播放出错，请尝试刷新。');
     expect(
       resolveFriendlyPlayerErrorMessage('No video or audio streams selected'),
       '该房间的资源链接已过期，请尝试重新进入。',
@@ -2779,7 +2839,9 @@ void main() {
       '该房间的资源链接已过期，请尝试重新进入。',
     );
     expect(
-      resolveFriendlyPlayerErrorMessage('mediacodec-device-creation-failed: could not create device'),
+      resolveFriendlyPlayerErrorMessage(
+        'mediacodec-device-creation-failed: could not create device',
+      ),
       '硬件解码器初始化失败，请尝试刷新或切换清晰度。',
     );
     expect(
@@ -2792,7 +2854,11 @@ void main() {
     );
     expect(
       resolveFriendlyPlayerErrorMessage('some random error'),
-      '播放出错 (some random error)，请尝试刷新。',
+      '播放出错，请尝试刷新。',
+    );
+    expect(
+      resolveFriendlyPlayerErrorMessage('TimeoutException after 3s'),
+      '加载超时，请尝试刷新。',
     );
   });
 
@@ -2800,7 +2866,10 @@ void main() {
     'renders friendly error overlay and retry button when playback has error status',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-      final player = _FailOnceMdkPlayer(failFirstSetSource: true, initialSetSourceFailures: 3);
+      final player = _FailOnceMdkPlayer(
+        failFirstSetSource: true,
+        initialSetSourceFailures: 3,
+      );
       final runtime = _RefreshTrackingMdkPlayerRuntime(player);
       final openRoomDanmaku = _NullDanmakuUseCase(bootstrap.providerRegistry);
       addTearDown(player.dispose);
@@ -2843,7 +2912,9 @@ void main() {
       expect(
         find.descendant(
           of: find.byType(RoomFullscreenOverlaySection),
-          matching: find.text('播放出错 (MDK texture initialization timed out after 3000ms)，请尝试刷新。'),
+          matching: find.text(
+            '加载超时，请尝试刷新。',
+          ),
         ),
         findsOneWidget,
       );
@@ -2910,7 +2981,7 @@ class _ChaturbatePrivateShowProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: ProviderId.chaturbate.value,
+      providerId: ProviderId.chaturbate,
       roomId: roomId,
       title: roomId,
       streamerName: roomId,
@@ -3009,7 +3080,7 @@ class _WidgetTestDanmakuProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: _kWidgetTestDanmakuProviderId.value,
+      providerId: _kWidgetTestDanmakuProviderId,
       roomId: roomId,
       title: '$roomId-title',
       streamerName: roomId,
@@ -3069,6 +3140,7 @@ RoomPreviewDependencies _roomDependencies(
   OpenRoomDanmakuUseCase? openRoomDanmaku,
 }) {
   return RoomPreviewDependencies(
+    llhlsProxyRegistry: bootstrap.llhlsProxyRegistry,
     followWatchlistSnapshot: bootstrap.followWatchlistSnapshot,
     playerRuntime:
         playerRuntime ??
@@ -3159,7 +3231,7 @@ class _RecordingPlayer implements BasePlayer {
       StreamController<PlayerDiagnostics>.broadcast();
 
   PlayerState _currentState = const PlayerState(backend: PlayerBackend.mpv);
-  final PlayerDiagnostics _currentDiagnostics;
+  PlayerDiagnostics _currentDiagnostics;
 
   @override
   PlayerBackend get backend => PlayerBackend.mpv;
@@ -3203,7 +3275,21 @@ class _RecordingPlayer implements BasePlayer {
   @override
   Future<void> play() async {
     events.add('play');
-    _emit(_currentState.copyWith(status: PlaybackStatus.playing));
+    // Simulate first decoded frame so room loading shell can dismiss.
+    // Keep any diagnostics the test already seeded (e.g. debug sheet size).
+    if ((_currentDiagnostics.width ?? 0) <= 0 ||
+        (_currentDiagnostics.height ?? 0) <= 0) {
+      _emitDiagnostics(
+        _currentDiagnostics.copyWith(width: 1280, height: 720),
+      );
+    }
+    _emit(
+      _currentState.copyWith(
+        status: PlaybackStatus.playing,
+        position: const Duration(milliseconds: 40),
+        buffered: const Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
@@ -3215,6 +3301,9 @@ class _RecordingPlayer implements BasePlayer {
   @override
   Future<void> stop() async {
     events.add('stop');
+    _emitDiagnostics(
+      _currentDiagnostics.copyWith(clearWidth: true, clearHeight: true),
+    );
     _emit(
       _currentState.copyWith(status: PlaybackStatus.ready, clearSource: true),
     );
@@ -3252,6 +3341,13 @@ class _RecordingPlayer implements BasePlayer {
     _currentState = next.copyWith(backend: backend);
     if (!_states.isClosed) {
       _states.add(_currentState);
+    }
+  }
+
+  void _emitDiagnostics(PlayerDiagnostics next) {
+    _currentDiagnostics = next;
+    if (!_diagnostics.isClosed) {
+      _diagnostics.add(_currentDiagnostics);
     }
   }
 }

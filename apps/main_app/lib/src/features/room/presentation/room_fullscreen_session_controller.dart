@@ -76,8 +76,19 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   RoomFullscreenSessionController({
     required this.bindings,
     required this.platforms,
+    bool startInFullscreen = false,
     ScreenBrightness? screenBrightness,
   }) {
+    if (startInFullscreen) {
+      // Seed before the first frame so follow-room switches never flash the
+      // non-fullscreen tablet side panel while bootstrap is still pending.
+      _viewUiState = const RoomViewUiState(
+        fullscreenBootstrapPending: true,
+        showInlinePlayerChrome: false,
+        showFullscreenChrome: true,
+        showFullscreenLockButton: true,
+      );
+    }
     _chromeController = RoomFullscreenChromeController(
       context: RoomFullscreenChromeContext(
         androidPlaybackBridge: platforms.androidPlaybackBridge,
@@ -190,6 +201,9 @@ class RoomFullscreenSessionController extends ChangeNotifier {
     _chromeController.clearGestureTip(rescheduleChrome: false);
     if (startInFullscreen) {
       _chromeController.scheduleFullscreenChromeAutoHide();
+      // Keep immersive system UI across seamless follow-room replacements so
+      // the landscape tablet chrome does not reappear mid-load.
+      unawaited(applyFullscreenSystemUi());
     }
     await setScreenAwake(true);
     await _pipCoordinator.primeRuntimeState();
@@ -203,6 +217,15 @@ class RoomFullscreenSessionController extends ChangeNotifier {
 
   void prepareForFollowRoomTransition() {
     _preserveRoomTransitionOnDispose = fullscreenSessionActive;
+    _chromeController.cancelAutoHideTimers();
+    _replaceGestureUiState(const RoomGestureUiState());
+    _chromeController.clearGestureTip(rescheduleChrome: false);
+    _chromeController.hideFullscreenFollowDrawer();
+  }
+
+  /// In-place room switch keeps this page mounted, so only chrome/drawer is
+  /// cleared — never mark dispose-time system UI preservation.
+  void prepareForInPlaceFollowRoomSwitch() {
     _chromeController.cancelAutoHideTimers();
     _replaceGestureUiState(const RoomGestureUiState());
     _chromeController.clearGestureTip(rescheduleChrome: false);

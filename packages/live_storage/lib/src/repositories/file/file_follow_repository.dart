@@ -1,3 +1,5 @@
+import 'package:live_core/live_core.dart';
+
 import '../../models/follow_record.dart';
 import '../../persistence/local_storage_file_store.dart';
 import '../follow_repository.dart';
@@ -16,9 +18,11 @@ class FileFollowRepository implements FollowRepository {
 
   @override
   Future<bool> exists(String providerId, String roomId) {
+    final normalizedProviderId = ProviderId.from(providerId);
     return store.read(
       (snapshot) => snapshot.follows.any(
-        (item) => item.providerId == providerId && item.roomId == roomId,
+        (item) =>
+            item.providerId == normalizedProviderId && item.roomId == roomId,
       ),
     );
   }
@@ -32,9 +36,11 @@ class FileFollowRepository implements FollowRepository {
 
   @override
   Future<void> remove(String providerId, String roomId) {
+    final normalizedProviderId = ProviderId.from(providerId);
     return store.update((snapshot) {
       snapshot.follows.removeWhere(
-        (item) => item.providerId == providerId && item.roomId == roomId,
+        (item) =>
+            item.providerId == normalizedProviderId && item.roomId == roomId,
       );
     });
   }

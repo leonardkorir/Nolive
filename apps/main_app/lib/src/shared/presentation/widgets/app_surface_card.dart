@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/theme/nolive_tokens.dart';
 
 class AppSurfaceCard extends StatelessWidget {
   const AppSurfaceCard({
@@ -6,7 +7,7 @@ class AppSurfaceCard extends StatelessWidget {
     this.padding = const EdgeInsets.all(16),
     this.margin = EdgeInsets.zero,
     this.color,
-    this.borderRadius = 18,
+    this.borderRadius,
     super.key,
   });
 
@@ -14,16 +15,18 @@ class AppSurfaceCard extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry margin;
   final Color? color;
-  final double borderRadius;
+  /// Defaults to [NoliveRadii.lg] from theme tokens.
+  final double? borderRadius;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final resolvedRadius = borderRadius ?? NoliveRadii.of(context).lg;
     return Container(
       margin: margin,
       decoration: BoxDecoration(
         color: color ?? Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(borderRadius),
+        borderRadius: BorderRadius.circular(resolvedRadius),
         border: Border.all(color: colorScheme.outlineVariant),
       ),
       child: Material(

@@ -23,7 +23,7 @@ class DouyinMapper {
   static LiveRoom mapSearchRoom(Map<String, dynamic> item) {
     final owner = _asMap(item['owner']);
     return LiveRoom(
-      providerId: ProviderId.douyin.value,
+      providerId: ProviderId.douyin,
       roomId: owner['web_rid']?.toString() ?? '',
       title: normalizeDisplayText(item['title']?.toString()),
       streamerName: normalizeDisplayText(owner['nickname']?.toString()),
@@ -46,17 +46,18 @@ class DouyinMapper {
     final owner = _asMap(roomData['owner']);
     final roomStatus = (_asInt(roomData['status']) ?? 0) == 2;
     final partitionRoadMap = _asMap(data['partition_road_map']);
-    final partitionTitle =
-        _asMap(partitionRoadMap['partition'])['title']?.toString();
-    final subPartitionTitle =
-        _asMap(_asMap(partitionRoadMap['sub_partition'])['partition'])['title']
-            ?.toString();
+    final partitionTitle = _asMap(
+      partitionRoadMap['partition'],
+    )['title']?.toString();
+    final subPartitionTitle = _asMap(
+      _asMap(partitionRoadMap['sub_partition'])['partition'],
+    )['title']?.toString();
     final areaName = (partitionTitle != null && partitionTitle.isNotEmpty)
         ? partitionTitle
         : (subPartitionTitle ?? '');
 
     return LiveRoomDetail(
-      providerId: ProviderId.douyin.value,
+      providerId: ProviderId.douyin,
       roomId: webRid,
       title: normalizeDisplayText(roomData['title']?.toString()),
       streamerName: roomStatus
@@ -102,8 +103,10 @@ class DouyinMapper {
     if (ownerUid.isNotEmpty) {
       return ownerUid;
     }
-    final digits =
-        (roomData['id_str']?.toString() ?? '').replaceAll(RegExp(r'\D'), '');
+    final digits = (roomData['id_str']?.toString() ?? '').replaceAll(
+      RegExp(r'\D'),
+      '',
+    );
     if (digits.isNotEmpty) {
       return digits.padRight(12, '0').substring(0, 12);
     }
@@ -126,7 +129,7 @@ class DouyinMapper {
     final roomStatus = (_asInt(room['status']) ?? 0) == 2;
 
     return LiveRoomDetail(
-      providerId: ProviderId.douyin.value,
+      providerId: ProviderId.douyin,
       roomId: webRid,
       title: normalizeDisplayText(room['title']?.toString()),
       streamerName: roomStatus
@@ -151,8 +154,9 @@ class DouyinMapper {
         userUniqueId: odin['user_unique_id']?.toString() ?? '',
       ),
       metadata: {
-        'streamUrl':
-            roomStatus ? _asMap(room['stream_url']) : const <String, Object?>{},
+        'streamUrl': roomStatus
+            ? _asMap(room['stream_url'])
+            : const <String, Object?>{},
       },
     );
   }
@@ -166,28 +170,34 @@ class DouyinMapper {
 
     final qualities = <LivePlayQuality>[];
     if (!streamData.startsWith('{')) {
-      final flvEntries =
-          _asMap(streamUrl['flv_pull_url']).entries.toList(growable: false);
-      final hlsEntries =
-          _asMap(streamUrl['hls_pull_url_map']).entries.toList(growable: false);
+      final flvEntries = _asMap(
+        streamUrl['flv_pull_url'],
+      ).entries.toList(growable: false);
+      final hlsEntries = _asMap(
+        streamUrl['hls_pull_url_map'],
+      ).entries.toList(growable: false);
       for (final rawQuality in qualityList) {
         final quality = _asMap(rawQuality);
         final level = _asInt(quality['level']) ?? 0;
         final sdkKey = quality['sdk_key']?.toString() ?? '';
         final label = quality['name']?.toString() ?? '未知清晰度';
         final urls = <String>[];
-        urls.addAll(_matchLegacyQualityUrls(
-          entries: flvEntries,
-          level: level,
-          sdkKey: sdkKey,
-          label: label,
-        ));
-        urls.addAll(_matchLegacyQualityUrls(
-          entries: hlsEntries,
-          level: level,
-          sdkKey: sdkKey,
-          label: label,
-        ));
+        urls.addAll(
+          _matchLegacyQualityUrls(
+            entries: flvEntries,
+            level: level,
+            sdkKey: sdkKey,
+            label: label,
+          ),
+        );
+        urls.addAll(
+          _matchLegacyQualityUrls(
+            entries: hlsEntries,
+            level: level,
+            sdkKey: sdkKey,
+            label: label,
+          ),
+        );
         if (urls.isEmpty) {
           continue;
         }
@@ -291,9 +301,10 @@ class DouyinMapper {
   }
 
   static Map<String, dynamic> parseHtmlState(String html) {
-    final matched = RegExp(r'\{\\"state\\":\{\\"appStore.*?\]\\n')
-            .firstMatch(html)
-            ?.group(0) ??
+    final matched =
+        RegExp(
+          r'\{\\"state\\":\{\\"appStore.*?\]\\n',
+        ).firstMatch(html)?.group(0) ??
         '';
     final normalized = matched
         .trim()

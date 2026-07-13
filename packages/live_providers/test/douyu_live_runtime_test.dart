@@ -8,27 +8,29 @@ import 'package:live_providers/src/providers/douyu/douyu_transport.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('live douyu runtime prefers square category icon when available',
-      () async {
-    final transport = _FakeDouyuTransport();
-    final signService = _FakeDouyuSignService();
-    final provider = DouyuProvider(
-      dataSource: DouyuLiveDataSource(
-        transport: transport,
-        signService: signService,
-      ),
-    );
+  test(
+    'live douyu runtime prefers square category icon when available',
+    () async {
+      final transport = _FakeDouyuTransport();
+      final signService = _FakeDouyuSignService();
+      final provider = DouyuProvider(
+        dataSource: DouyuLiveDataSource(
+          transport: transport,
+          signService: signService,
+        ),
+      );
 
-    final categories = await provider.fetchCategories();
-    final gaming = categories.firstWhere((item) => item.id == '1');
-    final lol = gaming.children.firstWhere((item) => item.id == '1');
+      final categories = await provider.fetchCategories();
+      final gaming = categories.firstWhere((item) => item.id == '1');
+      final lol = gaming.children.firstWhere((item) => item.id == '1');
 
-    expect(lol.name, '英雄联盟');
-    expect(
-      lol.pic,
-      'https://sta-op.douyucdn.cn/dycatr/1de1ea5215b513cf4f5b3c326f5f9657.png',
-    );
-  });
+      expect(lol.name, '英雄联盟');
+      expect(
+        lol.pic,
+        'https://sta-op.douyucdn.cn/dycatr/1de1ea5215b513cf4f5b3c326f5f9657.png',
+      );
+    },
+  );
 
   test('live douyu runtime maps search/detail/play flow', () async {
     final transport = _FakeDouyuTransport();
@@ -60,10 +62,11 @@ void main() {
     expect(qualities.map((item) => item.label), ['原画1080P60', '蓝光4M', '高清']);
     expect(qualities.first.sortOrder, greaterThan(qualities[1].sortOrder));
     expect(qualities.firstWhere((item) => item.isDefault).label, '蓝光4M');
-    expect(
-      qualities.firstWhere((item) => item.isDefault).metadata?['cdns'],
-      ['tct-h5', 'hw-h5', 'scdn'],
-    );
+    expect(qualities.firstWhere((item) => item.isDefault).metadata?['cdns'], [
+      'tct-h5',
+      'hw-h5',
+      'scdn',
+    ]);
 
     final urls = await provider.fetchPlayUrls(
       detail: detail,
@@ -83,26 +86,28 @@ void main() {
     );
   });
 
-  test('live douyu runtime retries transient play request failures once',
-      () async {
-    final transport = _FakeDouyuTransport()..failPlayPostCount = 1;
-    final signService = _FakeDouyuSignService();
-    final provider = DouyuProvider(
-      dataSource: DouyuLiveDataSource(
-        transport: transport,
-        signService: signService,
-      ),
-    );
+  test(
+    'live douyu runtime retries transient play request failures once',
+    () async {
+      final transport = _FakeDouyuTransport()..failPlayPostCount = 1;
+      final signService = _FakeDouyuSignService();
+      final provider = DouyuProvider(
+        dataSource: DouyuLiveDataSource(
+          transport: transport,
+          signService: signService,
+        ),
+      );
 
-    final detail = await provider.fetchRoomDetail('312212');
-    final qualities = await provider.fetchPlayQualities(detail);
+      final detail = await provider.fetchRoomDetail('312212');
+      final qualities = await provider.fetchPlayQualities(detail);
 
-    expect(qualities, isNotEmpty);
-    expect(
-      transport.postBodies.where((item) => item.contains('rate=-1')).length,
-      2,
-    );
-  });
+      expect(qualities, isNotEmpty);
+      expect(
+        transport.postBodies.where((item) => item.contains('rate=-1')).length,
+        2,
+      );
+    },
+  );
 }
 
 class _FakeDouyuSignService implements DouyuSignService {
@@ -184,16 +189,11 @@ class _FakeDouyuTransport implements DouyuTransport {
     );
     requestedUrls.add(uri.toString());
 
-    if (uri.toString().startsWith(
-          'https://m.douyu.com/api/cate/list',
-        )) {
+    if (uri.toString().startsWith('https://m.douyu.com/api/cate/list')) {
       return jsonEncode({
         'data': {
           'cate1Info': [
-            {
-              'cate1Id': 1,
-              'cate1Name': '网游竞技',
-            },
+            {'cate1Id': 1, 'cate1Name': '网游竞技'},
           ],
           'cate2Info': [
             {
@@ -212,8 +212,8 @@ class _FakeDouyuTransport implements DouyuTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://www.douyu.com/japi/search/api/searchShow',
-        )) {
+      'https://www.douyu.com/japi/search/api/searchShow',
+    )) {
       return jsonEncode({
         'error': 0,
         'data': {
@@ -243,20 +243,14 @@ class _FakeDouyuTransport implements DouyuTransport {
           'show_details': '这是一个用于 provider 迁移测试的直播间。',
           'show_status': 1,
           'videoLoop': 0,
-          'room_biz_all': {
-            'hot': '13.2万',
-          },
+          'room_biz_all': {'hot': '13.2万'},
         },
       });
     }
-    if (uri.toString().startsWith(
-          'https://www.douyu.com/swf_api/homeH5Enc',
-        )) {
+    if (uri.toString().startsWith('https://www.douyu.com/swf_api/homeH5Enc')) {
       expect(uri.queryParameters['rids'], '312212');
       return jsonEncode({
-        'data': {
-          'room312212': 'function ub98484234() {}',
-        },
+        'data': {'room312212': 'function ub98484234() {}'},
       });
     }
 
@@ -294,8 +288,8 @@ class _FakeDouyuTransport implements DouyuTransport {
     expect(headers['content-type'], 'application/x-www-form-urlencoded');
 
     if (uri.toString().startsWith(
-          'https://www.douyu.com/lapi/live/getH5Play/312212',
-        )) {
+      'https://www.douyu.com/lapi/live/getH5Play/312212',
+    )) {
       if (failPlayPostCount > 0) {
         failPlayPostCount -= 1;
         throw ProviderParseException(
@@ -331,8 +325,8 @@ class _FakeDouyuTransport implements DouyuTransport {
       final line = body.contains('cdn=tct-h5')
           ? 'tct-h5'
           : body.contains('cdn=hw-h5')
-              ? 'hw-h5'
-              : 'scdn';
+          ? 'hw-h5'
+          : 'scdn';
       return jsonEncode({
         'error': 0,
         'data': {

@@ -13,6 +13,145 @@ import 'package:nolive_app/src/shared/application/player_runtime_controller.dart
 
 void main() {
   test(
+    'room twitch recovery waits on playing auto without refreshing source',
+    () async {
+      final player = _TwitchRecoveryTestPlayer();
+      final runtime = PlayerRuntimeController(player);
+      // Limit recursive wait ticks so zero-delay tests do not auto-promote.
+      var delayTicks = 0;
+      final controller = RoomTwitchRecoveryController(
+        runtime: RoomRuntimeInspectionContext.fromPlayerRuntime(runtime),
+        delay: (_) async {
+          delayTicks += 1;
+        },
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
+
+      final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+      final q1080 = LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 4,
+      );
+      final playbackSource = PlaybackSource(
+        url: Uri.parse('https://example.com/auto.m3u8'),
+      );
+      // Auto already has A/V (playing) but demuxer position not advanced yet.
+      player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          position: Duration.zero,
+          buffered: Duration.zero,
+          source: playbackSource,
+        ),
+      );
+      controller.applyStartupPlan(
+        TwitchStartupPlan(startupQuality: auto, promotionQuality: q1080),
+      );
+
+      var refreshCount = 0;
+      LivePlayQuality? switchedQuality;
+      await controller.scheduleRecovery(
+        providerId: ProviderId.twitch,
+        snapshot: _buildSnapshot(
+          selectedQuality: auto,
+          qualities: [auto, q1080],
+          playUrls: const [LivePlayUrl(url: 'https://example.com/auto.m3u8')],
+        ),
+        playbackSource: playbackSource,
+        playUrls: const [LivePlayUrl(url: 'https://example.com/auto.m3u8')],
+        selectedQuality: auto,
+        resolveCurrentQuality: () => auto,
+        // Stop after first wait tick so we observe "wait, no refresh".
+        isMounted: () => delayTicks < 2,
+        switchQuality:
+            (
+              snapshot,
+              quality, {
+              bool resetTwitchRecoveryAttempts = true,
+              LivePlayQuality? twitchStartupPromotionQuality,
+            }) async {
+              switchedQuality = quality;
+            },
+        refreshPlaybackSource:
+            (
+              snapshot,
+              quality, {
+              LivePlayQuality? twitchStartupPromotionQuality,
+              bool resetTwitchRecoveryAttempts = false,
+              PlaybackSource? preferredPlaybackSource,
+              List<LivePlayUrl>? currentPlayUrls,
+            }) async {
+              refreshCount += 1;
+            },
+        switchLine: (playUrl, {bool resetTwitchRecoveryAttempts = true}) async {
+          fail('should not switch line during auto warm-up');
+        },
+      );
+
+      expect(refreshCount, 0);
+      expect(switchedQuality, isNull);
+      expect(controller.current.startupPromotionQuality?.id, '1080p60');
+
+      // After warm-up progress, promote once to highest.
+      // Reset source-key gate from the interrupted wait tick above.
+      controller.prepareForResolvedPlayback(startupPromotionQuality: q1080);
+      player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+          position: const Duration(milliseconds: 1500),
+          buffered: const Duration(seconds: 3),
+          source: playbackSource,
+        ),
+      );
+      await controller.scheduleRecovery(
+        providerId: ProviderId.twitch,
+        snapshot: _buildSnapshot(
+          selectedQuality: auto,
+          qualities: [auto, q1080],
+          playUrls: const [LivePlayUrl(url: 'https://example.com/auto.m3u8')],
+        ),
+        playbackSource: playbackSource,
+        playUrls: const [LivePlayUrl(url: 'https://example.com/auto.m3u8')],
+        selectedQuality: auto,
+        resolveCurrentQuality: () => auto,
+        isMounted: () => true,
+        switchQuality:
+            (
+              snapshot,
+              quality, {
+              bool resetTwitchRecoveryAttempts = true,
+              LivePlayQuality? twitchStartupPromotionQuality,
+            }) async {
+              switchedQuality = quality;
+              expect(resetTwitchRecoveryAttempts, isFalse);
+            },
+        refreshPlaybackSource:
+            (
+              snapshot,
+              quality, {
+              LivePlayQuality? twitchStartupPromotionQuality,
+              bool resetTwitchRecoveryAttempts = false,
+              PlaybackSource? preferredPlaybackSource,
+              List<LivePlayUrl>? currentPlayUrls,
+            }) async {
+              fail('must not refresh auto before promotion');
+            },
+        switchLine: (playUrl, {bool resetTwitchRecoveryAttempts = true}) async {
+          fail('should not switch line during promotion');
+        },
+      );
+
+      expect(refreshCount, 0);
+      expect(switchedQuality?.id, '1080p60');
+      expect(controller.current.startupPromotionQuality, isNull);
+    },
+  );
+
+  test(
     'room twitch recovery controller promotes startup quality after warmup',
     () async {
       final player = _TwitchRecoveryTestPlayer();
@@ -390,7 +529,7 @@ LoadedRoomSnapshot _buildSnapshot({
   return LoadedRoomSnapshot(
     providerId: providerId,
     detail: LiveRoomDetail(
-      providerId: providerId.value,
+      providerId: providerId,
       roomId: 'room-id',
       title: 'title',
       streamerName: 'streamer',

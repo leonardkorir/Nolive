@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/app_page_scaffold.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:nolive_app/src/features/settings/application/release_info_manifest.dart';
+import 'package:nolive_app/src/shared/presentation/theme/nolive_tokens.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 
 class ReleaseInfoPage extends StatelessWidget {
@@ -9,10 +12,11 @@ class ReleaseInfoPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: const Text('应用信息')),
+    final markRadius = NoliveRadii.of(context).lg + 2;
+    return AppPageScaffold(
+      title: '应用信息',
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+        padding: kSettingsPagePadding,
         children: [
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
@@ -24,7 +28,7 @@ class ReleaseInfoPage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(markRadius),
                         child: Image.asset(
                           'assets/branding/nolive_brand_mark.png',
                           width: 88,

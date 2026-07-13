@@ -11,9 +11,9 @@ class YouTubeFixtureLoader {
   static final Map<String, Map<String, dynamic>> _harCache = {};
 
   static List<String> get missingArtifacts => [
-        for (final name in _requiredArtifacts)
-          if (_resolveArtifactIfExists(name) == null) name,
-      ];
+    for (final name in _requiredArtifacts)
+      if (_resolveArtifactIfExists(name) == null) name,
+  ];
 
   static String? get skipReason {
     final missing = missingArtifacts;
@@ -60,7 +60,8 @@ class YouTubeFixtureLoader {
       break;
     }
     throw StateError(
-        'YouTube player response fixture for $videoId was not found.');
+      'YouTube player response fixture for $videoId was not found.',
+    );
   }
 
   static String loadLiveChatPageHtml() {

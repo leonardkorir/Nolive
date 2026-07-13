@@ -3,7 +3,7 @@ import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_session_controller.dart';
 import 'package:nolive_app/src/features/room/application/twitch_playback_recovery.dart';
@@ -120,7 +120,7 @@ void main() {
   );
 
   test(
-    'page interaction coordinator uses replacement room route for follow-room navigation and forwards messages',
+    'page interaction coordinator switches follow rooms in-place and forwards messages',
     () async {
       final harness = _InteractionHarness()
         ..followTransitionPreserveFullscreen = true
@@ -128,12 +128,12 @@ void main() {
       final coordinator = harness.createCoordinator();
       final entry = FollowWatchEntry(
         record: const FollowRecord(
-          providerId: 'douyu',
+          providerId: ProviderId.douyu,
           roomId: '3125893',
           streamerName: '斗鱼样例主播',
         ),
         detail: const LiveRoomDetail(
-          providerId: 'douyu',
+          providerId: ProviderId.douyu,
           roomId: '3125893',
           title: '斗鱼样例直播间',
           streamerName: '斗鱼样例主播',
@@ -144,9 +144,10 @@ void main() {
       await coordinator.commitFollowRoomNavigation(entry);
 
       expect(harness.followTransitionEntry, same(entry));
-      expect(harness.replacedRoomArgs?.providerId, ProviderId.douyu);
-      expect(harness.replacedRoomArgs?.roomId, '3125893');
-      expect(harness.replacedRoomArgs?.startInFullscreen, isTrue);
+      expect(harness.switchedRoomProviderId, ProviderId.douyu);
+      expect(harness.switchedRoomId, '3125893');
+      expect(harness.switchedPreserveFullscreen, isTrue);
+      expect(harness.replacedRoomArgs, isNull);
       expect(harness.messages, <String>['已在当前房间']);
     },
   );
@@ -166,6 +167,9 @@ class _InteractionHarness {
   onPushNamed;
 
   RoomRouteArguments? replacedRoomArgs;
+  ProviderId? switchedRoomProviderId;
+  String? switchedRoomId;
+  bool? switchedPreserveFullscreen;
   int popCalls = 0;
   int handleDanmakuSettingsReturnCalls = 0;
   PlayerPreferences loadedPlayerPreferences = _playerPreferences();
@@ -212,6 +216,17 @@ class _InteractionHarness {
           events.add('pushReplacementToRoom');
           replacedRoomArgs = args;
         },
+        switchToRoomInPlace:
+            ({
+              required providerId,
+              required roomId,
+              required preserveFullscreen,
+            }) async {
+              events.add('switchToRoomInPlace');
+              switchedRoomProviderId = providerId;
+              switchedRoomId = roomId;
+              switchedPreserveFullscreen = preserveFullscreen;
+            },
         popPage: () {
           events.add('popPage');
           popCalls += 1;
@@ -368,8 +383,11 @@ PlayerPreferences _playerPreferences() {
     mpvDoubleBufferingEnabled: false,
     mpvCustomOutputEnabled: false,
     mpvVideoOutputDriver: kDefaultMpvVideoOutputDriver,
+    mpvAudioOutputDriver: kDefaultMpvAudioOutputDriver,
     mpvHardwareDecoder: kDefaultMpvHardwareDecoder,
     mpvLogEnabled: false,
+    wifiQualityPreference: NetworkQualityPreference.middle,
+    cellularQualityPreference: NetworkQualityPreference.lowest,
     mdkLowLatencyEnabled: true,
     mdkAndroidTunnelEnabled: false,
     mdkAndroidHardwareVideoDecoderEnabled: true,
@@ -419,7 +437,7 @@ RoomSessionLoadResult _roomState() {
     snapshot: LoadedRoomSnapshot(
       providerId: ProviderId.bilibili,
       detail: LiveRoomDetail(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '6',
         title: '系统演示直播间',
         streamerName: '系统演示主播',

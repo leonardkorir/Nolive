@@ -88,10 +88,7 @@ class StripchatPlaybackVariant {
 }
 
 class _StripchatMasterPlaylistAuth {
-  const _StripchatMasterPlaylistAuth({
-    required this.scheme,
-    required this.key,
-  });
+  const _StripchatMasterPlaylistAuth({required this.scheme, required this.key});
 
   final String scheme;
   final String key;
@@ -117,10 +114,10 @@ class HttpStripchatApiClient implements StripchatApiClient {
         ProviderBrowserProfile.chromiumDesktop,
     ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
     bool? ownsClient,
-  })  : _client = client ?? http.Client(),
-        _ownsClient = ownsClient ?? client == null,
-        _browserProfile = browserProfile,
-        _retryPolicy = retryPolicy;
+  }) : _client = client ?? http.Client(),
+       _ownsClient = ownsClient ?? client == null,
+       _browserProfile = browserProfile,
+       _retryPolicy = retryPolicy;
 
   static const String _apiHost = 'zh.stripchat.com';
   static const Duration _initialDynamicFallbackTtl = Duration(minutes: 10);
@@ -369,7 +366,10 @@ class HttpStripchatApiClient implements StripchatApiClient {
     };
     return _getJson(
       Uri.https(
-          _apiHost, '/api/front/v2/models/username/$username/cam', params),
+        _apiHost,
+        '/api/front/v2/models/username/$username/cam',
+        params,
+      ),
       context: 'cam $username',
     );
   }
@@ -389,7 +389,10 @@ class HttpStripchatApiClient implements StripchatApiClient {
     };
     return _getJson(
       Uri.https(
-          _apiHost, '/api/front/models/username/$username/members', params),
+        _apiHost,
+        '/api/front/models/username/$username/members',
+        params,
+      ),
       context: 'members $username',
     );
   }
@@ -416,10 +419,7 @@ class HttpStripchatApiClient implements StripchatApiClient {
     );
     final finalUrl = response.request?.url ?? Uri.parse(url);
     final body = response.body;
-    final directProbe = _inspectPlaylistResponse(
-      uri: finalUrl,
-      body: body,
-    );
+    final directProbe = _inspectPlaylistResponse(uri: finalUrl, body: body);
     if (!directProbe.isPlayable || !_looksLikeMasterPlaylist(body)) {
       return directProbe;
     }
@@ -465,11 +465,7 @@ class HttpStripchatApiClient implements StripchatApiClient {
       return const <StripchatPlaybackVariant>[];
     }
     final masterAuth = _parseMasterPlaylistAuth(body);
-    return _parsePlaybackVariants(
-      finalUrl,
-      body,
-      masterAuth: masterAuth,
-    );
+    return _parsePlaybackVariants(finalUrl, body, masterAuth: masterAuth);
   }
 
   Future<Map<String, dynamic>> _getJson(
@@ -500,9 +496,7 @@ class HttpStripchatApiClient implements StripchatApiClient {
       operation: 'GET $context',
       policy: _retryPolicy,
       action: (_) async {
-        final mergedHeaders = _buildApiHeaders(
-          referer: 'https://$_apiHost/',
-        );
+        final mergedHeaders = _buildApiHeaders(referer: 'https://$_apiHost/');
         mergedHeaders.addAll(headers);
         try {
           final response = await _client.get(uri, headers: mergedHeaders);
@@ -586,8 +580,9 @@ class HttpStripchatApiClient implements StripchatApiClient {
         )
         .toList(growable: false);
     if (preferred.isNotEmpty) {
-      preferred
-          .sort((left, right) => right.bandwidth.compareTo(left.bandwidth));
+      preferred.sort(
+        (left, right) => right.bandwidth.compareTo(left.bandwidth),
+      );
       return preferred.first.url;
     }
     variants.sort((left, right) => right.bandwidth.compareTo(left.bandwidth));
@@ -681,8 +676,9 @@ class HttpStripchatApiClient implements StripchatApiClient {
   _StripchatMasterPlaylistAuth? _parseMasterPlaylistAuth(String body) {
     for (final rawLine in const LineSplitter().convert(body)) {
       final line = rawLine.trim();
-      final match =
-          RegExp(r'^#EXT-X-MOUFLON:PSCH:([^:]+):(.+)$').firstMatch(line);
+      final match = RegExp(
+        r'^#EXT-X-MOUFLON:PSCH:([^:]+):(.+)$',
+      ).firstMatch(line);
       if (match == null) {
         continue;
       }
@@ -691,10 +687,7 @@ class HttpStripchatApiClient implements StripchatApiClient {
       if (scheme.isEmpty || key.isEmpty) {
         continue;
       }
-      return _StripchatMasterPlaylistAuth(
-        scheme: scheme,
-        key: key,
-      );
+      return _StripchatMasterPlaylistAuth(scheme: scheme, key: key);
     }
     return null;
   }
@@ -729,8 +722,10 @@ class HttpStripchatApiClient implements StripchatApiClient {
     if (!filename.toLowerCase().endsWith('.m3u8')) {
       return false;
     }
-    if (RegExp(r'_\d+p(?:60)?\.m3u8$', caseSensitive: false)
-        .hasMatch(filename)) {
+    if (RegExp(
+      r'_\d+p(?:60)?\.m3u8$',
+      caseSensitive: false,
+    ).hasMatch(filename)) {
       return false;
     }
     final stem = filename.substring(0, filename.length - '.m3u8'.length);
@@ -749,14 +744,12 @@ class HttpStripchatApiClient implements StripchatApiClient {
     return int.tryParse(match?.group(1) ?? '') ?? -1;
   }
 
-  void _ensureSuccess(
-    http.Response response, {
-    required String context,
-  }) {
+  void _ensureSuccess(http.Response response, {required String context}) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return;
     }
-    if (isRetryableHttpStatus(response.statusCode) || response.statusCode == 403) {
+    if (isRetryableHttpStatus(response.statusCode) ||
+        response.statusCode == 403) {
       throw ProviderRetryableException(
         ProviderParseException(
           providerId: ProviderId.stripchat,

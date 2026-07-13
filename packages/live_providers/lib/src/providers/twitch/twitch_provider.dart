@@ -22,8 +22,8 @@ class TwitchProvider extends LiveProvider
   TwitchProvider({
     TwitchDataSource? dataSource,
     void Function()? disposeOwnedResources,
-  })  : _dataSource = dataSource ?? const TwitchPreviewDataSource(),
-        _disposeOwnedResources = disposeOwnedResources;
+  }) : _dataSource = dataSource ?? const TwitchPreviewDataSource(),
+       _disposeOwnedResources = disposeOwnedResources;
 
   factory TwitchProvider.preview() => TwitchProvider();
 
@@ -33,8 +33,9 @@ class TwitchProvider extends LiveProvider
     String cookie = '',
     TwitchPlaybackBootstrapResolver? playbackBootstrapResolver,
   }) {
-    final ownedApiClient =
-        apiClient == null ? HttpTwitchApiClient(cookie: cookie) : null;
+    final ownedApiClient = apiClient == null
+        ? HttpTwitchApiClient(cookie: cookie)
+        : null;
     return TwitchProvider(
       dataSource: TwitchLiveDataSource(
         apiClient: apiClient ?? ownedApiClient!,
@@ -65,9 +66,7 @@ class TwitchProvider extends LiveProvider
       ProviderPlatform.linux,
       ProviderPlatform.androidTv,
     },
-    roomIdPatterns: [
-      r'^[A-Za-z0-9_]{3,30}$',
-    ],
+    roomIdPatterns: [r'^[A-Za-z0-9_]{3,30}$'],
     maturity: ProviderMaturity.inMigration,
   );
 
@@ -136,7 +135,7 @@ class TwitchProvider extends LiveProvider
     final token = detail.danmakuToken;
     if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
-        providerId: descriptor.id.value,
+        providerId: descriptor.id,
         detail: detail,
       );
     }
@@ -148,8 +147,6 @@ class TwitchProvider extends LiveProvider
         oauthToken: oauthToken.trim(),
       );
     }
-    return ProviderUnavailableDanmakuSession(
-      reason: 'Twitch 当前没有可用弹幕房间参数。',
-    );
+    return ProviderUnavailableDanmakuSession(reason: 'Twitch 当前没有可用弹幕房间参数。');
   }
 }

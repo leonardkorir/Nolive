@@ -1,4 +1,5 @@
 import '../text/well_formed_string_extension.dart';
+import '../provider/provider_id.dart';
 import 'model_equality.dart';
 import 'danmaku_token.dart';
 
@@ -24,7 +25,7 @@ class LiveRoomDetail {
        _areaName = areaName,
        _description = description;
 
-  final String providerId;
+  final ProviderId providerId;
   final String roomId;
   final String _title;
   final String _streamerName;
@@ -68,20 +69,20 @@ class LiveRoomDetail {
 
   @override
   int get hashCode => Object.hash(
-        providerId,
-        roomId,
-        title,
-        streamerName,
-        streamerAvatarUrl,
-        coverUrl,
-        keyframeUrl,
-        areaName,
-        description,
-        sourceUrl,
-        startedAt,
-        isLive,
-        viewerCount,
-        modelValueHash(danmakuToken),
-        modelMapHash(metadata),
-      );
+    providerId,
+    roomId,
+    title,
+    streamerName,
+    streamerAvatarUrl,
+    coverUrl,
+    keyframeUrl,
+    areaName,
+    description,
+    sourceUrl,
+    startedAt,
+    isLive,
+    viewerCount,
+    modelValueHash(danmakuToken),
+    modelMapHash(metadata),
+  );
 }

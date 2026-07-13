@@ -73,8 +73,8 @@ class HttpDouyuTransport extends DouyuTransport {
   HttpDouyuTransport({
     http.Client? client,
     ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
-  })  : _client = client ?? http.Client(),
-        _retryPolicy = retryPolicy;
+  }) : _client = client ?? http.Client(),
+       _retryPolicy = retryPolicy;
 
   final http.Client _client;
   final ProviderRetryPolicy _retryPolicy;
@@ -107,18 +107,11 @@ class HttpDouyuTransport extends DouyuTransport {
     );
     return _sendText(
       uri,
-      () => _client.post(
-        uri,
-        headers: headers,
-        body: body,
-      ),
+      () => _client.post(uri, headers: headers, body: body),
     );
   }
 
-  Future<String> _sendText(
-    Uri uri,
-    Future<http.Response> Function() request,
-  ) {
+  Future<String> _sendText(Uri uri, Future<http.Response> Function() request) {
     return runProviderRequestWithRetry(
       providerId: ProviderId.douyu,
       operation: 'douyu transport $uri',

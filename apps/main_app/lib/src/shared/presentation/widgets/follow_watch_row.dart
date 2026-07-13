@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
 import 'provider_badge.dart';
 import 'streamer_avatar.dart';
@@ -174,73 +174,34 @@ class FollowWatchRow extends StatelessWidget {
                             ],
                           )
                         else if (placeBadgesWithTrailingAction)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      displayStreamerName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style:
-                                          theme.textTheme.titleMedium?.copyWith(
-                                        color: titleColor,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: showSurface ? 13.8 : 14.8,
-                                        height: 1.08,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  _TrailingBadges(
-                                    areaLabel: areaLabel,
-                                    status: status,
-                                    areaForeground: highContrastOverlay
-                                        ? const Color(0xFF8ED9FF)
-                                        : theme.brightness == Brightness.dark
-                                            ? const Color(0xFF95D0FF)
-                                            : const Color(0xFF5EA2EB),
-                                    areaBackground: highContrastOverlay
-                                        ? const Color(0xFF13283A)
-                                        : theme.brightness == Brightness.dark
-                                            ? const Color(0xFF102438)
-                                            : const Color(0xFFF0F7FF),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      subtitle,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.left,
-                                      style:
-                                          theme.textTheme.bodyMedium?.copyWith(
-                                        color: subtitleColor,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: showSurface ? 11.8 : 12.0,
-                                        height: 1.14,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  _TrailingAction(
-                                    showChevron: showChevron,
-                                    onRemove: onRemove,
-                                    chevronColor: highContrastOverlay
-                                        ? const Color(0xFFF8FAFC)
-                                        : null,
-                                  ),
-                                ],
-                              ),
-                            ],
+                          _FollowListBody(
+                            displayStreamerName: displayStreamerName,
+                            subtitle: subtitle,
+                            tagsLabel: tagsLabel,
+                            liveDuration: liveDuration,
+                            titleColor: titleColor,
+                            subtitleColor: subtitleColor,
+                            metaColor: metaColor,
+                            showSurface: showSurface,
+                            areaLabel: areaLabel,
+                            status: status,
+                            areaForeground: highContrastOverlay
+                                ? const Color(0xFF8ED9FF)
+                                : theme.brightness == Brightness.dark
+                                    ? const Color(0xFF95D0FF)
+                                    : const Color(0xFF5EA2EB),
+                            areaBackground: highContrastOverlay
+                                ? const Color(0xFF13283A)
+                                : theme.brightness == Brightness.dark
+                                    ? const Color(0xFF102438)
+                                    : const Color(0xFFF0F7FF),
+                            providerDescriptor: providerDescriptor,
+                            showChevron: showChevron,
+                            onRemove: onRemove,
+                            isLive: entry.isLive,
+                            chevronColor: highContrastOverlay
+                                ? const Color(0xFFF8FAFC)
+                                : null,
                           )
                         else ...[
                           Row(
@@ -303,71 +264,39 @@ class FollowWatchRow extends StatelessWidget {
                             ),
                           ),
                         ],
-                        SizedBox(height: showSurface ? 2 : 3),
-                        if (compactOverlayLayout)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: _ProviderMeta(
-                                      providerDescriptor: providerDescriptor,
-                                      textStyle:
-                                          theme.textTheme.bodySmall?.copyWith(
-                                        color: metaColor,
-                                        fontWeight: FontWeight.w500,
-                                        fontSize: showSurface ? 10.1 : 10.4,
-                                        height: 1.1,
+                        if (!placeBadgesWithTrailingAction) ...[
+                          SizedBox(height: showSurface ? 2 : 3),
+                          if (compactOverlayLayout)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      child: _ProviderMeta(
+                                        providerDescriptor: providerDescriptor,
+                                        textStyle: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                          color: metaColor,
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: showSurface ? 10.1 : 10.4,
+                                          height: 1.1,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  if (liveDuration.isNotEmpty) ...[
-                                    const SizedBox(width: 6),
-                                    _DurationText(
-                                      label: liveDuration,
-                                      foregroundColor: metaColor,
-                                    ),
+                                    if (liveDuration.isNotEmpty) ...[
+                                      const SizedBox(width: 6),
+                                      _DurationText(
+                                        label: liveDuration,
+                                        foregroundColor: metaColor,
+                                      ),
+                                    ],
                                   ],
-                                ],
-                              ),
-                              if (tagsLabel.isNotEmpty) ...[
-                                const SizedBox(height: 3),
-                                Text(
-                                  tagsLabel,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: metaColor,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: showSurface ? 9.9 : 10.2,
-                                    height: 1.1,
-                                  ),
                                 ),
-                              ],
-                            ],
-                          )
-                        else
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Flexible(
-                                child: _ProviderMeta(
-                                  providerDescriptor: providerDescriptor,
-                                  textStyle:
-                                      theme.textTheme.bodySmall?.copyWith(
-                                    color: metaColor,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: showSurface ? 10.1 : 10.4,
-                                    height: 1.1,
-                                  ),
-                                ),
-                              ),
-                              if (tagsLabel.isNotEmpty) ...[
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
+                                if (tagsLabel.isNotEmpty) ...[
+                                  const SizedBox(height: 3),
+                                  Text(
                                     tagsLabel,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -378,25 +307,61 @@ class FollowWatchRow extends StatelessWidget {
                                       height: 1.1,
                                     ),
                                   ),
+                                ],
+                              ],
+                            )
+                          else
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Flexible(
+                                  child: _ProviderMeta(
+                                    providerDescriptor: providerDescriptor,
+                                    textStyle:
+                                        theme.textTheme.bodySmall?.copyWith(
+                                      color: metaColor,
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: showSurface ? 10.1 : 10.4,
+                                      height: 1.1,
+                                    ),
+                                  ),
                                 ),
-                              ] else
-                                const Spacer(),
-                              if (liveDuration.isNotEmpty)
-                                _DurationText(
-                                  label: liveDuration,
-                                  foregroundColor: metaColor,
-                                ),
-                            ],
-                          ),
+                                if (tagsLabel.isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      tagsLabel,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color: metaColor,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: showSurface ? 9.9 : 10.2,
+                                        height: 1.1,
+                                      ),
+                                    ),
+                                  ),
+                                ] else
+                                  const Spacer(),
+                                if (liveDuration.isNotEmpty)
+                                  _DurationText(
+                                    label: liveDuration,
+                                    foregroundColor: metaColor,
+                                  ),
+                              ],
+                            ),
+                        ],
                       ],
                     ),
                   ),
                   if (!placeBadgesWithTrailingAction &&
                       (onRemove != null || showChevron)) ...[
-                    SizedBox(width: placeBadgesWithTrailingAction ? 6 : 1),
+                    const SizedBox(width: 1),
                     _TrailingAction(
                       showChevron: showChevron,
                       onRemove: onRemove,
+                      isLive: entry.isLive,
                       chevronColor:
                           highContrastOverlay ? const Color(0xFFF8FAFC) : null,
                     ),
@@ -425,49 +390,301 @@ class FollowWatchRow extends StatelessWidget {
   }
 }
 
+/// Library list layout: keep partition chips in their original trailing place,
+/// only shift user tags on the meta row so their left edge matches the chips.
+class _FollowListBody extends StatefulWidget {
+  const _FollowListBody({
+    required this.displayStreamerName,
+    required this.subtitle,
+    required this.tagsLabel,
+    required this.liveDuration,
+    required this.titleColor,
+    required this.subtitleColor,
+    required this.metaColor,
+    required this.showSurface,
+    required this.areaLabel,
+    required this.status,
+    required this.areaForeground,
+    required this.areaBackground,
+    required this.providerDescriptor,
+    required this.showChevron,
+    required this.onRemove,
+    required this.isLive,
+    required this.chevronColor,
+  });
+
+  final String displayStreamerName;
+  final String subtitle;
+  final String tagsLabel;
+  final String liveDuration;
+  final Color titleColor;
+  final Color subtitleColor;
+  final Color metaColor;
+  final bool showSurface;
+  final String areaLabel;
+  final _FollowStatusPresentation status;
+  final Color areaForeground;
+  final Color areaBackground;
+  final ProviderDescriptor providerDescriptor;
+  final bool showChevron;
+  final VoidCallback? onRemove;
+  final bool isLive;
+  final Color? chevronColor;
+
+  @override
+  State<_FollowListBody> createState() => _FollowListBodyState();
+}
+
+class _FollowListBodyState extends State<_FollowListBody> {
+  final GlobalKey _badgesKey = GlobalKey();
+  final GlobalKey _bodyKey = GlobalKey();
+  double _tagsLeft = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncTagsLeft());
+  }
+
+  @override
+  void didUpdateWidget(covariant _FollowListBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncTagsLeft());
+  }
+
+  void _syncTagsLeft() {
+    if (!mounted) {
+      return;
+    }
+    final badgesBox =
+        _badgesKey.currentContext?.findRenderObject() as RenderBox?;
+    final bodyBox = _bodyKey.currentContext?.findRenderObject() as RenderBox?;
+    if (badgesBox == null ||
+        bodyBox == null ||
+        !badgesBox.hasSize ||
+        !bodyBox.hasSize) {
+      return;
+    }
+    // Leading chip box left + MiniPill horizontal padding (6) so user tags
+    // line up with the area label text (e.g. 吃鸡行动), not past it.
+    const chipLabelInset = 6.0;
+    final badgesOriginGlobal = badgesBox.localToGlobal(Offset.zero);
+    final next = (bodyBox.globalToLocal(badgesOriginGlobal).dx + chipLabelInset)
+        .clamp(0.0, bodyBox.size.width);
+    if ((next - _tagsLeft).abs() > 0.5) {
+      setState(() {
+        _tagsLeft = next;
+      });
+      // Re-measure after provider width reacts to the new tag offset.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncTagsLeft());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tagsStyle = theme.textTheme.bodySmall?.copyWith(
+      color: widget.metaColor,
+      fontWeight: FontWeight.w500,
+      fontSize: widget.showSurface ? 9.9 : 10.2,
+      height: 1.1,
+    );
+    final providerStyle = theme.textTheme.bodySmall?.copyWith(
+      color: widget.metaColor,
+      fontWeight: FontWeight.w500,
+      fontSize: widget.showSurface ? 10.1 : 10.4,
+      height: 1.1,
+    );
+
+    return Column(
+      key: _bodyKey,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Original name + trailing chips (chips stay where they were).
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                widget.displayStreamerName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: widget.titleColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: widget.showSurface ? 13.8 : 14.8,
+                  height: 1.08,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            _TrailingBadges(
+              // Align user tags to the first chip (e.g. 吃鸡行动), not the
+              // outer trailing box which may be wider than the chips.
+              leadingChipKey: _badgesKey,
+              areaLabel: widget.areaLabel,
+              status: widget.status,
+              areaForeground: widget.areaForeground,
+              areaBackground: widget.areaBackground,
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        // Original subtitle + unfollow action.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                widget.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.left,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: widget.subtitleColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: widget.showSurface ? 11.8 : 12.0,
+                  height: 1.14,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            _TrailingAction(
+              showChevron: widget.showChevron,
+              onRemove: widget.onRemove,
+              isLive: widget.isLive,
+              chevronColor: widget.chevronColor,
+            ),
+          ],
+        ),
+        SizedBox(height: widget.showSurface ? 2 : 3),
+        // Meta row: provider left; tags on same row, left edge = chips left edge.
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final hasTags = widget.tagsLabel.isNotEmpty;
+            final hasDuration = widget.liveDuration.isNotEmpty;
+            // Approximate duration block; tags stop before it.
+            const durationReserve = 72.0;
+            final tagsLeft = hasTags ? _tagsLeft : constraints.maxWidth;
+            final providerMaxWidth = hasTags
+                ? (tagsLeft - 8).clamp(0.0, constraints.maxWidth)
+                : constraints.maxWidth -
+                    (hasDuration ? durationReserve : 0);
+            final tagsRight = hasDuration ? durationReserve : 0.0;
+
+            return SizedBox(
+              height: 16,
+              width: constraints.maxWidth,
+              child: Stack(
+                clipBehavior: Clip.hardEdge,
+                children: [
+                  Positioned(
+                    left: 0,
+                    width: providerMaxWidth,
+                    top: 0,
+                    bottom: 0,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _ProviderMeta(
+                        providerDescriptor: widget.providerDescriptor,
+                        textStyle: providerStyle,
+                      ),
+                    ),
+                  ),
+                  if (hasTags)
+                    Positioned(
+                      left: tagsLeft,
+                      right: tagsRight,
+                      top: 0,
+                      bottom: 0,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          widget.tagsLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.left,
+                          style: tagsStyle,
+                        ),
+                      ),
+                    ),
+                  if (hasDuration)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: _DurationText(
+                        label: widget.liveDuration,
+                        foregroundColor: widget.metaColor,
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
 class _TrailingBadges extends StatelessWidget {
   const _TrailingBadges({
     required this.areaLabel,
     required this.status,
     required this.areaForeground,
     required this.areaBackground,
+    this.leadingChipKey,
   });
 
   final String areaLabel;
   final _FollowStatusPresentation status;
   final Color areaForeground;
   final Color areaBackground;
+  final Key? leadingChipKey;
 
   @override
   Widget build(BuildContext context) {
+    // Original trailing chips: pack to the end; do not change their position.
+    final areaChip = areaLabel.isEmpty
+        ? null
+        : _MiniPill(
+            label: areaLabel,
+            maxWidth: 96,
+            foreground: areaForeground,
+            background: areaBackground,
+          );
+    final statusChip = _MiniPill(
+      label: status.label,
+      maxWidth: 64,
+      foreground: status.foreground,
+      background: status.background,
+    );
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 156),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          if (areaLabel.isNotEmpty) ...[
+          if (areaChip != null) ...[
             Flexible(
               child: Align(
                 alignment: Alignment.centerRight,
-                child: _MiniPill(
-                  label: areaLabel,
-                  maxWidth: 96,
-                  foreground: areaForeground,
-                  background: areaBackground,
+                child: KeyedSubtree(
+                  key: leadingChipKey,
+                  child: areaChip,
                 ),
               ),
             ),
             const SizedBox(width: 4),
-          ],
-          Flexible(
-            child: _MiniPill(
-              label: status.label,
-              maxWidth: 64,
-              foreground: status.foreground,
-              background: status.background,
+            Flexible(child: statusChip),
+          ] else
+            Flexible(
+              child: KeyedSubtree(
+                key: leadingChipKey,
+                child: statusChip,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -478,17 +695,26 @@ class _TrailingAction extends StatelessWidget {
   const _TrailingAction({
     required this.showChevron,
     required this.onRemove,
+    required this.isLive,
     this.chevronColor,
   });
 
   final bool showChevron;
   final VoidCallback? onRemove;
+  final bool isLive;
   final Color? chevronColor;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
     if (onRemove != null) {
+      // Offline matches grey "未开播" chip; live keeps red.
+      final iconColor = isLive
+          ? colorScheme.error.withValues(alpha: 0.9)
+          : theme.brightness == Brightness.dark
+              ? const Color(0xFFAFB7C5)
+              : const Color(0xFF667085);
       return IconButton(
         tooltip: '取消关注',
         padding: EdgeInsets.zero,
@@ -498,7 +724,7 @@ class _TrailingAction extends StatelessWidget {
         icon: Icon(
           Icons.heart_broken_rounded,
           size: 16,
-          color: colorScheme.error.withValues(alpha: 0.9),
+          color: iconColor,
         ),
       );
     }

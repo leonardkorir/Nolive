@@ -58,10 +58,17 @@ void main() {
       lineHeight: 1.5,
       topMargin: 20,
       bottomMargin: 48,
+      frequencyWindowSeconds: 12,
+      maxFrequency: 4,
+      textNormalizationEnabled: false,
     );
 
     await bootstrap.updateDanmakuPreferences(next);
 
-    expect(await bootstrap.loadDanmakuPreferences(), next);
+    final loaded = await bootstrap.loadDanmakuPreferences();
+    expect(loaded, next);
+    expect(loaded.frequencyWindowSeconds, 12);
+    expect(loaded.maxFrequency, 4);
+    expect(loaded.textNormalizationEnabled, isFalse);
   });
 }

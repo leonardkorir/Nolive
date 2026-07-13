@@ -72,7 +72,7 @@ class _HistoryPreferenceProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: _kHistoryPreferenceProviderId.value,
+      providerId: _kHistoryPreferenceProviderId,
       roomId: roomId,
       title: 'demo-title',
       streamerName: 'demo-streamer',

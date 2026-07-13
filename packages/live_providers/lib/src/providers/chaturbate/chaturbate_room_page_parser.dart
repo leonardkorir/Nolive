@@ -29,9 +29,29 @@ class ChaturbateRoomPageParser {
   static final RegExp _initialRoomDossierPattern = RegExp(
     r'window\.initialRoomDossier\s*=\s*"((?:\\.|[^"\\])*)";?',
   );
-  static final RegExp _csrfTokenPattern = RegExp(r"csrftoken:\s*'([^']+)'");
-  static final RegExp _pushServicesPattern = RegExp(
+  static final RegExp _csrfTokenPattern = RegExp(
+    r'''["']?csrftoken["']?\s*:\s*["']([^"']+)["']''',
+  );
+  static final RegExp _csrfMiddlewareInputPattern = RegExp(
+    r'''name=["']csrfmiddlewaretoken["'][^>]*value=["']([^"']+)["']'''
+    r'''|value=["']([^"']+)["'][^>]*name=["']csrfmiddlewaretoken["']''',
+    caseSensitive: false,
+  );
+  static final RegExp _csrfCookiePattern = RegExp(
+    r'(?:^|;\s*)csrftoken=([^;\s]+)',
+    caseSensitive: false,
+  );
+  static final RegExp _pushServicesSingleQuotePattern = RegExp(
     r"push_services:\s*JSON\.parse\('((?:\\.|[^'\\])*)'\)",
+    dotAll: true,
+  );
+  static final RegExp _pushServicesDoubleQuotePattern = RegExp(
+    r'push_services:\s*JSON\.parse\("((?:\\.|[^"\\])*)"\)',
+    dotAll: true,
+  );
+  static final RegExp _pushServicesArrayPattern = RegExp(
+    r'''["']?push_services["']?\s*:\s*(\[[\s\S]*?\])\s*[,}]''',
+    dotAll: true,
   );
 
   String extractInitialRoomDossierRawValue(String source) {
@@ -60,8 +80,31 @@ class ChaturbateRoomPageParser {
 
   String? tryExtractCsrfToken(String source) {
     final match = _csrfTokenPattern.firstMatch(source);
+    final fromScript = match?.group(1)?.trim() ?? '';
+    if (fromScript.isNotEmpty) {
+      return fromScript;
+    }
+    final inputMatch = _csrfMiddlewareInputPattern.firstMatch(source);
+    final fromInput =
+        (inputMatch?.group(1) ?? inputMatch?.group(2))?.trim() ?? '';
+    if (fromInput.isNotEmpty) {
+      return fromInput;
+    }
+    return tryExtractCsrfTokenFromCookie(source);
+  }
+
+  /// Extracts `csrftoken` from a Cookie header / cookie jar string.
+  static String? tryExtractCsrfTokenFromCookie(String cookie) {
+    final match = _csrfCookiePattern.firstMatch(cookie);
     final token = match?.group(1)?.trim() ?? '';
-    return token.isEmpty ? null : token;
+    if (token.isEmpty) {
+      return null;
+    }
+    try {
+      return Uri.decodeComponent(token);
+    } catch (_) {
+      return token;
+    }
   }
 
   String extractPushServicesRawValue(String source) {
@@ -76,7 +119,10 @@ class ChaturbateRoomPageParser {
   }
 
   String? tryExtractPushServicesRawValue(String source) {
-    final match = _pushServicesPattern.firstMatch(source);
+    final match =
+        _pushServicesSingleQuotePattern.firstMatch(source) ??
+        _pushServicesDoubleQuotePattern.firstMatch(source) ??
+        _pushServicesArrayPattern.firstMatch(source);
     final rawValue = match?.group(1);
     if (rawValue == null || rawValue.isEmpty) {
       return null;
@@ -117,7 +163,7 @@ class ChaturbateRoomPageParser {
 
   List<Map<String, dynamic>> decodePushServices(String rawValue) {
     try {
-      final unescaped = _decodeEmbeddedJsonString(
+      final unescaped = _decodeMaybeEmbeddedJsonString(
         rawValue,
         context: 'push_services outer string',
       );
@@ -155,15 +201,23 @@ class ChaturbateRoomPageParser {
     );
   }
 
-  String _decodeEmbeddedJsonString(
-    String rawValue, {
-    required String context,
-  }) {
+  String _decodeEmbeddedJsonString(String rawValue, {required String context}) {
     final unescaped = jsonDecode('"$rawValue"');
     if (unescaped is! String) {
       throw FormatException('$context did not decode to String');
     }
     return unescaped;
+  }
+
+  String _decodeMaybeEmbeddedJsonString(
+    String rawValue, {
+    required String context,
+  }) {
+    try {
+      return _decodeEmbeddedJsonString(rawValue, context: context);
+    } on FormatException {
+      return rawValue;
+    }
   }
 
   Map<String, dynamic> _asMap(Object? value) {

@@ -6,6 +6,8 @@ import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/library/application/watch_history_feature_dependencies.dart';
 import 'package:nolive_app/src/features/settings/application/manage_history_preferences_use_case.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 
@@ -59,23 +61,22 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
 
   Future<void> _removeRecord(HistoryRecord record) async {
     await widget.dependencies.removeHistoryRecord(
-      providerId: record.providerId,
+      providerId: record.providerId.value,
       roomId: record.roomId,
     );
     await _refresh();
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已删除 ${_displayStreamerName(record)}')),
-    );
+    showAppSnackBar(context, '已删除 ${_displayStreamerName(record)}');
   }
 
   Future<void> _clearHistory() async {
     if (_records.isEmpty) {
       return;
     }
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
           builder: (dialogContext) {
             return AlertDialog(
@@ -103,9 +104,7 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已清空观看记录')),
-    );
+    showAppSnackBar(context, '已清空观看记录');
   }
 
   Future<void> _setHistoryRecordingEnabled(bool enabled) async {
@@ -120,27 +119,28 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
     Navigator.of(context).pushNamed(
       AppRoutes.room,
       arguments: RoomRouteArguments(
-        providerId: ProviderId(record.providerId),
+        providerId: record.providerId,
         roomId: record.roomId,
       ),
     );
   }
 
   String _providerLabel(HistoryRecord record) {
-    final descriptor =
-        widget.dependencies.findProviderDescriptorById(record.providerId);
+    final descriptor = widget.dependencies.findProviderDescriptorById(
+      record.providerId.value,
+    );
     if (descriptor != null) {
       return descriptor.displayName;
     }
     return switch (record.providerId) {
-      'bilibili' => '哔哩哔哩',
-      'chaturbate' => 'Chaturbate',
-      'douyu' => '斗鱼',
-      'huya' => '虎牙',
-      'douyin' => '抖音直播',
-      'twitch' => 'Twitch',
-      'youtube' => 'YouTube 直播',
-      _ => record.providerId,
+      ProviderId.bilibili => '哔哩哔哩',
+      ProviderId.chaturbate => 'Chaturbate',
+      ProviderId.douyu => '斗鱼',
+      ProviderId.huya => '虎牙',
+      ProviderId.douyin => '抖音直播',
+      ProviderId.twitch => 'Twitch',
+      ProviderId.youtube => 'YouTube 直播',
+      _ => record.providerId.value,
     };
   }
 
@@ -167,10 +167,7 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: _buildBody(context),
-      ),
+      body: RefreshIndicator(onRefresh: _refresh, child: _buildBody(context)),
     );
   }
 
@@ -181,7 +178,7 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
     if (_errorMessage != null) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
+        padding: kSettingsPagePadding,
         children: [
           _HistoryRecordingCard(
             enabled: _preferences.recordWatchHistory,
@@ -203,7 +200,7 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
     if (_records.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
+        padding: kSettingsPagePadding,
         children: [
           _HistoryRecordingCard(
             enabled: _preferences.recordWatchHistory,
@@ -256,10 +253,7 @@ class _WatchHistoryPageState extends State<WatchHistoryPage> {
 }
 
 class _HistoryRecordingCard extends StatelessWidget {
-  const _HistoryRecordingCard({
-    required this.enabled,
-    required this.onChanged,
-  });
+  const _HistoryRecordingCard({required this.enabled, required this.onChanged});
 
   final bool enabled;
   final ValueChanged<bool> onChanged;

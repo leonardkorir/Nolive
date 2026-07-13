@@ -18,15 +18,13 @@ class HuyaPreviewDataSource implements HuyaDataSource {
     LiveCategory(
       id: '8',
       name: '娱乐',
-      children: [
-        LiveSubCategory(id: '800', parentId: '8', name: '聊天互动'),
-      ],
+      children: [LiveSubCategory(id: '800', parentId: '8', name: '聊天互动')],
     ),
   ];
 
   static const List<LiveRoom> _rooms = [
     LiveRoom(
-      providerId: 'huya',
+      providerId: ProviderId.huya,
       roomId: 'yy/880123',
       title: '虎牙架构演示房间',
       streamerName: '虎牙样例主播',
@@ -37,7 +35,7 @@ class HuyaPreviewDataSource implements HuyaDataSource {
       viewerCount: 54321,
     ),
     LiveRoom(
-      providerId: 'huya',
+      providerId: ProviderId.huya,
       roomId: 'yy/990456',
       title: '虎牙迁移验证房间',
       streamerName: '迁移样例主播',
@@ -51,7 +49,7 @@ class HuyaPreviewDataSource implements HuyaDataSource {
 
   static const Map<String, LiveRoomDetail> _details = {
     'yy/880123': LiveRoomDetail(
-      providerId: 'huya',
+      providerId: ProviderId.huya,
       roomId: 'yy/880123',
       title: '虎牙架构演示房间',
       streamerName: '虎牙样例主播',
@@ -66,7 +64,7 @@ class HuyaPreviewDataSource implements HuyaDataSource {
       danmakuToken: PreviewDanmakuToken(),
     ),
     'yy/990456': LiveRoomDetail(
-      providerId: 'huya',
+      providerId: ProviderId.huya,
       roomId: 'yy/990456',
       title: '虎牙迁移验证房间',
       streamerName: '迁移样例主播',
@@ -105,9 +103,11 @@ class HuyaPreviewDataSource implements HuyaDataSource {
 
   @override
   Future<PagedResponse<LiveRoom>> fetchRecommendRooms({int page = 1}) async {
-    final items = [..._rooms]..sort((left, right) {
-        final compare =
-            (right.viewerCount ?? -1).compareTo(left.viewerCount ?? -1);
+    final items = [..._rooms]
+      ..sort((left, right) {
+        final compare = (right.viewerCount ?? -1).compareTo(
+          left.viewerCount ?? -1,
+        );
         if (compare != 0) {
           return compare;
         }
@@ -117,16 +117,20 @@ class HuyaPreviewDataSource implements HuyaDataSource {
   }
 
   @override
-  Future<PagedResponse<LiveRoom>> searchRooms(String query,
-      {int page = 1}) async {
+  Future<PagedResponse<LiveRoom>> searchRooms(
+    String query, {
+    int page = 1,
+  }) async {
     final normalizedQuery = query.trim().toLowerCase();
-    final filtered = _rooms.where((room) {
-      if (normalizedQuery.isEmpty) {
-        return true;
-      }
-      return room.title.toLowerCase().contains(normalizedQuery) ||
-          room.streamerName.toLowerCase().contains(normalizedQuery);
-    }).toList(growable: false);
+    final filtered = _rooms
+        .where((room) {
+          if (normalizedQuery.isEmpty) {
+            return true;
+          }
+          return room.title.toLowerCase().contains(normalizedQuery) ||
+              room.streamerName.toLowerCase().contains(normalizedQuery);
+        })
+        .toList(growable: false);
     return PagedResponse(items: filtered, hasMore: false, page: page);
   }
 
@@ -144,7 +148,8 @@ class HuyaPreviewDataSource implements HuyaDataSource {
 
   @override
   Future<List<LivePlayQuality>> fetchPlayQualities(
-      LiveRoomDetail detail) async {
+    LiveRoomDetail detail,
+  ) async {
     return _qualities;
   }
 

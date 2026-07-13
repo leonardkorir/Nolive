@@ -85,8 +85,11 @@ void main() {
       mpvDoubleBufferingEnabled: false,
       mpvCustomOutputEnabled: false,
       mpvVideoOutputDriver: kDefaultMpvVideoOutputDriver,
+      mpvAudioOutputDriver: kDefaultMpvAudioOutputDriver,
       mpvHardwareDecoder: kDefaultMpvHardwareDecoder,
       mpvLogEnabled: false,
+      wifiQualityPreference: NetworkQualityPreference.middle,
+      cellularQualityPreference: NetworkQualityPreference.lowest,
       mdkLowLatencyEnabled: true,
       mdkAndroidTunnelEnabled: false,
       mdkAndroidHardwareVideoDecoderEnabled: true,
@@ -460,14 +463,14 @@ void main() {
     () async {
       final harness = _CoordinatorHarness();
       const staleDetail = LiveRoomDetail(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: 'stale',
         title: 'Stale Room',
         streamerName: '旧主播',
         sourceUrl: 'https://example.com/stale',
       );
       const currentDetail = LiveRoomDetail(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: 'current',
         title: 'Current Room',
         streamerName: '新主播',
@@ -776,7 +779,7 @@ class _CoordinatorHarness {
 
   static LiveRoomDetail roomDetail({required ProviderId providerId}) {
     return LiveRoomDetail(
-      providerId: providerId.value,
+      providerId: providerId,
       roomId: '6',
       title: 'Demo Room',
       streamerName: '主播',
@@ -800,8 +803,11 @@ class _CoordinatorHarness {
       mpvDoubleBufferingEnabled: false,
       mpvCustomOutputEnabled: false,
       mpvVideoOutputDriver: kDefaultMpvVideoOutputDriver,
+      mpvAudioOutputDriver: kDefaultMpvAudioOutputDriver,
       mpvHardwareDecoder: kDefaultMpvHardwareDecoder,
       mpvLogEnabled: false,
+      wifiQualityPreference: NetworkQualityPreference.middle,
+      cellularQualityPreference: NetworkQualityPreference.lowest,
       mdkLowLatencyEnabled: true,
       mdkAndroidTunnelEnabled: false,
       mdkAndroidHardwareVideoDecoderEnabled: true,

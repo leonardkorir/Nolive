@@ -14,27 +14,34 @@ void main() {
     'fixture-backed chaturbate mapper coverage',
     skip: ChaturbateFixtureLoader.skipReason,
     () {
-      test('recommend mapper keeps phase-1 field boundaries from artifacts',
-          () {
-        final mostPopular =
-            ChaturbateFixtureLoader.loadCarousel('most_popular');
-        final rooms = (mostPopular['rooms'] as List).cast<Map>();
+      test(
+        'recommend mapper keeps phase-1 field boundaries from artifacts',
+        () {
+          final mostPopular = ChaturbateFixtureLoader.loadCarousel(
+            'most_popular',
+          );
+          final rooms = (mostPopular['rooms'] as List).cast<Map>();
 
-        final titleFallbackRoom = ChaturbateMapper.mapRecommendRoom(
-          rooms.first.cast<String, dynamic>(),
-        );
-        expect(titleFallbackRoom.roomId, 'kittengirlxo');
-        expect(titleFallbackRoom.title, 'kittengirlxo');
-        expect(titleFallbackRoom.streamerName, 'kittengirlxo');
-        expect(titleFallbackRoom.coverUrl, contains('thumb.live.mmcdn.com'));
-        expect(titleFallbackRoom.keyframeUrl, isNull);
-        expect(titleFallbackRoom.streamerAvatarUrl, isNull);
-        expect(titleFallbackRoom.areaName, 'Female');
+          final titleFallbackRoom = ChaturbateMapper.mapRecommendRoom(
+            rooms.first.cast<String, dynamic>(),
+          );
+          expect(titleFallbackRoom.roomId, 'kittengirlxo');
+          expect(titleFallbackRoom.title, 'kittengirlxo');
+          expect(titleFallbackRoom.streamerName, 'kittengirlxo');
+          expect(titleFallbackRoom.coverUrl, contains('thumb.live.mmcdn.com'));
+          expect(titleFallbackRoom.keyframeUrl, isNull);
+          expect(titleFallbackRoom.streamerAvatarUrl, isNull);
+          expect(titleFallbackRoom.areaName, 'Female');
 
-        final roomSubjectPreferred =
-            ChaturbateMapper.mapRecommendRoom(rooms[1].cast<String, dynamic>());
-        expect(roomSubjectPreferred.title, 'Hiya! | /tipmenu | #lovense #lush');
-      });
+          final roomSubjectPreferred = ChaturbateMapper.mapRecommendRoom(
+            rooms[1].cast<String, dynamic>(),
+          );
+          expect(
+            roomSubjectPreferred.title,
+            'Hiya! | /tipmenu | #lovense #lush',
+          );
+        },
+      );
 
       test('spy_shows payload still maps room rows without crashing', () {
         final spyShows = ChaturbateFixtureLoader.loadCarousel('spy_shows');
@@ -64,8 +71,9 @@ void main() {
 
       test('room page parser extracts csrf token and push services', () {
         const parser = ChaturbateRoomPageParser();
-        final context =
-            parser.parsePageContext(ChaturbateFixtureLoader.loadRoomPage());
+        final context = parser.parsePageContext(
+          ChaturbateFixtureLoader.loadRoomPage(),
+        );
 
         expect(context.csrfToken, isNotEmpty);
         expect(context.pushServices, hasLength(1));
@@ -90,27 +98,30 @@ void main() {
         );
       });
 
-      test('room page parser tolerates missing csrf token and push services',
-          () {
-        const parser = ChaturbateRoomPageParser();
-        final roomPage = ChaturbateFixtureLoader.loadRoomPage();
-        final rawValue = parser.extractInitialRoomDossierRawValue(roomPage);
+      test(
+        'room page parser tolerates missing csrf token and push services',
+        () {
+          const parser = ChaturbateRoomPageParser();
+          final roomPage = ChaturbateFixtureLoader.loadRoomPage();
+          final rawValue = parser.extractInitialRoomDossierRawValue(roomPage);
 
-        final context = parser.parsePageContext(
-          'window.initialRoomDossier = "$rawValue";',
-        );
+          final context = parser.parsePageContext(
+            'window.initialRoomDossier = "$rawValue";',
+          );
 
-        expect(context.csrfToken, isEmpty);
-        expect(context.pushServices, isEmpty);
+          expect(context.csrfToken, isEmpty);
+          expect(context.pushServices, isEmpty);
 
-        final detail = ChaturbateMapper.mapRoomDetailFromPageContext(context);
-        expect(detail.roomId, 'kittengirlxo');
-        expect(detail.danmakuToken, isNull);
-      });
+          final detail = ChaturbateMapper.mapRoomDetailFromPageContext(context);
+          expect(detail.roomId, 'kittengirlxo');
+          expect(detail.danmakuToken, isNull);
+        },
+      );
 
       test('search mapper uses username as roomId and streamerName', () {
-        final payload =
-            ChaturbateFixtureLoader.loadSearchResponse(query: 'lucy');
+        final payload = ChaturbateFixtureLoader.loadSearchResponse(
+          query: 'lucy',
+        );
         final rooms = (payload['rooms'] as List).cast<Map>();
 
         final mapped = ChaturbateMapper.mapSearchRoom(
@@ -126,11 +137,12 @@ void main() {
 
       test('detail mapper and play mapper keep phase-2 boundaries', () {
         const parser = ChaturbateRoomPageParser();
-        final context =
-            parser.parsePageContext(ChaturbateFixtureLoader.loadRoomPage());
+        final context = parser.parsePageContext(
+          ChaturbateFixtureLoader.loadRoomPage(),
+        );
 
         final detail = ChaturbateMapper.mapRoomDetailFromPageContext(context);
-        expect(detail.providerId, ProviderId.chaturbate.value);
+        expect(detail.providerId, ProviderId.chaturbate);
         expect(detail.roomId, 'kittengirlxo');
         expect(detail.title, "Kittengirlxo's room");
         expect(detail.streamerName, 'kittengirlxo');
@@ -163,10 +175,7 @@ void main() {
         expect(urls.single.url, contains('playlist.m3u8'));
         expect(urls.single.lineLabel, 'AUS');
         expect(urls.single.headers['referer'], 'https://chaturbate.com/');
-        expect(
-          urls.single.headers['origin'],
-          'https://chaturbate.com',
-        );
+        expect(urls.single.headers['origin'], 'https://chaturbate.com');
         expect(
           urls.single.headers['user-agent'],
           HttpChaturbateApiClient.browserUserAgent,
@@ -183,15 +192,12 @@ void main() {
           source: fixture.content,
         );
         final detail = LiveRoomDetail(
-          providerId: ProviderId.chaturbate.value,
+          providerId: ProviderId.chaturbate,
           roomId: 'realcest',
           title: 'realcest room',
           streamerName: 'realcest',
           sourceUrl: 'https://chaturbate.com/realcest/',
-          metadata: {
-            'edgeRegion': 'CHI',
-            'hlsSource': fixture.url,
-          },
+          metadata: {'edgeRegion': 'CHI', 'hlsSource': fixture.url},
         );
 
         final qualities = ChaturbateMapper.mapPlayQualitiesFromVariants(
@@ -207,10 +213,7 @@ void main() {
         );
 
         final urls = ChaturbateMapper.mapPlayUrls(detail, qualities[1]);
-        expect(
-          urls.single.url,
-          fixture.url,
-        );
+        expect(urls.single.url, fixture.url);
         expect(urls.single.metadata?['hlsBitrate'], qualities[1].id);
         expect(
           urls.single.metadata?['resolvedVariantUrl'],
@@ -227,12 +230,13 @@ void main() {
         expect(urls.single.headers['referer'], 'https://chaturbate.com/');
       });
 
-      test('ll-hls parser keeps paired audio rendition for each video variant',
-          () {
-        const parser = ChaturbateHlsMasterPlaylistParser();
-        const playlistUrl =
-            'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.pinkypuppa.01KNFDA17Y6RTSYE3GWA8VYTPT/llhls.m3u8?token=fixture';
-        const source = '''
+      test(
+        'll-hls parser keeps paired audio rendition for each video variant',
+        () {
+          const parser = ChaturbateHlsMasterPlaylistParser();
+          const playlistUrl =
+              'https://edge11-lax.live.mmcdn.com/v1/edge/streams/origin.pinkypuppa.01KNFDA17Y6RTSYE3GWA8VYTPT/llhls.m3u8?token=fixture';
+          const source = '''
 #EXTM3U
 #EXT-X-VERSION:6
 #EXT-X-INDEPENDENT-SEGMENTS
@@ -244,70 +248,59 @@ void main() {
 /v1/edge/streams/origin.pinkypuppa.01KNFDA17Y6RTSYE3GWA8VYTPT/chunklist_4_video_3689313794811747259_llhls.m3u8?session=e92ff262-9461-43b8-9ee4-ef180e1ea521
 ''';
 
-        final variants = parser.parse(
-          playlistUrl: playlistUrl,
-          source: source,
-        );
-        final qualities = ChaturbateMapper.mapPlayQualitiesFromVariants(
-          variants: variants,
-          fallbackPlaylistUrl: playlistUrl,
-        );
-        final detail = LiveRoomDetail(
-          providerId: ProviderId.chaturbate.value,
-          roomId: 'pinkypuppa',
-          title: 'pinkypuppa room',
-          streamerName: 'pinkypuppa',
-          sourceUrl: 'https://chaturbate.com/pinkypuppa/',
-          metadata: const {
-            'edgeRegion': 'LAX',
-            'hlsSource': playlistUrl,
-          },
-        );
+          final variants = parser.parse(
+            playlistUrl: playlistUrl,
+            source: source,
+          );
+          final qualities = ChaturbateMapper.mapPlayQualitiesFromVariants(
+            variants: variants,
+            fallbackPlaylistUrl: playlistUrl,
+          );
+          final detail = LiveRoomDetail(
+            providerId: ProviderId.chaturbate,
+            roomId: 'pinkypuppa',
+            title: 'pinkypuppa room',
+            streamerName: 'pinkypuppa',
+            sourceUrl: 'https://chaturbate.com/pinkypuppa/',
+            metadata: const {'edgeRegion': 'LAX', 'hlsSource': playlistUrl},
+          );
 
-        expect(variants, hasLength(2));
-        expect(
-          variants.first.audioUrl,
-          contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
-        );
-        expect(
-          qualities.first.metadata?['masterPlaylistUrl'],
-          playlistUrl,
-        );
-        expect(qualities.first.metadata?['hlsBitrate'], '1296000');
+          expect(variants, hasLength(2));
+          expect(
+            variants.first.audioUrl,
+            contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
+          );
+          expect(qualities.first.metadata?['masterPlaylistUrl'], playlistUrl);
+          expect(qualities.first.metadata?['hlsBitrate'], '1296000');
 
-        final autoUrls = ChaturbateMapper.mapPlayUrls(detail, qualities.first);
-        expect(
-          autoUrls.single.url,
-          contains('chunklist_2_video_3689313794811747259_llhls.m3u8'),
-        );
-        expect(autoUrls.single.metadata?['hlsBitrate'], '1296000');
-        expect(
-          autoUrls.single.metadata?['masterPlaylistUrl'],
-          playlistUrl,
-        );
-        expect(
-          autoUrls.single.metadata?['audioUrl'],
-          contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
-        );
+          final autoUrls = ChaturbateMapper.mapPlayUrls(
+            detail,
+            qualities.first,
+          );
+          expect(
+            autoUrls.single.url,
+            contains('chunklist_2_video_3689313794811747259_llhls.m3u8'),
+          );
+          expect(autoUrls.single.metadata?['hlsBitrate'], '1296000');
+          expect(autoUrls.single.metadata?['masterPlaylistUrl'], playlistUrl);
+          expect(
+            autoUrls.single.metadata?['audioUrl'],
+            contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
+          );
 
-        final fixedUrls = ChaturbateMapper.mapPlayUrls(detail, qualities[1]);
-        expect(
-          fixedUrls.single.url,
-          contains('chunklist_4_video_3689313794811747259_llhls.m3u8'),
-        );
-        expect(
-          fixedUrls.single.metadata?['hlsBitrate'],
-          '3296000',
-        );
-        expect(
-          fixedUrls.single.metadata?['masterPlaylistUrl'],
-          playlistUrl,
-        );
-        expect(
-          fixedUrls.single.metadata?['audioUrl'],
-          contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
-        );
-      });
+          final fixedUrls = ChaturbateMapper.mapPlayUrls(detail, qualities[1]);
+          expect(
+            fixedUrls.single.url,
+            contains('chunklist_4_video_3689313794811747259_llhls.m3u8'),
+          );
+          expect(fixedUrls.single.metadata?['hlsBitrate'], '3296000');
+          expect(fixedUrls.single.metadata?['masterPlaylistUrl'], playlistUrl);
+          expect(
+            fixedUrls.single.metadata?['audioUrl'],
+            contains('chunklist_5_audio_3689313794811747259_llhls.m3u8'),
+          );
+        },
+      );
 
       test('hls parser prefers default audio rendition within a group', () {
         const parser = ChaturbateHlsMasterPlaylistParser();
@@ -329,7 +322,7 @@ video.m3u8
 
       test('play mapper ignores request cookie for playback headers', () {
         final detail = LiveRoomDetail(
-          providerId: ProviderId.chaturbate.value,
+          providerId: ProviderId.chaturbate,
           roomId: 'realcest',
           title: 'realcest room',
           streamerName: 'realcest',
@@ -372,68 +365,60 @@ video.m3u8
       });
 
       test(
-          'auto quality keeps ll-hls master playback on a safer startup variant',
-          () {
-        const parser = ChaturbateHlsMasterPlaylistParser();
-        final fixture = ChaturbateFixtureLoader.loadHlsMasterPlaylist(
-          harName: 'room-page-realcest-auto-0415.har',
-        );
-        final variants = parser.parse(
-          playlistUrl: fixture.url,
-          source: fixture.content,
-        );
-        final qualities = ChaturbateMapper.mapPlayQualitiesFromVariants(
-          variants: variants,
-          fallbackPlaylistUrl: fixture.url,
-        );
-        final detail = LiveRoomDetail(
-          providerId: ProviderId.chaturbate.value,
-          roomId: 'realcest',
-          title: 'realcest room',
-          streamerName: 'realcest',
-          sourceUrl: 'https://chaturbate.com/realcest/',
-          metadata: {
-            'edgeRegion': 'LAX',
-            'hlsSource': fixture.url,
-          },
-        );
+        'auto quality keeps ll-hls master playback on a safer startup variant',
+        () {
+          const parser = ChaturbateHlsMasterPlaylistParser();
+          final fixture = ChaturbateFixtureLoader.loadHlsMasterPlaylist(
+            harName: 'room-page-realcest-auto-0415.har',
+          );
+          final variants = parser.parse(
+            playlistUrl: fixture.url,
+            source: fixture.content,
+          );
+          final qualities = ChaturbateMapper.mapPlayQualitiesFromVariants(
+            variants: variants,
+            fallbackPlaylistUrl: fixture.url,
+          );
+          final detail = LiveRoomDetail(
+            providerId: ProviderId.chaturbate,
+            roomId: 'realcest',
+            title: 'realcest room',
+            streamerName: 'realcest',
+            sourceUrl: 'https://chaturbate.com/realcest/',
+            metadata: {'edgeRegion': 'LAX', 'hlsSource': fixture.url},
+          );
 
-        final autoUrls = ChaturbateMapper.mapPlayUrls(detail, qualities.first);
-        final fixedUrls = ChaturbateMapper.mapPlayUrls(detail, qualities[1]);
+          final autoUrls = ChaturbateMapper.mapPlayUrls(
+            detail,
+            qualities.first,
+          );
+          final fixedUrls = ChaturbateMapper.mapPlayUrls(detail, qualities[1]);
 
-        expect(variants, isNotEmpty);
-        expect(autoUrls.single.url, variants[2].url);
-        expect(
-          autoUrls.single.metadata?['hlsBitrate'],
-          variants[2].bandwidth.toString(),
-        );
-        expect(
-          autoUrls.single.metadata?['masterPlaylistUrl'],
-          fixture.url,
-        );
-        expect(autoUrls.single.metadata?['audioUrl'], isNotNull);
-        expect(
-          qualities.first.metadata?['masterPlaylistUrl'],
-          fixture.url,
-        );
-        expect(fixedUrls.single.url, variants.first.url);
-        expect(
-          fixedUrls.single.metadata?['hlsBitrate'],
-          variants.first.bandwidth.toString(),
-        );
-        expect(
-          fixedUrls.single.metadata?['masterPlaylistUrl'],
-          fixture.url,
-        );
-        expect(fixedUrls.single.metadata?['audioUrl'], isNotNull);
-      });
+          expect(variants, isNotEmpty);
+          expect(autoUrls.single.url, variants[2].url);
+          expect(
+            autoUrls.single.metadata?['hlsBitrate'],
+            variants[2].bandwidth.toString(),
+          );
+          expect(autoUrls.single.metadata?['masterPlaylistUrl'], fixture.url);
+          expect(autoUrls.single.metadata?['audioUrl'], isNotNull);
+          expect(qualities.first.metadata?['masterPlaylistUrl'], fixture.url);
+          expect(fixedUrls.single.url, variants.first.url);
+          expect(
+            fixedUrls.single.metadata?['hlsBitrate'],
+            variants.first.bandwidth.toString(),
+          );
+          expect(fixedUrls.single.metadata?['masterPlaylistUrl'], fixture.url);
+          expect(fixedUrls.single.metadata?['audioUrl'], isNotNull);
+        },
+      );
 
       test(
-          'auto fallback can derive split playback directly from master playlist content',
-          () {
-        const playlistUrl =
-            'https://edge18-sin.live.mmcdn.com/v1/edge/streams/origin.teyyumi.demo/llhls.m3u8?token=fresh';
-        const masterPlaylistContent = '''
+        'auto fallback can derive split playback directly from master playlist content',
+        () {
+          const playlistUrl =
+              'https://edge18-sin.live.mmcdn.com/v1/edge/streams/origin.teyyumi.demo/llhls.m3u8?token=fresh';
+          const masterPlaylistContent = '''
 #EXTM3U
 #EXT-X-VERSION:6
 #EXT-X-INDEPENDENT-SEGMENTS
@@ -443,75 +428,72 @@ video.m3u8
 #EXT-X-STREAM-INF:BANDWIDTH=5128000,RESOLUTION=1920x1080,FRAME-RATE=30.000,CODECS="avc1.640028,mp4a.40.2",AUDIO="audio_aac_96"
 /v1/edge/streams/origin.teyyumi.demo/chunklist_4_video_llhls.m3u8?session=fresh
 ''';
-        final detail = LiveRoomDetail(
-          providerId: ProviderId.chaturbate.value,
-          roomId: 'teyyumi',
-          title: 'teyyumi room',
-          streamerName: 'teyyumi',
-          sourceUrl: 'https://chaturbate.com/teyyumi/',
-          metadata: const {
-            'edgeRegion': 'SIN',
-            'hlsSource': playlistUrl,
-            'hlsMasterPlaylistContent': masterPlaylistContent,
-          },
-        );
+          final detail = LiveRoomDetail(
+            providerId: ProviderId.chaturbate,
+            roomId: 'teyyumi',
+            title: 'teyyumi room',
+            streamerName: 'teyyumi',
+            sourceUrl: 'https://chaturbate.com/teyyumi/',
+            metadata: const {
+              'edgeRegion': 'SIN',
+              'hlsSource': playlistUrl,
+              'hlsMasterPlaylistContent': masterPlaylistContent,
+            },
+          );
 
-        final urls = ChaturbateMapper.mapPlayUrls(
-          detail,
-          LivePlayQuality(
-            id: 'auto',
-            label: 'Auto',
-            isDefault: true,
-          ),
-        );
+          final urls = ChaturbateMapper.mapPlayUrls(
+            detail,
+            LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
+          );
 
-        expect(urls, hasLength(1));
-        expect(
-          urls.single.url,
-          contains('chunklist_2_video_llhls.m3u8?session=fresh'),
-        );
-        expect(
-          urls.single.metadata?['masterPlaylistUrl'],
-          playlistUrl,
-        );
-        expect(
-          urls.single.metadata?['audioUrl'],
-          contains('chunklist_7_audio_llhls.m3u8?session=fresh'),
-        );
-        expect(urls.single.metadata?['hlsBitrate'], '2096000');
-      });
+          expect(urls, hasLength(1));
+          expect(
+            urls.single.url,
+            contains('chunklist_2_video_llhls.m3u8?session=fresh'),
+          );
+          expect(urls.single.metadata?['masterPlaylistUrl'], playlistUrl);
+          expect(
+            urls.single.metadata?['audioUrl'],
+            contains('chunklist_7_audio_llhls.m3u8?session=fresh'),
+          );
+          expect(urls.single.metadata?['hlsBitrate'], '2096000');
+        },
+      );
 
-      test('danmaku mapper parses history and realtime payloads from fixtures',
-          () {
-        final history = ChaturbateFixtureLoader.loadRoomHistory();
-        final historyMessage =
-            ChaturbateMapper.mapDanmakuPayload(history.first);
-        expect(historyMessage, isNotNull);
-        expect(historyMessage!.type, LiveMessageType.chat);
-        expect(historyMessage.userName, 'nicolasmonzon');
-        expect(historyMessage.content, 'Por el culo la cojes?');
+      test(
+        'danmaku mapper parses history and realtime payloads from fixtures',
+        () {
+          final history = ChaturbateFixtureLoader.loadRoomHistory();
+          final historyMessage = ChaturbateMapper.mapDanmakuPayload(
+            history.first,
+          );
+          expect(historyMessage, isNotNull);
+          expect(historyMessage!.type, LiveMessageType.chat);
+          expect(historyMessage.userName, 'nicolasmonzon');
+          expect(historyMessage.content, 'Por el culo la cojes?');
 
-        final websocketMessages =
-            ChaturbateFixtureLoader.loadWebSocketMessages();
-        final realtimeData = websocketMessages
-            .where((item) => item['type'] == 'receive')
-            .map((item) => item['data']?.toString() ?? '')
-            .firstWhere((text) => text.contains('"action":15'));
-        final wrapper =
-            (jsonDecode(realtimeData) as Map).cast<String, dynamic>();
-        final envelope =
-            (wrapper['messages'] as List).first as Map<String, dynamic>;
-        final event =
-            jsonDecode(envelope['data'] as String) as Map<String, dynamic>;
-        final realtimeMessage = ChaturbateMapper.mapDanmakuPayload(event);
+          final websocketMessages =
+              ChaturbateFixtureLoader.loadWebSocketMessages();
+          final realtimeData = websocketMessages
+              .where((item) => item['type'] == 'receive')
+              .map((item) => item['data']?.toString() ?? '')
+              .firstWhere((text) => text.contains('"action":15'));
+          final wrapper = (jsonDecode(realtimeData) as Map)
+              .cast<String, dynamic>();
+          final envelope =
+              (wrapper['messages'] as List).first as Map<String, dynamic>;
+          final event =
+              jsonDecode(envelope['data'] as String) as Map<String, dynamic>;
+          final realtimeMessage = ChaturbateMapper.mapDanmakuPayload(event);
 
-        expect(realtimeMessage, isNotNull);
-        expect(
-          realtimeMessage!.type,
-          anyOf(LiveMessageType.chat, LiveMessageType.gift),
-        );
-        expect(realtimeMessage.content, isNotEmpty);
-      });
+          expect(realtimeMessage, isNotNull);
+          expect(
+            realtimeMessage!.type,
+            anyOf(LiveMessageType.chat, LiveMessageType.gift),
+          );
+          expect(realtimeMessage.content, isNotEmpty);
+        },
+      );
     },
   );
 }

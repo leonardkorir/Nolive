@@ -21,8 +21,8 @@ class StripchatProvider extends LiveProvider
   StripchatProvider({
     StripchatDataSource? dataSource,
     void Function()? disposeOwnedResources,
-  })  : _dataSource = dataSource ?? const StripchatPreviewDataSource(),
-        _disposeOwnedResources = disposeOwnedResources;
+  }) : _dataSource = dataSource ?? const StripchatPreviewDataSource(),
+       _disposeOwnedResources = disposeOwnedResources;
 
   factory StripchatProvider.preview() => StripchatProvider();
 
@@ -30,8 +30,9 @@ class StripchatProvider extends LiveProvider
     String cookie = '',
     StripchatApiClient? apiClient,
   }) {
-    final ownedClient =
-        apiClient == null ? HttpStripchatApiClient(cookie: cookie) : null;
+    final ownedClient = apiClient == null
+        ? HttpStripchatApiClient(cookie: cookie)
+        : null;
     final resolvedClient = apiClient ?? ownedClient!;
     return StripchatProvider(
       dataSource: StripchatLiveDataSource(apiClient: resolvedClient),
@@ -128,15 +129,16 @@ class StripchatProvider extends LiveProvider
     final token = detail.danmakuToken;
     if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
-        providerId: descriptor.id.value,
+        providerId: descriptor.id,
         detail: detail,
       );
     }
     if (token is UnavailableDanmakuToken) {
       final reason = token.reason.trim();
       return ProviderUnavailableDanmakuSession(
-        reason:
-            reason.isNotEmpty ? reason : 'Stripchat 当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',
+        reason: reason.isNotEmpty
+            ? reason
+            : 'Stripchat 当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',
       );
     }
     if (token is StripchatDanmakuToken) {
@@ -150,9 +152,7 @@ class StripchatProvider extends LiveProvider
           reason: 'Stripchat 弹幕连接失败：弹幕Token JWT为空。',
         );
       }
-      return StripchatDanmakuSession(
-        danmakuToken: token,
-      );
+      return StripchatDanmakuSession(danmakuToken: token);
     }
     return ProviderUnavailableDanmakuSession(
       reason: 'Stripchat 当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:flutter/services.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
@@ -10,6 +11,7 @@ import 'package:nolive_app/src/features/settings/application/settings_feature_de
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/settings_action_buttons.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 class OtherSettingsPage extends StatefulWidget {
   const OtherSettingsPage({required this.dependencies, super.key});
@@ -430,9 +432,7 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+        showAppSnackBar(context, message);
   }
 
   Future<void> _resetAppData() async {
@@ -520,7 +520,7 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('其他设置')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+        padding: kSettingsPagePadding,
         children: [
           const SectionHeader(title: '其他设置'),
           const SizedBox(height: 12),

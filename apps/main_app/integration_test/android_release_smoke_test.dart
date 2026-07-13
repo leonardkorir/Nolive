@@ -59,23 +59,31 @@ void main() {
   }
 
   Future<void> completeFullscreenRoundTrip(WidgetTester tester) async {
-    final exitFullscreenButton =
-        find.byKey(const Key('room-exit-fullscreen-button'));
+    final exitFullscreenButton = find.byKey(
+      const Key('room-exit-fullscreen-button'),
+    );
     final fullscreenOverlay = find.byKey(const Key('room-fullscreen-overlay'));
+    final inlineFullscreenButton = find.byKey(
+      const Key('room-inline-fullscreen-button'),
+    );
     final leaveButton = find.byKey(const Key('room-leave-button'));
     var sawFullscreen = false;
 
-    for (var attempt = 0; attempt < 16; attempt++) {
-      if (leaveButton.evaluate().isNotEmpty) {
-        expect(sawFullscreen, isTrue);
-        return;
-      }
+    for (var attempt = 0; attempt < 24; attempt++) {
       if (exitFullscreenButton.evaluate().isNotEmpty) {
         sawFullscreen = true;
         await tester.tap(exitFullscreenButton, warnIfMissed: false);
       } else if (fullscreenOverlay.evaluate().isNotEmpty) {
         sawFullscreen = true;
         await tester.tap(fullscreenOverlay, warnIfMissed: false);
+      } else if (leaveButton.evaluate().isNotEmpty) {
+        if (sawFullscreen) {
+          return;
+        }
+        await showInlinePlayerControls(tester);
+        if (inlineFullscreenButton.evaluate().isNotEmpty) {
+          await tester.tap(inlineFullscreenButton, warnIfMissed: false);
+        }
       }
       await tester.pump(const Duration(milliseconds: 250));
     }
@@ -86,8 +94,9 @@ void main() {
 
   Future<void> ensureInlineRoomChrome(WidgetTester tester) async {
     final leaveButton = find.byKey(const Key('room-leave-button'));
-    final exitFullscreenButton =
-        find.byKey(const Key('room-exit-fullscreen-button'));
+    final exitFullscreenButton = find.byKey(
+      const Key('room-exit-fullscreen-button'),
+    );
 
     await pumpUntilVisible(
       tester,
@@ -124,10 +133,12 @@ void main() {
       if (shellVisible(tester)) {
         return;
       }
-      final fullscreenOverlay =
-          find.byKey(const Key('room-fullscreen-overlay'));
-      final exitFullscreenButton =
-          find.byKey(const Key('room-exit-fullscreen-button'));
+      final fullscreenOverlay = find.byKey(
+        const Key('room-fullscreen-overlay'),
+      );
+      final exitFullscreenButton = find.byKey(
+        const Key('room-exit-fullscreen-button'),
+      );
       if (fullscreenOverlay.evaluate().isNotEmpty &&
           exitFullscreenButton.evaluate().isNotEmpty) {
         await tester.tap(exitFullscreenButton, warnIfMissed: false);
@@ -156,9 +167,7 @@ void main() {
 
   Future<void> pumpApp(WidgetTester tester) async {
     await tester.pumpWidget(
-      NoliveApp(
-        appBootstrap: createAppBootstrap(mode: AppRuntimeMode.preview),
-      ),
+      NoliveApp(appBootstrap: createAppBootstrap(mode: AppRuntimeMode.preview)),
     );
     await pumpUntilVisible(tester, find.byKey(const Key('shell-tab-home')));
     expect(shellVisible(tester), isTrue);
@@ -184,10 +193,7 @@ void main() {
     await ensureInlineRoomChrome(tester);
 
     expect(find.byKey(const Key('room-leave-button')), findsOneWidget);
-    expect(
-      find.byKey(const Key('room-appbar-more-button')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('room-appbar-more-button')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('room-appbar-more-button')));
     await pumpUntilVisible(
@@ -252,8 +258,9 @@ void main() {
     );
   });
 
-  testWidgets('android smoke covers profile, sync, and settings tools',
-      (tester) async {
+  testWidgets('android smoke covers profile, sync, and settings tools', (
+    tester,
+  ) async {
     await pumpApp(tester);
 
     await selectShellTab(tester, id: 'profile', label: '我的');

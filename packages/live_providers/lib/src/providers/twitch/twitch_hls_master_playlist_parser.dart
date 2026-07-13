@@ -55,10 +55,12 @@ class TwitchHlsMasterPlaylistParser {
       }
       final resolution = attributes['RESOLUTION'] ?? '';
       final dimensions = resolution.split('x');
-      final width =
-          dimensions.length == 2 ? int.tryParse(dimensions.first) : null;
-      final height =
-          dimensions.length == 2 ? int.tryParse(dimensions.last) : null;
+      final width = dimensions.length == 2
+          ? int.tryParse(dimensions.first)
+          : null;
+      final height = dimensions.length == 2
+          ? int.tryParse(dimensions.last)
+          : null;
       final frameRate = double.tryParse(attributes['FRAME-RATE'] ?? '');
       final bandwidth = int.tryParse(attributes['BANDWIDTH'] ?? '') ?? 0;
       variants.add(

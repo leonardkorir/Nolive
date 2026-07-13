@@ -14,6 +14,9 @@ class DanmakuPreferences {
     required this.lineHeight,
     required this.topMargin,
     required this.bottomMargin,
+    this.frequencyWindowSeconds = 8,
+    this.maxFrequency = 2,
+    this.textNormalizationEnabled = true,
   });
 
   static const DanmakuPreferences defaults = DanmakuPreferences(
@@ -28,6 +31,9 @@ class DanmakuPreferences {
     lineHeight: 1.25,
     topMargin: 0,
     bottomMargin: 0,
+    frequencyWindowSeconds: 8,
+    maxFrequency: 2,
+    textNormalizationEnabled: true,
   );
 
   final bool enabledByDefault;
@@ -41,6 +47,9 @@ class DanmakuPreferences {
   final double lineHeight;
   final double topMargin;
   final double bottomMargin;
+  final int frequencyWindowSeconds;
+  final int maxFrequency;
+  final bool textNormalizationEnabled;
 
   DanmakuPreferences copyWith({
     bool? enabledByDefault,
@@ -54,6 +63,9 @@ class DanmakuPreferences {
     double? lineHeight,
     double? topMargin,
     double? bottomMargin,
+    int? frequencyWindowSeconds,
+    int? maxFrequency,
+    bool? textNormalizationEnabled,
   }) {
     return DanmakuPreferences(
       enabledByDefault: enabledByDefault ?? this.enabledByDefault,
@@ -68,6 +80,11 @@ class DanmakuPreferences {
       lineHeight: lineHeight ?? this.lineHeight,
       topMargin: topMargin ?? this.topMargin,
       bottomMargin: bottomMargin ?? this.bottomMargin,
+      frequencyWindowSeconds:
+          frequencyWindowSeconds ?? this.frequencyWindowSeconds,
+      maxFrequency: maxFrequency ?? this.maxFrequency,
+      textNormalizationEnabled:
+          textNormalizationEnabled ?? this.textNormalizationEnabled,
     );
   }
 
@@ -100,7 +117,10 @@ class DanmakuPreferences {
             strokeWidth == other.strokeWidth &&
             lineHeight == other.lineHeight &&
             topMargin == other.topMargin &&
-            bottomMargin == other.bottomMargin;
+            bottomMargin == other.bottomMargin &&
+            frequencyWindowSeconds == other.frequencyWindowSeconds &&
+            maxFrequency == other.maxFrequency &&
+            textNormalizationEnabled == other.textNormalizationEnabled;
   }
 
   @override
@@ -116,6 +136,9 @@ class DanmakuPreferences {
         lineHeight,
         topMargin,
         bottomMargin,
+        frequencyWindowSeconds,
+        maxFrequency,
+        textNormalizationEnabled,
       );
 }
 
@@ -187,6 +210,25 @@ class LoadDanmakuPreferencesUseCase {
         max: 48,
         fallback: defaults.bottomMargin,
       ),
+      frequencyWindowSeconds: _clampInt(
+        await settingsRepository.readValue<int>(
+          'danmaku_frequency_window_seconds',
+        ),
+        min: 2,
+        max: 60,
+        fallback: defaults.frequencyWindowSeconds,
+      ),
+      maxFrequency: _clampInt(
+        await settingsRepository.readValue<int>('danmaku_max_frequency'),
+        min: 1,
+        max: 20,
+        fallback: defaults.maxFrequency,
+      ),
+      textNormalizationEnabled:
+          await settingsRepository.readValue<bool>(
+            'danmaku_text_normalization',
+          ) ??
+          defaults.textNormalizationEnabled,
     );
   }
 
@@ -258,6 +300,18 @@ class UpdateDanmakuPreferencesUseCase {
     await settingsRepository.writeValue(
       'danmaku_bottom_margin',
       preferences.bottomMargin.clamp(0, 48),
+    );
+    await settingsRepository.writeValue(
+      'danmaku_frequency_window_seconds',
+      preferences.frequencyWindowSeconds.clamp(2, 60),
+    );
+    await settingsRepository.writeValue(
+      'danmaku_max_frequency',
+      preferences.maxFrequency.clamp(1, 20),
+    );
+    await settingsRepository.writeValue(
+      'danmaku_text_normalization',
+      preferences.textNormalizationEnabled,
     );
   }
 }

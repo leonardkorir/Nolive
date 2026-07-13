@@ -28,8 +28,9 @@ void main() {
 
     final categories = await provider.fetchCategories();
     final game = categories.firstWhere((item) => item.name == '游戏');
-    final names =
-        game.children.map((item) => item.name).toList(growable: false);
+    final names = game.children
+        .map((item) => item.name)
+        .toList(growable: false);
 
     expect(names.first, '游戏');
     expect(names, contains('绝地求生'));
@@ -107,97 +108,105 @@ void main() {
     expect(recommend.items.single.viewerCount, 54321);
   });
 
-  test('bilibili play info prefers web candidate for initial playback',
-      () async {
-    final transport = _FakeBilibiliPlayInfoTransport();
-    final authContext = BilibiliAuthContext()
-      ..imgKey = 'imgkey'
-      ..subKey = 'subkey'
-      ..buvid3 = 'mock-buvid3'
-      ..buvid4 = 'mock-buvid4';
-    final provider = BilibiliProvider(
-      dataSource: BilibiliLiveDataSource(
-        transport: transport,
-        signService: BilibiliSignService(
+  test(
+    'bilibili play info prefers web candidate for initial playback',
+    () async {
+      final transport = _FakeBilibiliPlayInfoTransport();
+      final authContext = BilibiliAuthContext()
+        ..imgKey = 'imgkey'
+        ..subKey = 'subkey'
+        ..buvid3 = 'mock-buvid3'
+        ..buvid4 = 'mock-buvid4';
+      final provider = BilibiliProvider(
+        dataSource: BilibiliLiveDataSource(
           transport: transport,
+          signService: BilibiliSignService(
+            transport: transport,
+            authContext: authContext,
+          ),
           authContext: authContext,
         ),
-        authContext: authContext,
-      ),
-    );
-    const detail = LiveRoomDetail(
-      providerId: 'bilibili',
-      roomId: '4350043',
-      title: 'Bilibili test',
-      streamerName: 'tester',
-      isLive: true,
-    );
+      );
+      const detail = LiveRoomDetail(
+        providerId: ProviderId.bilibili,
+        roomId: '4350043',
+        title: 'Bilibili test',
+        streamerName: 'tester',
+        isLive: true,
+      );
 
-    final qualities = await provider.fetchPlayQualities(detail);
-    final urls = await provider.fetchPlayUrls(
-      detail: detail,
-      quality: qualities.first,
-    );
+      final qualities = await provider.fetchPlayQualities(detail);
+      final urls = await provider.fetchPlayUrls(
+        detail: detail,
+        quality: qualities.first,
+      );
 
-    expect(qualities.first.id, '10000');
-    expect(urls.first.url, contains('expected_qn=10000'));
-    expect(transport.playInfoPlatforms.first, 'web');
-  });
-
-  test('bilibili play info retries next candidate when web payload is empty',
-      () async {
-    final transport = _FakeBilibiliPlayInfoTransport(emptyWebCandidate: true);
-    final authContext = BilibiliAuthContext()
-      ..imgKey = 'imgkey'
-      ..subKey = 'subkey'
-      ..buvid3 = 'mock-buvid3'
-      ..buvid4 = 'mock-buvid4';
-    final provider = BilibiliProvider(
-      dataSource: BilibiliLiveDataSource(
-        transport: transport,
-        signService: BilibiliSignService(
-          transport: transport,
-          authContext: authContext,
-        ),
-        authContext: authContext,
-      ),
-    );
-    const detail = LiveRoomDetail(
-      providerId: 'bilibili',
-      roomId: '4350043',
-      title: 'Bilibili test',
-      streamerName: 'tester',
-      isLive: true,
-    );
-
-    final qualities = await provider.fetchPlayQualities(detail);
-
-    expect(qualities.first.id, '10000');
-    expect(transport.playInfoPlatforms.take(2), ['web', 'html5']);
-  });
+      expect(qualities.first.id, '10000');
+      expect(urls.first.url, contains('expected_qn=10000'));
+      expect(transport.playInfoPlatforms.first, 'web');
+    },
+  );
 
   test(
-      'bilibili recommend rooms fall back when homepage API is risk-controlled',
-      () async {
-    final transport = _FakeBilibiliRecommendFallbackTransport();
-    final authContext = BilibiliAuthContext(cookie: 'SESSDATA=test', userId: 1);
-    final provider = BilibiliProvider(
-      dataSource: BilibiliLiveDataSource(
-        transport: transport,
-        signService: BilibiliSignService(
+    'bilibili play info retries next candidate when web payload is empty',
+    () async {
+      final transport = _FakeBilibiliPlayInfoTransport(emptyWebCandidate: true);
+      final authContext = BilibiliAuthContext()
+        ..imgKey = 'imgkey'
+        ..subKey = 'subkey'
+        ..buvid3 = 'mock-buvid3'
+        ..buvid4 = 'mock-buvid4';
+      final provider = BilibiliProvider(
+        dataSource: BilibiliLiveDataSource(
           transport: transport,
+          signService: BilibiliSignService(
+            transport: transport,
+            authContext: authContext,
+          ),
           authContext: authContext,
         ),
-        authContext: authContext,
-      ),
-    );
+      );
+      const detail = LiveRoomDetail(
+        providerId: ProviderId.bilibili,
+        roomId: '4350043',
+        title: 'Bilibili test',
+        streamerName: 'tester',
+        isLive: true,
+      );
 
-    final recommend = await provider.fetchRecommendRooms();
+      final qualities = await provider.fetchPlayQualities(detail);
 
-    expect(recommend.items, hasLength(1));
-    expect(recommend.items.single.roomId, '987654');
-    expect(recommend.items.single.viewerCount, 77777);
-  });
+      expect(qualities.first.id, '10000');
+      expect(transport.playInfoPlatforms.take(2), ['web', 'html5']);
+    },
+  );
+
+  test(
+    'bilibili recommend rooms fall back when homepage API is risk-controlled',
+    () async {
+      final transport = _FakeBilibiliRecommendFallbackTransport();
+      final authContext = BilibiliAuthContext(
+        cookie: 'SESSDATA=test',
+        userId: 1,
+      );
+      final provider = BilibiliProvider(
+        dataSource: BilibiliLiveDataSource(
+          transport: transport,
+          signService: BilibiliSignService(
+            transport: transport,
+            authContext: authContext,
+          ),
+          authContext: authContext,
+        ),
+      );
+
+      final recommend = await provider.fetchRecommendRooms();
+
+      expect(recommend.items, hasLength(1));
+      expect(recommend.items.single.roomId, '987654');
+      expect(recommend.items.single.viewerCount, 77777);
+    },
+  );
 }
 
 class _FakeDouyinRecommendTransport extends DouyinTransport {
@@ -218,8 +227,8 @@ class _FakeDouyinRecommendTransport extends DouyinTransport {
       );
     }
     if (uri.toString().startsWith(
-          'https://live.douyin.com/webcast/web/partition/detail/room/v2/',
-        )) {
+      'https://live.douyin.com/webcast/web/partition/detail/room/v2/',
+    )) {
       return DouyinHttpResponse(
         body: jsonEncode({
           'data': {
@@ -230,13 +239,13 @@ class _FakeDouyinRecommendTransport extends DouyinTransport {
                 'room': {
                   'title': '抖音热门测试房间',
                   'cover': {
-                    'url_list': ['https://douyin.test/cover.jpg']
+                    'url_list': ['https://douyin.test/cover.jpg'],
                   },
                   'owner': {
                     'web_rid': '88990011',
                     'nickname': '抖音热榜主播',
                     'avatar_medium': {
-                      'url_list': ['https://douyin.test/avatar.jpg']
+                      'url_list': ['https://douyin.test/avatar.jpg'],
                     },
                   },
                   'room_view_stats': {'display_value': 45678},
@@ -289,8 +298,8 @@ class _FakeDouyuRecommendTransport extends DouyuTransport {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
     if (uri.toString().startsWith(
-          'https://www.douyu.com/japi/weblist/apinc/allpage/6/',
-        )) {
+      'https://www.douyu.com/japi/weblist/apinc/allpage/6/',
+    )) {
       return jsonEncode({
         'data': {
           'pgcnt': 3,
@@ -430,16 +439,16 @@ class _FakeBilibiliRecommendTransport extends BilibiliTransport {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
     if (uri.toString().startsWith(
-          'https://api.bilibili.com/x/frontend/finger/spi',
-        )) {
+      'https://api.bilibili.com/x/frontend/finger/spi',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {'b_3': 'mock-buvid3', 'b_4': 'mock-buvid4'},
       });
     }
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/web-interface/nav')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/web-interface/nav',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -453,8 +462,8 @@ class _FakeBilibiliRecommendTransport extends BilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
+    )) {
       expect(uri.queryParameters['w_rid'], isNotNull);
       expect(uri.queryParameters['wts'], isNotNull);
       return jsonEncode({
@@ -496,8 +505,8 @@ class _FakeBilibiliPlayInfoTransport extends BilibiliTransport {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
+    )) {
       final platform = queryParameters['platform'] ?? '';
       playInfoPlatforms.add(platform);
       if (emptyWebCandidate && platform == 'web') {
@@ -561,16 +570,16 @@ class _FakeBilibiliRecommendFallbackTransport extends BilibiliTransport {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
     if (uri.toString().startsWith(
-          'https://api.bilibili.com/x/frontend/finger/spi',
-        )) {
+      'https://api.bilibili.com/x/frontend/finger/spi',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {'b_3': 'mock-buvid3', 'b_4': 'mock-buvid4'},
       });
     }
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/web-interface/nav')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/web-interface/nav',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -587,8 +596,8 @@ class _FakeBilibiliRecommendFallbackTransport extends BilibiliTransport {
       return r'{"access_id":"fallback-access"}';
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
+    )) {
       expect(uri.queryParameters['w_rid'], isNotNull);
       expect(uri.queryParameters['wts'], isNotNull);
       return jsonEncode({
@@ -598,8 +607,8 @@ class _FakeBilibiliRecommendFallbackTransport extends BilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/room/v1/Area/getList',
-        )) {
+      'https://api.live.bilibili.com/room/v1/Area/getList',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': [
@@ -607,19 +616,15 @@ class _FakeBilibiliRecommendFallbackTransport extends BilibiliTransport {
             'id': 1,
             'name': '网游',
             'list': [
-              {
-                'id': 101,
-                'parent_id': 1,
-                'name': '英雄联盟',
-              },
+              {'id': 101, 'parent_id': 1, 'name': '英雄联盟'},
             ],
           },
         ],
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-interface/v1/second/getList',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-interface/v1/second/getList',
+    )) {
       expect(uri.queryParameters['w_rid'], isNotNull);
       expect(uri.queryParameters['wts'], isNotNull);
       return jsonEncode({

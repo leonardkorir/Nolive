@@ -21,8 +21,8 @@ class DouyuProvider extends LiveProvider
   DouyuProvider({
     DouyuDataSource? dataSource,
     void Function()? disposeOwnedResources,
-  })  : _dataSource = dataSource ?? const DouyuPreviewDataSource(),
-        _disposeOwnedResources = disposeOwnedResources;
+  }) : _dataSource = dataSource ?? const DouyuPreviewDataSource(),
+       _disposeOwnedResources = disposeOwnedResources;
 
   factory DouyuProvider.preview() => DouyuProvider();
 
@@ -32,14 +32,19 @@ class DouyuProvider extends LiveProvider
   }) {
     final ownedTransport = transport == null ? HttpDouyuTransport() : null;
     final resolvedTransport = transport ?? ownedTransport!;
-    final resolvedSignService =
-        signService ?? HttpDouyuSignService(transport: resolvedTransport);
+    final ownedSignService = signService == null
+        ? HttpDouyuSignService(transport: resolvedTransport)
+        : null;
+    final resolvedSignService = signService ?? ownedSignService!;
     return DouyuProvider(
       dataSource: DouyuLiveDataSource(
         transport: resolvedTransport,
         signService: resolvedSignService,
       ),
-      disposeOwnedResources: ownedTransport?.close,
+      disposeOwnedResources: () {
+        ownedSignService?.dispose();
+        ownedTransport?.close();
+      },
     );
   }
 
@@ -64,7 +69,7 @@ class DouyuProvider extends LiveProvider
       ProviderPlatform.androidTv,
     },
     roomIdPatterns: [r'^\d+$'],
-    maturity: ProviderMaturity.inMigration,
+    maturity: ProviderMaturity.ready,
   );
 
   final DouyuDataSource _dataSource;
@@ -132,7 +137,7 @@ class DouyuProvider extends LiveProvider
     final token = detail.danmakuToken;
     if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
-        providerId: descriptor.id.value,
+        providerId: descriptor.id,
         detail: detail,
       );
     }
@@ -146,7 +151,7 @@ class DouyuProvider extends LiveProvider
       );
     }
     return ProviderTickerDanmakuSession(
-      providerId: descriptor.id.value,
+      providerId: descriptor.id,
       detail: detail,
     );
   }

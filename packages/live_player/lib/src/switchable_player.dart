@@ -16,21 +16,40 @@ typedef PlayerBuilder = BasePlayer Function();
 class SwitchablePlayer implements BasePlayer {
   SwitchablePlayer({
     PlayerBackend initialBackend = PlayerBackend.memory,
-    Map<PlayerBackend, PlayerBuilder>? builders,
-  })  : _builders = builders ??
-            {
-              PlayerBackend.memory: MemoryPlayer.new,
-              PlayerBackend.mpv: SimulatedMpvPlayer.new,
-              PlayerBackend.mdk: SimulatedMdkPlayer.new,
-            },
-        _activeBackend = initialBackend,
-        _delegate = (builders ??
-            {
-              PlayerBackend.memory: MemoryPlayer.new,
-              PlayerBackend.mpv: SimulatedMpvPlayer.new,
-              PlayerBackend.mdk: SimulatedMdkPlayer.new,
-            })[initialBackend]!() {
+    required Map<PlayerBackend, PlayerBuilder> builders,
+  }) : _builders = Map<PlayerBackend, PlayerBuilder>.unmodifiable(builders),
+       _activeBackend = initialBackend,
+       _delegate = _buildInitialDelegate(initialBackend, builders) {
     _attachDelegate();
+  }
+
+  SwitchablePlayer.simulated({
+    PlayerBackend initialBackend = PlayerBackend.memory,
+  }) : _builders = const {
+         PlayerBackend.memory: MemoryPlayer.new,
+         PlayerBackend.mpv: SimulatedMpvPlayer.new,
+         PlayerBackend.mdk: SimulatedMdkPlayer.new,
+       },
+       _activeBackend = initialBackend,
+       _delegate = _buildInitialDelegate(initialBackend, const {
+         PlayerBackend.memory: MemoryPlayer.new,
+         PlayerBackend.mpv: SimulatedMpvPlayer.new,
+         PlayerBackend.mdk: SimulatedMdkPlayer.new,
+       }) {
+    _attachDelegate();
+  }
+
+  static BasePlayer _buildInitialDelegate(
+    PlayerBackend initialBackend,
+    Map<PlayerBackend, PlayerBuilder> builders,
+  ) {
+    final builder = builders[initialBackend];
+    if (builder == null) {
+      throw StateError(
+        'SwitchablePlayer requires a builder for $initialBackend.',
+      );
+    }
+    return builder();
   }
 
   final Map<PlayerBackend, PlayerBuilder> _builders;
@@ -94,10 +113,7 @@ class SwitchablePlayer implements BasePlayer {
       if (nextBackend == _activeBackend) {
         return;
       }
-      await _replaceDelegate(
-        nextBackend,
-        preservePlaybackState: false,
-      );
+      await _replaceDelegate(nextBackend, preservePlaybackState: false);
     });
   }
 
@@ -106,10 +122,7 @@ class SwitchablePlayer implements BasePlayer {
 
   Future<void> refreshBackendWithoutPlaybackState() =>
       _serializeDelegateReplacement(
-        () => _replaceDelegate(
-          _activeBackend,
-          preservePlaybackState: false,
-        ),
+        () => _replaceDelegate(_activeBackend, preservePlaybackState: false),
       );
 
   @override
@@ -185,8 +198,9 @@ class SwitchablePlayer implements BasePlayer {
     }
     final previousState = currentState;
     final source = preservePlaybackState ? previousState.source : null;
-    final status =
-        preservePlaybackState ? previousState.status : PlaybackStatus.ready;
+    final status = preservePlaybackState
+        ? previousState.status
+        : PlaybackStatus.ready;
     final volume = previousState.volume;
     await _delegateSubscription?.cancel();
     await _delegateDiagnosticsSubscription?.cancel();
@@ -214,14 +228,14 @@ class SwitchablePlayer implements BasePlayer {
 
   Future<void> _stopDelegateBestEffort(BasePlayer delegate) async {
     final state = delegate.currentState;
-    final shouldStop = state.source != null ||
+    final shouldStop =
+        state.source != null ||
         switch (state.status) {
           PlaybackStatus.buffering ||
           PlaybackStatus.playing ||
           PlaybackStatus.paused ||
           PlaybackStatus.completed ||
-          PlaybackStatus.error =>
-            true,
+          PlaybackStatus.error => true,
           _ => false,
         };
     if (!shouldStop) {
@@ -251,9 +265,7 @@ class SwitchablePlayer implements BasePlayer {
     });
   }
 
-  Future<void> _serializeDelegateReplacement(
-    Future<void> Function() action,
-  ) {
+  Future<void> _serializeDelegateReplacement(Future<void> Function() action) {
     final scheduled = _pendingDelegateReplacement.then((_) => action());
     _pendingDelegateReplacement = scheduled.catchError((_) {});
     return scheduled;

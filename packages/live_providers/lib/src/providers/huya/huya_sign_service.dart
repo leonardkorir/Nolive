@@ -9,10 +9,7 @@ import '../provider_runtime_support.dart';
 abstract class HuyaSignService {
   String get playerUserAgent;
 
-  String buildUrl({
-    required Map<String, Object?> line,
-    required int bitRate,
-  });
+  String buildUrl({required Map<String, Object?> line, required int bitRate});
 }
 
 class HttpHuyaSignService implements HuyaSignService {
@@ -25,17 +22,14 @@ class HttpHuyaSignService implements HuyaSignService {
     Random? random,
     ProviderBrowserProfile browserProfile =
         ProviderBrowserProfile.chromiumDesktop,
-  })  : _random = random ?? Random(),
-        _browserProfile = browserProfile;
+  }) : _random = random ?? Random(),
+       _browserProfile = browserProfile;
 
   @override
   String get playerUserAgent => _browserProfile.userAgent;
 
   @override
-  String buildUrl({
-    required Map<String, Object?> line,
-    required int bitRate,
-  }) {
+  String buildUrl({required Map<String, Object?> line, required int bitRate}) {
     final lineUrl = line['line']?.toString() ?? '';
     final streamName = line['streamName']?.toString() ?? '';
     final presenterUid = _asInt(line['presenterUid']) ?? 0;
@@ -72,8 +66,9 @@ class HttpHuyaSignService implements HuyaSignService {
     final isWap = platformId == 103;
     final currentTime = DateTime.now().millisecondsSinceEpoch;
     final seqId = presenterUid + currentTime;
-    final secretHash =
-        md5.convert(utf8.encode('$seqId|$ctype|$platformId')).toString();
+    final secretHash = md5
+        .convert(utf8.encode('$seqId|$ctype|$platformId'))
+        .toString();
 
     final convertedUid = _rotl64(presenterUid);
     final calcUid = isWap ? presenterUid.toString() : convertedUid;
@@ -107,10 +102,7 @@ class HttpHuyaSignService implements HuyaSignService {
       't': platformId,
     };
     if (isWap) {
-      antiCodeResult.addAll({
-        'uid': presenterUid,
-        'uuid': uuid,
-      });
+      antiCodeResult.addAll({'uid': presenterUid, 'uuid': uuid});
     } else {
       antiCodeResult['u'] = convertedUid;
     }

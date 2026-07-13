@@ -200,6 +200,9 @@ void main() {
     final harness = _ControllerHarness();
     addTearDown(harness.dispose);
     await harness.controller.initialize(startInFullscreen: true);
+    // initialize may already apply immersive system UI for startInFullscreen;
+    // isolate auto-enter behavior from that early lock.
+    harness.android.events.clear();
     harness.player.emit(
       const PlayerState(
         backend: PlayerBackend.mpv,
@@ -216,6 +219,8 @@ void main() {
     await tester.pump();
 
     expect(harness.controller.viewUiState.fullscreenAutoApplied, isFalse);
+    expect(harness.controller.viewUiState.isFullscreen, isFalse);
+    expect(harness.controller.viewUiState.fullscreenBootstrapPending, isTrue);
     expect(
       harness.android.events.where((event) => event == 'lockLandscape'),
       isEmpty,

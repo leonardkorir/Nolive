@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:nolive_app/src/features/settings/application/settings_feature_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 class BilibiliQrLoginPage extends StatefulWidget {
   const BilibiliQrLoginPage({required this.dependencies, super.key});
@@ -96,13 +98,9 @@ class _BilibiliQrLoginPageState extends State<BilibiliQrLoginPage> {
           });
         case BilibiliQrLoginStatus.success:
           _pollTimer?.cancel();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
+          showAppSnackBar(context, 
                 '已登录 ${progress.displayName ?? '哔哩哔哩账号'}${progress.userId == null ? '' : ' · UID ${progress.userId}'}',
-              ),
-            ),
-          );
+              );
           Navigator.of(context).pop(true);
       }
     } catch (error) {
@@ -128,7 +126,7 @@ class _BilibiliQrLoginPageState extends State<BilibiliQrLoginPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('哔哩哔哩扫码登录')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+        padding: kSettingsPagePadding,
         children: [
           AppSurfaceCard(
             child: Column(

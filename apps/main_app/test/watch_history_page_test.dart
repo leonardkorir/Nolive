@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
@@ -13,14 +14,14 @@ void main() {
   ) async {
     final bootstrap = await _createBootstrapWithHistory([
       HistoryRecord(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '1001',
         title: '早间技术分享',
         streamerName: '主播甲',
         viewedAt: DateTime(2026, 3, 13, 9, 30),
       ),
       HistoryRecord(
-        providerId: 'douyu',
+        providerId: ProviderId.douyu,
         roomId: '1002',
         title: '',
         streamerName: '主播乙',
@@ -78,14 +79,14 @@ void main() {
   testWidgets('watch history page deletes single record', (tester) async {
     final bootstrap = await _createBootstrapWithHistory([
       HistoryRecord(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '1001',
         title: '早间技术分享',
         streamerName: '主播甲',
         viewedAt: DateTime(2026, 3, 13, 9, 30),
       ),
       HistoryRecord(
-        providerId: 'douyu',
+        providerId: ProviderId.douyu,
         roomId: '1002',
         title: '晚间游戏直播',
         streamerName: '主播乙',
@@ -116,14 +117,14 @@ void main() {
   testWidgets('watch history page clears all records', (tester) async {
     final bootstrap = await _createBootstrapWithHistory([
       HistoryRecord(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '1001',
         title: '早间技术分享',
         streamerName: '主播甲',
         viewedAt: DateTime(2026, 3, 13, 9, 30),
       ),
       HistoryRecord(
-        providerId: 'huya',
+        providerId: ProviderId.huya,
         roomId: '1003',
         title: '周末赛事',
         streamerName: '主播丙',
@@ -156,7 +157,7 @@ void main() {
   testWidgets('watch history page opens room route on tap', (tester) async {
     final bootstrap = await _createBootstrapWithHistory([
       HistoryRecord(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '1001',
         title: '早间技术分享',
         streamerName: '主播甲',

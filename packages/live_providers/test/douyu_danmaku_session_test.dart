@@ -6,116 +6,124 @@ import 'package:live_providers/src/danmaku/douyu_danmaku_session.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('douyu danmaku session races both endpoints with browser headers',
-      () async {
-    final attempts =
-        <({Uri uri, Map<String, dynamic> headers, Duration timeout})>[];
-    final primaryClient = _FakeDouyuSocketClient();
-    final fallbackClient = _FakeDouyuSocketClient();
-    final session = DouyuDanmakuSession(
-      roomId: '3125893',
-      socketConnector: (uri,
-          {required headers, required connectTimeout}) async {
-        attempts.add((uri: uri, headers: headers, timeout: connectTimeout));
-        return uri.port == 8502 ? primaryClient : fallbackClient;
-      },
-    );
+  test(
+    'douyu danmaku session races both endpoints with browser headers',
+    () async {
+      final attempts =
+          <({Uri uri, Map<String, dynamic> headers, Duration timeout})>[];
+      final primaryClient = _FakeDouyuSocketClient();
+      final fallbackClient = _FakeDouyuSocketClient();
+      final session = DouyuDanmakuSession(
+        roomId: '3125893',
+        socketConnector:
+            (uri, {required headers, required connectTimeout}) async {
+              attempts.add((
+                uri: uri,
+                headers: headers,
+                timeout: connectTimeout,
+              ));
+              return uri.port == 8502 ? primaryClient : fallbackClient;
+            },
+      );
 
-    await session.connect();
+      await session.connect();
 
-    expect(attempts, hasLength(2));
-    expect(
-      attempts.map((item) => item.uri.toString()),
-      containsAll(<String>[
-        'wss://danmuproxy.douyu.com:8502/',
-        'wss://danmuproxy.douyu.com:8506/',
-      ]),
-    );
-    for (final attempt in attempts) {
-      expect(attempt.headers['origin'], 'https://www.douyu.com');
-      expect(attempt.headers['referer'], 'https://www.douyu.com/');
-      expect(attempt.headers['user-agent'], contains('Mozilla/5.0'));
-      expect(attempt.timeout, const Duration(seconds: 4));
-    }
-    expect(primaryClient.outgoingFrames, hasLength(2));
-    expect(fallbackClient.closed, isTrue);
+      expect(attempts, hasLength(2));
+      expect(
+        attempts.map((item) => item.uri.toString()),
+        containsAll(<String>[
+          'wss://danmuproxy.douyu.com:8502/',
+          'wss://danmuproxy.douyu.com:8506/',
+        ]),
+      );
+      for (final attempt in attempts) {
+        expect(attempt.headers['origin'], 'https://www.douyu.com');
+        expect(attempt.headers['referer'], 'https://www.douyu.com/');
+        expect(attempt.headers['user-agent'], contains('Mozilla/5.0'));
+        expect(attempt.timeout, const Duration(seconds: 4));
+      }
+      expect(primaryClient.outgoingFrames, hasLength(2));
+      expect(fallbackClient.closed, isTrue);
 
-    await session.disconnect();
-  });
-
-  test('douyu danmaku session succeeds when 8502 fails but 8506 connects',
-      () async {
-    final attemptedUrls = <String>[];
-    final session = DouyuDanmakuSession(
-      roomId: '3125893',
-      socketConnector: (uri,
-          {required headers, required connectTimeout}) async {
-        attemptedUrls.add(uri.toString());
-        if (uri.port == 8502) {
-          throw StateError('primary down');
-        }
-        return _FakeDouyuSocketClient();
-      },
-    );
-
-    await session.connect();
-
-    expect(
-      attemptedUrls,
-      containsAll(<String>[
-        'wss://danmuproxy.douyu.com:8502/',
-        'wss://danmuproxy.douyu.com:8506/',
-      ]),
-    );
-
-    await session.disconnect();
-  });
+      await session.disconnect();
+    },
+  );
 
   test(
-      'douyu danmaku session clears state on socket error and allows reconnect',
-      () async {
-    var connectCallCount = 0;
-    final firstController = StreamController<dynamic>();
-    final firstClient = _FakeDouyuSocketClientFromController(firstController);
-    final session = DouyuDanmakuSession(
-      roomId: '12345',
-      socketUrls: const ['wss://danmuproxy.douyu.com:8502/'],
-      socketConnector: (uri,
-          {required headers, required connectTimeout}) async {
-        connectCallCount++;
-        return connectCallCount == 1 ? firstClient : _FakeDouyuSocketClient();
-      },
-    );
+    'douyu danmaku session succeeds when 8502 fails but 8506 connects',
+    () async {
+      final attemptedUrls = <String>[];
+      final session = DouyuDanmakuSession(
+        roomId: '3125893',
+        socketConnector:
+            (uri, {required headers, required connectTimeout}) async {
+              attemptedUrls.add(uri.toString());
+              if (uri.port == 8502) {
+                throw StateError('primary down');
+              }
+              return _FakeDouyuSocketClient();
+            },
+      );
 
-    final notices = <String>[];
-    session.messages.listen((msg) {
-      if (msg.type == LiveMessageType.notice) notices.add(msg.content);
-    });
+      await session.connect();
 
-    await session.connect();
-    expect(connectCallCount, 1);
+      expect(
+        attemptedUrls,
+        containsAll(<String>[
+          'wss://danmuproxy.douyu.com:8502/',
+          'wss://danmuproxy.douyu.com:8506/',
+        ]),
+      );
 
-    firstController.addError(StateError('network failure'));
-    await Future<void>.delayed(Duration.zero);
+      await session.disconnect();
+    },
+  );
 
-    expect(firstClient.closed, isTrue);
+  test(
+    'douyu danmaku session clears state on socket error and allows reconnect',
+    () async {
+      var connectCallCount = 0;
+      final firstController = StreamController<dynamic>();
+      final firstClient = _FakeDouyuSocketClientFromController(firstController);
+      final session = DouyuDanmakuSession(
+        roomId: '12345',
+        socketUrls: const ['wss://danmuproxy.douyu.com:8502/'],
+        socketConnector:
+            (uri, {required headers, required connectTimeout}) async {
+              connectCallCount++;
+              return connectCallCount == 1
+                  ? firstClient
+                  : _FakeDouyuSocketClient();
+            },
+      );
 
-    // zombie fix: _connected should be false after error, allowing reconnect.
-    await session.connect();
-    expect(connectCallCount, 2);
-    expect(notices.any((n) => n.contains('斗鱼弹幕连接异常')), isTrue);
+      final notices = <String>[];
+      session.messages.listen((msg) {
+        if (msg.type == LiveMessageType.notice) notices.add(msg.content);
+      });
 
-    await session.disconnect();
-    if (!firstController.isClosed) {
-      await firstController.close();
-    }
-  });
+      await session.connect();
+      expect(connectCallCount, 1);
+
+      firstController.addError(StateError('network failure'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(firstClient.closed, isTrue);
+
+      // zombie fix: _connected should be false after error, allowing reconnect.
+      await session.connect();
+      expect(connectCallCount, 2);
+      expect(notices.any((n) => n.contains('斗鱼弹幕连接异常')), isTrue);
+
+      await session.disconnect();
+      if (!firstController.isClosed) {
+        await firstController.close();
+      }
+    },
+  );
 
   test('douyu danmaku session throws on empty socket URLs', () async {
-    final session = DouyuDanmakuSession(
-      roomId: '12345',
-      socketUrls: const [],
-    );
+    final session = DouyuDanmakuSession(roomId: '12345', socketUrls: const []);
     await expectLater(session.connect, throwsStateError);
   });
 }

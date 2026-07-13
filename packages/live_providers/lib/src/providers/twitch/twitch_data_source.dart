@@ -10,10 +10,7 @@ abstract interface class TwitchDataSource {
 
   Future<PagedResponse<LiveRoom>> fetchRecommendRooms({int page = 1});
 
-  Future<PagedResponse<LiveRoom>> searchRooms(
-    String query, {
-    int page = 1,
-  });
+  Future<PagedResponse<LiveRoom>> searchRooms(String query, {int page = 1});
 
   Future<LiveRoomDetail> fetchRoomDetail(String roomId);
 

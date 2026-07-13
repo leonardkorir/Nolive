@@ -11,9 +11,15 @@ class StripchatPreviewDataSource implements StripchatDataSource {
       name: '亚洲 & 太平洋',
       children: [
         LiveSubCategory(
-            id: 'tagLanguageChinese', parentId: 'country-asia_pacific', name: '中文'),
+          id: 'tagLanguageChinese',
+          parentId: 'country-asia_pacific',
+          name: '中文',
+        ),
         LiveSubCategory(
-            id: 'tagLanguageIndian', parentId: 'country-asia_pacific', name: '印度人'),
+          id: 'tagLanguageIndian',
+          parentId: 'country-asia_pacific',
+          name: '印度人',
+        ),
       ],
     ),
     LiveCategory(
@@ -21,8 +27,10 @@ class StripchatPreviewDataSource implements StripchatDataSource {
       name: '北美',
       children: [
         LiveSubCategory(
-            id: 'tagLanguageUSModels', parentId: 'country-north_america',
-            name: '美国人'),
+          id: 'tagLanguageUSModels',
+          parentId: 'country-north_america',
+          name: '美国人',
+        ),
       ],
     ),
     LiveCategory(
@@ -30,18 +38,27 @@ class StripchatPreviewDataSource implements StripchatDataSource {
       name: '种族',
       children: [
         LiveSubCategory(
-            id: 'ethnicityAsian', parentId: 'ethnicity', name: '亚洲人'),
+          id: 'ethnicityAsian',
+          parentId: 'ethnicity',
+          name: '亚洲人',
+        ),
         LiveSubCategory(
-            id: 'ethnicityLatina', parentId: 'ethnicity', name: '拉丁人'),
+          id: 'ethnicityLatina',
+          parentId: 'ethnicity',
+          name: '拉丁人',
+        ),
         LiveSubCategory(
-            id: 'ethnicityWhite', parentId: 'ethnicity', name: '白人'),
+          id: 'ethnicityWhite',
+          parentId: 'ethnicity',
+          name: '白人',
+        ),
       ],
     ),
   ];
 
   static const List<LiveRoom> _rooms = [
     LiveRoom(
-      providerId: 'stripchat',
+      providerId: ProviderId.stripchat,
       roomId: 'alice_demo',
       title: '',
       streamerName: 'alice_demo',
@@ -52,7 +69,7 @@ class StripchatPreviewDataSource implements StripchatDataSource {
       viewerCount: 1200,
     ),
     LiveRoom(
-      providerId: 'stripchat',
+      providerId: ProviderId.stripchat,
       roomId: 'bob_live',
       title: '',
       streamerName: 'bob_live',
@@ -62,7 +79,7 @@ class StripchatPreviewDataSource implements StripchatDataSource {
       viewerCount: 800,
     ),
     LiveRoom(
-      providerId: 'stripchat',
+      providerId: ProviderId.stripchat,
       roomId: 'carol_show',
       title: '',
       streamerName: 'carol_show',
@@ -73,7 +90,7 @@ class StripchatPreviewDataSource implements StripchatDataSource {
       viewerCount: 2500,
     ),
     LiveRoom(
-      providerId: 'stripchat',
+      providerId: ProviderId.stripchat,
       roomId: 'dave_music',
       title: '',
       streamerName: 'dave_music',
@@ -88,7 +105,7 @@ class StripchatPreviewDataSource implements StripchatDataSource {
   static final Map<String, LiveRoomDetail> _details = {
     for (final room in _rooms)
       room.roomId: LiveRoomDetail(
-        providerId: 'stripchat',
+        providerId: ProviderId.stripchat,
         roomId: room.roomId,
         title: '${room.streamerName} Room',
         streamerName: room.streamerName,
@@ -109,32 +126,11 @@ class StripchatPreviewDataSource implements StripchatDataSource {
   };
 
   static final List<LivePlayQuality> _qualities = List.unmodifiable([
-    LivePlayQuality(
-      id: 'auto',
-      label: 'Auto',
-      isDefault: true,
-      sortOrder: 0,
-    ),
-    LivePlayQuality(
-      id: '720p',
-      label: '720P',
-      sortOrder: 720,
-    ),
-    LivePlayQuality(
-      id: '480p',
-      label: '480P',
-      sortOrder: 480,
-    ),
-    LivePlayQuality(
-      id: '240p',
-      label: '240P',
-      sortOrder: 240,
-    ),
-    LivePlayQuality(
-      id: '160p',
-      label: '160P',
-      sortOrder: 160,
-    ),
+    LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true, sortOrder: 0),
+    LivePlayQuality(id: '720p', label: '720P', sortOrder: 720),
+    LivePlayQuality(id: '480p', label: '480P', sortOrder: 480),
+    LivePlayQuality(id: '240p', label: '240P', sortOrder: 240),
+    LivePlayQuality(id: '160p', label: '160P', sortOrder: 160),
   ]);
 
   @override
@@ -147,34 +143,43 @@ class StripchatPreviewDataSource implements StripchatDataSource {
     LiveSubCategory category, {
     int page = 1,
   }) async {
-    final filtered = _rooms.where((room) {
-      return switch (category.id) {
-        'tagLanguageChinese' => room.areaName == 'China',
-        'tagLanguageUSModels' => room.areaName == 'United States',
-        _ => true,
-      };
-    }).toList(growable: false);
+    final filtered = _rooms
+        .where((room) {
+          return switch (category.id) {
+            'tagLanguageChinese' => room.areaName == 'China',
+            'tagLanguageUSModels' => room.areaName == 'United States',
+            _ => true,
+          };
+        })
+        .toList(growable: false);
     return PagedResponse(items: filtered, hasMore: false, page: page);
   }
 
   @override
   Future<PagedResponse<LiveRoom>> fetchRecommendRooms({int page = 1}) async {
-    final items = [..._rooms]..sort((left, right) =>
-        (right.viewerCount ?? 0).compareTo(left.viewerCount ?? 0));
+    final items = [..._rooms]
+      ..sort(
+        (left, right) =>
+            (right.viewerCount ?? 0).compareTo(left.viewerCount ?? 0),
+      );
     return PagedResponse(items: items, hasMore: false, page: page);
   }
 
   @override
-  Future<PagedResponse<LiveRoom>> searchRooms(String query,
-      {int page = 1}) async {
+  Future<PagedResponse<LiveRoom>> searchRooms(
+    String query, {
+    int page = 1,
+  }) async {
     final normalizedQuery = query.trim().toLowerCase();
-    final filtered = _rooms.where((room) {
-      if (normalizedQuery.isEmpty) {
-        return true;
-      }
-      return room.streamerName.toLowerCase().contains(normalizedQuery) ||
-          room.roomId.toLowerCase().contains(normalizedQuery);
-    }).toList(growable: false);
+    final filtered = _rooms
+        .where((room) {
+          if (normalizedQuery.isEmpty) {
+            return true;
+          }
+          return room.streamerName.toLowerCase().contains(normalizedQuery) ||
+              room.roomId.toLowerCase().contains(normalizedQuery);
+        })
+        .toList(growable: false);
     return PagedResponse(items: filtered, hasMore: false, page: page);
   }
 
@@ -192,7 +197,8 @@ class StripchatPreviewDataSource implements StripchatDataSource {
 
   @override
   Future<List<LivePlayQuality>> fetchPlayQualities(
-      LiveRoomDetail detail) async {
+    LiveRoomDetail detail,
+  ) async {
     return _qualities;
   }
 
@@ -206,9 +212,7 @@ class StripchatPreviewDataSource implements StripchatDataSource {
       LivePlayUrl(
         url:
             'https://edge-hls.doppiocdn.com/hls/$streamName/master/${streamName}_${quality.id}.m3u8?minHeight=240&playlistType=lowLatency',
-        headers: const {
-          'referer': 'https://zh.stripchat.com/',
-        },
+        headers: const {'referer': 'https://zh.stripchat.com/'},
         lineLabel: 'HLS ${quality.id}',
       ),
     ];

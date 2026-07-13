@@ -60,14 +60,22 @@ class RestoreWebDavSnapshotUseCase {
   final SecureSnapshotImportCoordinator snapshotImportCoordinator;
   final WebDavBackupServiceFactory? _createService;
 
-  Future<SyncSnapshot?> call(SyncPreferences preferences) async {
+  Future<SyncSnapshot?> call(
+    SyncPreferences preferences, {
+    SyncImportMode mode = SyncImportMode.replace,
+    DateTime? lastSyncAt,
+  }) async {
     final service = (_createService ?? _createWebDavBackupService)(
       preferences.toWebDavConfig(),
     );
     try {
       final snapshot = await service.restoreLatest();
       if (snapshot != null) {
-        await snapshotImportCoordinator.importSnapshot(snapshot);
+        await snapshotImportCoordinator.importSnapshot(
+          snapshot,
+          mode: mode,
+          lastSyncAt: lastSyncAt,
+        );
       }
       return snapshot;
     } finally {

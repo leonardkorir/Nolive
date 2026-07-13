@@ -107,9 +107,7 @@ var bootstrap = {
 </script></html>
 ''';
     final parser = YouTubePageParser();
-    final bootstrap = parser.tryParseLiveChatBootstrap(
-      html: html,
-    );
+    final bootstrap = parser.tryParseLiveChatBootstrap(html: html);
 
     expect(bootstrap, isNotNull);
     expect(bootstrap!.apiKey, 'AIzaChat');
@@ -207,25 +205,28 @@ ytcfg.set({
     expect((context!['client'] as Map)['visitorData'], 'visitor-token');
   });
 
-  test('youtube page parser keeps escaped backslashes before quotes intact',
-      () {
-    const html = r'''
+  test(
+    'youtube page parser keeps escaped backslashes before quotes intact',
+    () {
+      const html = r'''
 <html><script>
 var ytInitialData = {"metadata":{"json":"\\\\\"quoted\\\\\""},"contents":{"twoColumnBrowseResultsRenderer":{"tabs":[]}}};
 </script></html>
 ''';
-    final parser = YouTubePageParser();
-    final initialData = parser.tryExtractInitialData(html);
+      final parser = YouTubePageParser();
+      final initialData = parser.tryExtractInitialData(html);
 
-    expect(initialData, isNotNull);
-    final encoded = (initialData!['metadata'] as Map)['json'] as String;
-    expect(encoded, contains('quoted'));
-    expect(encoded, startsWith(r'\\'));
-  });
+      expect(initialData, isNotNull);
+      final encoded = (initialData!['metadata'] as Map)['json'] as String;
+      expect(encoded, contains('quoted'));
+      expect(encoded, startsWith(r'\\'));
+    },
+  );
 
-  test('youtube page parser finds watch-page renderers without fixed slots',
-      () {
-    const html = '''
+  test(
+    'youtube page parser finds watch-page renderers without fixed slots',
+    () {
+      const html = '''
 <html><script>
 var ytInitialData = {
   "contents": {
@@ -275,14 +276,15 @@ var ytInitialData = {
 };
 </script></html>
 ''';
-    final parser = YouTubePageParser();
-    final candidate = parser.findLiveCandidateByVideoId(
-      initialData: parser.tryExtractInitialData(html),
-      videoId: 'iEpJwprxDdk',
-    );
+      final parser = YouTubePageParser();
+      final candidate = parser.findLiveCandidateByVideoId(
+        initialData: parser.tryExtractInitialData(html),
+        videoId: 'iEpJwprxDdk',
+      );
 
-    expect(candidate, isNotNull);
-    expect(candidate!.streamerName, 'Bloomberg Television');
-    expect(candidate.viewerCount, 4615);
-  });
+      expect(candidate, isNotNull);
+      expect(candidate!.streamerName, 'Bloomberg Television');
+      expect(candidate.viewerCount, 4615);
+    },
+  );
 }

@@ -17,3 +17,5 @@ export 'src/provider/provider_registration.dart';
 export 'src/text/display_text_normalizer.dart';
 export 'src/text/html_entity_decoder.dart';
 export 'src/text/well_formed_string_extension.dart';
+export 'src/result.dart';
+export 'src/telemetry/nfr_isolate_telemetry.dart';

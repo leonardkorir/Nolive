@@ -16,11 +16,7 @@ abstract final class ProviderJson {
     return const <dynamic>[];
   }
 
-  static int? asInt(
-    Object? value, {
-    bool allowNum = false,
-    bool trim = false,
-  }) {
+  static int? asInt(Object? value, {bool allowNum = false, bool trim = false}) {
     if (value is int) {
       return value;
     }
@@ -43,8 +39,9 @@ abstract final class ProviderJson {
       return null;
     }
     final normalized = raw.replaceAll(',', '');
-    final match =
-        RegExp(r'^([0-9]+(?:\.[0-9]+)?)([万亿]?)$').firstMatch(normalized);
+    final match = RegExp(
+      r'^([0-9]+(?:\.[0-9]+)?)([万亿]?)$',
+    ).firstMatch(normalized);
     if (match != null) {
       final number = double.tryParse(match.group(1) ?? '');
       if (number == null) {

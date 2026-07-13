@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
@@ -56,7 +57,7 @@ class _DanmakuShieldPageState extends State<DanmakuShieldPage> {
         builder: (context, snapshot) {
           final keywords = snapshot.data ?? const <String>[];
           return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+            padding: kSettingsPagePadding,
             children: [
               const SectionHeader(
                 title: '弹幕屏蔽规则',

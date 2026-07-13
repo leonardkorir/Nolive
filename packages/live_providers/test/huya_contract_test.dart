@@ -10,23 +10,32 @@ void main() {
 
     expect(descriptor.validate(), isEmpty);
     expect(
-        provider.requireContract<SupportsRecommendRooms>(
-            ProviderCapability.recommendRooms),
-        isA<SupportsRecommendRooms>());
+      provider.requireContract<SupportsRecommendRooms>(
+        ProviderCapability.recommendRooms,
+      ),
+      isA<SupportsRecommendRooms>(),
+    );
     expect(
-        provider.requireContract<SupportsRoomSearch>(
-            ProviderCapability.searchRooms),
-        isA<SupportsRoomSearch>());
+      provider.requireContract<SupportsRoomSearch>(
+        ProviderCapability.searchRooms,
+      ),
+      isA<SupportsRoomSearch>(),
+    );
     expect(
-        provider
-            .requireContract<SupportsRoomDetail>(ProviderCapability.roomDetail),
-        isA<SupportsRoomDetail>());
+      provider.requireContract<SupportsRoomDetail>(
+        ProviderCapability.roomDetail,
+      ),
+      isA<SupportsRoomDetail>(),
+    );
     expect(
-        provider.requireContract<SupportsPlayQualities>(
-            ProviderCapability.playQualities),
-        isA<SupportsPlayQualities>());
+      provider.requireContract<SupportsPlayQualities>(
+        ProviderCapability.playQualities,
+      ),
+      isA<SupportsPlayQualities>(),
+    );
     expect(
-        provider.requireContract<SupportsPlayUrls>(ProviderCapability.playUrls),
-        isA<SupportsPlayUrls>());
+      provider.requireContract<SupportsPlayUrls>(ProviderCapability.playUrls),
+      isA<SupportsPlayUrls>(),
+    );
   });
 }

@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:flutter/services.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/sync/application/sync_feature_dependencies.dart';
 import 'package:nolive_app/src/features/sync/application/sync_preferences_use_case.dart';
+import 'package:nolive_app/src/shared/presentation/user_facing_error.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 class SyncCenterPage extends StatefulWidget {
   const SyncCenterPage({required this.dependencies, super.key});
@@ -46,9 +49,7 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('快照 JSON 已复制到剪贴板')),
-    );
+    showAppSnackBar(context, '快照 JSON 已复制到剪贴板');
   }
 
   @override
@@ -66,11 +67,14 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
             if (snapshot.hasError || !snapshot.hasData) {
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
+                padding: kSettingsPagePadding,
                 children: [
                   EmptyStateCard(
                     title: '数据同步加载失败',
-                    message: '${snapshot.error}',
+                    message: formatUserFacingError(
+                      snapshot.error,
+                      fallback: '无法加载同步数据，请下拉重试',
+                    ),
                     icon: Icons.error_outline,
                   ),
                 ],
@@ -92,7 +96,7 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
 
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+              padding: kSettingsPagePadding,
               children: [
                 SectionHeader(
                   title: '数据同步',

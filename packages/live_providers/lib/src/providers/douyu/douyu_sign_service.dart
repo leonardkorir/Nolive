@@ -9,12 +9,13 @@ import '../provider_runtime_support.dart';
 import 'douyu_quickjs_signer.dart';
 import 'douyu_transport.dart';
 
-typedef DouyuSignExecutor = Future<String> Function({
-  required String script,
-  required String roomId,
-  required String deviceId,
-  required int timestamp,
-});
+typedef DouyuSignExecutor =
+    Future<String> Function({
+      required String script,
+      required String roomId,
+      required String deviceId,
+      required int timestamp,
+    });
 
 class DouyuSignedPlayContext {
   const DouyuSignedPlayContext({
@@ -35,10 +36,7 @@ abstract class DouyuSignService {
 
   Map<String, String> buildRoomHeaders(String roomId);
 
-  Map<String, String> buildPlayHeaders(
-    String roomId, {
-    String? deviceId,
-  });
+  Map<String, String> buildPlayHeaders(String roomId, {String? deviceId});
 
   Future<DouyuSignedPlayContext> buildPlayContext(String roomId);
 
@@ -50,17 +48,42 @@ abstract class DouyuSignService {
 }
 
 class HttpDouyuSignService implements DouyuSignService {
-  HttpDouyuSignService({
+  factory HttpDouyuSignService({
     required DouyuTransport transport,
     DouyuSignExecutor? signExecutor,
+    DouyuQuickJsSigner? signer,
     Random? random,
     void Function()? scheduleSignerWarmUp,
     void Function(String message)? diagnostics,
-  })  : _transport = transport,
-        _signExecutor = signExecutor ?? _defaultSignExecutor,
-        _diagnostics = diagnostics,
-        _random = random ?? Random.secure() {
-    (scheduleSignerWarmUp ?? DouyuQuickJsSigner.scheduleWarmUp).call();
+  }) {
+    final ownedSigner = signExecutor == null
+        ? signer ?? DouyuQuickJsSigner()
+        : null;
+    final DouyuSignExecutor resolvedSignExecutor =
+        signExecutor ?? ownedSigner!.execute;
+    return HttpDouyuSignService._(
+      transport: transport,
+      signExecutor: resolvedSignExecutor,
+      ownedSigner: ownedSigner,
+      random: random,
+      diagnostics: diagnostics,
+      scheduleSignerWarmUp: scheduleSignerWarmUp,
+    );
+  }
+
+  HttpDouyuSignService._({
+    required DouyuTransport transport,
+    required DouyuSignExecutor signExecutor,
+    required DouyuQuickJsSigner? ownedSigner,
+    Random? random,
+    void Function()? scheduleSignerWarmUp,
+    void Function(String message)? diagnostics,
+  }) : _transport = transport,
+       _signExecutor = signExecutor,
+       _ownedSigner = ownedSigner,
+       _diagnostics = diagnostics,
+       _random = random ?? Random.secure() {
+    (scheduleSignerWarmUp ?? _ownedSigner?.warmUp)?.call();
   }
 
   static const String defaultUserAgent =
@@ -70,6 +93,7 @@ class HttpDouyuSignService implements DouyuSignService {
 
   final DouyuTransport _transport;
   final DouyuSignExecutor _signExecutor;
+  final DouyuQuickJsSigner? _ownedSigner;
   final void Function(String message)? _diagnostics;
   final Random _random;
 
@@ -92,10 +116,7 @@ class HttpDouyuSignService implements DouyuSignService {
   }
 
   @override
-  Map<String, String> buildPlayHeaders(
-    String roomId, {
-    String? deviceId,
-  }) {
+  Map<String, String> buildPlayHeaders(String roomId, {String? deviceId}) {
     final resolvedDeviceId = deviceId ?? _generateDeviceId();
     return {
       'user-agent': defaultUserAgent,
@@ -200,29 +221,11 @@ class HttpDouyuSignService implements DouyuSignService {
     }
   }
 
-  static Future<String> _defaultSignExecutor({
-    required String script,
-    required String roomId,
-    required String deviceId,
-    required int timestamp,
-  }) async {
-    try {
-      return DouyuQuickJsSigner.getSign(
-        script,
-        roomId: roomId,
-        deviceId: deviceId,
-        timestamp: timestamp,
-      ).trim();
-    } catch (_) {
-      return _buildFallbackBody(
-        roomId: roomId,
-        deviceId: deviceId,
-        timestamp: timestamp,
-      );
-    }
-  }
-
   static Map<String, dynamic> _asMap(Object? value) {
     return ProviderJson.asMap(value);
+  }
+
+  void dispose() {
+    _ownedSigner?.dispose();
   }
 }

@@ -28,9 +28,10 @@ class DouyinUtils {
     resolvedParams.putIfAbsent('msToken', () => getMSToken());
 
     final query = Uri(
-        queryParameters: resolvedParams.map(
-      (key, value) => MapEntry(key, value.toString()),
-    )).query;
+      queryParameters: resolvedParams.map(
+        (key, value) => MapEntry(key, value.toString()),
+      ),
+    ).query;
     final signedQuery = signer.generateAbogus(query, body: '').first;
     return Uri.parse(baseUrl).replace(query: signedQuery).toString();
   }

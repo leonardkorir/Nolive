@@ -1,3 +1,4 @@
+import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 
 class UpdateFollowTagsUseCase {
@@ -14,22 +15,25 @@ class UpdateFollowTagsUseCase {
     required String roomId,
     required List<String> tags,
   }) async {
+    final normalizedProviderId = ProviderId.from(providerId);
     final records = await followRepository.listAll();
     final record = records
         .where(
-          (item) => item.providerId == providerId && item.roomId == roomId,
+          (item) =>
+              item.providerId == normalizedProviderId && item.roomId == roomId,
         )
         .firstOrNull;
     if (record == null) {
       return;
     }
 
-    final normalized = tags
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty)
-        .toSet()
-        .toList(growable: false)
-      ..sort();
+    final normalized =
+        tags
+            .map((item) => item.trim())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
 
     for (final tag in normalized) {
       await tagRepository.create(tag);

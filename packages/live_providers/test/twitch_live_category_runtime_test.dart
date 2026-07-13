@@ -3,96 +3,102 @@ import 'package:live_providers/src/providers/twitch/twitch_live_data_source.dart
 import 'package:test/test.dart';
 
 void main() {
-  test('twitch live data source maps native categories from directory payload',
-      () async {
-    final dataSource = TwitchLiveDataSource(
-      apiClient: _FakeTwitchCategoryApiClient(),
-    );
+  test(
+    'twitch live data source maps native categories from directory payload',
+    () async {
+      final dataSource = TwitchLiveDataSource(
+        apiClient: _FakeTwitchCategoryApiClient(),
+      );
 
-    final categories = await dataSource.fetchCategories();
-    expect(categories, hasLength(1));
-    expect(categories.single.children.length, greaterThanOrEqualTo(2));
+      final categories = await dataSource.fetchCategories();
+      expect(categories, hasLength(1));
+      expect(categories.single.children.length, greaterThanOrEqualTo(2));
 
-    final justChatting = categories.single.children.firstWhere(
-      (item) => item.name == 'Just Chatting',
-    );
-    expect(justChatting.id, 'just-chatting');
-    expect(justChatting.pic, contains('144x192'));
+      final justChatting = categories.single.children.firstWhere(
+        (item) => item.name == 'Just Chatting',
+      );
+      expect(justChatting.id, 'just-chatting');
+      expect(justChatting.pic, contains('144x192'));
 
-    final firstPage = await dataSource.fetchCategoryRooms(
-      justChatting,
-      page: 1,
-    );
-    expect(firstPage.items, hasLength(30));
-    expect(firstPage.hasMore, isTrue);
-    expect(
-      firstPage.items.map((item) => item.roomId),
-      containsAll(['xqc', 'arky']),
-    );
-    expect(
-      firstPage.items.every((item) => item.areaName == 'Just Chatting'),
-      isTrue,
-    );
+      final firstPage = await dataSource.fetchCategoryRooms(
+        justChatting,
+        page: 1,
+      );
+      expect(firstPage.items, hasLength(30));
+      expect(firstPage.hasMore, isTrue);
+      expect(
+        firstPage.items.map((item) => item.roomId),
+        containsAll(['xqc', 'arky']),
+      );
+      expect(
+        firstPage.items.every((item) => item.areaName == 'Just Chatting'),
+        isTrue,
+      );
 
-    final secondPage = await dataSource.fetchCategoryRooms(
-      justChatting,
-      page: 2,
-    );
-    expect(secondPage.items, hasLength(10));
-    expect(secondPage.hasMore, isFalse);
-  });
+      final secondPage = await dataSource.fetchCategoryRooms(
+        justChatting,
+        page: 2,
+      );
+      expect(secondPage.items, hasLength(10));
+      expect(secondPage.hasMore, isFalse);
+    },
+  );
 
-  test('twitch live data source expands recommend feed with category windows',
-      () async {
-    final dataSource = TwitchLiveDataSource(
-      apiClient: _FakeTwitchCategoryApiClient(),
-    );
+  test(
+    'twitch live data source expands recommend feed with category windows',
+    () async {
+      final dataSource = TwitchLiveDataSource(
+        apiClient: _FakeTwitchCategoryApiClient(),
+      );
 
-    final firstPage = await dataSource.fetchRecommendRooms(page: 1);
-    expect(firstPage.items, isNotEmpty);
-    expect(firstPage.hasMore, isTrue);
+      final firstPage = await dataSource.fetchRecommendRooms(page: 1);
+      expect(firstPage.items, isNotEmpty);
+      expect(firstPage.hasMore, isTrue);
 
-    final secondPage = await dataSource.fetchRecommendRooms(page: 2);
-    expect(secondPage.items, isNotEmpty);
-    expect(
-      secondPage.items.map((item) => item.roomId),
-      contains('justchatting2'),
-    );
-    expect(secondPage.page, 2);
-    expect(secondPage.hasMore, isTrue);
-  });
+      final secondPage = await dataSource.fetchRecommendRooms(page: 2);
+      expect(secondPage.items, isNotEmpty);
+      expect(
+        secondPage.items.map((item) => item.roomId),
+        contains('justchatting2'),
+      );
+      expect(secondPage.page, 2);
+      expect(secondPage.hasMore, isTrue);
+    },
+  );
 }
 
 class _FakeTwitchCategoryApiClient implements TwitchApiClient {
-  static final List<Map<String, dynamic>> _justChattingStreams =
-      List.generate(40, (index) {
-    final login = switch (index) {
-      0 => 'xqc',
-      1 => 'arky',
-      _ => 'justchatting$index',
-    };
-    final displayName = switch (index) {
-      0 => 'xQc',
-      1 => 'arky',
-      _ => 'JustChatting$index',
-    };
-    return {
-      'title': 'Just Chatting Stream #$index',
-      'previewImageURL': 'https://static.test/$login.jpg',
-      'viewersCount': 20000 - index,
-      'broadcaster': {
-        'login': login,
-        'displayName': displayName,
-        'profileImageURL': 'https://static.test/$login-avatar.jpg',
-      },
-      'game': {
-        'id': '509658',
-        'slug': 'just-chatting',
-        'displayName': 'Just Chatting',
-        'boxArtURL': 'https://static.test/{width}x{height}.jpg',
-      },
-    };
-  });
+  static final List<Map<String, dynamic>> _justChattingStreams = List.generate(
+    40,
+    (index) {
+      final login = switch (index) {
+        0 => 'xqc',
+        1 => 'arky',
+        _ => 'justchatting$index',
+      };
+      final displayName = switch (index) {
+        0 => 'xQc',
+        1 => 'arky',
+        _ => 'JustChatting$index',
+      };
+      return {
+        'title': 'Just Chatting Stream #$index',
+        'previewImageURL': 'https://static.test/$login.jpg',
+        'viewersCount': 20000 - index,
+        'broadcaster': {
+          'login': login,
+          'displayName': displayName,
+          'profileImageURL': 'https://static.test/$login-avatar.jpg',
+        },
+        'game': {
+          'id': '509658',
+          'slug': 'just-chatting',
+          'displayName': 'Just Chatting',
+          'boxArtURL': 'https://static.test/{width}x{height}.jpg',
+        },
+      };
+    },
+  );
 
   @override
   Future<String> fetchText(
@@ -120,9 +126,7 @@ class _FakeTwitchCategoryApiClient implements TwitchApiClient {
                 .take(2)
                 .map((item) => {'node': item, 'cursor': item['title']})
                 .toList(),
-            'pageInfo': {
-              'hasNextPage': true,
-            },
+            'pageInfo': {'hasNextPage': true},
           },
         },
       };
@@ -199,9 +203,7 @@ class _FakeTwitchCategoryApiClient implements TwitchApiClient {
                 },
               },
             ],
-            'pageInfo': {
-              'hasNextPage': true,
-            },
+            'pageInfo': {'hasNextPage': true},
           },
         },
       };
@@ -215,9 +217,7 @@ class _FakeTwitchCategoryApiClient implements TwitchApiClient {
             'game': {
               'streams': {
                 'edges': const [],
-                'pageInfo': {
-                  'hasNextPage': false,
-                },
+                'pageInfo': {'hasNextPage': false},
               },
             },
           },
@@ -229,9 +229,7 @@ class _FakeTwitchCategoryApiClient implements TwitchApiClient {
           'game': {
             'streams': {
               'edges': items.map((item) => {'node': item}).toList(),
-              'pageInfo': {
-                'hasNextPage': limit < _justChattingStreams.length,
-              },
+              'pageInfo': {'hasNextPage': limit < _justChattingStreams.length},
             },
           },
         },

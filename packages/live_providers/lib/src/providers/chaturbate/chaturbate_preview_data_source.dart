@@ -8,7 +8,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
 
   static const List<LiveRoom> _rooms = [
     LiveRoom(
-      providerId: 'chaturbate',
+      providerId: ProviderId.chaturbate,
       roomId: 'kittengirlxo',
       title: 'kittengirlxo',
       streamerName: 'kittengirlxo',
@@ -17,7 +17,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
       viewerCount: 9775,
     ),
     LiveRoom(
-      providerId: 'chaturbate',
+      providerId: ProviderId.chaturbate,
       roomId: 'emilygrey_',
       title: 'Hiya! | /tipmenu | #lovense #lush',
       streamerName: 'emilygrey_',
@@ -26,7 +26,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
       viewerCount: 8910,
     ),
     LiveRoom(
-      providerId: 'chaturbate',
+      providerId: ProviderId.chaturbate,
       roomId: 'sladkoesolnishko',
       title: 'Couple preview room',
       streamerName: 'sladkoesolnishko',
@@ -36,7 +36,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
       viewerCount: 4210,
     ),
     LiveRoom(
-      providerId: 'chaturbate',
+      providerId: ProviderId.chaturbate,
       roomId: 'cutie_lilliana',
       title: 'Trans preview room',
       streamerName: 'cutie_lilliana',
@@ -49,7 +49,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
 
   static const Map<String, LiveRoomDetail> _details = {
     'kittengirlxo': LiveRoomDetail(
-      providerId: 'chaturbate',
+      providerId: ProviderId.chaturbate,
       roomId: 'kittengirlxo',
       title: "Kittengirlxo's room",
       streamerName: 'kittengirlxo',
@@ -69,7 +69,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
       },
     ),
     'emilygrey_': LiveRoomDetail(
-      providerId: 'chaturbate',
+      providerId: ProviderId.chaturbate,
       roomId: 'emilygrey_',
       title: 'Hiya! | /tipmenu | #lovense #lush',
       streamerName: 'emilygrey_',
@@ -86,7 +86,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
       },
     ),
     'sladkoesolnishko': LiveRoomDetail(
-      providerId: 'chaturbate',
+      providerId: ProviderId.chaturbate,
       roomId: 'sladkoesolnishko',
       title: 'Couple preview room',
       streamerName: 'sladkoesolnishko',
@@ -103,7 +103,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
       },
     ),
     'cutie_lilliana': LiveRoomDetail(
-      providerId: 'chaturbate',
+      providerId: ProviderId.chaturbate,
       roomId: 'cutie_lilliana',
       title: 'Trans preview room',
       streamerName: 'cutie_lilliana',
@@ -122,11 +122,7 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
   };
 
   static final List<LivePlayQuality> _qualities = List.unmodifiable([
-    LivePlayQuality(
-      id: 'auto',
-      label: 'Auto',
-      isDefault: true,
-    ),
+    LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
   ]);
 
   @override
@@ -159,14 +155,16 @@ class ChaturbatePreviewDataSource implements ChaturbateDataSource {
     int page = 1,
   }) async {
     final normalizedQuery = query.trim().toLowerCase();
-    final items = _rooms.where((room) {
-      if (normalizedQuery.isEmpty) {
-        return true;
-      }
-      return room.roomId.toLowerCase().contains(normalizedQuery) ||
-          room.title.toLowerCase().contains(normalizedQuery) ||
-          room.streamerName.toLowerCase().contains(normalizedQuery);
-    }).toList(growable: false);
+    final items = _rooms
+        .where((room) {
+          if (normalizedQuery.isEmpty) {
+            return true;
+          }
+          return room.roomId.toLowerCase().contains(normalizedQuery) ||
+              room.title.toLowerCase().contains(normalizedQuery) ||
+              room.streamerName.toLowerCase().contains(normalizedQuery);
+        })
+        .toList(growable: false);
     return PagedResponse(items: items, hasMore: false, page: page);
   }
 

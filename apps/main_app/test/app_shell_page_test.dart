@@ -27,6 +27,18 @@ void main() {
 
     expect(find.text('全部'), findsOneWidget);
     expect(find.byKey(const Key('shell-tab-library')), findsOneWidget);
+
+    final navBar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(
+      navBar.labelBehavior,
+      isNot(NavigationDestinationLabelBehavior.alwaysHide),
+    );
+    expect(
+      navBar.labelBehavior,
+      NavigationDestinationLabelBehavior.onlyShowSelected,
+    );
+    // Selected tab label is discoverable on the phone shell.
+    expect(find.text('关注'), findsWidgets);
   });
 
   testWidgets('app shell keeps library page alive across tab switches', (
@@ -48,7 +60,7 @@ void main() {
           onRoomDetail: (roomId) async {
             detailCalls += 1;
             return LiveRoomDetail(
-              providerId: _kAppShellFollowProviderId.value,
+              providerId: _kAppShellFollowProviderId,
               roomId: roomId,
               title: '壳层测试直播间',
               streamerName: '壳层测试主播',
@@ -61,7 +73,7 @@ void main() {
 
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'app_shell_follow',
+        providerId: ProviderId('app_shell_follow'),
         roomId: 'room-1',
         streamerName: '壳层测试主播',
       ),

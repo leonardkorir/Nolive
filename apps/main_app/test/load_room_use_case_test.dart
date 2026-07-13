@@ -31,8 +31,8 @@ void main() {
       final registry = ProviderRegistry()
         ..register(
           ProviderRegistration(
-            descriptor: _kOverrideDescriptor,
-            builder: _OverrideRoomProvider.new,
+            descriptor: _kOverrideBilibiliDescriptor,
+            builder: _OverrideBilibiliRoomProvider.new,
           ),
         );
       final historyRepository = InMemoryHistoryRepository();
@@ -40,11 +40,11 @@ void main() {
         registry,
         historyRepository: historyRepository,
         roomDetailOverride: ({required providerId, required roomId}) async {
-          if (providerId != ProviderId.chaturbate) {
+          if (providerId != ProviderId.bilibili) {
             return null;
           }
           return LiveRoomDetail(
-            providerId: providerId.value,
+            providerId: providerId,
             roomId: roomId,
             title: 'override room',
             streamerName: roomId,
@@ -55,13 +55,50 @@ void main() {
       );
 
       final snapshot = await useCase(
-        providerId: ProviderId.chaturbate,
-        roomId: 'milabunny_',
+        providerId: ProviderId.bilibili,
+        roomId: '6',
       );
 
-      expect(snapshot.detail.roomId, 'milabunny_');
+      expect(snapshot.detail.roomId, '6');
       expect(snapshot.detail.title, 'override room');
       expect(snapshot.playUrls.single.url, 'https://example.com/live.m3u8');
+      expect(_OverrideBilibiliRoomProvider.fetchRoomDetailCalls, 1);
+    },
+  );
+
+  test(
+    'load room does not use room detail override for chaturbate after provider failure',
+    () async {
+      _OverrideRoomProvider.fetchRoomDetailCalls = 0;
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kOverrideDescriptor,
+            builder: _OverrideRoomProvider.new,
+          ),
+        );
+      var overrideCalls = 0;
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
+        roomDetailOverride: ({required providerId, required roomId}) async {
+          overrideCalls += 1;
+          return LiveRoomDetail(
+            providerId: providerId,
+            roomId: roomId,
+            title: 'override room',
+            streamerName: roomId,
+            isLive: true,
+            metadata: const {'hlsSource': 'https://example.com/live.m3u8'},
+          );
+        },
+      );
+
+      await expectLater(
+        () => useCase(providerId: ProviderId.chaturbate, roomId: 'milabunny_'),
+        throwsA(isA<StateError>()),
+      );
+      expect(overrideCalls, 0);
       expect(_OverrideRoomProvider.fetchRoomDetailCalls, 1);
     },
   );
@@ -79,7 +116,7 @@ void main() {
       historyRepository: InMemoryHistoryRepository(),
       roomDetailOverride: ({required providerId, required roomId}) async {
         return LiveRoomDetail(
-          providerId: providerId.value,
+          providerId: providerId,
           roomId: roomId,
           title: 'override room',
           streamerName: roomId,
@@ -96,7 +133,7 @@ void main() {
     );
 
     expect(snapshot.detail.title, isNot('override room'));
-    expect(snapshot.playUrls.single.url, contains('/480p.m3u8'));
+    expect(snapshot.playUrls.single.url, contains('/1080p.m3u8'));
   });
 
   test('load room keeps chaturbate private show rooms openable', () async {
@@ -231,7 +268,7 @@ void main() {
   });
 
   test(
-    'load room caps chaturbate startup quality to a safer fixed tier',
+    'load room defaults chaturbate startup quality to highest fixed tier',
     () async {
       final registry = ProviderRegistry()
         ..register(
@@ -248,23 +285,21 @@ void main() {
       final snapshot = await useCase(
         providerId: ProviderId.chaturbate,
         roomId: 'dewdropdoll',
-        preferHighestQuality: true,
       );
 
       expect(snapshot.hasPlayback, isTrue);
-      expect(snapshot.selectedQuality.id, '1296000');
-      expect(snapshot.selectedQuality.label, '480p');
-      expect(snapshot.playUrls.single.url, contains('/480p.m3u8'));
+      expect(snapshot.selectedQuality.id, '5200000');
+      expect(snapshot.selectedQuality.label, '1080p');
+      expect(snapshot.playUrls.single.url, contains('/1080p.m3u8'));
     },
   );
 
-  test('load room strips stripchat auto quality in favor of highest fixed',
-      () async {
+  test('load room prefers highest chaturbate fixed tier', () async {
     final registry = ProviderRegistry()
       ..register(
         ProviderRegistration(
-          descriptor: _kStripchatDescriptor,
-          builder: _StripchatStartupQualityProvider.new,
+          descriptor: _kStableChaturbateDescriptor,
+          builder: _StableChaturbateProvider.new,
         ),
       );
     final useCase = LoadRoomUseCase(
@@ -273,69 +308,103 @@ void main() {
     );
 
     final snapshot = await useCase(
-      providerId: ProviderId.stripchat,
-      roomId: 'ranran_ch',
+      providerId: ProviderId.chaturbate,
+      roomId: 'dewdropdoll',
       preferHighestQuality: true,
     );
 
     expect(snapshot.hasPlayback, isTrue);
-    expect(snapshot.selectedQuality.id, '1080p');
-    expect(snapshot.playUrls.single.url, contains('/99999_1080p.m3u8'));
+    expect(snapshot.selectedQuality.id, '5200000');
+    expect(snapshot.selectedQuality.label, '1080p');
+    expect(snapshot.playUrls.single.url, contains('/1080p.m3u8'));
   });
 
-  test('load room selects highest quality when qualities are unexpectedly sorted', () async {
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: _kTwitchDescriptor,
-          builder: () => _CustomSortQualityProvider(
-            qualities: [
-              LivePlayQuality(id: '720p', label: '720p', sortOrder: 720),
-              LivePlayQuality(id: '1080p', label: '1080p', sortOrder: 1080),
-              LivePlayQuality(id: '360p', label: '360p', sortOrder: 360),
-            ],
+  test(
+    'load room strips stripchat auto quality in favor of highest fixed',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kStripchatDescriptor,
+            builder: _StripchatStartupQualityProvider.new,
           ),
-        ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
       );
-    final useCase = LoadRoomUseCase(
-      registry,
-      historyRepository: InMemoryHistoryRepository(),
-    );
 
-    final snapshot = await useCase(
-      providerId: ProviderId.twitch,
-      roomId: 'test_channel',
-      preferHighestQuality: true,
-    );
+      final snapshot = await useCase(
+        providerId: ProviderId.stripchat,
+        roomId: 'ranran_ch',
+        preferHighestQuality: true,
+      );
 
-    expect(snapshot.selectedQuality.id, '1080p');
-  });
+      expect(snapshot.hasPlayback, isTrue);
+      expect(snapshot.selectedQuality.id, '1080p');
+      expect(snapshot.playUrls.single.url, contains('/99999_1080p.m3u8'));
+    },
+  );
 
-  test('load room selects the only available auto quality when only auto is returned', () async {
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: _kTwitchDescriptor,
-          builder: () => _CustomSortQualityProvider(
-            qualities: [
-              LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
-            ],
+  test(
+    'load room selects highest quality when qualities are unexpectedly sorted',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kTwitchDescriptor,
+            builder: () => _CustomSortQualityProvider(
+              qualities: [
+                LivePlayQuality(id: '720p', label: '720p', sortOrder: 720),
+                LivePlayQuality(id: '1080p', label: '1080p', sortOrder: 1080),
+                LivePlayQuality(id: '360p', label: '360p', sortOrder: 360),
+              ],
+            ),
           ),
-        ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
       );
-    final useCase = LoadRoomUseCase(
-      registry,
-      historyRepository: InMemoryHistoryRepository(),
-    );
 
-    final snapshot = await useCase(
-      providerId: ProviderId.twitch,
-      roomId: 'test_channel',
-      preferHighestQuality: true,
-    );
+      final snapshot = await useCase(
+        providerId: ProviderId.twitch,
+        roomId: 'test_channel',
+        preferHighestQuality: true,
+      );
 
-    expect(snapshot.selectedQuality.id, 'auto');
-  });
+      expect(snapshot.selectedQuality.id, '1080p');
+    },
+  );
+
+  test(
+    'load room selects the only available auto quality when only auto is returned',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kTwitchDescriptor,
+            builder: () => _CustomSortQualityProvider(
+              qualities: [
+                LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
+              ],
+            ),
+          ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
+      );
+
+      final snapshot = await useCase(
+        providerId: ProviderId.twitch,
+        roomId: 'test_channel',
+        preferHighestQuality: true,
+      );
+
+      expect(snapshot.selectedQuality.id, 'auto');
+    },
+  );
 }
 
 const _kOverrideDescriptor = ProviderDescriptor(
@@ -350,6 +419,18 @@ const _kOverrideDescriptor = ProviderDescriptor(
   maturity: ProviderMaturity.inMigration,
 );
 
+const _kOverrideBilibiliDescriptor = ProviderDescriptor(
+  id: ProviderId.bilibili,
+  displayName: 'Bilibili',
+  capabilities: {
+    ProviderCapability.roomDetail,
+    ProviderCapability.playQualities,
+    ProviderCapability.playUrls,
+  },
+  supportedPlatforms: {ProviderPlatform.android},
+  maturity: ProviderMaturity.ready,
+);
+
 class _OverrideRoomProvider extends LiveProvider
     implements SupportsRoomDetail, SupportsPlayQualities, SupportsPlayUrls {
   static int fetchRoomDetailCalls = 0;
@@ -360,7 +441,36 @@ class _OverrideRoomProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) {
     fetchRoomDetailCalls += 1;
-    throw StateError('provider fetchRoomDetail should not be called');
+    throw StateError('provider fetchRoomDetail failed');
+  }
+
+  @override
+  Future<List<LivePlayQuality>> fetchPlayQualities(
+    LiveRoomDetail detail,
+  ) async {
+    return [LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true)];
+  }
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return [LivePlayUrl(url: detail.metadata?['hlsSource']?.toString() ?? '')];
+  }
+}
+
+class _OverrideBilibiliRoomProvider extends LiveProvider
+    implements SupportsRoomDetail, SupportsPlayQualities, SupportsPlayUrls {
+  static int fetchRoomDetailCalls = 0;
+
+  @override
+  ProviderDescriptor get descriptor => _kOverrideBilibiliDescriptor;
+
+  @override
+  Future<LiveRoomDetail> fetchRoomDetail(String roomId) {
+    fetchRoomDetailCalls += 1;
+    throw StateError('provider fetchRoomDetail failed');
   }
 
   @override
@@ -399,7 +509,7 @@ class _StableChaturbateProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: ProviderId.chaturbate.value,
+      providerId: ProviderId.chaturbate,
       roomId: roomId,
       title: roomId,
       streamerName: roomId,
@@ -463,7 +573,7 @@ class _PrivateShowProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: ProviderId.chaturbate.value,
+      providerId: ProviderId.chaturbate,
       roomId: roomId,
       title: roomId,
       streamerName: roomId,
@@ -510,7 +620,7 @@ class _OfflineProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: _kOfflineProviderId.value,
+      providerId: _kOfflineProviderId,
       roomId: roomId,
       title: 'offline-room',
       streamerName: 'offline-room',
@@ -556,7 +666,7 @@ class _RestrictedProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: _kRestrictedProviderId.value,
+      providerId: _kRestrictedProviderId,
       roomId: roomId,
       title: 'member-only-room',
       streamerName: 'member-only-room',
@@ -601,7 +711,7 @@ class _TwitchDefaultQualityProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: ProviderId.twitch.value,
+      providerId: ProviderId.twitch,
       roomId: roomId,
       title: roomId,
       streamerName: roomId,
@@ -650,7 +760,7 @@ class _StripchatStartupQualityProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: ProviderId.stripchat.value,
+      providerId: ProviderId.stripchat,
       roomId: roomId,
       title: roomId,
       streamerName: roomId,
@@ -691,7 +801,7 @@ class _CustomSortQualityProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: ProviderId.twitch.value,
+      providerId: ProviderId.twitch,
       roomId: roomId,
       title: roomId,
       streamerName: roomId,
@@ -700,7 +810,9 @@ class _CustomSortQualityProvider extends LiveProvider
   }
 
   @override
-  Future<List<LivePlayQuality>> fetchPlayQualities(LiveRoomDetail detail) async {
+  Future<List<LivePlayQuality>> fetchPlayQualities(
+    LiveRoomDetail detail,
+  ) async {
     return qualities;
   }
 

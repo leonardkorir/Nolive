@@ -41,12 +41,17 @@ class HttpLocalSyncClient implements LocalSyncClient {
       : _client = client ?? HttpClient(),
         _ownsClient = client == null {
     if (_ownsClient) {
-      _client.connectionTimeout = _kRequestTimeout;
-      _client.idleTimeout = _kRequestTimeout;
+      _client.connectionTimeout = _kConnectTimeout;
+      _client.idleTimeout = _kTransferTimeout;
     }
   }
 
-  static const Duration _kRequestTimeout = Duration(seconds: 5);
+  /// 建连超时：目标离线时尽快失败。
+  static const Duration _kConnectTimeout = Duration(seconds: 10);
+
+  /// 传输超时：全量快照导入可能较慢，需明显高于分类同步。
+  static const Duration _kTransferTimeout = Duration(seconds: 90);
+
   static const String _timestampHeader = 'X-Nolive-Sync-Timestamp';
   static const String _nonceHeader = 'X-Nolive-Sync-Nonce';
   static const String _signatureHeader = 'X-Nolive-Sync-Signature';
@@ -182,7 +187,7 @@ class HttpLocalSyncClient implements LocalSyncClient {
   }) async {
     try {
       final request =
-          await _client.openUrl(method, uri).timeout(_kRequestTimeout);
+          await _client.openUrl(method, uri).timeout(_kConnectTimeout);
       if (contentType != null) {
         request.headers.contentType = contentType;
       }
@@ -201,7 +206,7 @@ class HttpLocalSyncClient implements LocalSyncClient {
       if (body != null) {
         request.write(body);
       }
-      return await request.close().timeout(_kRequestTimeout);
+      return await request.close().timeout(_kTransferTimeout);
     } on TimeoutException {
       throw HttpException('Local sync request timed out.', uri: uri);
     } on SocketException catch (error) {

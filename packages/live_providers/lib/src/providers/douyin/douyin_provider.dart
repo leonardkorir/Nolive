@@ -22,9 +22,9 @@ class DouyinProvider extends LiveProvider
     DouyinDataSource? dataSource,
     DouyinWebsocketSignatureBuilder? websocketSignatureBuilder,
     void Function()? disposeOwnedResources,
-  })  : _dataSource = dataSource ?? const DouyinPreviewDataSource(),
-        _websocketSignatureBuilder = websocketSignatureBuilder,
-        _disposeOwnedResources = disposeOwnedResources;
+  }) : _dataSource = dataSource ?? const DouyinPreviewDataSource(),
+       _websocketSignatureBuilder = websocketSignatureBuilder,
+       _disposeOwnedResources = disposeOwnedResources;
 
   factory DouyinProvider.preview() => DouyinProvider();
 
@@ -36,8 +36,9 @@ class DouyinProvider extends LiveProvider
   }) {
     final ownedTransport = transport == null ? HttpDouyinTransport() : null;
     final resolvedTransport = transport ?? ownedTransport!;
-    final ownedSignService =
-        signService == null ? HttpDouyinSignService(cookie: cookie) : null;
+    final ownedSignService = signService == null
+        ? HttpDouyinSignService(cookie: cookie)
+        : null;
     final resolvedSignService = signService ?? ownedSignService!;
     return DouyinProvider(
       dataSource: DouyinLiveDataSource(
@@ -73,7 +74,7 @@ class DouyinProvider extends LiveProvider
       ProviderPlatform.androidTv,
     },
     roomIdPatterns: [r'^[0-9a-zA-Z_]+$'],
-    maturity: ProviderMaturity.inMigration,
+    maturity: ProviderMaturity.experimental,
   );
 
   final DouyinDataSource _dataSource;
@@ -142,7 +143,7 @@ class DouyinProvider extends LiveProvider
     final token = detail.danmakuToken;
     if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
-        providerId: descriptor.id.value,
+        providerId: descriptor.id,
         detail: detail,
       );
     }
@@ -159,7 +160,7 @@ class DouyinProvider extends LiveProvider
       );
     }
     return ProviderTickerDanmakuSession(
-      providerId: descriptor.id.value,
+      providerId: descriptor.id,
       detail: detail,
     );
   }

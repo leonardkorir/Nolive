@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/room/application/room_follow_watchlist_controller.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/follow_watch_row.dart';
@@ -321,99 +321,104 @@ class RoomFullscreenFollowDrawer extends StatelessWidget {
     final theme = Theme.of(context);
     final drawerWidth =
         math.min(MediaQuery.sizeOf(context).width * 0.54, 388.0).toDouble();
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
+    // Use Positioned + AnimatedSlide so size/orientation changes do not
+    // interpolate the off-screen `right` edge and flash the drawer.
+    return Positioned(
       top: MediaQuery.paddingOf(context).top + 12,
       bottom: MediaQuery.paddingOf(context).bottom + 12,
-      right: showDrawer ? 12 : -(drawerWidth + 24),
+      right: 12,
       child: IgnorePointer(
         ignoring: !showDrawer,
-        child: SizedBox(
-          width: drawerWidth,
-          child: DecoratedBox(
-            key: const Key('room-fullscreen-follow-drawer'),
-            decoration: BoxDecoration(
-              color: const Color(0xED11161D),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0x33FFFFFF)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.32),
-                  blurRadius: 24,
-                  offset: const Offset(-8, 12),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '关注中正在直播',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: const Color(0xFFF8FAFC),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        key: const Key('room-fullscreen-follow-close-button'),
-                        onPressed: onClose,
-                        color: Colors.white,
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    followState.isLoading
-                        ? '正在同步关注页开播结果…'
-                        : entries.isEmpty
-                            ? '当前没有正在直播的关注房间'
-                            : '${entries.length} 个房间可直接切换',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: const Color(0xCCD5DAE1),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: entries.isEmpty
-                        ? Center(
-                            child: Text(
-                              '长按右侧时会显示这里。\n等关注页同步到开播结果后，就能直接切房。',
-                              textAlign: TextAlign.center,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: const Color(0xCCD5DAE1),
-                                height: 1.45,
-                              ),
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: entries.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 6),
-                            itemBuilder: (context, index) {
-                              final item = entries[index];
-                              return FollowWatchRow(
-                                key: Key(
-                                  'room-fullscreen-follow-entry-${item.entry.record.providerId}-${item.entry.roomId}',
-                                ),
-                                entry: item.entry,
-                                providerDescriptor: item.providerDescriptor,
-                                isPlaying: item.isPlaying,
-                                highContrastOverlay: true,
-                                showSurface: false,
-                                showChevron: true,
-                                onTap: () => onOpenEntry(item.entry),
-                              );
-                            },
-                          ),
+        child: AnimatedSlide(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          offset: showDrawer ? Offset.zero : const Offset(1.08, 0),
+          child: SizedBox(
+            width: drawerWidth,
+            child: DecoratedBox(
+              key: const Key('room-fullscreen-follow-drawer'),
+              decoration: BoxDecoration(
+                color: const Color(0xED11161D),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0x33FFFFFF)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.32),
+                    blurRadius: 24,
+                    offset: const Offset(-8, 12),
                   ),
                 ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '关注中正在直播',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: const Color(0xFFF8FAFC),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          key: const Key('room-fullscreen-follow-close-button'),
+                          onPressed: onClose,
+                          color: Colors.white,
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      followState.isLoading
+                          ? '正在同步关注页开播结果…'
+                          : entries.isEmpty
+                              ? '当前没有正在直播的关注房间'
+                              : '${entries.length} 个房间可直接切换',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: const Color(0xCCD5DAE1),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: entries.isEmpty
+                          ? Center(
+                              child: Text(
+                                '长按右侧时会显示这里。\n等关注页同步到开播结果后，就能直接切房。',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: const Color(0xCCD5DAE1),
+                                  height: 1.45,
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: entries.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 6),
+                              itemBuilder: (context, index) {
+                                final item = entries[index];
+                                return FollowWatchRow(
+                                  key: Key(
+                                    'room-fullscreen-follow-entry-${item.entry.record.providerId}-${item.entry.roomId}',
+                                  ),
+                                  entry: item.entry,
+                                  providerDescriptor: item.providerDescriptor,
+                                  isPlaying: item.isPlaying,
+                                  highContrastOverlay: true,
+                                  showSurface: false,
+                                  showChevron: true,
+                                  onTap: () => onOpenEntry(item.entry),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

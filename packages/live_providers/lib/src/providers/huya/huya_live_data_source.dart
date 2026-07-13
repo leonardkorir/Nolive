@@ -10,8 +10,8 @@ class HuyaLiveDataSource implements HuyaDataSource {
   HuyaLiveDataSource({
     required HuyaTransport transport,
     required HuyaSignService signService,
-  })  : _transport = transport,
-        _signService = signService;
+  }) : _transport = transport,
+       _signService = signService;
 
   final HuyaTransport _transport;
   final HuyaSignService _signService;
@@ -29,11 +29,7 @@ class HuyaLiveDataSource implements HuyaDataSource {
     for (final item in _rootCategories) {
       final children = await _fetchSubCategories(item.id);
       categories.add(
-        LiveCategory(
-          id: item.id,
-          name: item.name,
-          children: children,
-        ),
+        LiveCategory(id: item.id, name: item.name, children: children),
       );
     }
     return categories;
@@ -90,8 +86,10 @@ class HuyaLiveDataSource implements HuyaDataSource {
   }
 
   @override
-  Future<PagedResponse<LiveRoom>> searchRooms(String query,
-      {int page = 1}) async {
+  Future<PagedResponse<LiveRoom>> searchRooms(
+    String query, {
+    int page = 1,
+  }) async {
     final text = await _transport.getText(
       'https://search.cdn.huya.com/',
       queryParameters: {
@@ -120,7 +118,8 @@ class HuyaLiveDataSource implements HuyaDataSource {
 
   @override
   Future<List<LivePlayQuality>> fetchPlayQualities(
-      LiveRoomDetail detail) async {
+    LiveRoomDetail detail,
+  ) async {
     return HuyaMapper.mapPlayQualities(detail);
   }
 
@@ -137,8 +136,8 @@ class HuyaLiveDataSource implements HuyaDataSource {
       final line = item is Map<String, Object?>
           ? item
           : item is Map
-              ? item.cast<String, Object?>()
-              : const <String, Object?>{};
+          ? item.cast<String, Object?>()
+          : const <String, Object?>{};
       if (line.isEmpty) {
         continue;
       }
@@ -158,20 +157,23 @@ class HuyaLiveDataSource implements HuyaDataSource {
       'https://live.cdn.huya.com/liveconfig/game/bussLive',
       queryParameters: {'bussType': categoryId},
     );
-    return _asList(response['data']).map((item) {
-      final data = _asMap(item);
-      final gameId = _resolveGameId(data['gid']);
-      return LiveSubCategory(
-        id: gameId,
-        parentId: categoryId,
-        name: normalizeDisplayText(data['gameFullName']?.toString()),
-        pic: gameId.isEmpty
-            ? null
-            : 'https://huyaimg.msstatic.com/cdnimage/game/$gameId-MS.jpg',
-      );
-    }).where((item) {
-      return item.id.isNotEmpty && item.name.isNotEmpty;
-    }).toList(growable: false);
+    return _asList(response['data'])
+        .map((item) {
+          final data = _asMap(item);
+          final gameId = _resolveGameId(data['gid']);
+          return LiveSubCategory(
+            id: gameId,
+            parentId: categoryId,
+            name: normalizeDisplayText(data['gameFullName']?.toString()),
+            pic: gameId.isEmpty
+                ? null
+                : 'https://huyaimg.msstatic.com/cdnimage/game/$gameId-MS.jpg',
+          );
+        })
+        .where((item) {
+          return item.id.isNotEmpty && item.name.isNotEmpty;
+        })
+        .toList(growable: false);
   }
 
   LiveRoom _mapCategoryRoom(Map<String, dynamic> item) {
@@ -183,7 +185,7 @@ class HuyaLiveDataSource implements HuyaDataSource {
         ? item['introduction'].toString()
         : item['roomName']?.toString() ?? '';
     return LiveRoom(
-      providerId: ProviderId.huya.value,
+      providerId: ProviderId.huya,
       roomId: item['profileRoom']?.toString() ?? '',
       title: normalizeDisplayText(title),
       streamerName: normalizeDisplayText(item['nick']?.toString()),

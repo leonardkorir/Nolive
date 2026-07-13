@@ -16,10 +16,7 @@ class BilibiliAuthContext {
   bool suppressAuthCookieForPublicApis;
 }
 
-String normalizeBilibiliCookie(
-  String cookie, {
-  required int userId,
-}) {
+String normalizeBilibiliCookie(String cookie, {required int userId}) {
   final parts = cookie
       .split(';')
       .map((part) => part.trim())

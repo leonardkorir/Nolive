@@ -1,23 +1,20 @@
 import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_follow.dart';
 
 typedef RoomConfirmUnfollow = Future<bool?> Function(String displayName);
-typedef RoomCommitFollowRoomNavigation = Future<void> Function(
-  FollowWatchEntry entry,
-);
-typedef RoomReplaceFollowWatchlistSnapshot = void Function(
-  FollowWatchlist? watchlist, {
-  required bool hydrated,
-});
+typedef RoomCommitFollowRoomNavigation =
+    Future<void> Function(FollowWatchEntry entry);
+typedef RoomReplaceFollowWatchlistSnapshot =
+    void Function(FollowWatchlist? watchlist, {required bool hydrated});
 
 class RoomFollowActionContext {
   const RoomFollowActionContext({
-    required this.currentProviderId,
-    required this.currentRoomId,
+    required this.resolveCurrentProviderId,
+    required this.resolveCurrentRoomId,
     required this.showMessage,
     required this.isMounted,
     required this.confirmUnfollow,
@@ -27,8 +24,8 @@ class RoomFollowActionContext {
     required this.commitFollowRoomNavigation,
   });
 
-  final ProviderId currentProviderId;
-  final String currentRoomId;
+  final ProviderId Function() resolveCurrentProviderId;
+  final String Function() resolveCurrentRoomId;
   final void Function(String message) showMessage;
   final bool Function() isMounted;
   final RoomConfirmUnfollow confirmUnfollow;
@@ -36,6 +33,9 @@ class RoomFollowActionContext {
   final RoomReplaceFollowWatchlistSnapshot replaceWatchlistSnapshot;
   final Future<void> Function({bool force}) ensureFollowWatchlistLoaded;
   final RoomCommitFollowRoomNavigation commitFollowRoomNavigation;
+
+  ProviderId get currentProviderId => resolveCurrentProviderId();
+  String get currentRoomId => resolveCurrentRoomId();
 }
 
 class RoomFollowActionCoordinator {
@@ -97,7 +97,7 @@ class RoomFollowActionCoordinator {
               currentEntry,
               ...currentWatchlist.entries.where(
                 (entry) =>
-                    entry.record.providerId != snapshot.providerId.value ||
+                    entry.record.providerId != snapshot.providerId ||
                     entry.record.roomId != snapshot.detail.roomId,
               ),
             ],
@@ -112,7 +112,7 @@ class RoomFollowActionCoordinator {
         entries: currentWatchlist.entries
             .where(
               (entry) =>
-                  entry.record.providerId != snapshot.providerId.value ||
+                  entry.record.providerId != snapshot.providerId ||
                   entry.record.roomId != snapshot.detail.roomId,
             )
             .toList(growable: false),
@@ -133,7 +133,7 @@ class RoomFollowActionCoordinator {
   }
 
   Future<void> openFollowRoom(FollowWatchEntry entry) async {
-    if (entry.record.providerId == context.currentProviderId.value &&
+    if (entry.record.providerId == context.currentProviderId &&
         entry.roomId == context.currentRoomId) {
       context.showMessage('当前已经在这个直播间里了');
       return;
@@ -141,39 +141,44 @@ class RoomFollowActionCoordinator {
     await context.commitFollowRoomNavigation(entry);
   }
 
-  List<RoomFollowEntryViewData> buildEntryViewData(
-    FollowWatchlist watchlist,
-  ) {
+  List<RoomFollowEntryViewData> buildEntryViewData(FollowWatchlist watchlist) {
     return resolveLiveFollowEntries(
-      watchlist,
-      currentProviderId: context.currentProviderId,
-      currentRoomId: context.currentRoomId,
-    ).map((entry) {
-      final descriptor =
-          dependencies.findProviderDescriptorById(entry.record.providerId) ??
+          watchlist,
+          currentProviderId: context.currentProviderId,
+          currentRoomId: context.currentRoomId,
+        )
+        .map((entry) {
+          final descriptor =
+              dependencies.findProviderDescriptorById(
+                entry.record.providerId.value,
+              ) ??
               ProviderDescriptor(
-                id: ProviderId(entry.record.providerId),
-                displayName: entry.record.providerId,
+                id: entry.record.providerId,
+                displayName: entry.record.providerId.value,
                 capabilities: const {},
                 supportedPlatforms: const {ProviderPlatform.android},
                 maturity: ProviderMaturity.inMigration,
               );
-      return RoomFollowEntryViewData(
-        entry: entry,
-        providerDescriptor: descriptor,
-        isPlaying: entry.record.providerId == context.currentProviderId.value &&
-            entry.roomId == context.currentRoomId,
-      );
-    }).toList(growable: false);
+          return RoomFollowEntryViewData(
+            entry: entry,
+            providerDescriptor: descriptor,
+            isPlaying:
+                entry.record.providerId == context.currentProviderId &&
+                entry.roomId == context.currentRoomId,
+          );
+        })
+        .toList(growable: false);
   }
 
   Future<FollowRecord?> _findFollowRecord({
     required String providerId,
     required String roomId,
   }) async {
+    final normalizedProviderId = ProviderId.from(providerId);
     final records = await dependencies.listFollowRecords();
     for (final record in records) {
-      if (record.providerId == providerId && record.roomId == roomId) {
+      if (record.providerId == normalizedProviderId &&
+          record.roomId == roomId) {
         return record;
       }
     }
@@ -190,9 +195,11 @@ List<FollowWatchEntry> resolveLiveFollowEntries(
       .where((entry) => entry.isLive)
       .toList(growable: false)
     ..sort((left, right) {
-      final leftCurrent = left.record.providerId == currentProviderId.value &&
+      final leftCurrent =
+          left.record.providerId == currentProviderId &&
           left.roomId == currentRoomId;
-      final rightCurrent = right.record.providerId == currentProviderId.value &&
+      final rightCurrent =
+          right.record.providerId == currentProviderId &&
           right.roomId == currentRoomId;
       if (leftCurrent != rightCurrent) {
         return leftCurrent ? -1 : 1;

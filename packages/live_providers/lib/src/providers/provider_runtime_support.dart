@@ -57,7 +57,6 @@ class ProviderBrowserProfile {
     secChUaPlatform: kChromiumDesktopSecChUaPlatform,
   );
 
-  
   static const ProviderBrowserProfile chromiumMobile = ProviderBrowserProfile(
     userAgent: kChromiumMobileUserAgent,
     acceptLanguage: kChromiumMobileAcceptLanguage,
@@ -72,13 +71,13 @@ class ProviderBrowserProfile {
 
   static const ProviderBrowserProfile bilibiliLegacyDesktop =
       ProviderBrowserProfile(
-    userAgent: kBilibiliLegacyDesktopUserAgent,
-    acceptLanguage: '',
-    browserName: 'Edge',
-    browserVersion: '126.0.0.0',
-    osName: 'Windows',
-    osVersion: '10.0',
-  );
+        userAgent: kBilibiliLegacyDesktopUserAgent,
+        acceptLanguage: '',
+        browserName: 'Edge',
+        browserVersion: '126.0.0.0',
+        osName: 'Windows',
+        osVersion: '10.0',
+      );
 
   final String userAgent;
   final String acceptLanguage;
@@ -190,17 +189,16 @@ void reportProviderDiagnostic({
   final suffix = error == null ? '' : ' error=$error';
   var line = '$scope: $message$suffix';
   if (providerId == ProviderId.stripchat) {
-    line = line.replaceAllMapped(
-      RegExp(r'(pkeys?|psch)=([a-zA-Z0-9_-]+)'),
-      (match) {
-        final key = match.group(1);
-        final val = match.group(2) ?? '';
-        if (val.length <= 4) {
-          return '$key=***';
-        }
-        return '$key=${val.substring(0, 4)}***';
-      },
-    );
+    line = line.replaceAllMapped(RegExp(r'(pkeys?|psch)=([a-zA-Z0-9_-]+)'), (
+      match,
+    ) {
+      final key = match.group(1);
+      final val = match.group(2) ?? '';
+      if (val.length <= 4) {
+        return '$key=***';
+      }
+      return '$key=${val.substring(0, 4)}***';
+    });
   }
   diagnostics?.call(line);
   developer.log(

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
-import 'package:nolive_app/src/app/home/presentation/home_page.dart';
+import 'package:nolive_app/src/features/home/presentation/home_page.dart';
 import 'package:nolive_app/src/shared/presentation/gestures/responsive_tab_swipe_switcher.dart';
 import 'test_feature_dependencies.dart';
 
@@ -186,7 +186,7 @@ class _PagedTwitchHomeProvider extends LiveProvider
       1 => PagedResponse(
         items: const [
           LiveRoom(
-            providerId: 'twitch',
+            providerId: ProviderId.twitch,
             roomId: 'room-1',
             title: '第一页',
             streamerName: '主播一',
@@ -202,7 +202,7 @@ class _PagedTwitchHomeProvider extends LiveProvider
       _ => PagedResponse(
         items: const [
           LiveRoom(
-            providerId: 'twitch',
+            providerId: ProviderId.twitch,
             roomId: 'room-2',
             title: '第二页',
             streamerName: '主播二',
@@ -239,7 +239,7 @@ class _AutoPrefetchLimitedHomeProvider extends LiveProvider
     return PagedResponse(
       items: [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: 'room-$page',
           title: switch (page) {
             1 => '第一页',
@@ -285,7 +285,7 @@ class _ReloadingHomeProvider extends LiveProvider
     return const PagedResponse(
       items: [
         LiveRoom(
-          providerId: 'twitch',
+          providerId: ProviderId.twitch,
           roomId: 'room-reloaded',
           title: '恢复后的第一页',
           streamerName: '主播恢复',

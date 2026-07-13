@@ -477,65 +477,66 @@ void main() {
       },
     );
 
-    test(
-      'sends heartbeat periodic keepalive every 15 seconds',
-      () {
-        fakeAsync((async) {
-          final localServerStreamController = StreamController<dynamic>.broadcast();
-          try {
-            final localMockSink = _MockMockWebSocketSink(localServerStreamController);
-            final localMockChannel = _MockWebSocketChannel(
-              localServerStreamController.stream,
-              localMockSink,
-            );
-            final localSession = StripchatDanmakuSession(
-              danmakuToken: const StripchatDanmakuToken(
-                modelId: '12345',
-                websocketUrl: 'wss://ws.stripchat.com/connection/websocket',
-                jwt: 'mock-jwt',
-              ),
-              inactivityTimeout: const Duration(minutes: 2),
-              channelConnector: (
-                uri, {
-                headers,
-                protocols,
-                connectTimeout = const Duration(seconds: 10),
-              }) => Future.value(localMockChannel),
-            );
+    test('sends heartbeat periodic keepalive every 15 seconds', () {
+      fakeAsync((async) {
+        final localServerStreamController =
+            StreamController<dynamic>.broadcast();
+        try {
+          final localMockSink = _MockMockWebSocketSink(
+            localServerStreamController,
+          );
+          final localMockChannel = _MockWebSocketChannel(
+            localServerStreamController.stream,
+            localMockSink,
+          );
+          final localSession = StripchatDanmakuSession(
+            danmakuToken: const StripchatDanmakuToken(
+              modelId: '12345',
+              websocketUrl: 'wss://ws.stripchat.com/connection/websocket',
+              jwt: 'mock-jwt',
+            ),
+            inactivityTimeout: const Duration(minutes: 2),
+            channelConnector:
+                (
+                  uri, {
+                  headers,
+                  protocols,
+                  connectTimeout = const Duration(seconds: 10),
+                }) => Future.value(localMockChannel),
+          );
 
-            // 1. Connect
-            localSession.connect();
-            async.elapse(const Duration(milliseconds: 100));
+          // 1. Connect
+          localSession.connect();
+          async.elapse(const Duration(milliseconds: 100));
 
-            // 2. Respond with connect ACK
-            localServerStreamController.add('{"result": {}, "id": 1}');
-            async.elapse(const Duration(milliseconds: 100));
+          // 2. Respond with connect ACK
+          localServerStreamController.add('{"result": {}, "id": 1}');
+          async.elapse(const Duration(milliseconds: 100));
 
-            // Clear initial connection/subscription frames sent so far
-            localMockSink.sentLines.clear();
+          // Clear initial connection/subscription frames sent so far
+          localMockSink.sentLines.clear();
 
-            // 3. Elapse 14 seconds: no heartbeat should be sent yet
-            async.elapse(const Duration(seconds: 14));
-            expect(localMockSink.sentLines, isEmpty);
+          // 3. Elapse 14 seconds: no heartbeat should be sent yet
+          async.elapse(const Duration(seconds: 14));
+          expect(localMockSink.sentLines, isEmpty);
 
-            // 4. Elapse 1 more second (total 15 seconds): heartbeat should be sent
-            async.elapse(const Duration(seconds: 1));
-            expect(localMockSink.sentLines, hasLength(1));
-            expect(localMockSink.sentLines.first, '{}\n');
+          // 4. Elapse 1 more second (total 15 seconds): heartbeat should be sent
+          async.elapse(const Duration(seconds: 1));
+          expect(localMockSink.sentLines, hasLength(1));
+          expect(localMockSink.sentLines.first, '{}\n');
 
-            // 5. Elapse another 15 seconds: second heartbeat should be sent
-            async.elapse(const Duration(seconds: 15));
-            expect(localMockSink.sentLines, hasLength(2));
-            expect(localMockSink.sentLines.last, '{}\n');
+          // 5. Elapse another 15 seconds: second heartbeat should be sent
+          async.elapse(const Duration(seconds: 15));
+          expect(localMockSink.sentLines, hasLength(2));
+          expect(localMockSink.sentLines.last, '{}\n');
 
-            localSession.disconnect();
-          } finally {
-            localServerStreamController.close();
-            async.elapse(const Duration(milliseconds: 100));
-          }
-        });
-      },
-    );
+          localSession.disconnect();
+        } finally {
+          localServerStreamController.close();
+          async.elapse(const Duration(milliseconds: 100));
+        }
+      });
+    });
 
     test(
       'server ping echo: when server sends {}, client responds with {}',
@@ -557,8 +558,11 @@ void main() {
       'reconnect after WebSocket drop works immediately without stale session blockage',
       () async {
         var channelIndex = 0;
-        final secondServerStreamController = StreamController<dynamic>.broadcast();
-        final secondMockSink = _MockMockWebSocketSink(secondServerStreamController);
+        final secondServerStreamController =
+            StreamController<dynamic>.broadcast();
+        final secondMockSink = _MockMockWebSocketSink(
+          secondServerStreamController,
+        );
         final secondMockChannel = _MockWebSocketChannel(
           secondServerStreamController.stream,
           secondMockSink,
@@ -570,10 +574,16 @@ void main() {
             websocketUrl: 'wss://ws.stripchat.com/connection/websocket',
             jwt: 'mock-jwt',
           ),
-          channelConnector: (uri, {headers, protocols, connectTimeout = const Duration(seconds: 10)}) async {
-            channelIndex++;
-            return secondMockChannel;
-          },
+          channelConnector:
+              (
+                uri, {
+                headers,
+                protocols,
+                connectTimeout = const Duration(seconds: 10),
+              }) async {
+                channelIndex++;
+                return secondMockChannel;
+              },
         );
 
         final fut = session2.connect();
@@ -597,9 +607,12 @@ void main() {
       'session-level inactivity timeout triggers disconnect and reports diagnostic',
       () {
         fakeAsync((async) {
-          final localServerStreamController = StreamController<dynamic>.broadcast();
+          final localServerStreamController =
+              StreamController<dynamic>.broadcast();
           try {
-            final localMockSink = _MockMockWebSocketSink(localServerStreamController);
+            final localMockSink = _MockMockWebSocketSink(
+              localServerStreamController,
+            );
             final localMockChannel = _MockWebSocketChannel(
               localServerStreamController.stream,
               localMockSink,
@@ -611,8 +624,13 @@ void main() {
                 jwt: 'mock-jwt',
               ),
               inactivityTimeout: const Duration(seconds: 5),
-              channelConnector: (uri, {headers, protocols, connectTimeout = const Duration(seconds: 10)}) =>
-                  Future.value(localMockChannel),
+              channelConnector:
+                  (
+                    uri, {
+                    headers,
+                    protocols,
+                    connectTimeout = const Duration(seconds: 10),
+                  }) => Future.value(localMockChannel),
             );
 
             final connectFuture = localSession.connect();

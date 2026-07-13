@@ -31,7 +31,8 @@ class ProviderSmokeResult {
 }
 
 Future<ProviderSmokeResult> runProviderSmokeCase(
-    ProviderSmokeCase smokeCase) async {
+  ProviderSmokeCase smokeCase,
+) async {
   final provider = smokeCase.provider;
   final detailApi = provider.requireContract<SupportsRoomDetail>(
     ProviderCapability.roomDetail,
@@ -45,10 +46,7 @@ Future<ProviderSmokeResult> runProviderSmokeCase(
 
   final rooms = await _loadSmokeRooms(provider, smokeCase);
   if (rooms.items.isEmpty) {
-    return ProviderSmokeResult(
-      smokeCase: smokeCase,
-      rooms: rooms,
-    );
+    return ProviderSmokeResult(smokeCase: smokeCase, rooms: rooms);
   }
 
   final room = rooms.items.first;
@@ -67,10 +65,7 @@ Future<ProviderSmokeResult> runProviderSmokeCase(
     (item) => item.isDefault,
     orElse: () => qualities.first,
   );
-  final urls = await urlApi.fetchPlayUrls(
-    detail: detail,
-    quality: selected,
-  );
+  final urls = await urlApi.fetchPlayUrls(detail: detail, quality: selected);
   return ProviderSmokeResult(
     smokeCase: smokeCase,
     rooms: rooms,

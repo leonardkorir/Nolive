@@ -21,13 +21,14 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
 
   static const Map<String, String> _playHeaders = {
     'referer': 'https://www.youtube.com/watch?v=Z3eFGbFcaXs',
-    'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+    'user-agent':
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
   };
 
   static const List<LiveRoom> _rooms = [
     LiveRoom(
-      providerId: 'youtube',
+      providerId: ProviderId.youtube,
       roomId: '@ChinaStreetObserver/live',
       title: 'China Street Observer Live',
       streamerName: 'China Street Observer',
@@ -37,7 +38,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       isLive: true,
     ),
     LiveRoom(
-      providerId: 'youtube',
+      providerId: ProviderId.youtube,
       roomId: '@WenzelTCG/live',
       title: 'WENZ VAULT!',
       streamerName: 'Wenzel TCG',
@@ -47,7 +48,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       isLive: true,
     ),
     LiveRoom(
-      providerId: 'youtube',
+      providerId: ProviderId.youtube,
       roomId: '@lofigirl/live',
       title: 'lofi hip hop radio',
       streamerName: 'Lofi Girl',
@@ -60,7 +61,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
 
   static const Map<String, LiveRoomDetail> _details = {
     '@ChinaStreetObserver/live': LiveRoomDetail(
-      providerId: 'youtube',
+      providerId: ProviderId.youtube,
       roomId: '@ChinaStreetObserver/live',
       title: 'China Street Observer Live',
       streamerName: 'China Street Observer',
@@ -73,11 +74,11 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       metadata: {
         'resolvedVideoId': 'Z3eFGbFcaXs',
         'hlsManifestUrl':
-            'https://manifest.googlevideo.com/api/manifest/hls_variant/fixture/Z3eFGbFcaXs/index.m3u8',
+            'https://manifest.googlevideo.com/api/manifest/hls_playlist/fixture/Z3eFGbFcaXs/index.m3u8',
       },
     ),
     'Z3eFGbFcaXs': LiveRoomDetail(
-      providerId: 'youtube',
+      providerId: ProviderId.youtube,
       roomId: '@ChinaStreetObserver/live',
       title: 'China Street Observer Live',
       streamerName: 'China Street Observer',
@@ -90,11 +91,11 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       metadata: {
         'resolvedVideoId': 'Z3eFGbFcaXs',
         'hlsManifestUrl':
-            'https://manifest.googlevideo.com/api/manifest/hls_variant/fixture/Z3eFGbFcaXs/index.m3u8',
+            'https://manifest.googlevideo.com/api/manifest/hls_playlist/fixture/Z3eFGbFcaXs/index.m3u8',
       },
     ),
     '@WenzelTCG/live': LiveRoomDetail(
-      providerId: 'youtube',
+      providerId: ProviderId.youtube,
       roomId: '@WenzelTCG/live',
       title: 'WENZ VAULT!',
       streamerName: 'Wenzel TCG',
@@ -107,11 +108,11 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       metadata: {
         'resolvedVideoId': 'Z3eFGbFcaXs',
         'hlsManifestUrl':
-            'https://manifest.googlevideo.com/api/manifest/hls_variant/fixture/Z3eFGbFcaXs/index.m3u8',
+            'https://manifest.googlevideo.com/api/manifest/hls_playlist/fixture/Z3eFGbFcaXs/index.m3u8',
       },
     ),
     '@lofigirl/live': LiveRoomDetail(
-      providerId: 'youtube',
+      providerId: ProviderId.youtube,
       roomId: '@lofigirl/live',
       title: 'lofi hip hop radio',
       streamerName: 'Lofi Girl',
@@ -124,7 +125,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       metadata: {
         'resolvedVideoId': 'jfKfPfyJRdk',
         'hlsManifestUrl':
-            'https://manifest.googlevideo.com/api/manifest/hls_variant/fixture/jfKfPfyJRdk/index.m3u8',
+            'https://manifest.googlevideo.com/api/manifest/hls_playlist/fixture/jfKfPfyJRdk/index.m3u8',
       },
     ),
   };
@@ -132,7 +133,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
   static const List<YouTubeHlsVariant> _variants = [
     YouTubeHlsVariant(
       url:
-          'https://manifest.googlevideo.com/api/manifest/hls_variant/fixture/Z3eFGbFcaXs/1080p60.m3u8',
+          'https://manifest.googlevideo.com/api/manifest/hls_playlist/fixture/Z3eFGbFcaXs/1080p60.m3u8',
       bandwidth: 6200000,
       label: '1080p60',
       width: 1920,
@@ -141,7 +142,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
     ),
     YouTubeHlsVariant(
       url:
-          'https://manifest.googlevideo.com/api/manifest/hls_variant/fixture/Z3eFGbFcaXs/720p60.m3u8',
+          'https://manifest.googlevideo.com/api/manifest/hls_playlist/fixture/Z3eFGbFcaXs/720p60.m3u8',
       bandwidth: 3200000,
       label: '720p60',
       width: 1280,
@@ -150,7 +151,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
     ),
     YouTubeHlsVariant(
       url:
-          'https://manifest.googlevideo.com/api/manifest/hls_variant/fixture/Z3eFGbFcaXs/480p30.m3u8',
+          'https://manifest.googlevideo.com/api/manifest/hls_playlist/fixture/Z3eFGbFcaXs/480p30.m3u8',
       bandwidth: 1500000,
       label: '480p',
       width: 854,
@@ -183,11 +184,7 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
     if (page != 1) {
       return PagedResponse(items: const [], hasMore: false, page: page);
     }
-    return PagedResponse(
-      items: _rooms,
-      hasMore: false,
-      page: page,
-    );
+    return PagedResponse(items: _rooms, hasMore: false, page: page);
   }
 
   @override
@@ -199,14 +196,16 @@ class YouTubePreviewDataSource implements YouTubeDataSource {
       return PagedResponse(items: const [], hasMore: false, page: page);
     }
     final normalized = query.trim().toLowerCase();
-    final items = _rooms.where((room) {
-      if (normalized.isEmpty) {
-        return true;
-      }
-      return room.roomId.toLowerCase().contains(normalized) ||
-          room.streamerName.toLowerCase().contains(normalized) ||
-          room.title.toLowerCase().contains(normalized);
-    }).toList(growable: false);
+    final items = _rooms
+        .where((room) {
+          if (normalized.isEmpty) {
+            return true;
+          }
+          return room.roomId.toLowerCase().contains(normalized) ||
+              room.streamerName.toLowerCase().contains(normalized) ||
+              room.title.toLowerCase().contains(normalized);
+        })
+        .toList(growable: false);
     return PagedResponse(items: items, hasMore: false, page: page);
   }
 

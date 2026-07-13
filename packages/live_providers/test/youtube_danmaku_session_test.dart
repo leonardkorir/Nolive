@@ -7,72 +7,68 @@ import 'package:test/test.dart';
 import 'support/youtube_fixture_loader.dart';
 
 void main() {
-  group(
-    'youtube danmaku session',
-    skip: YouTubeFixtureLoader.skipReason,
-    () {
-      test('polls live chat and maps text messages from fixtures', () async {
-        final bootstrap = YouTubePageParser().tryParseLiveChatBootstrap(
-          html: YouTubeFixtureLoader.loadLiveChatPageHtml(),
-          fallbackApiKey: 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
-        );
-        expect(bootstrap, isNotNull);
+  group('youtube danmaku session', skip: YouTubeFixtureLoader.skipReason, () {
+    test('polls live chat and maps text messages from fixtures', () async {
+      final bootstrap = YouTubePageParser().tryParseLiveChatBootstrap(
+        html: YouTubeFixtureLoader.loadLiveChatPageHtml(),
+        // Intentionally no fallback: the fixture HTML must contain the
+        // real INNERTUBE_API_KEY. Avoid hardcoding any Google API key
+        // in the public source tree.
+      );
+      expect(bootstrap, isNotNull);
 
-        final apiClient = _FixtureDanmakuApiClient(
-          YouTubeFixtureLoader.loadLiveChatResponses(),
-        );
-        final session = YouTubeDanmakuSession(
-          apiClient: apiClient,
-          apiKey: bootstrap!.apiKey,
-          continuation: bootstrap.continuation,
-          visitorData: bootstrap.visitorData,
-          referer: bootstrap.liveChatPageUrl,
-          clientVersion: bootstrap.clientVersion,
-        );
+      final apiClient = _FixtureDanmakuApiClient(
+        YouTubeFixtureLoader.loadLiveChatResponses(),
+      );
+      final session = YouTubeDanmakuSession(
+        apiClient: apiClient,
+        apiKey: bootstrap!.apiKey,
+        continuation: bootstrap.continuation,
+        visitorData: bootstrap.visitorData,
+        referer: bootstrap.liveChatPageUrl,
+        clientVersion: bootstrap.clientVersion,
+      );
 
-        final messages = <LiveMessage>[];
-        final subscription = session.messages.listen(messages.add);
+      final messages = <LiveMessage>[];
+      final subscription = session.messages.listen(messages.add);
 
-        await session.connect();
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+      await session.connect();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-        expect(apiClient.calls, isNotEmpty);
-        expect(messages, isNotEmpty);
-        expect(messages.first.type, LiveMessageType.notice);
-        expect(
-          messages.any(
-            (item) =>
-                item.type == LiveMessageType.chat &&
-                item.userName == '@The-Ishita-Diaries' &&
-                item.content.contains('said hi'),
-          ),
-          isTrue,
-        );
+      expect(apiClient.calls, isNotEmpty);
+      expect(messages, isNotEmpty);
+      expect(messages.first.type, LiveMessageType.notice);
+      expect(
+        messages.any(
+          (item) =>
+              item.type == LiveMessageType.chat &&
+              item.userName == '@The-Ishita-Diaries' &&
+              item.content.contains('said hi'),
+        ),
+        isTrue,
+      );
 
-        await session.disconnect();
-        await subscription.cancel();
-      });
-    },
-  );
+      await session.disconnect();
+      await subscription.cancel();
+    });
+  });
 
   test('youtube danmaku session emits inactivity timeout notice', () async {
-    final apiClient = _SinglePollDanmakuApiClient(
-      {
-        'continuationContents': {
-          'liveChatContinuation': {
-            'actions': const [],
-            'continuations': [
-              {
-                'timedContinuationData': {
-                  'continuation': 'next-continuation',
-                  'timeoutMs': 60000,
-                },
+    final apiClient = _SinglePollDanmakuApiClient({
+      'continuationContents': {
+        'liveChatContinuation': {
+          'actions': const [],
+          'continuations': [
+            {
+              'timedContinuationData': {
+                'continuation': 'next-continuation',
+                'timeoutMs': 60000,
               },
-            ],
-          },
+            },
+          ],
         },
       },
-    );
+    });
     final session = YouTubeDanmakuSession(
       apiClient: apiClient,
       apiKey: 'key',
@@ -87,10 +83,7 @@ void main() {
     await session.connect();
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    expect(
-      messages.any((item) => item.content.contains('连接活动超时')),
-      isTrue,
-    );
+    expect(messages.any((item) => item.content.contains('连接活动超时')), isTrue);
 
     await session.disconnect();
     await subscription.cancel();
@@ -150,7 +143,8 @@ class _FixtureDanmakuApiClient implements YouTubeApiClient {
     Map<String, dynamic> innertubeContext = const {},
     String rolloutToken = '',
     String poToken = '',
-    YouTubePlayerClientProfile clientProfile = YouTubePlayerClientProfile.web,
+    YouTubePlayerClientProfile clientProfile =
+        YouTubePlayerClientProfile.streamlinkAndroid,
   }) {
     throw UnimplementedError();
   }
@@ -197,7 +191,8 @@ class _SinglePollDanmakuApiClient implements YouTubeApiClient {
     Map<String, dynamic> innertubeContext = const {},
     String rolloutToken = '',
     String poToken = '',
-    YouTubePlayerClientProfile clientProfile = YouTubePlayerClientProfile.web,
+    YouTubePlayerClientProfile clientProfile =
+        YouTubePlayerClientProfile.streamlinkAndroid,
   }) {
     throw UnimplementedError();
   }

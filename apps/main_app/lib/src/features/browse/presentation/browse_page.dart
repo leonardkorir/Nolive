@@ -12,6 +12,7 @@ import 'package:nolive_app/src/features/search/presentation/search_page.dart';
 import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:nolive_app/src/shared/presentation/adaptive/app_adaptive_layout.dart';
 import 'package:nolive_app/src/shared/presentation/gestures/responsive_tab_swipe_switcher.dart';
+import 'package:nolive_app/src/shared/presentation/provider_tab_keep_alive.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
@@ -93,15 +94,17 @@ class BrowsePage extends StatelessWidget {
                 child: TabBarView(
                   physics: const NeverScrollableScrollPhysics(),
                   children: [
-                    for (final descriptor in providers)
-                      descriptor.supports(ProviderCapability.categories)
+                    for (var index = 0; index < providers.length; index += 1)
+                      providers[index].supports(ProviderCapability.categories)
                           ? _ProviderCategoriesTab(
                               dependencies: dependencies,
-                              descriptor: descriptor,
+                              descriptor: providers[index],
+                              tabIndex: index,
                             )
                           : _ProviderDiscoveryTab(
                               dependencies: dependencies,
-                              descriptor: descriptor,
+                              descriptor: providers[index],
+                              tabIndex: index,
                               pageHorizontalPadding:
                                   adaptive.pageHorizontalPadding,
                             ),
@@ -159,11 +162,13 @@ class _ProviderDiscoveryTab extends StatefulWidget {
   const _ProviderDiscoveryTab({
     required this.dependencies,
     required this.descriptor,
+    required this.tabIndex,
     required this.pageHorizontalPadding,
   });
 
   final BrowseFeatureDependencies dependencies;
   final ProviderDescriptor descriptor;
+  final int tabIndex;
   final double pageHorizontalPadding;
 
   @override
@@ -173,14 +178,50 @@ class _ProviderDiscoveryTab extends StatefulWidget {
 class _ProviderDiscoveryTabState extends State<_ProviderDiscoveryTab>
     with AutomaticKeepAliveClientMixin<_ProviderDiscoveryTab> {
   late Future<List<ProviderHighlightSection>> _future;
+  TabController? _tabController;
 
   @override
-  bool get wantKeepAlive => true;
+  bool get wantKeepAlive =>
+      browseProviderTabKeepAlive.shouldKeep(widget.tabIndex);
 
   @override
   void initState() {
     super.initState();
+    browseProviderTabKeepAlive.addListener(_onKeepAliveStoreChanged);
     _future = _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controller = DefaultTabController.maybeOf(context);
+    if (!identical(controller, _tabController)) {
+      _tabController?.removeListener(_handleTabControllerTick);
+      _tabController = controller;
+      _tabController?.addListener(_handleTabControllerTick);
+      if (controller != null && !controller.indexIsChanging) {
+        browseProviderTabKeepAlive.select(controller.index);
+      }
+      updateKeepAlive();
+    }
+  }
+
+  void _handleTabControllerTick() {
+    final controller = _tabController;
+    if (controller == null || controller.indexIsChanging) {
+      return;
+    }
+    browseProviderTabKeepAlive.select(controller.index);
+    updateKeepAlive();
+  }
+
+  void _onKeepAliveStoreChanged() => updateKeepAlive();
+
+  @override
+  void dispose() {
+    browseProviderTabKeepAlive.removeListener(_onKeepAliveStoreChanged);
+    _tabController?.removeListener(_handleTabControllerTick);
+    super.dispose();
   }
 
   Future<List<ProviderHighlightSection>> _load() {
@@ -278,10 +319,12 @@ class _ProviderCategoriesTab extends StatefulWidget {
   const _ProviderCategoriesTab({
     required this.dependencies,
     required this.descriptor,
+    required this.tabIndex,
   });
 
   final BrowseFeatureDependencies dependencies;
   final ProviderDescriptor descriptor;
+  final int tabIndex;
 
   @override
   State<_ProviderCategoriesTab> createState() => _ProviderCategoriesTabState();
@@ -290,17 +333,47 @@ class _ProviderCategoriesTab extends StatefulWidget {
 class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
     with AutomaticKeepAliveClientMixin<_ProviderCategoriesTab> {
   late Future<ProviderCategoriesPayload> _future;
+  TabController? _tabController;
+
+  @override
+  bool get wantKeepAlive =>
+      browseProviderTabKeepAlive.shouldKeep(widget.tabIndex);
+
   late final TextEditingController _searchController;
   final Set<String> _expandedCategoryIds = <String>{};
   List<FavoriteCategoryTag> _favoriteTags = const <FavoriteCategoryTag>[];
   String _categoryQuery = '';
 
   @override
-  bool get wantKeepAlive => true;
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controller = DefaultTabController.maybeOf(context);
+    if (!identical(controller, _tabController)) {
+      _tabController?.removeListener(_handleTabControllerTick);
+      _tabController = controller;
+      _tabController?.addListener(_handleTabControllerTick);
+      if (controller != null && !controller.indexIsChanging) {
+        browseProviderTabKeepAlive.select(controller.index);
+      }
+      updateKeepAlive();
+    }
+  }
+
+  void _handleTabControllerTick() {
+    final controller = _tabController;
+    if (controller == null || controller.indexIsChanging) {
+      return;
+    }
+    browseProviderTabKeepAlive.select(controller.index);
+    updateKeepAlive();
+  }
+
+  void _onKeepAliveStoreChanged() => updateKeepAlive();
 
   @override
   void initState() {
     super.initState();
+    browseProviderTabKeepAlive.addListener(_onKeepAliveStoreChanged);
     _searchController = TextEditingController();
     _future = _loadCategories();
     _reloadFavoriteTags();
@@ -308,6 +381,8 @@ class _ProviderCategoriesTabState extends State<_ProviderCategoriesTab>
 
   @override
   void dispose() {
+    browseProviderTabKeepAlive.removeListener(_onKeepAliveStoreChanged);
+    _tabController?.removeListener(_handleTabControllerTick);
     _searchController.dispose();
     super.dispose();
   }

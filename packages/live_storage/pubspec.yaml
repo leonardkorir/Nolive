@@ -7,6 +7,8 @@ environment:
   sdk: ">=3.10.0 <4.0.0"
 
 dependencies:
+  live_core:
+    path: ../live_core
   path: ^1.9.1
 
 dev_dependencies:

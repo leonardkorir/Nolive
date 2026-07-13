@@ -19,7 +19,7 @@ import 'room_fullscreen_test_fakes.dart';
 
 void main() {
   test(
-    'fullscreen preserve transition cleans up MDK runtime before commit',
+    'in-place fullscreen follow switch commits without pre-stopping MDK',
     () async {
       final harness = _TestRoomTransitionHarness(
         playerBackend: PlayerBackend.mdk,
@@ -49,51 +49,19 @@ void main() {
       );
 
       expect(preserveFullscreen, isTrue);
-      expect(harness.player.events, contains('stop'));
-      expect(harness.runtime.refreshCount, 1);
+      // Keep last frame until the next room rebinds — no pre-stop black flash.
+      expect(harness.player.events, isEmpty);
+      expect(harness.runtime.refreshCount, 0);
       expect(harness.messages, isEmpty);
-    },
-  );
-
-  test(
-    'cleanup failure restores current playback and reports message',
-    () async {
-      final harness = _TestRoomTransitionHarness(
-        playerBackend: PlayerBackend.mdk,
-        throwOnRefresh: true,
-      );
-      addTearDown(harness.dispose);
-      harness.fullscreenController.replaceViewUiState(
-        const RoomViewUiState(isFullscreen: true),
-      );
-      harness.player.emit(
-        PlayerState(
-          backend: PlayerBackend.mdk,
-          status: PlaybackStatus.playing,
-          source: harness.source,
-        ),
-      );
-      var commitCalled = false;
-
-      await harness.coordinator.openFollowRoom(
-        leavingRoom: false,
-        commitNavigation: (_) {
-          commitCalled = true;
-        },
-        showMessage: harness.messages.add,
-      );
-
-      expect(commitCalled, isFalse);
-      expect(harness.runtime.refreshCount, 1);
       expect(
-        harness.player.events,
-        containsAllInOrder(<String>['stop', 'setSource', 'play']),
+        harness.fullscreenController.viewUiState.showFullscreenFollowDrawer,
+        isFalse,
       );
-      expect(harness.messages, contains('切换直播间失败，请稍后重试'));
     },
   );
 
-  test('navigation failure after cleanup restores current playback', () async {
+  test('navigation failure reports message without forced playback restore',
+      () async {
     final harness = _TestRoomTransitionHarness(
       playerBackend: PlayerBackend.mdk,
     );
@@ -117,21 +85,13 @@ void main() {
       showMessage: harness.messages.add,
     );
 
-    expect(harness.runtime.refreshCount, 1);
-    expect(
-      harness.player.events,
-      containsAllInOrder(<String>[
-        'stop',
-        'refreshBackend',
-        'setSource',
-        'play',
-      ]),
-    );
+    expect(harness.runtime.refreshCount, 0);
+    expect(harness.player.events, isEmpty);
     expect(harness.messages, contains('切换直播间失败，请稍后重试'));
   });
 
   test(
-    'async navigation failure after cleanup restores current playback',
+    'async navigation failure reports message without forced playback restore',
     () async {
       final harness = _TestRoomTransitionHarness(
         playerBackend: PlayerBackend.mdk,
@@ -157,21 +117,13 @@ void main() {
         showMessage: harness.messages.add,
       );
 
-      expect(harness.runtime.refreshCount, 1);
-      expect(
-        harness.player.events,
-        containsAllInOrder(<String>[
-          'stop',
-          'refreshBackend',
-          'setSource',
-          'play',
-        ]),
-      );
+      expect(harness.runtime.refreshCount, 0);
+      expect(harness.player.events, isEmpty);
       expect(harness.messages, contains('切换直播间失败，请稍后重试'));
     },
   );
 
-  test('non-fullscreen non-MDK transition takes light path', () async {
+  test('non-fullscreen transition still commits and preserves false', () async {
     final harness = _TestRoomTransitionHarness(
       playerBackend: PlayerBackend.mpv,
     );
@@ -199,45 +151,49 @@ void main() {
     expect(harness.messages, isEmpty);
   });
 
-  test(
-    'disposed stale transition does not continue cleanup or navigation',
-    () async {
-      final endOfFrame = Completer<void>();
-      final harness = _TestRoomTransitionHarness(
-        playerBackend: PlayerBackend.mdk,
-        waitForEndOfFrame: () => endOfFrame.future,
-      );
-      harness.fullscreenController.replaceViewUiState(
-        const RoomViewUiState(isFullscreen: true),
-      );
-      harness.player.emit(
-        PlayerState(
+  test('leaving room skips transition entirely', () async {
+    final harness = _TestRoomTransitionHarness(
+      playerBackend: PlayerBackend.mdk,
+    );
+    addTearDown(harness.dispose);
+    var commitCalled = false;
+
+    await harness.coordinator.openFollowRoom(
+      leavingRoom: true,
+      commitNavigation: (_) {
+        commitCalled = true;
+      },
+      showMessage: harness.messages.add,
+    );
+
+    expect(commitCalled, isFalse);
+    expect(harness.messages, isEmpty);
+  });
+
+  test('helper still flags MDK fullscreen as needing surface care', () {
+    expect(
+      shouldResetMdkBeforeFullscreenFollowRoomSwitch(
+        fullscreenSessionActive: true,
+        playerState: const PlayerState(
           backend: PlayerBackend.mdk,
           status: PlaybackStatus.playing,
-          source: harness.source,
         ),
-      );
-      var commitCalled = false;
-
-      final future = harness.coordinator.openFollowRoom(
-        leavingRoom: false,
-        commitNavigation: (_) {
-          commitCalled = true;
-        },
-        showMessage: harness.messages.add,
-      );
-      harness.coordinator.dispose();
-      endOfFrame.complete();
-      await future;
-      harness.playbackController.dispose();
-      harness.fullscreenController.dispose();
-      await harness.player.dispose();
-
-      expect(commitCalled, isFalse);
-      expect(harness.runtime.refreshCount, 0);
-      expect(harness.messages, isEmpty);
-    },
-  );
+        runtimeBackend: PlayerBackend.mdk,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldResetMdkBeforeFullscreenFollowRoomSwitch(
+        fullscreenSessionActive: false,
+        playerState: const PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.playing,
+        ),
+        runtimeBackend: PlayerBackend.mdk,
+      ),
+      isFalse,
+    );
+  });
 }
 
 class _TestRoomTransitionHarness {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
@@ -83,7 +84,7 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('弹幕设置')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+        padding: kSettingsPagePadding,
         children: [
           AppSurfaceCard(
             child: Column(
@@ -115,6 +116,50 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
                   onChanged: (value) {
                     _update(
                       preferences.copyWith(nativeBatchMaskEnabled: value),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: preferences.textNormalizationEnabled,
+                  title: const Text('文本归一化'),
+                  subtitle: const Text('忽略空格与常见标点后再做重复频控'),
+                  onChanged: (value) {
+                    _update(
+                      preferences.copyWith(textNormalizationEnabled: value),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                _SliderSettingTile(
+                  title: '频控窗口',
+                  subtitle: '滑动窗口秒数，越大越容易合并重复弹幕',
+                  valueLabel: '${preferences.frequencyWindowSeconds} 秒',
+                  value: preferences.frequencyWindowSeconds.toDouble(),
+                  min: 2,
+                  max: 30,
+                  divisions: 28,
+                  onChanged: (value) {
+                    _update(
+                      preferences.copyWith(
+                        frequencyWindowSeconds: value.round(),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                _SliderSettingTile(
+                  title: '最大重复次数',
+                  subtitle: '窗口内同一文本最多展示次数',
+                  valueLabel: '${preferences.maxFrequency} 次',
+                  value: preferences.maxFrequency.toDouble(),
+                  min: 1,
+                  max: 10,
+                  divisions: 9,
+                  onChanged: (value) {
+                    _update(
+                      preferences.copyWith(maxFrequency: value.round()),
                     );
                   },
                 ),

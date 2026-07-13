@@ -66,7 +66,21 @@ class TestRecordingPlayer implements BasePlayer {
   @override
   Future<void> play() async {
     events.add('play');
-    emit(_currentState.copyWith(status: PlaybackStatus.playing));
+    // Simulate first decoded frame so room loading shell can dismiss.
+    // Keep any diagnostics the test already seeded.
+    if ((_currentDiagnostics.width ?? 0) <= 0 ||
+        (_currentDiagnostics.height ?? 0) <= 0) {
+      emitDiagnostics(
+        _currentDiagnostics.copyWith(width: 1280, height: 720),
+      );
+    }
+    emit(
+      _currentState.copyWith(
+        status: PlaybackStatus.playing,
+        position: const Duration(milliseconds: 40),
+        buffered: const Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
@@ -78,6 +92,9 @@ class TestRecordingPlayer implements BasePlayer {
   @override
   Future<void> stop() async {
     events.add('stop');
+    emitDiagnostics(
+      _currentDiagnostics.copyWith(clearWidth: true, clearHeight: true),
+    );
     emit(
       _currentState.copyWith(status: PlaybackStatus.ready, clearSource: true),
     );

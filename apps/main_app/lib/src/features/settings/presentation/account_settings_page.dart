@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
@@ -7,9 +8,9 @@ import 'package:nolive_app/src/features/settings/application/settings_feature_de
 import 'package:nolive_app/src/features/settings/application/stripchat_mouflon_key_store.dart';
 import 'package:nolive_app/src/features/settings/presentation/provider_web_login_pages.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
-import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/provider_badge.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 class AccountSettingsPage extends StatefulWidget {
   const AccountSettingsPage({required this.dependencies, super.key});
@@ -268,9 +269,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                   );
                   Navigator.of(context).pop(parsed);
                 } catch (error) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('$error')));
+                        showAppErrorSnackBar(context, error);
                 }
               },
               child: const Text('导入'),
@@ -429,12 +428,12 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           }
           if (snapshot.hasError || !snapshot.hasData) {
             return ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+              padding: kSettingsPagePadding,
               children: [
-                EmptyStateCard(
+                SettingsErrorState(
                   title: '账号状态加载失败',
-                  message: '${snapshot.error}',
-                  icon: Icons.error_outline,
+                  error: snapshot.error,
+                  fallback: '无法加载账号状态，请稍后重试',
                 ),
               ],
             );
@@ -443,7 +442,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           final dashboard = snapshot.data!;
           final scheme = Theme.of(context).colorScheme;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+            padding: kSettingsPagePadding,
             children: [
               SectionHeader(
                 title: '账号管理',

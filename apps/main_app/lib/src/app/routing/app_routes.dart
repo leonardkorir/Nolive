@@ -31,11 +31,15 @@ class RoomRouteArguments {
     required this.providerId,
     required this.roomId,
     this.startInFullscreen = false,
+    this.seamlessTransition = false,
   });
 
   final ProviderId providerId;
   final String roomId;
   final bool startInFullscreen;
+
+  /// Skip the page push/replace animation (follow-room switches).
+  final bool seamlessTransition;
 }
 
 class ProviderCategoriesRouteArguments {

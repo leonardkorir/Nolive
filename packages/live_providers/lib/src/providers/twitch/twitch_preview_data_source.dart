@@ -27,14 +27,15 @@ class TwitchPreviewDataSource implements TwitchDataSource {
   ];
 
   static const Map<String, String> _playHeaders = {
-    'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+    'user-agent':
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
     'referer': 'https://www.twitch.tv/xqc',
   };
 
   static const List<LiveRoom> _rooms = [
     LiveRoom(
-      providerId: 'twitch',
+      providerId: ProviderId.twitch,
       roomId: 'xqc',
       title: 'LIVE REACT DRAMA NEWS VIDEOS GAMES',
       streamerName: 'xQc',
@@ -47,7 +48,7 @@ class TwitchPreviewDataSource implements TwitchDataSource {
       isLive: true,
     ),
     LiveRoom(
-      providerId: 'twitch',
+      providerId: ProviderId.twitch,
       roomId: 'arky',
       title: 'LAST DANCE PARTY',
       streamerName: 'arky',
@@ -60,7 +61,7 @@ class TwitchPreviewDataSource implements TwitchDataSource {
       isLive: true,
     ),
     LiveRoom(
-      providerId: 'twitch',
+      providerId: ProviderId.twitch,
       roomId: 'zackrawrr',
       title: 'Offline preview room',
       streamerName: 'zackrawrr',
@@ -73,7 +74,7 @@ class TwitchPreviewDataSource implements TwitchDataSource {
 
   static const Map<String, LiveRoomDetail> _details = {
     'xqc': LiveRoomDetail(
-      providerId: 'twitch',
+      providerId: ProviderId.twitch,
       roomId: 'xqc',
       title: 'LIVE REACT DRAMA NEWS VIDEOS GAMES',
       streamerName: 'xQc',
@@ -92,7 +93,7 @@ class TwitchPreviewDataSource implements TwitchDataSource {
       },
     ),
     'arky': LiveRoomDetail(
-      providerId: 'twitch',
+      providerId: ProviderId.twitch,
       roomId: 'arky',
       title: 'LAST DANCE PARTY',
       streamerName: 'arky',
@@ -111,7 +112,7 @@ class TwitchPreviewDataSource implements TwitchDataSource {
       },
     ),
     'zackrawrr': LiveRoomDetail(
-      providerId: 'twitch',
+      providerId: ProviderId.twitch,
       roomId: 'zackrawrr',
       title: 'Offline preview room',
       streamerName: 'zackrawrr',
@@ -200,14 +201,16 @@ class TwitchPreviewDataSource implements TwitchDataSource {
     int page = 1,
   }) async {
     final normalized = query.trim().toLowerCase();
-    final items = _rooms.where((room) {
-      if (normalized.isEmpty) {
-        return true;
-      }
-      return room.roomId.toLowerCase().contains(normalized) ||
-          room.streamerName.toLowerCase().contains(normalized) ||
-          room.title.toLowerCase().contains(normalized);
-    }).toList(growable: false);
+    final items = _rooms
+        .where((room) {
+          if (normalized.isEmpty) {
+            return true;
+          }
+          return room.roomId.toLowerCase().contains(normalized) ||
+              room.streamerName.toLowerCase().contains(normalized) ||
+              room.title.toLowerCase().contains(normalized);
+        })
+        .toList(growable: false);
     return PagedResponse(items: items, hasMore: false, page: page);
   }
 
@@ -246,8 +249,8 @@ class TwitchPreviewDataSource implements TwitchDataSource {
 }
 
 String _normalizeCategoryKey(String? value) {
-  return (value ?? '')
-      .trim()
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+  return (value ?? '').trim().toLowerCase().replaceAll(
+    RegExp(r'[^a-z0-9]+'),
+    '-',
+  );
 }

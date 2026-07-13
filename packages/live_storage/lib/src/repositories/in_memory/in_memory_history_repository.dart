@@ -1,3 +1,5 @@
+import 'package:live_core/live_core.dart';
+
 import '../../models/history_record.dart';
 import '../history_repository.dart';
 
@@ -25,8 +27,10 @@ class InMemoryHistoryRepository implements HistoryRepository {
 
   @override
   Future<void> remove(String providerId, String roomId) async {
+    final normalizedProviderId = ProviderId.from(providerId);
     _records.removeWhere(
-      (item) => item.providerId == providerId && item.roomId == roomId,
+      (item) =>
+          item.providerId == normalizedProviderId && item.roomId == roomId,
     );
   }
 }

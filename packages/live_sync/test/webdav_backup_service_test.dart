@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:test/test.dart';
@@ -50,7 +51,11 @@ void main() {
     final snapshot = SyncSnapshot(
       settings: const {'theme_mode': 'dark'},
       follows: const [
-        FollowRecord(providerId: 'bilibili', roomId: '1', streamerName: '主播'),
+        FollowRecord(
+          providerId: ProviderId.bilibili,
+          roomId: '1',
+          streamerName: '主播',
+        ),
       ],
     );
 

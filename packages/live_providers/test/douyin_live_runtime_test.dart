@@ -32,51 +32,53 @@ void main() {
     expect(qualities, isNotEmpty);
     final selected = qualities.firstWhere((item) => item.isDefault);
 
-    final urls =
-        await provider.fetchPlayUrls(detail: detail, quality: selected);
+    final urls = await provider.fetchPlayUrls(
+      detail: detail,
+      quality: selected,
+    );
     expect(urls, isNotEmpty);
     expect(urls.first.url, contains('/origin.'));
   });
 
   test(
-      'douyin search fallback paginates filtered feed instead of returning hot rooms',
-      () async {
-    final provider = DouyinProvider(
-      dataSource: DouyinLiveDataSource(
-        transport: _FallbackDouyinTransport(),
-        signService: HttpDouyinSignService(cookie: 'ttwid=test-cookie'),
-      ),
-    );
+    'douyin search fallback paginates filtered feed instead of returning hot rooms',
+    () async {
+      final provider = DouyinProvider(
+        dataSource: DouyinLiveDataSource(
+          transport: _FallbackDouyinTransport(),
+          signService: HttpDouyinSignService(cookie: 'ttwid=test-cookie'),
+        ),
+      );
 
-    final page1 = await provider.searchRooms('关键', page: 1);
-    expect(page1.items, hasLength(10));
-    expect(page1.hasMore, isTrue);
-    expect(page1.items.first.roomId, 'match-0');
+      final page1 = await provider.searchRooms('关键', page: 1);
+      expect(page1.items, hasLength(10));
+      expect(page1.hasMore, isTrue);
+      expect(page1.items.first.roomId, 'match-0');
 
-    final page2 = await provider.searchRooms('关键', page: 2);
-    expect(page2.items, hasLength(2));
-    expect(page2.hasMore, isFalse);
-    expect(page2.items.first.roomId, 'match-10');
+      final page2 = await provider.searchRooms('关键', page: 2);
+      expect(page2.items, hasLength(2));
+      expect(page2.hasMore, isFalse);
+      expect(page2.items.first.roomId, 'match-10');
 
-    final empty = await provider.searchRooms('不存在', page: 1);
-    expect(empty.items, isEmpty);
-    expect(empty.hasMore, isFalse);
-  });
+      final empty = await provider.searchRooms('不存在', page: 1);
+      expect(empty.items, isEmpty);
+      expect(empty.hasMore, isFalse);
+    },
+  );
 
-  test('douyin categories surface parse failures instead of silent fallback',
-      () async {
-    final provider = DouyinProvider(
-      dataSource: DouyinLiveDataSource(
-        transport: _BrokenDouyinCategoryTransport(),
-        signService: HttpDouyinSignService(cookie: 'ttwid=test-cookie'),
-      ),
-    );
+  test(
+    'douyin categories surface parse failures instead of silent fallback',
+    () async {
+      final provider = DouyinProvider(
+        dataSource: DouyinLiveDataSource(
+          transport: _BrokenDouyinCategoryTransport(),
+          signService: HttpDouyinSignService(cookie: 'ttwid=test-cookie'),
+        ),
+      );
 
-    expect(
-      provider.fetchCategories,
-      throwsA(isA<ProviderParseException>()),
-    );
-  });
+      expect(provider.fetchCategories, throwsA(isA<ProviderParseException>()));
+    },
+  );
 
   test('douyin categories extract nested icon url payloads', () async {
     final provider = DouyinProvider(
@@ -95,33 +97,35 @@ void main() {
     );
   });
 
-  test('douyin category rooms skip sparse empty pages by advancing offset',
-      () async {
-    final provider = DouyinProvider(
-      dataSource: DouyinLiveDataSource(
-        transport: _SparseDouyinCategoryTransport(),
-        signService: HttpDouyinSignService(cookie: 'ttwid=test-cookie'),
-      ),
-    );
+  test(
+    'douyin category rooms skip sparse empty pages by advancing offset',
+    () async {
+      final provider = DouyinProvider(
+        dataSource: DouyinLiveDataSource(
+          transport: _SparseDouyinCategoryTransport(),
+          signService: HttpDouyinSignService(cookie: 'ttwid=test-cookie'),
+        ),
+      );
 
-    final page = await provider.fetchCategoryRooms(
-      const LiveSubCategory(
-        id: '1010026,1',
-        parentId: '1000000,1',
-        name: '绝地求生',
-      ),
-      page: 2,
-    );
+      final page = await provider.fetchCategoryRooms(
+        const LiveSubCategory(
+          id: '1010026,1',
+          parentId: '1000000,1',
+          name: '绝地求生',
+        ),
+        page: 2,
+      );
 
-    expect(page.page, 3);
-    expect(page.items, hasLength(15));
-    expect(page.items.first.roomId, 'room-30-0');
-    expect(page.hasMore, isTrue);
-  });
+      expect(page.page, 3);
+      expect(page.items, hasLength(15));
+      expect(page.items.first.roomId, 'room-30-0');
+      expect(page.hasMore, isTrue);
+    },
+  );
 
   test('legacy douyin quality mapping keeps origin playable', () {
     const detail = LiveRoomDetail(
-      providerId: 'douyin',
+      providerId: ProviderId.douyin,
       roomId: '1',
       title: 'legacy',
       streamerName: 'tester',
@@ -223,21 +227,23 @@ void main() {
     expect(categories.single.name, '游戏');
   });
 
-  test('douyin request retry refreshes cookie and succeeds on second attempt',
-      () async {
-    final signService = _TrackingDouyinSignService();
-    final provider = DouyinProvider(
-      dataSource: DouyinLiveDataSource(
-        transport: _RetryOnceDouyinTransport(),
-        signService: signService,
-      ),
-    );
+  test(
+    'douyin request retry refreshes cookie and succeeds on second attempt',
+    () async {
+      final signService = _TrackingDouyinSignService();
+      final provider = DouyinProvider(
+        dataSource: DouyinLiveDataSource(
+          transport: _RetryOnceDouyinTransport(),
+          signService: signService,
+        ),
+      );
 
-    final rooms = await provider.searchRooms('关键');
+      final rooms = await provider.searchRooms('关键');
 
-    expect(rooms.items, hasLength(1));
-    expect(signService.forceRefreshCalls, 1);
-  });
+      expect(rooms.items, hasLength(1));
+      expect(signService.forceRefreshCalls, 1);
+    },
+  );
 
   test('douyin request retry rethrows second risk-control failure', () async {
     final provider = DouyinProvider(
@@ -259,27 +265,29 @@ void main() {
     );
   });
 
-  test('douyin signed requests avoid hardcoded Win32/Edge fingerprints',
-      () async {
-    final transport = _InspectingDouyinTransport();
-    final provider = DouyinProvider(
-      dataSource: DouyinLiveDataSource(
-        transport: transport,
-        signService: _TrackingDouyinSignService(),
-      ),
-    );
+  test(
+    'douyin signed requests avoid hardcoded Win32/Edge fingerprints',
+    () async {
+      final transport = _InspectingDouyinTransport();
+      final provider = DouyinProvider(
+        dataSource: DouyinLiveDataSource(
+          transport: transport,
+          signService: _TrackingDouyinSignService(),
+        ),
+      );
 
-    await provider.searchRooms('测试');
+      await provider.searchRooms('测试');
 
-    final uri = transport.lastRequestUri;
-    expect(uri, isNotNull);
-    expect(uri!.queryParameters['browser_platform'], 'Linux x86_64');
-    expect(uri.queryParameters['browser_name'], 'Chrome');
-    expect(uri.queryParameters['browser_version'], '125.0.0.0');
-    expect(uri.queryParameters['os_name'], 'Linux');
-    expect(uri.query, isNot(contains('Win32')));
-    expect(uri.query, isNot(contains('Edge')));
-  });
+      final uri = transport.lastRequestUri;
+      expect(uri, isNotNull);
+      expect(uri!.queryParameters['browser_platform'], 'Linux x86_64');
+      expect(uri.queryParameters['browser_name'], 'Chrome');
+      expect(uri.queryParameters['browser_version'], '125.0.0.0');
+      expect(uri.queryParameters['os_name'], 'Linux');
+      expect(uri.query, isNot(contains('Win32')));
+      expect(uri.query, isNot(contains('Edge')));
+    },
+  );
 
   test('douyin search skips malformed lives payload entries', () async {
     final provider = DouyinProvider(
@@ -315,9 +323,9 @@ class _FakeDouyinTransport extends DouyinTransport {
     final uri = Uri.parse(url).replace(
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
-    if (uri
-        .toString()
-        .startsWith('https://www.douyin.com/aweme/v1/web/live/search/')) {
+    if (uri.toString().startsWith(
+      'https://www.douyin.com/aweme/v1/web/live/search/',
+    )) {
       return DouyinHttpResponse(
         body: jsonEncode({
           'status_code': 0,
@@ -330,11 +338,11 @@ class _FakeDouyinTransport extends DouyinTransport {
                     'web_rid': '416144012050',
                     'nickname': '抖音主播',
                     'avatar_medium': {
-                      'url_list': ['https://douyin.test/avatar.jpg']
+                      'url_list': ['https://douyin.test/avatar.jpg'],
                     },
                   },
                   'cover': {
-                    'url_list': ['https://douyin.test/cover.jpg']
+                    'url_list': ['https://douyin.test/cover.jpg'],
                   },
                   'stats': {'total_user': 12345},
                   'room': {'title': '抖音测试直播间'},
@@ -346,9 +354,9 @@ class _FakeDouyinTransport extends DouyinTransport {
         headers: const {},
       );
     }
-    if (uri
-        .toString()
-        .startsWith('https://live.douyin.com/webcast/room/web/enter/')) {
+    if (uri.toString().startsWith(
+      'https://live.douyin.com/webcast/room/web/enter/',
+    )) {
       return DouyinHttpResponse(
         body: jsonEncode({
           'data': {
@@ -358,13 +366,13 @@ class _FakeDouyinTransport extends DouyinTransport {
                 'title': '抖音测试直播间',
                 'status': 2,
                 'cover': {
-                  'url_list': ['https://douyin.test/cover.jpg']
+                  'url_list': ['https://douyin.test/cover.jpg'],
                 },
                 'owner': {
                   'nickname': '抖音主播',
                   'signature': '签名',
                   'avatar_thumb': {
-                    'url_list': ['https://douyin.test/avatar.jpg']
+                    'url_list': ['https://douyin.test/avatar.jpg'],
                   },
                 },
                 'room_view_stats': {'display_value': 54321},
@@ -387,13 +395,13 @@ class _FakeDouyinTransport extends DouyinTransport {
             'user': {
               'nickname': '抖音主播',
               'avatar_thumb': {
-                'url_list': ['https://douyin.test/avatar.jpg']
+                'url_list': ['https://douyin.test/avatar.jpg'],
               },
             },
             'partition_road_map': {
               'partition': {'title': '知识'},
               'sub_partition': {
-                'partition': {'title': '技术'}
+                'partition': {'title': '技术'},
               },
             },
           },
@@ -435,14 +443,11 @@ class _FallbackDouyinTransport extends DouyinTransport {
     final uri = Uri.parse(url).replace(
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
-    if (uri
-        .toString()
-        .startsWith('https://www.douyin.com/aweme/v1/web/live/search/')) {
+    if (uri.toString().startsWith(
+      'https://www.douyin.com/aweme/v1/web/live/search/',
+    )) {
       return DouyinHttpResponse(
-        body: jsonEncode({
-          'status_code': 0,
-          'data': const [],
-        }),
+        body: jsonEncode({'status_code': 0, 'data': const []}),
         headers: const {},
       );
     }
@@ -456,13 +461,13 @@ class _FallbackDouyinTransport extends DouyinTransport {
                 'data': {
                   'title': index < 12 ? '关键房间$index' : '无关房间$index',
                   'cover': {
-                    'url_list': ['https://douyin.test/cover-$index.jpg']
+                    'url_list': ['https://douyin.test/cover-$index.jpg'],
                   },
                   'owner': {
                     'web_rid': index < 12 ? 'match-$index' : 'other-$index',
                     'nickname': index < 12 ? '关键主播$index' : '其他主播$index',
                     'avatar_thumb': {
-                      'url_list': ['https://douyin.test/avatar-$index.jpg']
+                      'url_list': ['https://douyin.test/avatar-$index.jpg'],
                     },
                   },
                   'room_view_stats': {'display_value': 1000 + index},
@@ -505,7 +510,8 @@ class _SparseDouyinCategoryTransport extends DouyinTransport {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
     if (!uri.toString().startsWith(
-        'https://live.douyin.com/webcast/web/partition/detail/room/v2/')) {
+      'https://live.douyin.com/webcast/web/partition/detail/room/v2/',
+    )) {
       fail('Unexpected douyin sparse category request: $uri');
     }
 
@@ -520,14 +526,14 @@ class _SparseDouyinCategoryTransport extends DouyinTransport {
               'room': {
                 'title': '房间$index',
                 'cover': {
-                  'url_list': ['https://douyin.test/cover-$offset-$index.jpg']
+                  'url_list': ['https://douyin.test/cover-$offset-$index.jpg'],
                 },
                 'owner': {
                   'nickname': '主播$index',
                   'avatar_medium': {
                     'url_list': [
-                      'https://douyin.test/avatar-$offset-$index.jpg'
-                    ]
+                      'https://douyin.test/avatar-$offset-$index.jpg',
+                    ],
                   },
                 },
                 'room_view_stats': {'display_value': 1000 + index},
@@ -537,11 +543,7 @@ class _SparseDouyinCategoryTransport extends DouyinTransport {
 
     return DouyinHttpResponse(
       body: jsonEncode({
-        'data': {
-          'count': 15,
-          'offset': responseOffset,
-          'data': items,
-        },
+        'data': {'count': 15, 'offset': responseOffset, 'data': items},
       }),
       headers: const {},
     );
@@ -608,10 +610,7 @@ class _RetryOnceDouyinTransport extends DouyinTransport {
             'lives': {
               'rawdata': jsonEncode({
                 'title': '重试成功',
-                'owner': {
-                  'web_rid': 'retry-room',
-                  'nickname': '重试主播',
-                },
+                'owner': {'web_rid': 'retry-room', 'nickname': '重试主播'},
                 'room': {'title': '重试成功'},
               }),
             },
@@ -659,10 +658,7 @@ class _MalformedSearchRawdataDouyinTransport extends DouyinTransport {
             'lives': {
               'rawdata': jsonEncode({
                 'title': '有效房间',
-                'owner': {
-                  'web_rid': 'valid-room',
-                  'nickname': '有效主播',
-                },
+                'owner': {'web_rid': 'valid-room', 'nickname': '有效主播'},
                 'room': {'title': '有效房间'},
               }),
             },
@@ -720,9 +716,9 @@ class _MalformedTextDouyinTransport extends _FakeDouyinTransport {
     final uri = Uri.parse(url).replace(
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
-    if (uri
-        .toString()
-        .startsWith('https://www.douyin.com/aweme/v1/web/live/search/')) {
+    if (uri.toString().startsWith(
+      'https://www.douyin.com/aweme/v1/web/live/search/',
+    )) {
       return DouyinHttpResponse(
         body: jsonEncode({
           'status_code': 0,
@@ -735,11 +731,11 @@ class _MalformedTextDouyinTransport extends _FakeDouyinTransport {
                     'web_rid': '416144012050',
                     'nickname': _badName,
                     'avatar_medium': {
-                      'url_list': ['https://douyin.test/avatar.jpg']
+                      'url_list': ['https://douyin.test/avatar.jpg'],
                     },
                   },
                   'cover': {
-                    'url_list': ['https://douyin.test/cover.jpg']
+                    'url_list': ['https://douyin.test/cover.jpg'],
                   },
                   'stats': {'total_user': 12345},
                   'room': {'title': _badTitle},
@@ -751,9 +747,9 @@ class _MalformedTextDouyinTransport extends _FakeDouyinTransport {
         headers: const {},
       );
     }
-    if (uri
-        .toString()
-        .startsWith('https://live.douyin.com/webcast/room/web/enter/')) {
+    if (uri.toString().startsWith(
+      'https://live.douyin.com/webcast/room/web/enter/',
+    )) {
       return DouyinHttpResponse(
         body: jsonEncode({
           'data': {
@@ -763,12 +759,12 @@ class _MalformedTextDouyinTransport extends _FakeDouyinTransport {
                 'title': _badTitle,
                 'status': 2,
                 'cover': {
-                  'url_list': ['https://douyin.test/cover.jpg']
+                  'url_list': ['https://douyin.test/cover.jpg'],
                 },
                 'owner': {
                   'nickname': _badName,
                   'avatar_thumb': {
-                    'url_list': ['https://douyin.test/avatar.jpg']
+                    'url_list': ['https://douyin.test/avatar.jpg'],
                   },
                   'signature': _badDescription,
                 },
@@ -793,9 +789,7 @@ class _MalformedTextDouyinTransport extends _FakeDouyinTransport {
                 },
               },
             ],
-            'user': {
-              'nickname': _badName,
-            },
+            'user': {'nickname': _badName},
             'partition_road_map': {
               'partition': {'title': _badArea},
             },
@@ -822,9 +816,9 @@ class _TimeoutThenHtmlDouyinTransport extends DouyinTransport {
     final uri = Uri.parse(url).replace(
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
-    if (uri
-        .toString()
-        .startsWith('https://live.douyin.com/webcast/room/web/enter/')) {
+    if (uri.toString().startsWith(
+      'https://live.douyin.com/webcast/room/web/enter/',
+    )) {
       await Future<void>.delayed(const Duration(milliseconds: 80));
       return const DouyinHttpResponse(body: '{}', headers: {});
     }
@@ -848,19 +842,13 @@ class _TimeoutThenHtmlDouyinTransport extends DouyinTransport {
                     'url_list': ['https://douyin.test/avatar.jpg'],
                   },
                 },
-                'room_view_stats': {
-                  'display_value': 54321,
-                },
+                'room_view_stats': {'display_value': 54321},
                 'stream_url': {
                   'live_core_sdk_data': {
                     'pull_data': {
                       'options': {
                         'qualities': [
-                          {
-                            'name': '原画',
-                            'level': 0,
-                            'sdk_key': 'origin',
-                          },
+                          {'name': '原画', 'level': 0, 'sdk_key': 'origin'},
                         ],
                       },
                       'stream_data': jsonEncode({
@@ -886,16 +874,11 @@ class _TimeoutThenHtmlDouyinTransport extends DouyinTransport {
             },
           },
           'userStore': {
-            'odin': {
-              'user_unique_id': '123456789012',
-            },
+            'odin': {'user_unique_id': '123456789012'},
           },
         },
       }).replaceAll('"', r'\"');
-      return DouyinHttpResponse(
-        body: '$payload]\\n',
-        headers: const {},
-      );
+      return DouyinHttpResponse(body: '$payload]\\n', headers: const {});
     }
     fail('Unexpected douyin timeout/html request: $uri');
   }

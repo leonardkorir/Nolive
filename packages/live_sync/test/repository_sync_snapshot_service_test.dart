@@ -1,3 +1,4 @@
+import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:test/test.dart';
@@ -21,7 +22,7 @@ void main() {
     await tagRepository.create('常看');
     await historyRepository.add(
       HistoryRecord(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '6',
         title: '测试房间',
         streamerName: '主播',
@@ -30,7 +31,7 @@ void main() {
     );
     await followRepository.upsert(
       const FollowRecord(
-        providerId: 'douyu',
+        providerId: ProviderId.douyu,
         roomId: '123',
         streamerName: '斗鱼主播',
         streamerAvatarUrl: 'https://example.com/avatar-douyu.png',
@@ -64,15 +65,12 @@ void main() {
 
     await service.importSnapshot(
       SyncSnapshot(
-        settings: const {
-          'theme_mode': 'light',
-          'player_auto_play': false,
-        },
+        settings: const {'theme_mode': 'light', 'player_auto_play': false},
         blockedKeywords: const ['广告'],
         tags: const ['收藏'],
         history: [
           HistoryRecord(
-            providerId: 'huya',
+            providerId: ProviderId.huya,
             roomId: '88',
             title: '测试直播',
             streamerName: '主播A',
@@ -81,7 +79,7 @@ void main() {
         ],
         follows: [
           FollowRecord(
-            providerId: 'douyin',
+            providerId: ProviderId.douyin,
             roomId: '66',
             streamerName: '主播B',
             streamerAvatarUrl: 'https://example.com/avatar-b.png',
@@ -93,7 +91,9 @@ void main() {
 
     expect(await settingsRepository.readValue<String>('theme_mode'), 'light');
     expect(
-        await settingsRepository.readValue<bool>('player_auto_play'), isFalse);
+      await settingsRepository.readValue<bool>('player_auto_play'),
+      isFalse,
+    );
     expect(
       await settingsRepository.readValue<List<String>>('blocked_keywords'),
       ['广告'],
@@ -124,7 +124,7 @@ void main() {
     await tagRepository.create('收藏');
     await followRepository.upsert(
       const FollowRecord(
-        providerId: 'douyu',
+        providerId: ProviderId.douyu,
         roomId: '77',
         streamerName: '主播C',
       ),
@@ -158,127 +158,125 @@ void main() {
     );
   });
 
-  test('repository sync snapshot merges blocked keywords when not clearing',
-      () async {
-    final settingsRepository = InMemorySettingsRepository();
-    final service = RepositorySyncSnapshotService(
-      settingsRepository: settingsRepository,
-      historyRepository: InMemoryHistoryRepository(),
-      followRepository: InMemoryFollowRepository(),
-      tagRepository: InMemoryTagRepository(),
-    );
+  test(
+    'repository sync snapshot merges blocked keywords when not clearing',
+    () async {
+      final settingsRepository = InMemorySettingsRepository();
+      final service = RepositorySyncSnapshotService(
+        settingsRepository: settingsRepository,
+        historyRepository: InMemoryHistoryRepository(),
+        followRepository: InMemoryFollowRepository(),
+        tagRepository: InMemoryTagRepository(),
+      );
 
-    await settingsRepository.writeValue('blocked_keywords', ['本地', '重复']);
+      await settingsRepository.writeValue('blocked_keywords', ['本地', '重复']);
 
-    await service.importCategory(
-      SyncDataCategory.blockedKeywords,
-      const SyncSnapshot(blockedKeywords: ['远端', '重复']),
-      clearExisting: false,
-    );
+      await service.importCategory(
+        SyncDataCategory.blockedKeywords,
+        const SyncSnapshot(blockedKeywords: ['远端', '重复']),
+        clearExisting: false,
+      );
 
-    expect(
-      await settingsRepository.readValue<List<String>>('blocked_keywords'),
-      ['本地', '重复', '远端'],
-    );
-  });
+      expect(
+        await settingsRepository.readValue<List<String>>('blocked_keywords'),
+        ['本地', '重复', '远端'],
+      );
+    },
+  );
 
-  test('repository sync snapshot can exclude sensitive settings from export',
-      () async {
-    final settingsRepository = InMemorySettingsRepository();
-    final historyRepository = InMemoryHistoryRepository();
-    final followRepository = InMemoryFollowRepository();
-    final tagRepository = InMemoryTagRepository();
-    final service = RepositorySyncSnapshotService(
-      settingsRepository: settingsRepository,
-      historyRepository: historyRepository,
-      followRepository: followRepository,
-      tagRepository: tagRepository,
-      shouldIncludeSettingInSnapshot: (key) =>
-          key != 'account_bilibili_cookie' && key != 'sync_webdav_password',
-    );
+  test(
+    'repository sync snapshot can exclude sensitive settings from export',
+    () async {
+      final settingsRepository = InMemorySettingsRepository();
+      final historyRepository = InMemoryHistoryRepository();
+      final followRepository = InMemoryFollowRepository();
+      final tagRepository = InMemoryTagRepository();
+      final service = RepositorySyncSnapshotService(
+        settingsRepository: settingsRepository,
+        historyRepository: historyRepository,
+        followRepository: followRepository,
+        tagRepository: tagRepository,
+        shouldIncludeSettingInSnapshot: (key) =>
+            key != 'account_bilibili_cookie' && key != 'sync_webdav_password',
+      );
 
-    await settingsRepository.writeValue('theme_mode', 'dark');
-    await settingsRepository.writeValue(
-      'account_bilibili_cookie',
-      'SESSDATA=demo',
-    );
-    await settingsRepository.writeValue(
-      'sync_webdav_password',
-      'demo-password',
-    );
+      await settingsRepository.writeValue('theme_mode', 'dark');
+      await settingsRepository.writeValue(
+        'account_bilibili_cookie',
+        'SESSDATA=demo',
+      );
+      await settingsRepository.writeValue(
+        'sync_webdav_password',
+        'demo-password',
+      );
 
-    final snapshot = await service.exportSnapshot();
+      final snapshot = await service.exportSnapshot();
 
-    expect(snapshot.settings['theme_mode'], 'dark');
-    expect(snapshot.settings.containsKey('account_bilibili_cookie'), isFalse);
-    expect(snapshot.settings.containsKey('sync_webdav_password'), isFalse);
-  });
+      expect(snapshot.settings['theme_mode'], 'dark');
+      expect(snapshot.settings.containsKey('account_bilibili_cookie'), isFalse);
+      expect(snapshot.settings.containsKey('sync_webdav_password'), isFalse);
+    },
+  );
 
-  test('repository sync snapshot preserves sensitive settings on import',
-      () async {
-    final settingsRepository = InMemorySettingsRepository();
-    final service = RepositorySyncSnapshotService(
-      settingsRepository: settingsRepository,
-      historyRepository: InMemoryHistoryRepository(),
-      followRepository: InMemoryFollowRepository(),
-      tagRepository: InMemoryTagRepository(),
-      shouldIncludeSettingInSnapshot: (key) =>
-          key != 'account_bilibili_cookie' && key != 'sync_webdav_password',
-    );
+  test(
+    'repository sync snapshot preserves sensitive settings on import',
+    () async {
+      final settingsRepository = InMemorySettingsRepository();
+      final service = RepositorySyncSnapshotService(
+        settingsRepository: settingsRepository,
+        historyRepository: InMemoryHistoryRepository(),
+        followRepository: InMemoryFollowRepository(),
+        tagRepository: InMemoryTagRepository(),
+        shouldIncludeSettingInSnapshot: (key) =>
+            key != 'account_bilibili_cookie' && key != 'sync_webdav_password',
+      );
 
-    await settingsRepository.writeValue('theme_mode', 'dark');
-    await settingsRepository.writeValue(
-      'account_bilibili_cookie',
-      'SESSDATA=demo',
-    );
-    await settingsRepository.writeValue(
-      'sync_webdav_password',
-      'demo-password',
-    );
+      await settingsRepository.writeValue('theme_mode', 'dark');
+      await settingsRepository.writeValue(
+        'account_bilibili_cookie',
+        'SESSDATA=demo',
+      );
+      await settingsRepository.writeValue(
+        'sync_webdav_password',
+        'demo-password',
+      );
 
-    // Import a snapshot that doesn't contain the sensitive settings, with clearExisting: true
-    await service.importSnapshot(
-      const SyncSnapshot(
-        settings: {
-          'theme_mode': 'light',
-        },
-      ),
-      clearExisting: true,
-    );
+      // Import a snapshot that doesn't contain the sensitive settings, with clearExisting: true
+      await service.importSnapshot(
+        const SyncSnapshot(settings: {'theme_mode': 'light'}),
+        clearExisting: true,
+      );
 
-    // The normal settings should be updated
-    expect(await settingsRepository.readValue<String>('theme_mode'), 'light');
-    // The sensitive settings should NOT be deleted
-    expect(
-      await settingsRepository.readValue<String>('account_bilibili_cookie'),
-      'SESSDATA=demo',
-    );
-    expect(
-      await settingsRepository.readValue<String>('sync_webdav_password'),
-      'demo-password',
-    );
+      // The normal settings should be updated
+      expect(await settingsRepository.readValue<String>('theme_mode'), 'light');
+      // The sensitive settings should NOT be deleted
+      expect(
+        await settingsRepository.readValue<String>('account_bilibili_cookie'),
+        'SESSDATA=demo',
+      );
+      expect(
+        await settingsRepository.readValue<String>('sync_webdav_password'),
+        'demo-password',
+      );
 
-    // Now test importCategory for SyncDataCategory.settings
-    await settingsRepository.writeValue('theme_mode', 'dark');
-    await service.importCategory(
-      SyncDataCategory.settings,
-      const SyncSnapshot(
-        settings: {
-          'theme_mode': 'light',
-        },
-      ),
-      clearExisting: true,
-    );
+      // Now test importCategory for SyncDataCategory.settings
+      await settingsRepository.writeValue('theme_mode', 'dark');
+      await service.importCategory(
+        SyncDataCategory.settings,
+        const SyncSnapshot(settings: {'theme_mode': 'light'}),
+        clearExisting: true,
+      );
 
-    // The normal settings should be updated, and sensitive settings preserved
-    expect(await settingsRepository.readValue<String>('theme_mode'), 'light');
-    expect(
-      await settingsRepository.readValue<String>('account_bilibili_cookie'),
-      'SESSDATA=demo',
-    );
-    expect(
-      await settingsRepository.readValue<String>('sync_webdav_password'),
-      'demo-password',
-    );
-  });
+      // The normal settings should be updated, and sensitive settings preserved
+      expect(await settingsRepository.readValue<String>('theme_mode'), 'light');
+      expect(
+        await settingsRepository.readValue<String>('account_bilibili_cookie'),
+        'SESSDATA=demo',
+      );
+      expect(
+        await settingsRepository.readValue<String>('sync_webdav_password'),
+        'demo-password',
+      );
+    },
+  );
 }

@@ -5,7 +5,7 @@ import 'package:nolive_app/src/app/platform/android_playback_bridge.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/app/shell/app_shell_dependencies.dart';
 import 'package:nolive_app/src/app/shell/app_shell_page.dart';
-import 'package:nolive_app/src/app/home/application/home_feature_dependencies.dart';
+import 'package:nolive_app/src/features/home/application/home_feature_dependencies.dart';
 import 'package:nolive_app/src/features/browse/application/browse_feature_dependencies.dart';
 import 'package:nolive_app/src/features/category/application/category_feature_dependencies.dart';
 import 'package:nolive_app/src/features/category/presentation/provider_categories_page.dart';
@@ -14,6 +14,7 @@ import 'package:nolive_app/src/features/library/application/watch_history_featur
 import 'package:nolive_app/src/features/library/presentation/watch_history_page.dart';
 import 'package:nolive_app/src/features/parse/application/parse_feature_dependencies.dart';
 import 'package:nolive_app/src/features/parse/presentation/parse_room_page.dart';
+import 'package:nolive_app/src/features/room/application/room_feature_dependencies.dart';
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page.dart';
 import 'package:nolive_app/src/features/search/application/search_feature_dependencies.dart';
@@ -58,11 +59,13 @@ class AppRouter {
         return _buildRoute(
           settings: settings,
           builder: (_) => RoomPreviewPage(
-            dependencies: RoomPreviewDependencies.fromBootstrap(bootstrap),
+            dependencies: _buildRoomFeatureDependencies(),
             providerId: arguments.providerId,
             roomId: arguments.roomId,
             startInFullscreen: arguments.startInFullscreen,
           ),
+          seamlessTransition: arguments.seamlessTransition ||
+              arguments.startInFullscreen,
         );
       case AppRoutes.providerCategories:
         final arguments = settings.arguments;
@@ -200,11 +203,22 @@ class AppRouter {
     }
   }
 
-  MaterialPageRoute<void> _buildRoute({
+  Route<void> _buildRoute({
     required RouteSettings settings,
     required WidgetBuilder builder,
+    bool seamlessTransition = false,
   }) {
-    return MaterialPageRoute<void>(settings: settings, builder: builder);
+    if (!seamlessTransition) {
+      return MaterialPageRoute<void>(settings: settings, builder: builder);
+    }
+    return PageRouteBuilder<void>(
+      settings: settings,
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return builder(context);
+      },
+    );
   }
 
   MaterialPageRoute<void> _errorRoute(String message) {
@@ -299,6 +313,10 @@ class AppRouter {
       clearHistory: bootstrap.clearHistory,
       findProviderDescriptorById: bootstrap.findProviderDescriptorById,
     );
+  }
+
+  RoomFeatureDependencies _buildRoomFeatureDependencies() {
+    return RoomPreviewDependencies.fromBootstrap(bootstrap);
   }
 
   ParseFeatureDependencies _buildParseFeatureDependencies() {

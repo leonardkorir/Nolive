@@ -1,14 +1,16 @@
 import 'package:live_core/live_core.dart';
+import 'package:live_player/live_player.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
+import 'package:nolive_app/src/features/room/application/room_detail_override_policy.dart';
+import 'package:nolive_app/src/features/room/application/room_play_selection_policy.dart';
 
 LivePlayQuality _kUnavailablePlayQuality = LivePlayQuality(
   id: 'unavailable',
   label: '不可用',
   isDefault: true,
 );
-const int _kChaturbateStartupMaxBandwidth = 2400000;
-const int _kChaturbateStartupMaxHeight = 540;
+
 class LoadRoomUseCase {
   const LoadRoomUseCase(
     this.registry, {
@@ -30,6 +32,9 @@ class LoadRoomUseCase {
     required ProviderId providerId,
     required String roomId,
     bool preferHighestQuality = false,
+    NetworkQualityPreference? qualityPreference,
+    bool isCellular = false,
+    NetworkQualityPreference? cellularQualityPreference,
     bool? recordHistory,
   }) async {
     final provider = registry.create(providerId);
@@ -63,9 +68,14 @@ class LoadRoomUseCase {
       urls = const [];
     } else {
       qualities = loadedQualities;
-      selectedQuality = preferHighestQuality
-          ? _selectStartupQuality(providerId: providerId, qualities: qualities)
-          : _selectDefaultQuality(providerId: providerId, qualities: qualities);
+      selectedQuality = _selectQualityByPreference(
+        providerId: providerId,
+        qualities: qualities,
+        preferHighestQuality: preferHighestQuality,
+        qualityPreference: qualityPreference,
+        isCellular: isCellular,
+        cellularQualityPreference: cellularQualityPreference,
+      );
       urls = await playUrls.fetchPlayUrls(
         detail: detail,
         quality: selectedQuality,
@@ -88,7 +98,7 @@ class LoadRoomUseCase {
     if (shouldRecordHistory) {
       await historyRepository.add(
         HistoryRecord(
-          providerId: providerId.value,
+          providerId: providerId,
           roomId: detail.roomId,
           title: detail.title,
           streamerName: detail.streamerName,
@@ -123,81 +133,52 @@ class LoadRoomUseCase {
       providerStackTrace = stackTrace;
     }
 
-    final overridden = await roomDetailOverride?.call(
-      providerId: provider.descriptor.id,
-      roomId: roomId,
-    );
-    if (overridden != null) {
-      return overridden;
+    if (shouldAllowRoomDetailOverride(provider.descriptor.id)) {
+      final overridden = await roomDetailOverride?.call(
+        providerId: provider.descriptor.id,
+        roomId: roomId,
+      );
+      if (overridden != null) {
+        return overridden;
+      }
     }
     Error.throwWithStackTrace(providerError, providerStackTrace);
   }
 
-  LivePlayQuality _selectHighestQuality(List<LivePlayQuality> qualities) {
-    if (qualities.length == 1) {
-      return qualities.first;
-    }
-    final sorted = [...qualities]
-      ..sort((a, b) => b.sortOrder.compareTo(a.sortOrder));
-    return sorted.first;
-  }
-
-  LivePlayQuality _selectStartupQuality({
+  LivePlayQuality _selectQualityByPreference({
     required ProviderId providerId,
     required List<LivePlayQuality> qualities,
+    required bool preferHighestQuality,
+    NetworkQualityPreference? qualityPreference,
+    required bool isCellular,
+    NetworkQualityPreference? cellularQualityPreference,
   }) {
-    if (providerId == ProviderId.chaturbate) {
-      return _selectChaturbateStartupQuality(qualities);
+    // Site-specific preferHighest (e.g. Chaturbate) still wins when requested.
+    if (preferHighestQuality) {
+      return selectRoomStartupQuality(
+        providerId: providerId,
+        qualities: qualities,
+      );
     }
-    return _selectHighestQuality(qualities);
-  }
-
-  LivePlayQuality _selectChaturbateStartupQuality(
-    List<LivePlayQuality> qualities,
-  ) {
-    final fixedQualities = qualities
-        .where((item) => item.id.trim().toLowerCase() != 'auto')
-        .toList(growable: false);
-    if (fixedQualities.isEmpty) {
-      return _selectHighestQuality(qualities);
-    }
-    final safeCandidates = fixedQualities
-        .where(_isChaturbateStartupSafeQuality)
-        .toList(growable: false);
-    if (safeCandidates.isNotEmpty) {
-      return _selectHighestQuality(safeCandidates);
-    }
-    final sortedAscending = [...fixedQualities]
-      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    return sortedAscending.first;
-  }
-
-  bool _isChaturbateStartupSafeQuality(LivePlayQuality quality) {
-    final metadata = quality.metadata;
-    final height = int.tryParse(metadata?['height']?.toString() ?? '');
-    if (height != null &&
-        height > 0 &&
-        height <= _kChaturbateStartupMaxHeight) {
-      return true;
-    }
-    final bandwidth = int.tryParse(metadata?['bandwidth']?.toString() ?? '');
-    return bandwidth != null &&
-        bandwidth > 0 &&
-        bandwidth <= _kChaturbateStartupMaxBandwidth;
-  }
-
-  LivePlayQuality _selectDefaultQuality({
-    required ProviderId providerId,
-    required List<LivePlayQuality> qualities,
-  }) {
-    final defaultQuality = qualities.firstWhere(
-      (item) => item.isDefault,
-      orElse: () => qualities.first,
+    final wifi = qualityPreference ?? NetworkQualityPreference.middle;
+    final cellular =
+        cellularQualityPreference ?? NetworkQualityPreference.lowest;
+    final preference = resolveNetworkQualityPreference(
+      isCellular: isCellular,
+      wifiPreference: wifi,
+      cellularPreference: cellular,
     );
-    if (providerId == ProviderId.twitch) {
-      return defaultQuality;
+    final index = selectQualityIndex(
+      qualityCount: qualities.length,
+      preference: preference,
+    );
+    if (index < 0 || index >= qualities.length) {
+      return selectRoomDefaultQuality(
+        providerId: providerId,
+        qualities: qualities,
+      );
     }
-    return defaultQuality;
+    return qualities[index];
   }
 
   String? _playbackUnavailableReason({

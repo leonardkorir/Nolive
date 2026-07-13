@@ -464,6 +464,7 @@ class RoomErrorState extends StatelessWidget {
     required this.detail,
     required this.onRetry,
     required this.onOpenSettings,
+    this.onCopyDiagnostic,
     super.key,
   });
 
@@ -472,6 +473,7 @@ class RoomErrorState extends StatelessWidget {
   final String detail;
   final Future<void> Function() onRetry;
   final Future<void> Function() onOpenSettings;
+  final Future<void> Function()? onCopyDiagnostic;
 
   @override
   Widget build(BuildContext context) {
@@ -496,6 +498,13 @@ class RoomErrorState extends StatelessWidget {
                     icon: const Icon(Icons.refresh),
                     label: const Text('重试'),
                   ),
+                  if (onCopyDiagnostic != null)
+                    OutlinedButton.icon(
+                      key: const Key('room-error-copy-diagnostic-button'),
+                      onPressed: onCopyDiagnostic,
+                      icon: const Icon(Icons.copy_all_outlined),
+                      label: const Text('复制错误信息'),
+                    ),
                   OutlinedButton.icon(
                     onPressed: onOpenSettings,
                     icon: const Icon(Icons.settings_suggest_outlined),

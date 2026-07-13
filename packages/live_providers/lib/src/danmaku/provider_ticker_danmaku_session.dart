@@ -8,7 +8,7 @@ class ProviderTickerDanmakuSession implements DanmakuSession {
     required this.detail,
   });
 
-  final String providerId;
+  final ProviderId providerId;
   final LiveRoomDetail detail;
 
   final StreamController<LiveMessage> _controller =

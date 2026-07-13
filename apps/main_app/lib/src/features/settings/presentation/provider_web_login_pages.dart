@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 @visibleForTesting
 bool shouldReportWebLoginLoadFailure(WebResourceRequest request) {
@@ -238,9 +239,7 @@ class _WebCookieLoginPageState extends State<_WebCookieLoginPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('$error')));
+            showAppErrorSnackBar(context, error);
     } finally {
       if (mounted) {
         setState(() {
@@ -441,9 +440,7 @@ class _WebCookieLoginPageState extends State<_WebCookieLoginPage> {
                 if (description.isEmpty) {
                   return;
                 }
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('页面加载失败：$description')));
+                    showAppSnackBar(context, '页面加载失败：$description');
               },
               onConsoleMessage: (controller, consoleMessage) {
                 debugPrint(

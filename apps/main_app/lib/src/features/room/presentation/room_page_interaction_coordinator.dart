@@ -1,73 +1,84 @@
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_session_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_view_data.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 
-typedef RoomPresentRoute = Future<void> Function(
-  String routeName, {
-  bool rootNavigator,
-});
+typedef RoomPresentRoute =
+    Future<void> Function(String routeName, {bool rootNavigator});
 typedef RoomReplaceRoomRoute = Future<void> Function(RoomRouteArguments args);
-typedef RoomPresentQuickActionsSheet = Future<void> Function({
-  required RoomControlsViewData viewData,
-  required Future<void> Function() onRefresh,
-  required Future<void> Function() onShowQuality,
-  required Future<void> Function() onShowLine,
-  required Future<RoomControlsViewData> Function() onCycleScaleMode,
-  required Future<void> Function() onEnterPictureInPicture,
-  required Future<void> Function() onToggleDesktopMiniWindow,
-  required Future<void> Function() onCaptureScreenshot,
-  required Future<void> Function() onShowAutoCloseSheet,
-  required Future<void> Function() onShowDebugPanel,
-});
-typedef RoomPresentQualitySheet = Future<void> Function({
-  required LivePlayQuality selectedQuality,
-  required List<LivePlayQuality> qualities,
-  required Future<void> Function(LivePlayQuality quality) onSelected,
-});
-typedef RoomPresentLineSheet = Future<void> Function({
-  required List<LivePlayUrl> playUrls,
-  required PlaybackSource playbackSource,
-  required Future<void> Function(LivePlayUrl playUrl) onSelected,
-});
-typedef RoomPresentAutoCloseSheet = Future<void> Function({
-  required DateTime? scheduledCloseAt,
-  required void Function(Duration? duration) onSelectDuration,
-});
-typedef RoomPresentPlayerDebugSheet = Future<void> Function({
-  required RoomPlayerDebugViewData debugViewData,
-});
-typedef RoomResolveControlsViewData = RoomControlsViewData Function({
-  required RoomSessionLoadResult state,
-  required List<LivePlayUrl> playUrls,
-  required PlaybackSource? playbackSource,
-  required bool hasPlayback,
-});
-typedef RoomResolvePlayerDebugViewData = RoomPlayerDebugViewData Function({
-  required RoomSessionLoadResult state,
-  required PlaybackSource? playbackSource,
-});
-typedef RoomCycleScaleModeAndResolveControlsViewData
-    = Future<RoomControlsViewData> Function({
-  required RoomSessionLoadResult state,
-  required List<LivePlayUrl> playUrls,
-  required PlaybackSource? playbackSource,
-  required bool hasPlayback,
-});
-typedef RoomPerformRefresh = Future<void> Function({
-  bool showFeedback,
-  bool reloadPlayer,
-  bool forcePlaybackRebind,
-});
-typedef RoomOpenFollowRoomTransition = Future<void> Function(
-  FollowWatchEntry entry, {
-  required Future<void> Function(bool preserveFullscreen) commitNavigation,
-  required void Function(String message) showMessage,
-});
+typedef RoomPresentQuickActionsSheet =
+    Future<void> Function({
+      required RoomControlsViewData viewData,
+      required Future<void> Function() onRefresh,
+      required Future<void> Function() onShowQuality,
+      required Future<void> Function() onShowLine,
+      required Future<RoomControlsViewData> Function() onCycleScaleMode,
+      required Future<void> Function() onEnterPictureInPicture,
+      required Future<void> Function() onToggleDesktopMiniWindow,
+      required Future<void> Function() onCaptureScreenshot,
+      required Future<void> Function() onShowAutoCloseSheet,
+      required Future<void> Function() onShowDebugPanel,
+    });
+typedef RoomPresentQualitySheet =
+    Future<void> Function({
+      required LivePlayQuality selectedQuality,
+      required List<LivePlayQuality> qualities,
+      required Future<void> Function(LivePlayQuality quality) onSelected,
+    });
+typedef RoomPresentLineSheet =
+    Future<void> Function({
+      required List<LivePlayUrl> playUrls,
+      required PlaybackSource playbackSource,
+      required Future<void> Function(LivePlayUrl playUrl) onSelected,
+    });
+typedef RoomPresentAutoCloseSheet =
+    Future<void> Function({
+      required DateTime? scheduledCloseAt,
+      required void Function(Duration? duration) onSelectDuration,
+    });
+typedef RoomPresentPlayerDebugSheet =
+    Future<void> Function({required RoomPlayerDebugViewData debugViewData});
+typedef RoomResolveControlsViewData =
+    RoomControlsViewData Function({
+      required RoomSessionLoadResult state,
+      required List<LivePlayUrl> playUrls,
+      required PlaybackSource? playbackSource,
+      required bool hasPlayback,
+    });
+typedef RoomResolvePlayerDebugViewData =
+    RoomPlayerDebugViewData Function({
+      required RoomSessionLoadResult state,
+      required PlaybackSource? playbackSource,
+    });
+typedef RoomCycleScaleModeAndResolveControlsViewData =
+    Future<RoomControlsViewData> Function({
+      required RoomSessionLoadResult state,
+      required List<LivePlayUrl> playUrls,
+      required PlaybackSource? playbackSource,
+      required bool hasPlayback,
+    });
+typedef RoomPerformRefresh =
+    Future<void> Function({
+      bool showFeedback,
+      bool reloadPlayer,
+      bool forcePlaybackRebind,
+    });
+typedef RoomOpenFollowRoomTransition =
+    Future<void> Function(
+      FollowWatchEntry entry, {
+      required Future<void> Function(bool preserveFullscreen) commitNavigation,
+      required void Function(String message) showMessage,
+    });
+typedef RoomSwitchToRoomInPlace =
+    Future<void> Function({
+      required ProviderId providerId,
+      required String roomId,
+      required bool preserveFullscreen,
+    });
 
 class RoomPageInteractionContext {
   const RoomPageInteractionContext({
@@ -76,6 +87,7 @@ class RoomPageInteractionContext {
     required this.showMessage,
     required this.pushNamed,
     required this.pushReplacementToRoom,
+    required this.switchToRoomInPlace,
     required this.popPage,
     required this.loadPlayerPreferences,
     required this.handlePlayerSettingsReturn,
@@ -110,21 +122,22 @@ class RoomPageInteractionContext {
   final void Function(String message) showMessage;
   final RoomPresentRoute pushNamed;
   final RoomReplaceRoomRoute pushReplacementToRoom;
+  final RoomSwitchToRoomInPlace switchToRoomInPlace;
   final void Function() popPage;
   final Future<PlayerPreferences> Function() loadPlayerPreferences;
   final Future<void> Function(PlayerPreferences previousPreferences)
-      handlePlayerSettingsReturn;
+  handlePlayerSettingsReturn;
   final Future<void> Function() handleDanmakuSettingsReturn;
   final Future<RoomSessionLoadResult> Function() resolveRoomFuture;
   final bool Function() resolveIsLeavingRoom;
   final PlaybackSource? Function() resolveCurrentPlaybackSource;
   final List<LivePlayUrl> Function() resolveCurrentPlayUrls;
   final LivePlayQuality Function(RoomSessionLoadResult state)
-      resolveRequestedQuality;
+  resolveRequestedQuality;
   final RoomResolveControlsViewData resolveControlsViewData;
   final RoomResolvePlayerDebugViewData resolvePlayerDebugViewData;
   final RoomCycleScaleModeAndResolveControlsViewData
-      cycleScaleModeAndResolveControlsViewData;
+  cycleScaleModeAndResolveControlsViewData;
   final RoomPresentQuickActionsSheet presentQuickActionsSheet;
   final RoomPresentQualitySheet presentQualitySheet;
   final RoomPresentLineSheet presentLineSheet;
@@ -136,7 +149,10 @@ class RoomPageInteractionContext {
   final RoomPerformRefresh refreshRoom;
   final Future<void> Function() leaveRoomCleanup;
   final Future<void> Function(
-      LoadedRoomSnapshot snapshot, LivePlayQuality quality) switchQuality;
+    LoadedRoomSnapshot snapshot,
+    LivePlayQuality quality,
+  )
+  switchQuality;
   final Future<void> Function(LivePlayUrl playUrl) switchLine;
   final DateTime? Function() resolveScheduledCloseAt;
   final void Function(Duration? duration) setAutoCloseTimer;
@@ -144,9 +160,7 @@ class RoomPageInteractionContext {
 }
 
 class RoomPageInteractionCoordinator {
-  const RoomPageInteractionCoordinator({
-    required this.context,
-  });
+  const RoomPageInteractionCoordinator({required this.context});
 
   final RoomPageInteractionContext context;
 
@@ -169,10 +183,7 @@ class RoomPageInteractionCoordinator {
   }
 
   Future<void> openFollowSettings() {
-    return context.pushNamed(
-      AppRoutes.followSettings,
-      rootNavigator: true,
-    );
+    return context.pushNamed(AppRoutes.followSettings, rootNavigator: true);
   }
 
   Future<void> showPlayerDebugSheet(
@@ -201,11 +212,13 @@ class RoomPageInteractionCoordinator {
     if (!context.isMounted()) {
       return;
     }
-    final resolvedPlaybackSource = context.resolveCurrentPlaybackSource() ??
+    final resolvedPlaybackSource =
+        context.resolveCurrentPlaybackSource() ??
         state.resolved?.playbackSource;
     final currentPlayUrls = context.resolveCurrentPlayUrls();
-    final resolvedPlayUrls =
-        currentPlayUrls.isEmpty ? state.snapshot.playUrls : currentPlayUrls;
+    final resolvedPlayUrls = currentPlayUrls.isEmpty
+        ? state.snapshot.playUrls
+        : currentPlayUrls;
     final hasPlayback =
         resolvedPlaybackSource != null && resolvedPlayUrls.isNotEmpty;
     await context.presentQuickActionsSheet(
@@ -217,10 +230,8 @@ class RoomPageInteractionCoordinator {
       ),
       onRefresh: () => refreshRoom(showFeedback: true),
       onShowQuality: () => showQualitySheet(state),
-      onShowLine: () => showLineSheet(
-        resolvedPlayUrls,
-        resolvedPlaybackSource!,
-      ),
+      onShowLine: () =>
+          showLineSheet(resolvedPlayUrls, resolvedPlaybackSource!),
       onCycleScaleMode: () => context.cycleScaleModeAndResolveControlsViewData(
         state: state,
         playUrls: resolvedPlayUrls,
@@ -231,10 +242,8 @@ class RoomPageInteractionCoordinator {
       onToggleDesktopMiniWindow: context.toggleDesktopMiniWindow,
       onCaptureScreenshot: context.captureScreenshot,
       onShowAutoCloseSheet: showAutoCloseSheet,
-      onShowDebugPanel: () => showPlayerDebugSheet(
-        state,
-        resolvedPlaybackSource,
-      ),
+      onShowDebugPanel: () =>
+          showPlayerDebugSheet(state, resolvedPlaybackSource),
     );
   }
 
@@ -287,9 +296,7 @@ class RoomPageInteractionCoordinator {
     }
   }
 
-  Future<void> leaveRoom({
-    bool exitFullscreenFirst = true,
-  }) async {
+  Future<void> leaveRoom({bool exitFullscreenFirst = true}) async {
     if (context.resolveIsLeavingRoom()) {
       return;
     }
@@ -317,12 +324,11 @@ class RoomPageInteractionCoordinator {
     return context.openFollowRoomTransition(
       entry,
       commitNavigation: (preserveFullscreen) {
-        return context.pushReplacementToRoom(
-          RoomRouteArguments(
-            providerId: ProviderId(entry.record.providerId),
-            roomId: entry.roomId,
-            startInFullscreen: preserveFullscreen,
-          ),
+        // Prefer in-place retarget so tablet landscape chrome stays mounted.
+        return context.switchToRoomInPlace(
+          providerId: entry.record.providerId,
+          roomId: entry.roomId,
+          preserveFullscreen: preserveFullscreen,
         );
       },
       showMessage: context.showMessage,
@@ -332,7 +338,7 @@ class RoomPageInteractionCoordinator {
   Future<void> _openSettingsRoute(
     String routeName, {
     required Future<void> Function(PlayerPreferences previousPreferences)
-        onReturn,
+    onReturn,
   }) async {
     final previousPreferences = await context.loadPlayerPreferences();
     if (!context.isMounted()) {

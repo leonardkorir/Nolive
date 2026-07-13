@@ -21,8 +21,8 @@ class HuyaProvider extends LiveProvider
   HuyaProvider({
     HuyaDataSource? dataSource,
     void Function()? disposeOwnedResources,
-  })  : _dataSource = dataSource ?? const HuyaPreviewDataSource(),
-        _disposeOwnedResources = disposeOwnedResources;
+  }) : _dataSource = dataSource ?? const HuyaPreviewDataSource(),
+       _disposeOwnedResources = disposeOwnedResources;
 
   factory HuyaProvider.preview() => HuyaProvider();
 
@@ -63,7 +63,7 @@ class HuyaProvider extends LiveProvider
       ProviderPlatform.androidTv,
     },
     roomIdPatterns: [r'^yy/\d+$', r'^\d+$', r'^[A-Za-z0-9_-]+$'],
-    maturity: ProviderMaturity.inMigration,
+    maturity: ProviderMaturity.ready,
   );
 
   final HuyaDataSource _dataSource;
@@ -131,7 +131,7 @@ class HuyaProvider extends LiveProvider
     final token = detail.danmakuToken;
     if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
-        providerId: descriptor.id.value,
+        providerId: descriptor.id,
         detail: detail,
       );
     }
@@ -146,7 +146,7 @@ class HuyaProvider extends LiveProvider
       );
     }
     return ProviderTickerDanmakuSession(
-      providerId: descriptor.id.value,
+      providerId: descriptor.id,
       detail: detail,
     );
   }

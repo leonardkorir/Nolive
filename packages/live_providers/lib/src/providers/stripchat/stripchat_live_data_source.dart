@@ -30,21 +30,25 @@ class StripchatLiveDataSource implements StripchatDataSource {
     final now = DateTime.now();
     if (_initialDynamicFuture != null &&
         _initialDynamicFetchedTime != null &&
-        now.difference(_initialDynamicFetchedTime!) > const Duration(minutes: 15)) {
+        now.difference(_initialDynamicFetchedTime!) >
+            const Duration(minutes: 15)) {
       _initialDynamicFuture = null;
     }
-    return _initialDynamicFuture ??= apiClient.fetchInitialDynamic().then((result) {
-      _initialDynamicFetchedTime = DateTime.now();
-      _cachedInitialDynamic = result;
-      _cachedGuestHash = result['userHash']?.toString();
-      _cachedCsrfToken = result['csrfToken']?.toString();
-      _cachedGuestId = ProviderJson.asInt(result['guestId']);
-      return result;
-    }).catchError((Object error, StackTrace stackTrace) {
-      _initialDynamicFuture = null;
-      _initialDynamicFetchedTime = null;
-      throw error;
-    });
+    return _initialDynamicFuture ??= apiClient
+        .fetchInitialDynamic()
+        .then((result) {
+          _initialDynamicFetchedTime = DateTime.now();
+          _cachedInitialDynamic = result;
+          _cachedGuestHash = result['userHash']?.toString();
+          _cachedCsrfToken = result['csrfToken']?.toString();
+          _cachedGuestId = ProviderJson.asInt(result['guestId']);
+          return result;
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          _initialDynamicFuture = null;
+          _initialDynamicFetchedTime = null;
+          throw error;
+        });
   }
 
   Future<String?> get _guestHash async {
@@ -142,10 +146,12 @@ class StripchatLiveDataSource implements StripchatDataSource {
 
     final initialDynamicFuture = _initialDynamic;
     final camPayloadFuture = apiClient.fetchCam(username);
-    final broadcastPayloadFuture =
-        apiClient.fetchBroadcast(username).timeout(_broadcastFetchTimeout);
-    final membersPayloadFuture =
-        apiClient.fetchMembers(username).timeout(_broadcastFetchTimeout);
+    final broadcastPayloadFuture = apiClient
+        .fetchBroadcast(username)
+        .timeout(_broadcastFetchTimeout);
+    final membersPayloadFuture = apiClient
+        .fetchMembers(username)
+        .timeout(_broadcastFetchTimeout);
 
     await initialDynamicFuture;
     Map<String, dynamic> camPayload;
@@ -205,7 +211,8 @@ class StripchatLiveDataSource implements StripchatDataSource {
 
   @override
   Future<List<LivePlayQuality>> fetchPlayQualities(
-      LiveRoomDetail detail) async {
+    LiveRoomDetail detail,
+  ) async {
     final mapped = StripchatMapper.mapPlayQualities(detail);
     if (_isPlaybackBlocked(detail) ||
         mapped.any((quality) => quality.id.trim().toLowerCase() == 'source')) {
@@ -213,11 +220,7 @@ class StripchatLiveDataSource implements StripchatDataSource {
     }
     final playbackUrls = await StripchatMapper.mapPlayUrls(
       detail: detail,
-      quality: LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-      ),
+      quality: LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
     );
     if (playbackUrls.isEmpty) {
       return mapped;
@@ -232,10 +235,9 @@ class StripchatLiveDataSource implements StripchatDataSource {
       }
       return StripchatMapper.mapPlayQualities(
         detail,
-        discoveredQualityIds:
-            variants.map((variant) => variant.qualityId).toList(
-                  growable: false,
-                ),
+        discoveredQualityIds: variants
+            .map((variant) => variant.qualityId)
+            .toList(growable: false),
       );
     } catch (error, stackTrace) {
       reportProviderDiagnostic(
@@ -269,24 +271,21 @@ class StripchatLiveDataSource implements StripchatDataSource {
       final probe = await apiClient.probePlaybackPlaylist(
         candidate.url,
         headers: candidate.headers,
-        preferredVariantId:
-            candidate.metadata?['preferredVariantId']?.toString(),
+        preferredVariantId: candidate.metadata?['preferredVariantId']
+            ?.toString(),
       );
       if (!probe.isPlayable) {
         reportProviderDiagnostic(
           providerId: ProviderId.stripchat,
           scope: 'stripchat playback probe',
-          message: 'rejecting non-playable playlist room=${detail.roomId} '
+          message:
+              'rejecting non-playable playlist room=${detail.roomId} '
               'quality=${quality.id} finalUrl=${probe.finalUrl} reason=${probe.reason ?? '-'}',
         );
         continue;
       }
       return [
-        _resolvedPlayUrl(
-          candidate: candidate,
-          quality: quality,
-          probe: probe,
-        ),
+        _resolvedPlayUrl(candidate: candidate, quality: quality, probe: probe),
       ];
     }
     return const <LivePlayUrl>[];

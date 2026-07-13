@@ -3,14 +3,8 @@ import 'package:test/test.dart';
 
 void main() {
   test('provider json decodes maps and lists defensively', () {
-    expect(
-      ProviderJson.asMap({'a': 1}),
-      {'a': 1},
-    );
-    expect(
-      ProviderJson.asMap({'a': 1, 'b': 'x'}),
-      {'a': 1, 'b': 'x'},
-    );
+    expect(ProviderJson.asMap({'a': 1}), {'a': 1});
+    expect(ProviderJson.asMap({'a': 1, 'b': 'x'}), {'a': 1, 'b': 'x'});
     expect(ProviderJson.asMap('bad'), isEmpty);
 
     expect(ProviderJson.asList([1, 2, 3]), [1, 2, 3]);

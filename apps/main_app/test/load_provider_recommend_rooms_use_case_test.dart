@@ -25,10 +25,7 @@ void main() {
         bilibiliMaxAttempts: 3,
       );
 
-      final payload = await useCase(
-        providerId: ProviderId.bilibili,
-        page: 1,
-      );
+      final payload = await useCase(providerId: ProviderId.bilibili, page: 1);
 
       expect(createdProviders, 2);
       expect(state.fetchAttempts, 2);
@@ -53,10 +50,7 @@ void main() {
         bilibiliRetryDelay: Duration.zero,
       );
 
-      final payload = await useCase(
-        providerId: ProviderId.douyu,
-        page: 1,
-      );
+      final payload = await useCase(providerId: ProviderId.douyu, page: 1);
 
       expect(provider.fetchRecommendCalls, 1);
       expect(payload.items, isEmpty);
@@ -94,7 +88,7 @@ class _RetryBilibiliRecommendProvider extends LiveProvider
     return const PagedResponse(
       items: [
         LiveRoom(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili,
           roomId: 'room-1',
           title: '第一页',
           streamerName: '主播一',

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/theme/nolive_tokens.dart';
 
 class SettingsAction {
   const SettingsAction({
@@ -28,12 +29,17 @@ class SettingsActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Inherit FilledButton theme (48 min height, shared radius) — no one-off 52.
+    final radius = NoliveRadii.of(context).md + 4;
     final button = FilledButton.tonal(
       key: action.key,
       onPressed: action.onPressed,
       style: FilledButton.styleFrom(
-        minimumSize: const Size(0, 52),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        minimumSize: const Size(48, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radius),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -42,11 +48,13 @@ class SettingsActionButton extends StatelessWidget {
             Icon(action.icon, size: 20),
             const SizedBox(width: 10),
           ],
-          Text(
-            action.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
+          Flexible(
+            child: Text(
+              action.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
           ),
         ],
       ),

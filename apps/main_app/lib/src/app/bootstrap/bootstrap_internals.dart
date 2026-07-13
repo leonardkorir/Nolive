@@ -213,6 +213,29 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
   final snapshotImportCoordinator = SecureSnapshotImportCoordinator(
     snapshotService: snapshotService,
     secureCredentialStore: context.secureCredentialStore,
+    // 局域网/WebDAV 导入写盘后必须通知 UI：否则关注页会沿用旧缓存，
+    // 看起来像「没同步」，重启 App 才出现内容。
+    onAfterImport: ({
+      required bool followDataChanged,
+      required bool settingsChanged,
+    }) async {
+      if (settingsChanged) {
+        await syncThemeModeNotifierFromSettings(
+          settingsRepository: context.repositories.settingsRepository,
+          themeModeNotifier: context.state.themeMode,
+        );
+        await syncLayoutPreferencesNotifierFromSettings(
+          settingsRepository: context.repositories.settingsRepository,
+          preferencesNotifier: context.state.layoutPreferences,
+        );
+        providerRegistry.clearCache();
+        context.state.providerCatalogRevision.value += 1;
+      }
+      if (followDataChanged) {
+        context.state.followWatchlistSnapshot.value = null;
+        context.state.followDataRevision.value += 1;
+      }
+    },
   );
   Future<LocalSyncPeerInfo>? localPeerInfoInFlight;
 
@@ -338,7 +361,6 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
   final listAvailableProviders = ListAvailableProvidersUseCase(
     providerRegistry,
     context.state.layoutPreferences,
-    stringSetting: context.settings.stringSetting,
   );
   final listLibrarySnapshot = ListLibrarySnapshotUseCase(
     historyRepository: context.repositories.historyRepository,
@@ -374,6 +396,21 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     context.repositories.followRepository,
   );
 
+  final llhlsProxyRegistry = LlhlsProxyRegistry(
+    chaturbateProxy: runtimeBridges.chaturbateLlHlsProxy,
+    stripchatProxy: runtimeBridges.stripchatLlHlsProxy,
+    twitchProxy: runtimeBridges.twitchAdGuardProxy,
+    releaseRuntimeWebPressure: () async {
+      await runtimeBridges.twitchWebPlaybackBridge?.releasePressure(
+        reason: 'room left',
+      );
+      final youtubeSolver = runtimeBridges.youtubeNSigSolver;
+      if (youtubeSolver is YouTubeWebViewNSigSolver) {
+        await youtubeSolver.releasePressure(reason: 'room left');
+      }
+    },
+  );
+
   return AppBootstrap(
     mode: context.mode,
     warmUpSecureCredentialStore: context.warmUpSecureCredentialStore,
@@ -384,6 +421,7 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     followWatchlistSnapshot: context.state.followWatchlistSnapshot,
     providerRegistry: providerRegistry,
     playerRuntime: playerRuntime,
+    llhlsProxyRegistry: llhlsProxyRegistry,
     settingsRepository: context.repositories.settingsRepository,
     historyRepository: context.repositories.historyRepository,
     followRepository: context.repositories.followRepository,
@@ -501,6 +539,16 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     pushLocalSyncSnapshot: PushLocalSyncSnapshotUseCase(
       snapshotService: snapshotService,
       client: localSyncClient,
+      loadSensitiveCredentials: () async {
+        await context.secureCredentialStore.ensureReady();
+        final all = await context.secureCredentialStore.readAll();
+        return <String, String>{
+          for (final entry in all.entries)
+            if (SensitiveSettingKeys.isTransferableCredentialKey(entry.key) &&
+                entry.value.trim().isNotEmpty)
+              entry.key: entry.value.trim(),
+        };
+      },
     ),
     loadProviderAccountSettings: loadProviderAccountSettings,
     updateProviderAccountSettings: updateProviderAccountSettings,
@@ -613,9 +661,6 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     parseRoomInput: ParseRoomInputUseCase(providerRegistry),
     inspectParsedRoom: InspectParsedRoomUseCase(
       providerRegistry,
-      loadProviderAccountSettings: loadProviderAccountSettings,
-      requireChaturbateCookiePreflight:
-          runtimeBridges.requireChaturbateCookiePreflight,
       roomDetailOverride: runtimeBridges.roomDetailOverride,
     ),
     disposeResources: () async {
@@ -664,6 +709,15 @@ ProviderRegistry _buildProviderRegistry(
           : null,
       twitchPlaybackBootstrapResolver:
           runtimeBridges.twitchWebPlaybackBridge?.call,
+      youtubeNSigSolver: runtimeBridges.youtubeNSigSolver,
+      chaturbateDiagnostics: (message) {
+        AppLog.instance.info(
+          'provider/chaturbate',
+          message
+              .replaceAll(RegExp(r'token=[^&\s]+'), 'token=***')
+              .replaceAll(RegExp(r'access_token=[^&\s]+'), 'access_token=***'),
+        );
+      },
     ),
   };
 }
@@ -699,11 +753,9 @@ AppRuntimeBridges _buildAppRuntimeBridges({
       mode: mode,
       platformCapabilities: platformCapabilities,
     ),
-    // Chaturbate can often resolve room detail and playback anonymously.
-    // Saved browser cookies are now treated as a fallback for WebView /
-    // Cloudflare bootstrap instead of a hard prerequisite.
-    requireChaturbateCookiePreflight: const bool.fromEnvironment(
-      'NOLIVE_CHATURBATE_COOKIE_PREFLIGHT',
+    youtubeNSigSolver: _buildYouTubeNSigSolver(
+      mode: mode,
+      platformCapabilities: platformCapabilities,
     ),
   );
 }
@@ -713,14 +765,14 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
     context.settings.stringSetting('player_backend'),
   );
   if (context.mode != AppRuntimeMode.live) {
-    return SwitchablePlayer(initialBackend: initialBackend);
+    return SwitchablePlayer.simulated(initialBackend: initialBackend);
   }
   return SwitchablePlayer(
     initialBackend: initialBackend,
     builders: {
       PlayerBackend.memory: MemoryPlayer.new,
       PlayerBackend.mpv: () {
-        final mpvLogEnabled =
+        final mpvNativeLogEnabled =
             !kReleaseMode &&
             _decodeBoolSetting(
               context.settings.stringSetting('player_mpv_log_enable'),
@@ -743,13 +795,14 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
           videoOutputDriver: context.settings.stringSetting(
             'player_mpv_video_output_driver',
           ),
+          audioOutputDriver: context.settings.stringSetting(
+            'player_mpv_audio_output_driver',
+          ),
           hardwareDecoder: context.settings.stringSetting(
             'player_mpv_hardware_decoder',
           ),
-          logEnabled: mpvLogEnabled,
-          eventLogger: mpvLogEnabled
-              ? (message) => AppLog.instance.info('player/mpv', message)
-              : null,
+          logEnabled: mpvNativeLogEnabled,
+          eventLogger: (message) => AppLog.instance.info('player/mpv', message),
         );
       },
       PlayerBackend.mdk: () => MdkPlayer(
@@ -783,8 +836,13 @@ ChaturbateWebRoomDetailLoader? _buildChaturbateRoomDetailLoader({
     return null;
   }
   return ChaturbateWebRoomDetailLoader(
-    loadProviderAccountSettings: loadProviderAccountSettings,
-    platformCapabilities: platformCapabilities,
+    platformAdapter: HlsProxyPlatformAdapterImpl(
+      platformCapabilities: platformCapabilities,
+    ),
+    loadCookie: () async {
+      final settings = await loadProviderAccountSettings();
+      return settings.chaturbateCookie;
+    },
   );
 }
 
@@ -798,7 +856,11 @@ ChaturbateLlHlsProxy? _buildChaturbateLlHlsProxy({
   if (!platformCapabilities.isMobile) {
     return null;
   }
-  return ChaturbateLlHlsProxy(platformCapabilities: platformCapabilities);
+  return ChaturbateLlHlsProxy(
+    platformAdapter: HlsProxyPlatformAdapterImpl(
+      platformCapabilities: platformCapabilities,
+    ),
+  );
 }
 
 StripchatLlHlsProxy? _buildStripchatLlHlsProxy({
@@ -814,7 +876,9 @@ StripchatLlHlsProxy? _buildStripchatLlHlsProxy({
   }
   return StripchatLlHlsProxy(
     enablePdkeyFallback: true,
-    platformCapabilities: platformCapabilities,
+    platformAdapter: HlsProxyPlatformAdapterImpl(
+      platformCapabilities: platformCapabilities,
+    ),
     decodedUrlResolver: null,
     warmDecodedUrlBridge: null,
     pdkeyResolver: () async {
@@ -823,7 +887,6 @@ StripchatLlHlsProxy? _buildStripchatLlHlsProxy({
     },
   );
 }
-
 
 TwitchWebPlaybackBridge? _buildTwitchWebPlaybackBridge({
   required AppRuntimeMode mode,
@@ -837,8 +900,13 @@ TwitchWebPlaybackBridge? _buildTwitchWebPlaybackBridge({
     return null;
   }
   final bridge = TwitchWebPlaybackBridge(
-    loadProviderAccountSettings: loadProviderAccountSettings,
-    platformCapabilities: platformCapabilities,
+    platformAdapter: HlsProxyPlatformAdapterImpl(
+      platformCapabilities: platformCapabilities,
+    ),
+    loadCookie: () async {
+      final settings = await loadProviderAccountSettings();
+      return settings.twitchCookie;
+    },
     timeout: const Duration(seconds: 6),
     bootstrapScriptTimeout: const Duration(milliseconds: 2500),
   );
@@ -855,5 +923,32 @@ TwitchAdGuardProxy? _buildTwitchAdGuardProxy({
   if (!platformCapabilities.isMobile) {
     return null;
   }
-  return TwitchAdGuardProxy(platformCapabilities: platformCapabilities);
+  return TwitchAdGuardProxy(
+    platformAdapter: HlsProxyPlatformAdapterImpl(
+      platformCapabilities: platformCapabilities,
+    ),
+  );
+}
+
+YouTubeNSigSolver? _buildYouTubeNSigSolver({
+  required AppRuntimeMode mode,
+  required AppPlatformCapabilities platformCapabilities,
+}) {
+  if (mode != AppRuntimeMode.live) {
+    return null;
+  }
+  if (!_supportsYouTubeNSigWebView(platformCapabilities)) {
+    return null;
+  }
+  return YouTubeWebViewNSigSolver(
+    platformAdapter: HlsProxyPlatformAdapterImpl(
+      platformCapabilities: platformCapabilities,
+    ),
+  );
+}
+
+bool _supportsYouTubeNSigWebView(AppPlatformCapabilities platformCapabilities) {
+  return platformCapabilities.isMobile ||
+      platformCapabilities.isMacOS ||
+      platformCapabilities.isWindows;
 }

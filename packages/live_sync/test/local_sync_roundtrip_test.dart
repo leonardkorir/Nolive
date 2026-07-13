@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:test/test.dart';
@@ -36,7 +37,11 @@ void main() {
       snapshot: const SyncSnapshot(
         tags: ['常看'],
         follows: [
-          FollowRecord(providerId: 'douyu', roomId: '999', streamerName: '主播A'),
+          FollowRecord(
+            providerId: ProviderId.douyu,
+            roomId: '999',
+            streamerName: '主播A',
+          ),
         ],
       ),
     );
@@ -88,9 +93,9 @@ void main() {
     final events = <List<DiscoveredPeer>>[];
     final done = Completer<void>();
     final subscription = service.watchPeers().listen(
-          events.add,
-          onDone: done.complete,
-        );
+      events.add,
+      onDone: done.complete,
+    );
     addTearDown(subscription.cancel);
 
     await service.start();
@@ -126,184 +131,200 @@ void main() {
     expect(events.last, isEmpty);
   });
 
-  test('http local sync server rejects malformed snapshot payloads as 400',
-      () async {
-    final server = HttpLocalSyncServer(
-      host: '127.0.0.1',
-      exportSnapshot: () async => const SyncSnapshot(),
-      importSnapshot: (_) async {},
-      exportCategory: (_) async => const SyncSnapshot(),
-      importCategory: (_, __) async {},
-      port: 28236,
-    );
-    await server.start();
-    addTearDown(server.stop);
-
-    final client = HttpClient();
-    addTearDown(client.close);
-
-    Future<HttpClientResponse> post(String path, String body) async {
-      final request =
-          await client.postUrl(Uri.parse('http://127.0.0.1:28236$path'));
-      request.headers.contentType = ContentType.json;
-      request.write(body);
-      return request.close();
-    }
-
-    final snapshotResponse = await post('/snapshot', '{"settings":');
-    expect(snapshotResponse.statusCode, HttpStatus.badRequest);
-    expect(
-      jsonDecode(await utf8.decoder.bind(snapshotResponse).join()),
-      containsPair('error', 'invalid_snapshot'),
-    );
-
-    final categoryResponse = await post('/sync/settings', '[]');
-    expect(categoryResponse.statusCode, HttpStatus.badRequest);
-    expect(
-      jsonDecode(await utf8.decoder.bind(categoryResponse).join()),
-      containsPair('error', 'invalid_snapshot'),
-    );
-  });
-
-  test('http local sync server rejects oversized snapshot payloads as 413',
-      () async {
-    final server = HttpLocalSyncServer(
-      host: '127.0.0.1',
-      exportSnapshot: () async => const SyncSnapshot(),
-      importSnapshot: (_) async {},
-      exportCategory: (_) async => const SyncSnapshot(),
-      importCategory: (_, __) async {},
-      port: 28237,
-      maxRequestBytes: 32,
-    );
-    await server.start();
-    addTearDown(server.stop);
-
-    final client = HttpClient();
-    addTearDown(client.close);
-
-    final request =
-        await client.postUrl(Uri.parse('http://127.0.0.1:28237/snapshot'));
-    request.headers.contentType = ContentType.json;
-    request.write('{"settings":{"theme_mode":"${'x' * 64}"}}');
-    final response = await request.close();
-
-    expect(response.statusCode, HttpStatus.requestEntityTooLarge);
-    expect(
-      jsonDecode(await utf8.decoder.bind(response).join()),
-      containsPair('error', 'payload_too_large'),
-    );
-  });
-
-  test('http local sync server logs unexpected import failures as 500',
-      () async {
-    Object? loggedError;
-    StackTrace? loggedStackTrace;
-    final server = HttpLocalSyncServer(
-      host: '127.0.0.1',
-      exportSnapshot: () async => const SyncSnapshot(),
-      importSnapshot: (_) async {
-        throw StateError('boom');
-      },
-      exportCategory: (_) async => const SyncSnapshot(),
-      importCategory: (_, __) async {},
-      port: 28238,
-      onUnexpectedError: (error, stackTrace) {
-        loggedError = error;
-        loggedStackTrace = stackTrace;
-      },
-    );
-    await server.start();
-    addTearDown(server.stop);
-
-    final client = HttpClient();
-    addTearDown(client.close);
-
-    final request =
-        await client.postUrl(Uri.parse('http://127.0.0.1:28238/snapshot'));
-    request.headers.contentType = ContentType.json;
-    request.write(SyncSnapshotJsonCodec.encode(const SyncSnapshot()));
-    final response = await request.close();
-
-    expect(response.statusCode, HttpStatus.internalServerError);
-    expect(loggedError.toString(), contains('snapshot import rollback failed'));
-    expect(loggedStackTrace, isNotNull);
-  });
-
-  test('wildcard local sync server requires and validates access token',
-      () async {
-    expect(
-      () => HttpLocalSyncServer(
+  test(
+    'http local sync server rejects malformed snapshot payloads as 400',
+    () async {
+      final server = HttpLocalSyncServer(
+        host: '127.0.0.1',
         exportSnapshot: () async => const SyncSnapshot(),
         importSnapshot: (_) async {},
         exportCategory: (_) async => const SyncSnapshot(),
         importCategory: (_, __) async {},
-      ),
-      throwsArgumentError,
-    );
+        port: 28236,
+      );
+      await server.start();
+      addTearDown(server.stop);
 
-    final resolverWithoutToken = HttpLocalSyncServer(
-      exportSnapshot: () async => const SyncSnapshot(),
-      importSnapshot: (_) async {},
-      exportCategory: (_) async => const SyncSnapshot(),
-      importCategory: (_, __) async {},
-      accessTokenResolver: () async => '',
-      port: 28241,
-    );
-    await expectLater(resolverWithoutToken.start(), throwsArgumentError);
+      final client = HttpClient();
+      addTearDown(client.close);
 
-    final server = HttpLocalSyncServer(
-      exportSnapshot: () async => const SyncSnapshot(tags: ['secure']),
-      importSnapshot: (_) async {},
-      exportCategory: (_) async => const SyncSnapshot(),
-      importCategory: (_, __) async {},
-      accessToken: 'sync-token',
-      port: 28239,
-    );
-    await server.start();
-    addTearDown(server.stop);
+      Future<HttpClientResponse> post(String path, String body) async {
+        final request = await client.postUrl(
+          Uri.parse('http://127.0.0.1:28236$path'),
+        );
+        request.headers.contentType = ContentType.json;
+        request.write(body);
+        return request.close();
+      }
 
-    final client = HttpClient();
-    addTearDown(client.close);
+      final snapshotResponse = await post('/snapshot', '{"settings":');
+      expect(snapshotResponse.statusCode, HttpStatus.badRequest);
+      expect(
+        jsonDecode(await utf8.decoder.bind(snapshotResponse).join()),
+        containsPair('error', 'invalid_snapshot'),
+      );
 
-    final unauthorized =
-        await client.getUrl(Uri.parse('http://127.0.0.1:28239/snapshot'));
-    final unauthorizedResponse = await unauthorized.close();
-    expect(unauthorizedResponse.statusCode, HttpStatus.unauthorized);
+      final categoryResponse = await post('/sync/settings', '[]');
+      expect(categoryResponse.statusCode, HttpStatus.badRequest);
+      expect(
+        jsonDecode(await utf8.decoder.bind(categoryResponse).join()),
+        containsPair('error', 'invalid_snapshot'),
+      );
+    },
+  );
 
-    final infoRequest =
-        await client.getUrl(Uri.parse('http://127.0.0.1:28239/info'));
-    final infoResponse = await infoRequest.close();
-    await utf8.decoder.bind(infoResponse).join();
-    expect(infoResponse.statusCode, HttpStatus.unauthorized);
+  test(
+    'http local sync server rejects oversized snapshot payloads as 413',
+    () async {
+      final server = HttpLocalSyncServer(
+        host: '127.0.0.1',
+        exportSnapshot: () async => const SyncSnapshot(),
+        importSnapshot: (_) async {},
+        exportCategory: (_) async => const SyncSnapshot(),
+        importCategory: (_, __) async {},
+        port: 28237,
+        maxRequestBytes: 32,
+      );
+      await server.start();
+      addTearDown(server.stop);
 
-    final syncClient = HttpLocalSyncClient();
-    addTearDown(syncClient.close);
-    final info = await syncClient.fetchInfo(
-      peer: DiscoveredPeer(
-        deviceId: 'dev-3',
-        displayName: '手机',
-        address: '127.0.0.1',
-        port: 28239,
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final request = await client.postUrl(
+        Uri.parse('http://127.0.0.1:28237/snapshot'),
+      );
+      request.headers.contentType = ContentType.json;
+      request.write('{"settings":{"theme_mode":"${'x' * 64}"}}');
+      final response = await request.close();
+
+      expect(response.statusCode, HttpStatus.requestEntityTooLarge);
+      expect(
+        jsonDecode(await utf8.decoder.bind(response).join()),
+        containsPair('error', 'payload_too_large'),
+      );
+    },
+  );
+
+  test(
+    'http local sync server logs unexpected import failures as 500',
+    () async {
+      Object? loggedError;
+      StackTrace? loggedStackTrace;
+      final server = HttpLocalSyncServer(
+        host: '127.0.0.1',
+        exportSnapshot: () async => const SyncSnapshot(),
+        importSnapshot: (_) async {
+          throw StateError('boom');
+        },
+        exportCategory: (_) async => const SyncSnapshot(),
+        importCategory: (_, __) async {},
+        port: 28238,
+        onUnexpectedError: (error, stackTrace) {
+          loggedError = error;
+          loggedStackTrace = stackTrace;
+        },
+      );
+      await server.start();
+      addTearDown(server.stop);
+
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final request = await client.postUrl(
+        Uri.parse('http://127.0.0.1:28238/snapshot'),
+      );
+      request.headers.contentType = ContentType.json;
+      request.write(SyncSnapshotJsonCodec.encode(const SyncSnapshot()));
+      final response = await request.close();
+
+      expect(response.statusCode, HttpStatus.internalServerError);
+      expect(
+        loggedError.toString(),
+        contains('snapshot import rollback failed'),
+      );
+      expect(loggedStackTrace, isNotNull);
+    },
+  );
+
+  test(
+    'wildcard local sync server requires and validates access token',
+    () async {
+      expect(
+        () => HttpLocalSyncServer(
+          exportSnapshot: () async => const SyncSnapshot(),
+          importSnapshot: (_) async {},
+          exportCategory: (_) async => const SyncSnapshot(),
+          importCategory: (_, __) async {},
+        ),
+        throwsArgumentError,
+      );
+
+      final resolverWithoutToken = HttpLocalSyncServer(
+        exportSnapshot: () async => const SyncSnapshot(),
+        importSnapshot: (_) async {},
+        exportCategory: (_) async => const SyncSnapshot(),
+        importCategory: (_, __) async {},
+        accessTokenResolver: () async => '',
+        port: 28241,
+      );
+      await expectLater(resolverWithoutToken.start(), throwsArgumentError);
+
+      final server = HttpLocalSyncServer(
+        exportSnapshot: () async => const SyncSnapshot(tags: ['secure']),
+        importSnapshot: (_) async {},
+        exportCategory: (_) async => const SyncSnapshot(),
+        importCategory: (_, __) async {},
         accessToken: 'sync-token',
-        lastSeenAt: DateTime(2026, 3, 30),
-      ),
-    );
-    expect(info.toJson(), isNot(containsPair('accessToken', anything)));
-    expect((await server.readInfo()).accessToken, 'sync-token');
-
-    final snapshot = await syncClient.fetchSnapshot(
-      peer: DiscoveredPeer(
-        deviceId: 'dev-3',
-        displayName: '手机',
-        address: '127.0.0.1',
         port: 28239,
-        accessToken: 'sync-token',
-        lastSeenAt: DateTime(2026, 3, 30),
-      ),
-    );
-    expect(snapshot.tags, ['secure']);
-  });
+      );
+      await server.start();
+      addTearDown(server.stop);
+
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final unauthorized = await client.getUrl(
+        Uri.parse('http://127.0.0.1:28239/snapshot'),
+      );
+      final unauthorizedResponse = await unauthorized.close();
+      expect(unauthorizedResponse.statusCode, HttpStatus.unauthorized);
+
+      final infoRequest = await client.getUrl(
+        Uri.parse('http://127.0.0.1:28239/info'),
+      );
+      final infoResponse = await infoRequest.close();
+      await utf8.decoder.bind(infoResponse).join();
+      expect(infoResponse.statusCode, HttpStatus.unauthorized);
+
+      final syncClient = HttpLocalSyncClient();
+      addTearDown(syncClient.close);
+      final info = await syncClient.fetchInfo(
+        peer: DiscoveredPeer(
+          deviceId: 'dev-3',
+          displayName: '手机',
+          address: '127.0.0.1',
+          port: 28239,
+          accessToken: 'sync-token',
+          lastSeenAt: DateTime(2026, 3, 30),
+        ),
+      );
+      expect(info.toJson(), isNot(containsPair('accessToken', anything)));
+      expect((await server.readInfo()).accessToken, 'sync-token');
+
+      final snapshot = await syncClient.fetchSnapshot(
+        peer: DiscoveredPeer(
+          deviceId: 'dev-3',
+          displayName: '手机',
+          address: '127.0.0.1',
+          port: 28239,
+          accessToken: 'sync-token',
+          lastSeenAt: DateTime(2026, 3, 30),
+        ),
+      );
+      expect(snapshot.tags, ['secure']);
+    },
+  );
 
   test('http local sync server rejects replayed signed requests', () async {
     final server = HttpLocalSyncServer(
@@ -329,8 +350,9 @@ void main() {
     );
 
     Future<int> getSnapshot() async {
-      final request =
-          await client.getUrl(Uri.parse('http://127.0.0.1:28242/snapshot'));
+      final request = await client.getUrl(
+        Uri.parse('http://127.0.0.1:28242/snapshot'),
+      );
       for (final entry in headers.entries) {
         request.headers.set(entry.key, entry.value);
       }
@@ -367,8 +389,9 @@ void main() {
         nonce: nonce,
         body: '',
       );
-      final request =
-          await client.getUrl(Uri.parse('http://127.0.0.1:28244/snapshot'));
+      final request = await client.getUrl(
+        Uri.parse('http://127.0.0.1:28244/snapshot'),
+      );
       for (final entry in headers.entries) {
         request.headers.set(entry.key, entry.value);
       }
@@ -384,157 +407,167 @@ void main() {
     expect(await getSnapshot('nonce-0'), HttpStatus.ok);
   });
 
-  test('http local sync client and server import category batches atomically',
-      () async {
-    final current = <SyncDataCategory, SyncSnapshot>{
-      SyncDataCategory.settings: const SyncSnapshot(
-        settings: {'theme_mode': 'dark'},
-      ),
-      SyncDataCategory.history: SyncSnapshot(
-        history: [
-          HistoryRecord(
-            providerId: 'bilibili',
-            roomId: '1',
-            title: 'old',
-            streamerName: 'old',
-            viewedAt: DateTime(2026, 5, 1),
-          ),
-        ],
-      ),
-    };
-    var failHistoryImport = false;
-    final rolledBackCategories = <SyncDataCategory>[];
-    final server = HttpLocalSyncServer(
-      host: '127.0.0.1',
-      exportSnapshot: () async => const SyncSnapshot(),
-      importSnapshot: (_) async {},
-      exportCategory: (category) async =>
-          current[category] ?? const SyncSnapshot(),
-      importCategory: (category, snapshot) async {
-        if (category == SyncDataCategory.history && failHistoryImport) {
-          throw StateError('history failed');
-        }
-        current[category] = snapshot;
-      },
-      rollbackCategory: (category, snapshot) async {
-        rolledBackCategories.add(category);
-        current[category] = snapshot;
-      },
-      accessToken: 'sync-token',
-      port: 28240,
-    );
-    await server.start();
-    addTearDown(server.stop);
-
-    final client = HttpLocalSyncClient();
-    addTearDown(client.close);
-    final peer = DiscoveredPeer(
-      deviceId: 'dev-4',
-      displayName: '手机',
-      address: '127.0.0.1',
-      port: 28240,
-      accessToken: 'sync-token',
-      lastSeenAt: DateTime(2026, 5, 2),
-    );
-
-    await client.pushCategories(
-      peer: peer,
-      snapshots: {
+  test(
+    'http local sync client and server import category batches atomically',
+    () async {
+      final current = <SyncDataCategory, SyncSnapshot>{
         SyncDataCategory.settings: const SyncSnapshot(
-          settings: {'theme_mode': 'light'},
+          settings: {'theme_mode': 'dark'},
         ),
         SyncDataCategory.history: SyncSnapshot(
           history: [
             HistoryRecord(
-              providerId: 'douyu',
-              roomId: '2',
-              title: 'new',
-              streamerName: 'new',
-              viewedAt: DateTime(2026, 5, 2),
+              providerId: ProviderId.bilibili,
+              roomId: '1',
+              title: 'old',
+              streamerName: 'old',
+              viewedAt: DateTime(2026, 5, 1),
             ),
           ],
         ),
-      },
-    );
+      };
+      var failHistoryImport = false;
+      final rolledBackCategories = <SyncDataCategory>[];
+      final server = HttpLocalSyncServer(
+        host: '127.0.0.1',
+        exportSnapshot: () async => const SyncSnapshot(),
+        importSnapshot: (_) async {},
+        exportCategory: (category) async =>
+            current[category] ?? const SyncSnapshot(),
+        importCategory: (category, snapshot) async {
+          if (category == SyncDataCategory.history && failHistoryImport) {
+            throw StateError('history failed');
+          }
+          current[category] = snapshot;
+        },
+        rollbackCategory: (category, snapshot) async {
+          rolledBackCategories.add(category);
+          current[category] = snapshot;
+        },
+        accessToken: 'sync-token',
+        port: 28240,
+      );
+      await server.start();
+      addTearDown(server.stop);
 
-    expect(current[SyncDataCategory.settings]!.settings['theme_mode'], 'light');
-    expect(current[SyncDataCategory.history]!.history.single.roomId, '2');
+      final client = HttpLocalSyncClient();
+      addTearDown(client.close);
+      final peer = DiscoveredPeer(
+        deviceId: 'dev-4',
+        displayName: '手机',
+        address: '127.0.0.1',
+        port: 28240,
+        accessToken: 'sync-token',
+        lastSeenAt: DateTime(2026, 5, 2),
+      );
 
-    failHistoryImport = true;
-    await expectLater(
-      client.pushCategories(
+      await client.pushCategories(
         peer: peer,
         snapshots: {
           SyncDataCategory.settings: const SyncSnapshot(
-            settings: {'theme_mode': 'system'},
+            settings: {'theme_mode': 'light'},
           ),
           SyncDataCategory.history: SyncSnapshot(
             history: [
               HistoryRecord(
-                providerId: 'huya',
-                roomId: '3',
-                title: 'failed',
-                streamerName: 'failed',
-                viewedAt: DateTime(2026, 5, 3),
+                providerId: ProviderId.douyu,
+                roomId: '2',
+                title: 'new',
+                streamerName: 'new',
+                viewedAt: DateTime(2026, 5, 2),
               ),
             ],
           ),
         },
-      ),
-      throwsA(isA<HttpException>()),
-    );
+      );
 
-    expect(current[SyncDataCategory.settings]!.settings['theme_mode'], 'light');
-    expect(current[SyncDataCategory.history]!.history.single.roomId, '2');
-    expect(rolledBackCategories, [
-      SyncDataCategory.settings,
-      SyncDataCategory.history,
-    ]);
-  });
+      expect(
+        current[SyncDataCategory.settings]!.settings['theme_mode'],
+        'light',
+      );
+      expect(current[SyncDataCategory.history]!.history.single.roomId, '2');
 
-  test('http local sync server rolls back full snapshot imports on failure',
-      () async {
-    var current = const SyncSnapshot(settings: {'theme_mode': 'dark'});
-    final server = HttpLocalSyncServer(
-      host: '127.0.0.1',
-      exportSnapshot: () async => current,
-      importSnapshot: (snapshot) async {
-        current = snapshot;
-        if (snapshot.settings['theme_mode'] == 'fail') {
-          throw StateError('snapshot import failed');
-        }
-      },
-      exportCategory: (_) async => current,
-      importCategory: (_, snapshot) async {
-        current = snapshot;
-      },
-      accessToken: 'sync-token',
-      port: 28243,
-    );
-    await server.start();
-    addTearDown(server.stop);
+      failHistoryImport = true;
+      await expectLater(
+        client.pushCategories(
+          peer: peer,
+          snapshots: {
+            SyncDataCategory.settings: const SyncSnapshot(
+              settings: {'theme_mode': 'system'},
+            ),
+            SyncDataCategory.history: SyncSnapshot(
+              history: [
+                HistoryRecord(
+                  providerId: ProviderId.huya,
+                  roomId: '3',
+                  title: 'failed',
+                  streamerName: 'failed',
+                  viewedAt: DateTime(2026, 5, 3),
+                ),
+              ],
+            ),
+          },
+        ),
+        throwsA(isA<HttpException>()),
+      );
 
-    final client = HttpLocalSyncClient();
-    addTearDown(client.close);
-    final peer = DiscoveredPeer(
-      deviceId: 'dev-5',
-      displayName: '手机',
-      address: '127.0.0.1',
-      port: 28243,
-      accessToken: 'sync-token',
-      lastSeenAt: DateTime(2026, 5, 2),
-    );
+      expect(
+        current[SyncDataCategory.settings]!.settings['theme_mode'],
+        'light',
+      );
+      expect(current[SyncDataCategory.history]!.history.single.roomId, '2');
+      expect(rolledBackCategories, [
+        SyncDataCategory.settings,
+        SyncDataCategory.history,
+      ]);
+    },
+  );
 
-    await expectLater(
-      client.pushSnapshot(
-        peer: peer,
-        snapshot: const SyncSnapshot(settings: {'theme_mode': 'fail'}),
-      ),
-      throwsA(isA<HttpException>()),
-    );
+  test(
+    'http local sync server rolls back full snapshot imports on failure',
+    () async {
+      var current = const SyncSnapshot(settings: {'theme_mode': 'dark'});
+      final server = HttpLocalSyncServer(
+        host: '127.0.0.1',
+        exportSnapshot: () async => current,
+        importSnapshot: (snapshot) async {
+          current = snapshot;
+          if (snapshot.settings['theme_mode'] == 'fail') {
+            throw StateError('snapshot import failed');
+          }
+        },
+        exportCategory: (_) async => current,
+        importCategory: (_, snapshot) async {
+          current = snapshot;
+        },
+        accessToken: 'sync-token',
+        port: 28243,
+      );
+      await server.start();
+      addTearDown(server.stop);
 
-    expect(current.settings['theme_mode'], 'dark');
-  });
+      final client = HttpLocalSyncClient();
+      addTearDown(client.close);
+      final peer = DiscoveredPeer(
+        deviceId: 'dev-5',
+        displayName: '手机',
+        address: '127.0.0.1',
+        port: 28243,
+        accessToken: 'sync-token',
+        lastSeenAt: DateTime(2026, 5, 2),
+      );
+
+      await expectLater(
+        client.pushSnapshot(
+          peer: peer,
+          snapshot: const SyncSnapshot(settings: {'theme_mode': 'fail'}),
+        ),
+        throwsA(isA<HttpException>()),
+      );
+
+      expect(current.settings['theme_mode'], 'dark');
+    },
+  );
 }
 
 Map<String, String> _signedLocalSyncHeaders({
@@ -544,13 +577,14 @@ Map<String, String> _signedLocalSyncHeaders({
   required String nonce,
   required String body,
 }) {
-  final timestamp =
-      (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000).toString();
+  final timestamp = (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000)
+      .toString();
   final bodySha256 = sha256.convert(utf8.encode(body)).toString();
   final payload = '${method.toUpperCase()}$path$timestamp$nonce$bodySha256';
-  final signature = Hmac(sha256, utf8.encode(secret))
-      .convert(utf8.encode(payload))
-      .toString();
+  final signature = Hmac(
+    sha256,
+    utf8.encode(secret),
+  ).convert(utf8.encode(payload)).toString();
   return {
     'X-Nolive-Sync-Timestamp': timestamp,
     'X-Nolive-Sync-Nonce': nonce,

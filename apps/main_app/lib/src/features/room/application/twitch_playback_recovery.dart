@@ -8,18 +8,10 @@ const Duration kTwitchStartupFixedRetryDelay = Duration(seconds: 2);
 const Duration kTwitchStartupInitialAutoRetryDelay = Duration(seconds: 2);
 const Duration kTwitchStartupFollowupAutoRetryDelay = Duration(seconds: 2);
 
-enum TwitchFixedRecoveryAction {
-  none,
-  switchLine,
-  refreshCurrentLine,
-  stop,
-}
+enum TwitchFixedRecoveryAction { none, switchLine, refreshCurrentLine, stop }
 
 class TwitchFixedRecoveryDecision {
-  const TwitchFixedRecoveryDecision({
-    required this.action,
-    this.recoveryLine,
-  });
+  const TwitchFixedRecoveryDecision({required this.action, this.recoveryLine});
 
   final TwitchFixedRecoveryAction action;
   final LivePlayUrl? recoveryLine;
@@ -38,6 +30,7 @@ class TwitchStartupPlan {
 TwitchStartupPlan resolveTwitchStartupPlan({
   required List<LivePlayQuality> qualities,
   required LivePlayQuality requestedQuality,
+  bool promoteAutoStartup = false,
 }) {
   LivePlayQuality? autoQuality;
   for (final item in qualities) {
@@ -46,22 +39,53 @@ TwitchStartupPlan resolveTwitchStartupPlan({
       break;
     }
   }
-  if (autoQuality == null || requestedQuality.id == 'auto') {
+  if (autoQuality == null) {
     return TwitchStartupPlan(startupQuality: requestedQuality);
   }
+  if (requestedQuality.id == 'auto') {
+    if (!promoteAutoStartup) {
+      return TwitchStartupPlan(startupQuality: requestedQuality);
+    }
+    final promotionQuality = _selectHighestFixedQuality(qualities);
+    if (promotionQuality == null) {
+      return TwitchStartupPlan(startupQuality: requestedQuality);
+    }
+    return TwitchStartupPlan(
+      startupQuality: _twitchStartupAutoQuality(autoQuality),
+      promotionQuality: promotionQuality,
+    );
+  }
   return TwitchStartupPlan(
-    startupQuality: LivePlayQuality(
-      id: autoQuality.id,
-      label: autoQuality.label,
-      isDefault: autoQuality.isDefault,
-      sortOrder: autoQuality.sortOrder,
-      metadata: {
-        ...?autoQuality.metadata,
-        'twitchStartupAuto': true,
-      },
-    ),
+    startupQuality: _twitchStartupAutoQuality(autoQuality),
     promotionQuality: requestedQuality,
   );
+}
+
+LivePlayQuality _twitchStartupAutoQuality(LivePlayQuality autoQuality) {
+  return LivePlayQuality(
+    id: autoQuality.id,
+    label: autoQuality.label,
+    isDefault: autoQuality.isDefault,
+    sortOrder: autoQuality.sortOrder,
+    metadata: {...?autoQuality.metadata, 'twitchStartupAuto': true},
+  );
+}
+
+LivePlayQuality? _selectHighestFixedQuality(List<LivePlayQuality> qualities) {
+  final fixedQualities = qualities
+      .where((item) => item.id.trim().toLowerCase() != 'auto')
+      .toList(growable: false);
+  if (fixedQualities.isEmpty) {
+    return null;
+  }
+  fixedQualities.sort((left, right) {
+    final sortOrderCompare = right.sortOrder.compareTo(left.sortOrder);
+    if (sortOrderCompare != 0) {
+      return sortOrderCompare;
+    }
+    return right.id.compareTo(left.id);
+  });
+  return fixedQualities.first;
 }
 
 bool shouldAttemptTwitchPlaybackRecovery(
@@ -75,6 +99,18 @@ bool shouldAttemptTwitchPlaybackRecovery(
   }
   return state.position < progressThreshold &&
       state.buffered < progressThreshold;
+}
+
+/// Auto warm-up is already producing media (or actively buffering a live
+/// source). In this state we must **not** re-setSource auto — only wait for
+/// promotion thresholds, then switch once to the highest fixed quality.
+bool isTwitchAutoWarmupInProgress(PlayerState state) {
+  if (state.source == null) {
+    return false;
+  }
+  return state.status == PlaybackStatus.playing ||
+      state.status == PlaybackStatus.buffering ||
+      state.status == PlaybackStatus.ready;
 }
 
 bool shouldPromoteTwitchPlaybackQuality(

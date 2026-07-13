@@ -21,11 +21,7 @@ class BilibiliMapper {
     final liveRoomInfo = ProviderJson.asMap(pageInfo['live_room']);
     final numPages = ProviderJson.asInt(liveRoomInfo['numPages']) ?? 1;
 
-    return PagedResponse(
-      items: items,
-      hasMore: page < numPages,
-      page: page,
-    );
+    return PagedResponse(items: items, hasMore: page < numPages, page: page);
   }
 
   static LiveRoom mapSearchRoom(Map<String, dynamic> item) {
@@ -37,7 +33,7 @@ class BilibiliMapper {
       );
     }
     return LiveRoom(
-      providerId: ProviderId.bilibili.value,
+      providerId: ProviderId.bilibili,
       roomId: roomId,
       title: _stripHighlight(item['title']?.toString()),
       streamerName: normalizeDisplayText(item['uname']?.toString()),
@@ -85,7 +81,8 @@ class BilibiliMapper {
     final danmakuMode = danmakuInfoData['mode']?.toString() ?? '';
     final danmakuToken = danmakuMode == 'unavailable'
         ? UnavailableDanmakuToken(
-            reason: danmakuInfoData['reason']?.toString() ??
+            reason:
+                danmakuInfoData['reason']?.toString() ??
                 '哔哩哔哩当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',
             cause: danmakuInfoData['cause']?.toString(),
           )
@@ -101,7 +98,7 @@ class BilibiliMapper {
           );
 
     return LiveRoomDetail(
-      providerId: ProviderId.bilibili.value,
+      providerId: ProviderId.bilibili,
       roomId: realRoomId,
       title: normalizeDisplayText(roomInfo['title']?.toString()),
       streamerName: normalizeDisplayText(anchorBaseInfo['uname']?.toString()),
@@ -135,23 +132,21 @@ class BilibiliMapper {
 
     final firstCodec = _firstCodec(playUrl);
     final acceptQn = ProviderJson.asList(firstCodec['accept_qn']);
-    final qualities = acceptQn
-        .map((item) => ProviderJson.asInt(item) ?? 0)
-        .where((item) => item > 0)
-        .map(
-          (item) => LivePlayQuality(
-            id: item.toString(),
-            label: qualityMap[item] ?? '未知清晰度',
-            isDefault: item == currentQn,
-            sortOrder: item,
-            metadata: {
-              'qn': item,
-              'qualityMap': qualityMap,
-            },
-          ),
-        )
-        .toList(growable: false)
-      ..sort((a, b) => b.sortOrder.compareTo(a.sortOrder));
+    final qualities =
+        acceptQn
+            .map((item) => ProviderJson.asInt(item) ?? 0)
+            .where((item) => item > 0)
+            .map(
+              (item) => LivePlayQuality(
+                id: item.toString(),
+                label: qualityMap[item] ?? '未知清晰度',
+                isDefault: item == currentQn,
+                sortOrder: item,
+                metadata: {'qn': item, 'qualityMap': qualityMap},
+              ),
+            )
+            .toList(growable: false)
+          ..sort((a, b) => b.sortOrder.compareTo(a.sortOrder));
 
     if (qualities.isNotEmpty && !qualities.any((item) => item.isDefault)) {
       final first = qualities.first;
@@ -169,11 +164,8 @@ class BilibiliMapper {
 
   static List<LivePlayUrl> mapPlayUrls(Map<String, dynamic> response) {
     final playUrl = _playUrlPayload(response);
-    final urls = <({
-      String url,
-      String lineLabel,
-      Map<String, Object?> metadata,
-    })>[];
+    final urls =
+        <({String url, String lineLabel, Map<String, Object?> metadata})>[];
 
     for (final stream in ProviderJson.asList(playUrl['stream'])) {
       for (final format in ProviderJson.asList(
@@ -193,23 +185,20 @@ class BilibiliMapper {
               continue;
             }
             final uri = Uri.tryParse(fullUrl);
-            final qn = ProviderJson.asInt(codecMap['current_qn']) ??
+            final qn =
+                ProviderJson.asInt(codecMap['current_qn']) ??
                 ProviderJson.asInt(playUrl['current_qn']) ??
                 ProviderJson.asInt(uri?.queryParameters['qn']);
-            final expectedQn = ProviderJson.asInt(
-                  uri?.queryParameters['expected_qn'],
-                ) ??
-                qn;
-            urls.add(
-              (
-                url: fullUrl,
-                lineLabel: Uri.tryParse(host)?.host ?? host,
-                metadata: <String, Object?>{
-                  if (qn != null) 'qn': qn,
-                  if (expectedQn != null) 'expectedQn': expectedQn,
-                },
-              ),
-            );
+            final expectedQn =
+                ProviderJson.asInt(uri?.queryParameters['expected_qn']) ?? qn;
+            urls.add((
+              url: fullUrl,
+              lineLabel: Uri.tryParse(host)?.host ?? host,
+              metadata: <String, Object?>{
+                if (qn != null) 'qn': qn,
+                if (expectedQn != null) 'expectedQn': expectedQn,
+              },
+            ));
           }
         }
       }
@@ -226,10 +215,12 @@ class BilibiliMapper {
 
     final sorted = uniqueUrls.entries.toList(growable: false)
       ..sort((a, b) {
-        final leftQn = ProviderJson.asInt(a.value.metadata['expectedQn']) ??
+        final leftQn =
+            ProviderJson.asInt(a.value.metadata['expectedQn']) ??
             ProviderJson.asInt(a.value.metadata['qn']) ??
             0;
-        final rightQn = ProviderJson.asInt(b.value.metadata['expectedQn']) ??
+        final rightQn =
+            ProviderJson.asInt(b.value.metadata['expectedQn']) ??
             ProviderJson.asInt(b.value.metadata['qn']) ??
             0;
         final qualityCompare = rightQn.compareTo(leftQn);

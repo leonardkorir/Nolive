@@ -38,7 +38,8 @@ Future<void> main() async {
       final room = result.selectedRoom;
       if (room != null) {
         print(
-            'room=${room.roomId} title=${room.title} streamer=${room.streamerName}');
+          'room=${room.roomId} title=${room.title} streamer=${room.streamerName}',
+        );
       }
 
       final detail = result.detail;

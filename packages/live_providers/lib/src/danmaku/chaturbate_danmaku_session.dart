@@ -22,8 +22,8 @@ abstract interface class ChaturbateSocketClient {
   Future<void> close();
 }
 
-typedef ChaturbateSocketClientFactory = ChaturbateSocketClient Function(
-    Uri uri);
+typedef ChaturbateSocketClientFactory =
+    ChaturbateSocketClient Function(Uri uri);
 
 class ChaturbateDanmakuSession implements DanmakuSession {
   ChaturbateDanmakuSession({
@@ -35,12 +35,20 @@ class ChaturbateDanmakuSession implements DanmakuSession {
     void Function()? disposeOwnedApiClient,
     ChaturbateSocketClientFactory? socketClientFactory,
     String? presenceId,
+    List<String> realtimeHosts = const [],
     Duration inactivityTimeout = const Duration(minutes: 2),
-  })  : _socketClientFactory =
-            socketClientFactory ?? _defaultSocketClientFactory,
-        _disposeOwnedApiClient = disposeOwnedApiClient,
-        _presenceId = presenceId ?? _buildPresenceId(),
-        _inactivityTimeout = inactivityTimeout;
+    void Function(String message)? diagnostics,
+  }) : _socketClientFactory =
+           socketClientFactory ?? _defaultSocketClientFactory,
+       _disposeOwnedApiClient = disposeOwnedApiClient,
+       _presenceId = presenceId ?? _buildPresenceId(),
+       _realtimeHosts = List.unmodifiable(
+         realtimeHosts
+             .map((item) => item.trim())
+             .where((item) => item.isNotEmpty),
+       ),
+       _inactivityTimeout = inactivityTimeout,
+       _diagnostics = diagnostics;
 
   final String roomId;
   final String broadcasterUid;
@@ -51,7 +59,9 @@ class ChaturbateDanmakuSession implements DanmakuSession {
 
   final ChaturbateSocketClientFactory _socketClientFactory;
   final String _presenceId;
+  final List<String> _realtimeHosts;
   final Duration _inactivityTimeout;
+  final void Function(String message)? _diagnostics;
 
   final StreamController<LiveMessage> _controller =
       StreamController<LiveMessage>.broadcast();
@@ -133,10 +143,7 @@ class ChaturbateDanmakuSession implements DanmakuSession {
         throw StateError('Chaturbate 实时弹幕未返回可用连接参数');
       }
 
-      final socket = await _connectRealtimeSocket(
-        hosts: hosts,
-        token: token,
-      );
+      final socket = await _connectRealtimeSocket(hosts: hosts, token: token);
       try {
         _socket = socket;
         _connected = true;
@@ -211,6 +218,7 @@ class ChaturbateDanmakuSession implements DanmakuSession {
             'non-fatal room_history status=${_roomHistoryStatusCode(error)}; continuing with realtime danmaku only',
         error: error,
         stackTrace: stackTrace,
+        diagnostics: _diagnostics,
       );
       _emit(
         LiveMessage(
@@ -444,11 +452,18 @@ class ChaturbateDanmakuSession implements DanmakuSession {
         .toList(growable: false);
   }
 
+  static const List<String> _defaultRealtimeHosts = [
+    'realtime.pa.highwebmedia.com',
+    'realtime.highwebmedia.com',
+  ];
+
   List<String> _resolveRealtimeHosts(Map<String, dynamic> authResponse) {
     final settings = _asMap(authResponse['settings']);
     final orderedHosts = <String>[
       settings['host']?.toString().trim() ?? '',
       settings['rest_host']?.toString().trim() ?? '',
+      ..._realtimeHosts,
+      ..._defaultRealtimeHosts,
     ];
     final resolved = <String>[];
     for (final host in orderedHosts) {
@@ -547,10 +562,10 @@ class ChaturbateDanmakuSession implements DanmakuSession {
 
 class _IoChaturbateSocketClient implements ChaturbateSocketClient {
   _IoChaturbateSocketClient(Uri uri)
-      : _channel = IOWebSocketChannel.connect(
-          uri,
-          connectTimeout: defaultDanmakuWebSocketConnectTimeout,
-        );
+    : _channel = IOWebSocketChannel.connect(
+        uri,
+        connectTimeout: defaultDanmakuWebSocketConnectTimeout,
+      );
 
   final IOWebSocketChannel _channel;
 

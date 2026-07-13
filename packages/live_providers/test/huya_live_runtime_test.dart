@@ -62,23 +62,25 @@ void main() {
     expect(detail.description, '虎牙游戏厅');
   });
 
-  test('huya sign service keeps anti-code unchanged when required fields miss',
-      () {
-    final signService = HttpHuyaSignService();
-    final antiCode = 'fm=dGVzdF9wcmVmaXg=&ctype=huya_pc_exe&t=100';
-    final url = signService.buildUrl(
-      line: {
-        'line': 'https://flv.huya.test/src',
-        'lineType': 'flv',
-        'antiCode': antiCode,
-        'streamName': 'demo',
-        'presenterUid': 123,
-      },
-      bitRate: 0,
-    );
+  test(
+    'huya sign service keeps anti-code unchanged when required fields miss',
+    () {
+      final signService = HttpHuyaSignService();
+      final antiCode = 'fm=dGVzdF9wcmVmaXg=&ctype=huya_pc_exe&t=100';
+      final url = signService.buildUrl(
+        line: {
+          'line': 'https://flv.huya.test/src',
+          'lineType': 'flv',
+          'antiCode': antiCode,
+          'streamName': 'demo',
+          'presenterUid': 123,
+        },
+        bitRate: 0,
+      );
 
-    expect(url, contains(antiCode));
-  });
+      expect(url, contains(antiCode));
+    },
+  );
 
   test('huya mapper rejects non-map search payloads', () {
     expect(
@@ -87,34 +89,106 @@ void main() {
     );
   });
 
-  test('live huya runtime uses injected browser profile for play headers',
-      () async {
-    final transport = _FakeHuyaTransport();
-    final signService = HttpHuyaSignService(
-      browserProfile: const ProviderBrowserProfile(
-        userAgent: 'SimpleLive-HY-UA',
-        acceptLanguage: 'en-US',
-        browserName: 'Chrome',
-        browserVersion: '146.0.0.0',
-        osName: 'Linux',
-        osVersion: '',
-      ),
-    );
-    final provider = HuyaProvider(
-      dataSource: HuyaLiveDataSource(
-        transport: transport,
-        signService: signService,
-      ),
-    );
+  test(
+    'live huya runtime uses injected browser profile for play headers',
+    () async {
+      final transport = _FakeHuyaTransport();
+      final signService = HttpHuyaSignService(
+        browserProfile: const ProviderBrowserProfile(
+          userAgent: 'SimpleLive-HY-UA',
+          acceptLanguage: 'en-US',
+          browserName: 'Chrome',
+          browserVersion: '146.0.0.0',
+          osName: 'Linux',
+          osVersion: '',
+        ),
+      );
+      final provider = HuyaProvider(
+        dataSource: HuyaLiveDataSource(
+          transport: transport,
+          signService: signService,
+        ),
+      );
 
-    final detail = await provider.fetchRoomDetail('yy/123456');
-    final qualities = await provider.fetchPlayQualities(detail);
-    final urls = await provider.fetchPlayUrls(
-      detail: detail,
-      quality: qualities.firstWhere((item) => item.isDefault),
-    );
+      final detail = await provider.fetchRoomDetail('yy/123456');
+      final qualities = await provider.fetchPlayQualities(detail);
+      final urls = await provider.fetchPlayUrls(
+        detail: detail,
+        quality: qualities.firstWhere((item) => item.isDefault),
+      );
 
-    expect(urls.first.headers['user-agent'], 'SimpleLive-HY-UA');
+      expect(urls.first.headers['user-agent'], 'SimpleLive-HY-UA');
+    },
+  );
+
+  group('Huya AntiCode boundary scenarios', () {
+    test('wsTime is expired or invalid hex format', () {
+      final signService = HttpHuyaSignService();
+      // wsTime=expiredhex - not a valid hex string, so it should keep original antiCode
+      final antiCode =
+          'fm=dGVzdF9wcmVmaXg=&ctype=huya_pc_exe&t=100&fs=1&wsTime=expiredhex';
+      final url = signService.buildUrl(
+        line: {
+          'line': 'https://flv.huya.test/src',
+          'lineType': 'flv',
+          'antiCode': antiCode,
+          'streamName': 'demo',
+          'presenterUid': 123,
+        },
+        bitRate: 0,
+      );
+      expect(url, contains(antiCode));
+    });
+
+    test('ctype is empty', () {
+      final signService = HttpHuyaSignService();
+      final antiCode = 'fm=dGVzdF9wcmVmaXg=&ctype=&t=100&fs=1&wsTime=65D4D440';
+      final url = signService.buildUrl(
+        line: {
+          'line': 'https://flv.huya.test/src',
+          'lineType': 'flv',
+          'antiCode': antiCode,
+          'streamName': 'demo',
+          'presenterUid': 123,
+        },
+        bitRate: 0,
+      );
+      expect(url, contains('ctype=&'));
+    });
+
+    test('presenterUid is missing', () {
+      final signService = HttpHuyaSignService();
+      final antiCode =
+          'fm=dGVzdF9wcmVmaXg=&ctype=huya_pc_exe&t=100&fs=1&wsTime=65D4D440';
+      final url = signService.buildUrl(
+        line: {
+          'line': 'https://flv.huya.test/src',
+          'lineType': 'flv',
+          'antiCode': antiCode,
+          'streamName': 'demo',
+          // presenterUid missing
+        },
+        bitRate: 0,
+      );
+      expect(url, contains('wsSecret='));
+    });
+
+    test('antiCode format is malformed', () {
+      final signService = HttpHuyaSignService();
+      // Missing 'fm' parameter entirely
+      final antiCode = 'ctype=huya_pc_exe&t=100&fs=1&wsTime=65D4D440';
+      final url = signService.buildUrl(
+        line: {
+          'line': 'https://flv.huya.test/src',
+          'lineType': 'flv',
+          'antiCode': antiCode,
+          'streamName': 'demo',
+          'presenterUid': 123,
+        },
+        bitRate: 0,
+      );
+      expect(url, contains(antiCode));
+    });
   });
 }
 

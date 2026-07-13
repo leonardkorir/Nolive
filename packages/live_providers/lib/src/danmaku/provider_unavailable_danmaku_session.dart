@@ -3,9 +3,7 @@ import 'dart:async';
 import 'package:live_core/live_core.dart';
 
 class ProviderUnavailableDanmakuSession implements DanmakuSession {
-  ProviderUnavailableDanmakuSession({
-    required this.reason,
-  });
+  ProviderUnavailableDanmakuSession({required this.reason});
 
   final String reason;
 

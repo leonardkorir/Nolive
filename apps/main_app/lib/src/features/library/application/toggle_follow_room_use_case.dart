@@ -29,7 +29,7 @@ class ToggleFollowRoomUseCase {
     }
     await followRepository.upsert(
       FollowRecord(
-        providerId: providerId,
+        providerId: ProviderId.from(providerId),
         roomId: roomId,
         streamerName: normalizeDisplayText(streamerName),
         streamerAvatarUrl: _normalizeOptionalString(streamerAvatarUrl),

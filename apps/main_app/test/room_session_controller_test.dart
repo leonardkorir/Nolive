@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
@@ -70,6 +72,65 @@ void main() {
     },
   );
 
+  test('room session controller waits for pending room teardown', () async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final cleanupStarted = Completer<void>();
+    final releaseCleanup = Completer<void>();
+    final cleanupFuture = bootstrap.playerRuntime.serializeRoomTeardown(
+      () async {
+        cleanupStarted.complete();
+        await releaseCleanup.future;
+      },
+    );
+    addTearDown(() async {
+      if (!releaseCleanup.isCompleted) {
+        releaseCleanup.complete();
+      }
+      await cleanupFuture;
+    });
+    await cleanupStarted.future;
+
+    final traces = <String>[];
+    final controller = RoomSessionController(
+      dependencies: RoomSessionDependencies.fromPreviewDependencies(
+        RoomPreviewDependencies.fromBootstrap(bootstrap),
+      ),
+      providerId: ProviderId.bilibili,
+      roomId: '66666',
+      targetPlatform: TargetPlatform.android,
+      isWeb: false,
+      trace: traces.add,
+    );
+
+    var completed = false;
+    final loadFuture = controller.load().then((result) {
+      completed = true;
+      return result;
+    });
+
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(completed, isFalse);
+    expect(
+      traces.any(
+        (line) => line.contains('load waiting for pending room teardown'),
+      ),
+      isTrue,
+    );
+
+    releaseCleanup.complete();
+    await cleanupFuture;
+    final result = await loadFuture;
+
+    expect(completed, isTrue);
+    expect(result.snapshot.detail.roomId, '66666');
+    expect(
+      traces.any(
+        (line) => line.contains('load pending room teardown released'),
+      ),
+      isTrue,
+    );
+  });
+
   test('room session controller keeps Android runtime gain neutral', () async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     final currentPreferences = await bootstrap.loadPlayerPreferences();
@@ -121,7 +182,7 @@ void main() {
     final snapshot = LoadedRoomSnapshot(
       providerId: ProviderId.stripchat,
       detail: const LiveRoomDetail(
-        providerId: 'stripchat',
+        providerId: ProviderId.stripchat,
         roomId: 'asian-asami',
         title: 'title',
         streamerName: 'streamer',
@@ -140,5 +201,39 @@ void main() {
 
     expect(plan.startupQuality.id, '960p');
     expect(plan.promotionQuality, isNull);
+  });
+
+  test('twitch implicit auto startup promotes to highest fixed quality', () {
+    final auto = LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true);
+    final q720 = LivePlayQuality(id: '720p60', label: '720p60', sortOrder: 720);
+    final q1080 = LivePlayQuality(
+      id: '1080p60',
+      label: '1080p60',
+      sortOrder: 1080,
+    );
+    final snapshot = LoadedRoomSnapshot(
+      providerId: ProviderId.twitch,
+      detail: const LiveRoomDetail(
+        providerId: ProviderId.twitch,
+        roomId: 'xqc',
+        title: 'title',
+        streamerName: 'streamer',
+        sourceUrl: 'https://www.twitch.tv/xqc',
+        isLive: true,
+      ),
+      qualities: [auto, q720, q1080],
+      selectedQuality: auto,
+      playUrls: const [],
+    );
+
+    final plan = resolveRoomStartupPlan(
+      snapshot: snapshot,
+      requestedQuality: auto,
+      promoteTwitchAutoStartup: true,
+    );
+
+    expect(plan.startupQuality.id, 'auto');
+    expect(plan.startupQuality.metadata?['twitchStartupAuto'], isTrue);
+    expect(plan.promotionQuality?.id, '1080p60');
   });
 }

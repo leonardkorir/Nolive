@@ -15,8 +15,8 @@ class DouyuLiveDataSource implements DouyuDataSource {
   DouyuLiveDataSource({
     required DouyuTransport transport,
     required DouyuSignService signService,
-  })  : _transport = transport,
-        _signService = signService;
+  }) : _transport = transport,
+       _signService = signService;
 
   final DouyuTransport _transport;
   final DouyuSignService _signService;
@@ -28,34 +28,41 @@ class DouyuLiveDataSource implements DouyuDataSource {
     );
     final data = _asMap(response['data']);
     final subCategories = _asList(data['cate2Info']);
-    final categories = _asList(data['cate1Info']).map((item) {
-      final category = _asMap(item);
-      final categoryId = category['cate1Id']?.toString() ?? '';
-      final children = subCategories
-          .map((subItem) => _asMap(subItem))
-          .where((subItem) => subItem['cate1Id']?.toString() == categoryId)
-          .map(
-            (subItem) => LiveSubCategory(
-              id: subItem['cate2Id']?.toString() ?? '',
-              parentId: categoryId,
-              name: subItem['cate2Name']?.toString() ?? '',
-              pic: _resolveCategoryImage(subItem),
-            ),
-          )
-          .where((item) => item.id.isNotEmpty && item.name.isNotEmpty)
-          .toList(growable: false);
-      return LiveCategory(
-        id: categoryId,
-        name: category['cate1Name']?.toString() ?? '',
-        children: children,
-      );
-    }).where((item) {
-      return item.id.isNotEmpty && item.name.isNotEmpty;
-    }).toList(growable: false)
-      ..sort((left, right) {
-        return (int.tryParse(left.id) ?? 0)
-            .compareTo(int.tryParse(right.id) ?? 0);
-      });
+    final categories =
+        _asList(data['cate1Info'])
+            .map((item) {
+              final category = _asMap(item);
+              final categoryId = category['cate1Id']?.toString() ?? '';
+              final children = subCategories
+                  .map((subItem) => _asMap(subItem))
+                  .where(
+                    (subItem) => subItem['cate1Id']?.toString() == categoryId,
+                  )
+                  .map(
+                    (subItem) => LiveSubCategory(
+                      id: subItem['cate2Id']?.toString() ?? '',
+                      parentId: categoryId,
+                      name: subItem['cate2Name']?.toString() ?? '',
+                      pic: _resolveCategoryImage(subItem),
+                    ),
+                  )
+                  .where((item) => item.id.isNotEmpty && item.name.isNotEmpty)
+                  .toList(growable: false);
+              return LiveCategory(
+                id: categoryId,
+                name: category['cate1Name']?.toString() ?? '',
+                children: children,
+              );
+            })
+            .where((item) {
+              return item.id.isNotEmpty && item.name.isNotEmpty;
+            })
+            .toList(growable: false)
+          ..sort((left, right) {
+            return (int.tryParse(left.id) ?? 0).compareTo(
+              int.tryParse(right.id) ?? 0,
+            );
+          });
     return categories;
   }
 
@@ -117,11 +124,7 @@ class DouyuLiveDataSource implements DouyuDataSource {
     final hasMore = totalPages > 0
         ? page < totalPages
         : rawItems.length >= _recommendPageSize;
-    return PagedResponse(
-      items: items,
-      hasMore: hasMore,
-      page: page,
-    );
+    return PagedResponse(items: items, hasMore: hasMore, page: page);
   }
 
   @override
@@ -131,11 +134,7 @@ class DouyuLiveDataSource implements DouyuDataSource {
   }) async {
     final response = await _transport.getJson(
       'https://www.douyu.com/japi/search/api/searchShow',
-      queryParameters: {
-        'kw': query,
-        'page': page.toString(),
-        'pageSize': '20',
-      },
+      queryParameters: {'kw': query, 'page': page.toString(), 'pageSize': '20'},
       headers: _signService.buildSearchHeaders(),
     );
 
@@ -219,11 +218,7 @@ class DouyuLiveDataSource implements DouyuDataSource {
         ),
       );
       urls.addAll(
-        DouyuMapper.mapPlayUrls(
-          response,
-          headers: headers,
-          lineLabel: cdn,
-        ),
+        DouyuMapper.mapPlayUrls(response, headers: headers, lineLabel: cdn),
       );
     }
 
@@ -271,9 +266,7 @@ class DouyuLiveDataSource implements DouyuDataSource {
     return const [''];
   }
 
-  Future<T> _runPlayRequestWithRetry<T>(
-    Future<T> Function() operation,
-  ) async {
+  Future<T> _runPlayRequestWithRetry<T>(Future<T> Function() operation) async {
     Object? lastError;
     StackTrace? lastStackTrace;
     for (var attempt = 0; attempt < _playRequestMaxAttempts; attempt += 1) {
@@ -293,7 +286,7 @@ class DouyuLiveDataSource implements DouyuDataSource {
 
   LiveRoom _mapCategoryRoom(Map<String, dynamic> item) {
     return LiveRoom(
-      providerId: ProviderId.douyu.value,
+      providerId: ProviderId.douyu,
       roomId: item['rid']?.toString() ?? '',
       title: normalizeDisplayText(item['rn']?.toString()),
       streamerName: normalizeDisplayText(item['nn']?.toString()),

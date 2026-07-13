@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/features/settings/application/manage_layout_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
@@ -20,7 +21,7 @@ class LayoutSettingsPage extends StatelessWidget {
         valueListenable: dependencies.layoutPreferences,
         builder: (context, preferences, _) {
           return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+            padding: kSettingsPagePadding,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

@@ -30,10 +30,7 @@ class BilibiliQrLoginSession {
 enum BilibiliQrLoginStatus { pending, scanned, expired, success }
 
 class BilibiliQrLoginPollResult {
-  const BilibiliQrLoginPollResult({
-    required this.status,
-    this.cookie = '',
-  });
+  const BilibiliQrLoginPollResult({required this.status, this.cookie = ''});
 
   final BilibiliQrLoginStatus status;
   final String cookie;
@@ -49,7 +46,7 @@ abstract class BilibiliAccountClient {
 
 class HttpBilibiliAccountClient implements BilibiliAccountClient {
   HttpBilibiliAccountClient({http.Client? client})
-      : _client = client ?? http.Client();
+    : _client = client ?? http.Client();
 
   final http.Client _client;
 

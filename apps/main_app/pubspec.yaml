@@ -2,7 +2,7 @@ name: nolive_app
 description: Main Flutter application for Nolive.
 publish_to: none
 
-version: 0.3.5+8
+version: 0.3.6+9
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -33,6 +33,8 @@ dependencies:
     path: ../../third_party/flutter_qjs
   live_core:
     path: ../../packages/live_core
+  live_hls_proxy:
+    path: ../../packages/live_hls_proxy
   live_providers:
     path: ../../packages/live_providers
   live_player:
@@ -43,9 +45,9 @@ dependencies:
     path: ../../packages/live_storage
   live_sync:
     path: ../../packages/live_sync
-  live_shared:
-    path: ../../packages/live_shared
   mobile_scanner: ^7.2.0
+  flutter_native_splash: ^2.4.6
+
 
 dev_dependencies:
   flutter_test:
@@ -69,10 +71,13 @@ flutter:
 flutter_launcher_icons:
   android: 'ic_launcher'
   ios: false
+  # Legacy / non-adaptive full tile (bg + mark).
   image_path: 'assets/branding/nolive_android_icon.png'
   min_sdk_android: 23
+  # Adaptive icons crop to circle/squircle — use a transparent-padded
+  # foreground so the monogram stays centered and is not clipped.
   adaptive_icon_background: '#101316'
-  adaptive_icon_foreground: 'assets/branding/nolive_android_icon.png'
+  adaptive_icon_foreground: 'assets/branding/nolive_android_icon_foreground.png'
 
 flutter_native_splash:
   color: '#101316'
@@ -80,3 +85,9 @@ flutter_native_splash:
   android: true
   ios: false
   web: false
+  # Android 12+ uses a separate circular icon path — feed the full 1024 mark
+  # so it is not the low-res adaptive foreground that looks soft.
+  android_12:
+    color: '#101316'
+    image: assets/branding/nolive_android_splash.png
+    icon_background_color: '#101316'

@@ -26,11 +26,11 @@ class TwitchDanmakuSession implements DanmakuSession {
     String? nick,
     String? oauthToken,
     Duration inactivityTimeout = const Duration(minutes: 2),
-  })  : _socketClientFactory =
-            socketClientFactory ?? _defaultSocketClientFactory,
-        _nick = nick ?? _buildAnonymousNick(),
-        _oauthToken = oauthToken?.trim() ?? '',
-        _inactivityTimeout = inactivityTimeout;
+  }) : _socketClientFactory =
+           socketClientFactory ?? _defaultSocketClientFactory,
+       _nick = nick ?? _buildAnonymousNick(),
+       _oauthToken = oauthToken?.trim() ?? '',
+       _inactivityTimeout = inactivityTimeout;
 
   final String roomId;
 
@@ -221,8 +221,9 @@ class TwitchDanmakuSession implements DanmakuSession {
     }
 
     final tags = _parseTags(line);
-    final taglessLine =
-        line.startsWith('@') ? line.substring(line.indexOf(' ') + 1) : line;
+    final taglessLine = line.startsWith('@')
+        ? line.substring(line.indexOf(' ') + 1)
+        : line;
     if (taglessLine.contains(' PRIVMSG #')) {
       final content = _extractTrailingContent(taglessLine);
       if (content.isEmpty) {
@@ -237,10 +238,7 @@ class TwitchDanmakuSession implements DanmakuSession {
           ]),
           content: content,
           timestamp: _readTimestamp(tags['tmi-sent-ts']),
-          payload: {
-            'line': line,
-            'tags': tags,
-          },
+          payload: {'line': line, 'tags': tags},
         ),
       );
       return;
@@ -269,10 +267,7 @@ class TwitchDanmakuSession implements DanmakuSession {
           ]),
           content: content,
           timestamp: _readTimestamp(tags['tmi-sent-ts']),
-          payload: {
-            'line': line,
-            'tags': tags,
-          },
+          payload: {'line': line, 'tags': tags},
         ),
       );
       return;
@@ -288,18 +283,16 @@ class TwitchDanmakuSession implements DanmakuSession {
           type: LiveMessageType.notice,
           content: content,
           timestamp: DateTime.now(),
-          payload: {
-            'line': line,
-            'tags': tags,
-          },
+          payload: {'line': line, 'tags': tags},
         ),
       );
     }
   }
 
   bool _isReadyCommand(String line) {
-    final taglessLine =
-        line.startsWith('@') ? line.substring(line.indexOf(' ') + 1) : line;
+    final taglessLine = line.startsWith('@')
+        ? line.substring(line.indexOf(' ') + 1)
+        : line;
     final parts = taglessLine.split(' ');
     final channel = '#${roomId.trim().toLowerCase()}';
     if (parts.length >= 3 && parts[1] == 'JOIN' && parts[2] == channel) {

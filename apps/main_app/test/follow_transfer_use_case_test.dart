@@ -1,9 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
 void main() {
   test(
@@ -53,7 +54,8 @@ void main() {
       expect(summary.totalCount, 2);
       expect(snapshot.follows, hasLength(2));
       final bilibiliFollow = snapshot.follows.firstWhere(
-        (record) => record.providerId == 'bilibili' && record.roomId == '1',
+        (record) =>
+            record.providerId == ProviderId.bilibili && record.roomId == '1',
       );
       expect(bilibiliFollow.streamerName, '主播A');
       expect(
@@ -80,7 +82,7 @@ void main() {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
       await bootstrap.followRepository.upsert(
         const FollowRecord(
-          providerId: 'huya',
+          providerId: ProviderId.huya,
           roomId: '9527',
           streamerName: '虎牙主播',
           streamerAvatarUrl: 'https://example.com/huya-avatar.png',

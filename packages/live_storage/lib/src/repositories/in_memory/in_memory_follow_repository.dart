@@ -1,3 +1,5 @@
+import 'package:live_core/live_core.dart';
+
 import '../../models/follow_record.dart';
 import '../follow_repository.dart';
 
@@ -11,8 +13,10 @@ class InMemoryFollowRepository implements FollowRepository {
 
   @override
   Future<bool> exists(String providerId, String roomId) async {
+    final normalizedProviderId = ProviderId.from(providerId);
     return _records.any(
-      (item) => item.providerId == providerId && item.roomId == roomId,
+      (item) =>
+          item.providerId == normalizedProviderId && item.roomId == roomId,
     );
   }
 
@@ -23,8 +27,10 @@ class InMemoryFollowRepository implements FollowRepository {
 
   @override
   Future<void> remove(String providerId, String roomId) async {
+    final normalizedProviderId = ProviderId.from(providerId);
     _records.removeWhere(
-      (item) => item.providerId == providerId && item.roomId == roomId,
+      (item) =>
+          item.providerId == normalizedProviderId && item.roomId == roomId,
     );
   }
 

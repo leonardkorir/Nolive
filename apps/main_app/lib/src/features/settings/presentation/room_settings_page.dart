@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_room_ui_preferences_use_case.dart';
@@ -64,7 +65,7 @@ class _RoomSettingsPageState extends State<RoomSettingsPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('直播间设置')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+        padding: kSettingsPagePadding,
         children: [
           const SectionHeader(
             title: '直播间设置',

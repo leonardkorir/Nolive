@@ -9,7 +9,7 @@ void main() {
     tester,
   ) async {
     const room = LiveRoom(
-      providerId: 'douyin',
+      providerId: ProviderId.douyin,
       roomId: 'room-1',
       title: '测试房间',
       streamerName: '测试主播',
@@ -47,7 +47,7 @@ void main() {
     tester,
   ) async {
     const room = LiveRoom(
-      providerId: 'bilibili',
+      providerId: ProviderId.bilibili,
       roomId: 'room-2',
       title: '标题\uD800',
       streamerName: '主播\uD800',

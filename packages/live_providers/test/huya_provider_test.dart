@@ -9,17 +9,18 @@ void main() {
     expect(categories, isNotEmpty);
     expect(categories.first.children, isNotEmpty);
 
-    final categoryRooms =
-        await provider.fetchCategoryRooms(categories.first.children.first);
+    final categoryRooms = await provider.fetchCategoryRooms(
+      categories.first.children.first,
+    );
     expect(categoryRooms.items, isNotEmpty);
-    expect(categoryRooms.items.first.providerId, 'huya');
+    expect(categoryRooms.items.first.providerId.value, 'huya');
 
     final rooms = await provider.searchRooms('架构');
     expect(rooms.items, isNotEmpty);
-    expect(rooms.items.first.providerId, 'huya');
+    expect(rooms.items.first.providerId.value, 'huya');
 
     final detail = await provider.fetchRoomDetail(rooms.items.first.roomId);
-    expect(detail.providerId, 'huya');
+    expect(detail.providerId.value, 'huya');
     expect(detail.sourceUrl, 'https://www.huya.com/${detail.roomId}');
 
     final qualities = await provider.fetchPlayQualities(detail);

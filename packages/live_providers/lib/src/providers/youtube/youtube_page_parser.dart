@@ -14,6 +14,7 @@ class YouTubePageBootstrap {
     this.innertubeContext,
     this.rolloutToken,
     this.poToken,
+    this.playerJsUrl,
   });
 
   final String apiKey;
@@ -23,6 +24,7 @@ class YouTubePageBootstrap {
   final Map<String, dynamic>? innertubeContext;
   final String? rolloutToken;
   final String? poToken;
+  final String? playerJsUrl;
 }
 
 class YouTubeSearchCandidate {
@@ -92,6 +94,11 @@ class YouTubePageParser {
   static final RegExp _continuationPattern = RegExp(
     r'"continuation"\s*:\s*"([^"]+)"',
   );
+  static final RegExp _jsUrlPattern = RegExp(r'"jsUrl"\s*:\s*"([^"]+)"');
+  static final RegExp _scriptBaseJsPattern = RegExp(
+    r'<script[^>]*src="([^"]+base\.js)"',
+  );
+  static final RegExp _baseJsPattern = RegExp(r'"([^"]*base\.js)"');
 
   YouTubePageBootstrap parsePage({
     required String requestedRoomId,
@@ -108,6 +115,21 @@ class YouTubePageParser {
       _findVideoIdInInitialData(initialData),
       _extractVideoIdFromFallback(html),
     ]);
+    final rawJsUrl = _firstNonEmpty([
+      _extractByPattern(_jsUrlPattern, html),
+      _extractByPattern(_scriptBaseJsPattern, html),
+      _extractByPattern(_baseJsPattern, html),
+    ]);
+    String? playerJsUrl;
+    if (rawJsUrl != null) {
+      if (rawJsUrl.startsWith('//')) {
+        playerJsUrl = 'https:$rawJsUrl';
+      } else if (rawJsUrl.startsWith('/')) {
+        playerJsUrl = 'https://www.youtube.com$rawJsUrl';
+      } else {
+        playerJsUrl = rawJsUrl;
+      }
+    }
     return YouTubePageBootstrap(
       apiKey: apiKey,
       videoId: videoId,
@@ -116,6 +138,7 @@ class YouTubePageParser {
       innertubeContext: innertubeContext,
       rolloutToken: _extractByPattern(_rolloutTokenPattern, html),
       poToken: _extractByPattern(_poTokenPattern, html),
+      playerJsUrl: playerJsUrl,
     );
   }
 
@@ -181,7 +204,8 @@ class YouTubePageParser {
         apiKey.isEmpty) {
       return null;
     }
-    final clientVersion = _firstNonEmpty([
+    final clientVersion =
+        _firstNonEmpty([
           _extractByPattern(_innertubeClientVersionPattern, html),
           fallbackClientVersion,
           YouTubeApiClient.defaultWebClientVersion,
@@ -364,14 +388,16 @@ class YouTubePageParser {
       _asMap(
         _asMap(
           _asMap(
-            _asMap(renderer['channelThumbnailSupportedRenderers'])[
-                'channelThumbnailWithLinkRenderer'],
+            _asMap(
+              renderer['channelThumbnailSupportedRenderers'],
+            )['channelThumbnailWithLinkRenderer'],
           )['thumbnail'],
         ),
       )['thumbnails'],
     );
-    final displayStreamerName =
-        streamerName?.isNotEmpty == true ? streamerName! : 'YouTube Live';
+    final displayStreamerName = streamerName?.isNotEmpty == true
+        ? streamerName!
+        : 'YouTube Live';
     return YouTubeSearchCandidate(
       videoId: videoId,
       title: title.isEmpty ? videoId : title,
@@ -399,11 +425,9 @@ class YouTubePageParser {
 
   bool _containsLiveStyle(List<dynamic> overlays) {
     for (final item in overlays) {
-      final style =
-          _asMap(_asMap(item)['thumbnailOverlayTimeStatusRenderer'])['style']
-              ?.toString()
-              .trim()
-              .toUpperCase();
+      final style = _asMap(
+        _asMap(item)['thumbnailOverlayTimeStatusRenderer'],
+      )['style']?.toString().trim().toUpperCase();
       if (style == 'LIVE') {
         return true;
       }
@@ -428,10 +452,12 @@ class YouTubePageParser {
   String? _extractOwnerProfileUrl(Map<String, dynamic> renderer) {
     for (final candidate in [
       _asMap(_firstRun(_asMap(renderer['ownerText']))?['navigationEndpoint']),
-      _asMap(_firstRun(
-          _asMap(renderer['shortBylineText']))?['navigationEndpoint']),
       _asMap(
-          _firstRun(_asMap(renderer['longBylineText']))?['navigationEndpoint']),
+        _firstRun(_asMap(renderer['shortBylineText']))?['navigationEndpoint'],
+      ),
+      _asMap(
+        _firstRun(_asMap(renderer['longBylineText']))?['navigationEndpoint'],
+      ),
     ]) {
       final url = _extractOwnerProfileUrlFromNavigationEndpoint(candidate);
       if (url != null && url.isNotEmpty) {
@@ -444,10 +470,9 @@ class YouTubePageParser {
   String? _extractOwnerProfileUrlFromNavigationEndpoint(
     Map<String, dynamic> navigationEndpoint,
   ) {
-    final url = _asMap(_asMap(
-            navigationEndpoint['commandMetadata'])['webCommandMetadata'])['url']
-        ?.toString()
-        .trim();
+    final url = _asMap(
+      _asMap(navigationEndpoint['commandMetadata'])['webCommandMetadata'],
+    )['url']?.toString().trim();
     if (url == null || url.isEmpty) {
       return null;
     }
@@ -483,8 +508,9 @@ class YouTubePageParser {
 
   int? _parseViewerCount(String text) {
     final compact = text.trim().toUpperCase();
-    final compactMatch =
-        RegExp(r'([0-9]+(?:\.[0-9]+)?)\s*([KMB])').firstMatch(compact);
+    final compactMatch = RegExp(
+      r'([0-9]+(?:\.[0-9]+)?)\s*([KMB])',
+    ).firstMatch(compact);
     if (compactMatch != null) {
       final value = double.tryParse(compactMatch.group(1) ?? '');
       final suffix = compactMatch.group(2) ?? '';
@@ -587,21 +613,26 @@ class YouTubePageParser {
       return null;
     }
 
-    final ownerRenderer =
-        _asMap(_asMap(secondaryRenderer['owner'])['videoOwnerRenderer']);
+    final ownerRenderer = _asMap(
+      _asMap(secondaryRenderer['owner'])['videoOwnerRenderer'],
+    );
     final title = _readText(primaryRenderer['title']);
     final streamerName = _readText(ownerRenderer['title']);
-    final viewerRenderer =
-        _asMap(_asMap(primaryRenderer['viewCount'])['videoViewCountRenderer']);
-    final viewerCount = _asInt(viewerRenderer['originalViewCount']) ??
+    final viewerRenderer = _asMap(
+      _asMap(primaryRenderer['viewCount'])['videoViewCountRenderer'],
+    );
+    final viewerCount =
+        _asInt(viewerRenderer['originalViewCount']) ??
         _parseViewerCount(_readText(viewerRenderer['viewCount']));
     final ownerProfileUrl = _extractOwnerProfileUrlFromNavigationEndpoint(
       _asMap(ownerRenderer['navigationEndpoint']),
     );
-    final thumbnails =
-        _asList(_asMap(ownerRenderer['thumbnail'])['thumbnails']);
-    final displayStreamerName =
-        streamerName.isNotEmpty ? streamerName : 'YouTube Live';
+    final thumbnails = _asList(
+      _asMap(ownerRenderer['thumbnail'])['thumbnails'],
+    );
+    final displayStreamerName = streamerName.isNotEmpty
+        ? streamerName
+        : 'YouTube Live';
     if (title.isEmpty && displayStreamerName == 'YouTube Live') {
       return null;
     }

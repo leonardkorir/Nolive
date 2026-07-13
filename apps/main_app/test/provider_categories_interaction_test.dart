@@ -99,7 +99,7 @@ class _FavoriteCategoryProvider extends LiveProvider
     return const PagedResponse(
       items: [
         LiveRoom(
-          providerId: 'favorite_categories',
+          providerId: ProviderId('favorite_categories'),
           roomId: 'room-1',
           title: '精选房间',
           streamerName: '测试主播',

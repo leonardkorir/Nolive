@@ -20,6 +20,8 @@ import 'package:nolive_app/src/features/room/presentation/room_page_session_coor
 import 'package:nolive_app/src/features/room/presentation/room_playback_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
 import 'package:nolive_app/src/features/room/presentation/room_twitch_recovery_controller.dart';
+import 'package:nolive_app/src/features/room/presentation/room_runtime_view_adapter.dart';
+import 'package:nolive_app/src/features/room/presentation/room_page_ui_effects.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_room_ui_preferences_use_case.dart';
@@ -175,6 +177,51 @@ void main() {
       await firstRefresh;
       await _flushAsyncWork();
       expect(coordinator.state.refreshInFlight, isFalse);
+    },
+  );
+
+  test(
+    'page session coordinator keeps current YouTube playback when refresh reload fails',
+    () async {
+      final harness = _RoomPageSessionHarness();
+      addTearDown(harness.dispose);
+      final coordinator = harness.createCoordinator(
+        providerId: ProviderId.youtube,
+      );
+      addTearDown(coordinator.dispose);
+      harness.sessionController.nextLoadResult = harness.primaryResult;
+      harness.ancillaryController.nextLoadResult =
+          const RoomAncillaryLoadResult(
+            danmakuSession: null,
+            isFollowed: false,
+          );
+
+      await coordinator.startInitialLoad();
+      await _flushAsyncWork();
+
+      harness.sessionController.nextReloadError = ProviderParseException(
+        providerId: ProviderId.youtube,
+        message: 'YouTube 当前未返回 HLS manifest；profile=streamlink_android。',
+      );
+
+      await coordinator.refreshRoom();
+      await _flushAsyncWork();
+
+      expect(harness.sessionController.reloadCalls, 1);
+      expect(harness.sessionController.clearCurrentCalls, 0);
+      expect(coordinator.state.latestLoadedState, same(harness.primaryResult));
+      expect(
+        coordinator.state.playbackSession.playbackSource?.url.toString(),
+        'https://example.com/primary.m3u8',
+      );
+      expect(
+        harness.traces,
+        contains(
+          contains(
+            'refresh retained current youtube playback after reload failure',
+          ),
+        ),
+      );
     },
   );
 
@@ -613,15 +660,33 @@ class _RoomPageSessionHarness {
 
   RoomPageSessionCoordinator createCoordinator({
     AppLifecycleState? initialLifecycleState,
+    ProviderId providerId = ProviderId.bilibili,
   }) {
     return RoomPageSessionCoordinator(
-      providerId: ProviderId.bilibili,
+      roomId: '6',
+      providerId: providerId,
+      dependencies: dependencies,
       sessionController: sessionController,
       ancillaryController: ancillaryController,
       danmakuController: danmakuController,
       playbackController: playbackController,
       fullscreenSessionController: fullscreenController,
       twitchRecoveryController: twitchRecoveryController,
+      runtimeViewAdapter: RoomRuntimeViewAdapter(runtime),
+      pageUiEffects: RoomPageUiEffects(
+        context: _FakeBuildContext(),
+        isMounted: () => false,
+        wrapFlatTileScope: ({required child}) => child,
+      ),
+      confirmUnfollow: (displayName) async => true,
+      captureRenderedPlayerSurface: () async => null,
+      exitFullscreenIfNeeded: () async {},
+      enterPictureInPicture: () async {},
+      toggleDesktopMiniWindow: () async {},
+      runtimeInspection: RoomRuntimeInspectionContext.fromPlayerRuntime(
+        runtime,
+      ),
+      runtimeControl: RoomRuntimeControlContext.fromPlayerRuntime(runtime),
       resolveRuntimeCurrentPlaybackSource: () => runtime.currentState.source,
       loadPlayerPreferences: () async => primaryResult.playerPreferences,
       updatePlayerPreferences: (_) async {},
@@ -697,8 +762,11 @@ class _RoomPageSessionHarness {
         mpvDoubleBufferingEnabled: false,
         mpvCustomOutputEnabled: false,
         mpvVideoOutputDriver: kDefaultMpvVideoOutputDriver,
+        mpvAudioOutputDriver: kDefaultMpvAudioOutputDriver,
         mpvHardwareDecoder: kDefaultMpvHardwareDecoder,
         mpvLogEnabled: false,
+        wifiQualityPreference: NetworkQualityPreference.middle,
+        cellularQualityPreference: NetworkQualityPreference.lowest,
         mdkLowLatencyEnabled: true,
         mdkAndroidTunnelEnabled: false,
         mdkAndroidHardwareVideoDecoderEnabled: true,
@@ -718,7 +786,7 @@ class _RoomPageSessionHarness {
 
   static LiveRoomDetail _roomDetail(String roomId, String title) {
     return LiveRoomDetail(
-      providerId: ProviderId.bilibili.value,
+      providerId: ProviderId.bilibili,
       roomId: roomId,
       title: title,
       streamerName: '主播$roomId',
@@ -1045,4 +1113,9 @@ class _TestDanmakuSession implements DanmakuSession {
   Future<void> disconnect() async {
     disconnectCalls += 1;
   }
+}
+
+class _FakeBuildContext implements BuildContext {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

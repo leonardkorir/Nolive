@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +11,23 @@ import 'package:nolive_app/src/features/sync/application/sync_feature_dependenci
 import 'package:nolive_app/src/features/sync/application/sync_preferences_use_case.dart';
 import 'package:nolive_app/src/features/sync/presentation/sync_local_page.dart';
 import 'package:nolive_app/src/features/sync/presentation/sync_webdav_page.dart';
+
+Future<void> _ensureTap(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.tap(finder);
+  await tester.pump();
+}
+
+/// ListView 懒构建，需滚动后 off-screen 文案才会进入树。
+Future<void> _scrollListView(WidgetTester tester, {double dy = -800}) async {
+  final list = find.byType(ListView);
+  if (list.evaluate().isEmpty) {
+    return;
+  }
+  await tester.drag(list.first, Offset(0, dy));
+  await tester.pumpAndSettle();
+}
 
 void main() {
   testWidgets('sync webdav page shows configure, test and upload actions', (
@@ -84,7 +102,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('sync-local-edit-button')));
+      await _ensureTap(tester, find.byKey(const Key('sync-local-edit-button')));
       await tester.pumpAndSettle();
 
       expect(
@@ -106,18 +124,24 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('192.168.50.2:24444'), findsOneWidget);
+      // 目标只进偏好，不再写 manual-peer 重复条目；若有真实 deviceId 可进发现缓存。
+      expect(
+        discoveryService.currentPeers.any(
+          (peer) => peer.deviceId == 'manual-peer',
+        ),
+        isFalse,
+      );
       expect(
         discoveryService.currentPeers.any(
           (peer) =>
-              peer.deviceId == 'manual-peer' &&
               peer.address == '192.168.50.2' &&
-              peer.port == 24444,
+              peer.port == 24444 &&
+              peer.deviceId == 'peer-1',
         ),
         isTrue,
       );
 
-      await tester.tap(find.byKey(const Key('sync-local-test-button')));
-      await tester.pump();
+      await _ensureTap(tester, find.byKey(const Key('sync-local-test-button')));
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('目标在线：客厅平板'), findsOneWidget);
@@ -125,8 +149,7 @@ void main() {
       expect(localSyncClient.fetchedPeers.last.address, '192.168.50.2');
       expect(localSyncClient.fetchedPeers.last.port, 24444);
 
-      await tester.tap(find.byKey(const Key('sync-local-push-button')));
-      await tester.pump();
+      await _ensureTap(tester, find.byKey(const Key('sync-local-push-button')));
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(localSyncClient.pushedSnapshots, hasLength(1));
@@ -140,8 +163,10 @@ void main() {
         'synctoken1234',
       );
 
-      await tester.tap(find.byKey(const Key('sync-local-category-settings')));
-      await tester.pump();
+      await _ensureTap(
+        tester,
+        find.byKey(const Key('sync-local-category-settings')),
+      );
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(localSyncClient.pushedCategories, hasLength(1));
@@ -177,10 +202,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('sync-local-edit-button')));
+      await _ensureTap(tester, find.byKey(const Key('sync-local-edit-button')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('sync-local-scan-pairing-button')));
-      await tester.pump();
+      await _ensureTap(
+        tester,
+        find.byKey(const Key('sync-local-scan-pairing-button')),
+      );
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('当前平台不支持扫码，请手动输入配对码'), findsOneWidget);
@@ -210,21 +237,32 @@ void main() {
         ),
       ),
     );
+    // Page auto-starts the LAN server; wait for empty-address state.
     await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const Key('sync-local-toggle-button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
 
     expect(
       discoveryService.currentPeers.any((peer) => peer.deviceId == 'self'),
       isFalse,
     );
-    expect(find.textContaining('未检测到可分享的局域网地址'), findsOneWidget);
+    // 没有可用局域网 IPv4 时，不得把 loopback 当成可同步地址发布。
+    expect(
+      discoveryService.currentPeers.any(
+        (peer) => peer.address.contains('127.0.0.1'),
+      ),
+      isFalse,
+    );
     expect(find.textContaining('127.0.0.1'), findsNothing);
+
+    await _scrollListView(tester, dy: -1600);
+    await _scrollListView(tester, dy: -1600);
+    expect(
+      find.textContaining('未检测到可分享的局域网地址').evaluate().isNotEmpty ||
+          find.textContaining('服务未启动').evaluate().isNotEmpty,
+      isTrue,
+    );
   });
 
-  testWidgets('sync local page removes real self peer when server stops', (
+  testWidgets('sync local page never injects self into discovery list', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -249,17 +287,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('sync-local-toggle-button')));
-    await tester.pumpAndSettle();
-
+    // 本机信息只在上方/二维码区，不得进入附近设备发现列表。
     expect(
       discoveryService.currentPeers.any(
-        (peer) => peer.deviceId == 'nolive-device',
+        (peer) => peer.deviceId == 'nolive-device' || peer.deviceId == 'self',
       ),
-      isTrue,
+      isFalse,
     );
+    expect(find.textContaining('仅供其他设备发现'), findsNothing);
+    expect(find.textContaining('（本机）'), findsNothing);
 
-    await tester.tap(find.byKey(const Key('sync-local-toggle-button')));
+    await _ensureTap(tester, find.byKey(const Key('sync-local-toggle-button')));
     await tester.pumpAndSettle();
 
     expect(
@@ -270,7 +308,7 @@ void main() {
     );
   });
 
-  testWidgets('sync local page marks real self peer and does not select it', (
+  testWidgets('sync local page hides self-like peer and does not select it', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -295,16 +333,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('sync-local-toggle-button')));
+    // 模拟误注入的本机条目：UI 必须过滤掉，且点选无效。
+    discoveryService.addOrReplacePeer(
+      DiscoveredPeer(
+        deviceId: 'nolive-device',
+        displayName: '本机伪装',
+        address: '10.0.0.8',
+        port: 23234,
+        platform: 'linux',
+        lastSeenAt: DateTime.now(),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView), const Offset(0, -600));
-    await tester.pumpAndSettle();
-
-    final selfPeerSubtitle = find.text('linux · 10.0.0.8:23234');
-    expect(find.text('本机'), findsOneWidget);
-    await tester.tap(selfPeerSubtitle, warnIfMissed: false);
-    await tester.pumpAndSettle();
+    expect(find.text('本机伪装'), findsNothing);
 
     final preferences = await bootstrap.loadSyncPreferences();
     expect(preferences.localPeerAddress, isEmpty);
@@ -348,8 +390,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('10.0.0.8:25555'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('sync-local-test-button')));
-    await tester.pump();
+    await _ensureTap(tester, find.byKey(const Key('sync-local-test-button')));
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.textContaining('probe failed'), findsOneWidget);
@@ -391,8 +432,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('sync-local-push-button')));
-    await tester.pump();
+    await _ensureTap(tester, find.byKey(const Key('sync-local-push-button')));
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.textContaining('push failed'), findsOneWidget);
@@ -441,6 +481,135 @@ void main() {
       );
     },
   );
+
+  test(
+    'push local full sync falls back to category batch on timeout',
+    () async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final localSyncClient = _RecordingLocalSyncClient(
+        snapshotError: const HttpException('Local sync request timed out.'),
+      );
+      final snapshotService = RepositorySyncSnapshotService(
+        settingsRepository: bootstrap.settingsRepository,
+        historyRepository: bootstrap.historyRepository,
+        followRepository: bootstrap.followRepository,
+        tagRepository: bootstrap.tagRepository,
+      );
+      final useCase = PushLocalSyncSnapshotUseCase(
+        snapshotService: snapshotService,
+        client: localSyncClient,
+      );
+
+      await useCase(
+        const SyncPreferences(
+          webDavBaseUrl: '',
+          webDavRemotePath: 'nolive/snapshot.json',
+          webDavUsername: '',
+          webDavPassword: '',
+          localDeviceName: 'nolive-device',
+          localPeerAddress: '192.168.50.2',
+          localPeerPort: 24444,
+          localPeerAccessToken: 'sync-token',
+        ),
+      );
+
+      expect(localSyncClient.pushedSnapshots, isEmpty);
+      expect(localSyncClient.pushedCategoryBatches, hasLength(1));
+      expect(
+        localSyncClient.pushedCategoryBatches.single.snapshots.keys,
+        containsAll(SyncDataCategory.values),
+      );
+    },
+  );
+
+  test(
+    'push local sync can attach transferable sensitive credentials',
+    () async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final localSyncClient = _RecordingLocalSyncClient();
+      final snapshotService = RepositorySyncSnapshotService(
+        settingsRepository: bootstrap.settingsRepository,
+        historyRepository: bootstrap.historyRepository,
+        followRepository: bootstrap.followRepository,
+        tagRepository: bootstrap.tagRepository,
+        shouldIncludeSettingInSnapshot: (key) {
+          return !SensitiveSettingKeys.isSnapshotExcludedKey(key);
+        },
+      );
+      final useCase = PushLocalSyncSnapshotUseCase(
+        snapshotService: snapshotService,
+        client: localSyncClient,
+        loadSensitiveCredentials: () async => {
+          SensitiveSettingKeys.syncWebDavPassword: 'webdav-secret',
+          SensitiveSettingKeys.accountBilibiliCookie: 'bili-cookie',
+          SensitiveSettingKeys.syncLocalAccessToken: 'should-not-transfer',
+        },
+      );
+
+      await useCase(
+        const SyncPreferences(
+          webDavBaseUrl: '',
+          webDavRemotePath: 'nolive/snapshot.json',
+          webDavUsername: '',
+          webDavPassword: '',
+          localDeviceName: 'nolive-device',
+          localPeerAddress: '192.168.50.2',
+          localPeerPort: 24444,
+          localPeerAccessToken: 'sync-token',
+        ),
+        includeSensitiveCredentials: true,
+      );
+
+      expect(localSyncClient.pushedSnapshots, hasLength(1));
+      final settings = localSyncClient.pushedSnapshots.single.snapshot.settings;
+      expect(settings[SensitiveSettingKeys.syncWebDavPassword], 'webdav-secret');
+      expect(
+        settings[SensitiveSettingKeys.accountBilibiliCookie],
+        'bili-cookie',
+      );
+      expect(
+        settings.containsKey(SensitiveSettingKeys.syncLocalAccessToken),
+        isFalse,
+      );
+    },
+  );
+
+  testWidgets('sync local page shows clarified category labels', (
+    tester,
+  ) async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    final discoveryService = _FakeLocalDiscoveryService();
+    final localSyncServer = _FakeLocalSyncServer();
+    final localSyncClient = _RecordingLocalSyncClient();
+    addTearDown(discoveryService.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SyncLocalPage(
+          dependencies: _buildSyncDependencies(
+            bootstrap,
+            discoveryService: discoveryService,
+            localSyncServer: localSyncServer,
+            localSyncClient: localSyncClient,
+          ),
+          readLocalAddresses: () async => const ['192.168.50.1'],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('同时传输账号与 WebDAV 密码'), findsOneWidget);
+
+    // 分类区在下方，ListView 懒构建需要滚入视口。
+    await _scrollListView(tester, dy: -1200);
+    await _scrollListView(tester, dy: -1200);
+
+    expect(find.text('我的-设置'), findsOneWidget);
+    expect(find.text('关注与标签'), findsOneWidget);
+    expect(find.text('观看历史'), findsOneWidget);
+    expect(find.text('弹幕屏蔽词'), findsOneWidget);
+    expect(find.textContaining('关注的主播记录 + 自定义标签'), findsOneWidget);
+  });
 }
 
 SyncFeatureDependencies _buildSyncDependencies(

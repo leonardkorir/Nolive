@@ -39,6 +39,8 @@ class RoomPanelController extends ChangeNotifier {
   final VoidCallback onEnterChatPanel;
   final VoidCallback onEnterFollowPanel;
 
+  PageController get pageController => _pageController;
+
   RoomPanel _selectedPanel = RoomPanel.chat;
   bool _pageSyncScheduled = false;
   bool _disposed = false;

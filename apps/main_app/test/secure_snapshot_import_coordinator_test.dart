@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:nolive_app/src/features/settings/application/secure_snapshot_import_coordinator.dart';
@@ -141,7 +142,7 @@ void main() {
           },
           history: [
             HistoryRecord(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '6',
               title: '演示房间',
               streamerName: '主播A',
@@ -218,10 +219,7 @@ void main() {
 
       await coordinator.importSnapshot(
         SyncSnapshot(
-          settings: const {
-            'theme_mode': 'dark',
-            'sync_webdav_password': '',
-          },
+          settings: const {'theme_mode': 'dark', 'sync_webdav_password': ''},
         ),
         clearExisting: true,
       );
@@ -254,7 +252,7 @@ void main() {
         secureCredentialStore: secureCredentialStore,
       );
       final importedHistory = HistoryRecord(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '1',
         title: '演示房间',
         streamerName: '主播A',
@@ -403,6 +401,70 @@ void main() {
         ),
         'local-token-keep',
       );
+    },
+  );
+
+  test(
+    'import notifies onAfterImport so follow UI can refresh without restart',
+    () async {
+      final settingsRepository = InMemorySettingsRepository();
+      final historyRepository = InMemoryHistoryRepository();
+      final followRepository = InMemoryFollowRepository();
+      final tagRepository = InMemoryTagRepository();
+      final secureCredentialStore = InMemorySecureCredentialStore();
+      final snapshotService = RepositorySyncSnapshotService(
+        settingsRepository: settingsRepository,
+        historyRepository: historyRepository,
+        followRepository: followRepository,
+        tagRepository: tagRepository,
+      );
+
+      final notifications = <({bool follow, bool settings})>[];
+      final coordinator = SecureSnapshotImportCoordinator(
+        snapshotService: snapshotService,
+        secureCredentialStore: secureCredentialStore,
+        onAfterImport: ({
+          required bool followDataChanged,
+          required bool settingsChanged,
+        }) async {
+          notifications.add((
+            follow: followDataChanged,
+            settings: settingsChanged,
+          ));
+        },
+      );
+
+      await coordinator.importCategory(
+        SyncDataCategory.library,
+        SyncSnapshot(
+          follows: [
+            FollowRecord(
+              providerId: ProviderId.bilibili,
+              roomId: '1',
+              streamerName: '主播A',
+              streamerAvatarUrl: '',
+              lastTitle: '',
+              lastAreaName: '',
+              lastCoverUrl: '',
+              lastKeyframeUrl: '',
+              tags: const [],
+            ),
+          ],
+          tags: const ['常看'],
+        ),
+      );
+
+      expect(notifications, hasLength(1));
+      expect(notifications.single.follow, isTrue);
+      expect(notifications.single.settings, isFalse);
+      expect(await followRepository.listAll(), hasLength(1));
+
+      await coordinator.importSnapshot(
+        const SyncSnapshot(settings: {'theme_mode': 'dark'}),
+      );
+      expect(notifications, hasLength(2));
+      expect(notifications.last.follow, isTrue);
+      expect(notifications.last.settings, isTrue);
     },
   );
 }

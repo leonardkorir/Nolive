@@ -5,104 +5,110 @@ import 'package:live_providers/src/danmaku/twitch_danmaku_session.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('twitch danmaku session waits for socket readiness before IRC handshake',
-      () async {
-    final inbound = StreamController<dynamic>();
-    final ready = Completer<void>();
-    final socket = _FakeTwitchSocketClient(
-      inbound.stream,
-      ready: ready.future,
-    );
-    final session = TwitchDanmakuSession(
-      roomId: 'xqc',
-      nick: 'justinfan4242',
-      socketClientFactory: (_) => socket,
-    );
+  test(
+    'twitch danmaku session waits for socket readiness before IRC handshake',
+    () async {
+      final inbound = StreamController<dynamic>();
+      final ready = Completer<void>();
+      final socket = _FakeTwitchSocketClient(
+        inbound.stream,
+        ready: ready.future,
+      );
+      final session = TwitchDanmakuSession(
+        roomId: 'xqc',
+        nick: 'justinfan4242',
+        socketClientFactory: (_) => socket,
+      );
 
-    final connectFuture = session.connect();
-    await Future<void>.delayed(Duration.zero);
-    expect(socket.sent, isEmpty);
+      final connectFuture = session.connect();
+      await Future<void>.delayed(Duration.zero);
+      expect(socket.sent, isEmpty);
 
-    ready.complete();
-    await connectFuture;
+      ready.complete();
+      await connectFuture;
 
-    expect(
-      socket.sent,
-      containsAll([
-        'CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership',
-        'PASS SCHMOOPIIE',
-        'NICK justinfan4242',
-        'USER justinfan4242 8 * :justinfan4242',
-        'JOIN #xqc',
-      ]),
-    );
+      expect(
+        socket.sent,
+        containsAll([
+          'CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership',
+          'PASS SCHMOOPIIE',
+          'NICK justinfan4242',
+          'USER justinfan4242 8 * :justinfan4242',
+          'JOIN #xqc',
+        ]),
+      );
 
-    await session.disconnect();
-    await inbound.close();
-  });
+      await session.disconnect();
+      await inbound.close();
+    },
+  );
 
-  test('twitch danmaku session uses oauth PASS when token is provided',
-      () async {
-    final inbound = StreamController<dynamic>();
-    final socket = _FakeTwitchSocketClient(inbound.stream);
-    final session = TwitchDanmakuSession(
-      roomId: 'xqc',
-      nick: 'tester',
-      oauthToken: 'secret-token',
-      socketClientFactory: (_) => socket,
-    );
+  test(
+    'twitch danmaku session uses oauth PASS when token is provided',
+    () async {
+      final inbound = StreamController<dynamic>();
+      final socket = _FakeTwitchSocketClient(inbound.stream);
+      final session = TwitchDanmakuSession(
+        roomId: 'xqc',
+        nick: 'tester',
+        oauthToken: 'secret-token',
+        socketClientFactory: (_) => socket,
+      );
 
-    await session.connect();
+      await session.connect();
 
-    expect(socket.sent, contains('PASS oauth:secret-token'));
+      expect(socket.sent, contains('PASS oauth:secret-token'));
 
-    await session.disconnect();
-    await inbound.close();
-  });
+      await session.disconnect();
+      await inbound.close();
+    },
+  );
 
-  test('twitch danmaku session performs IRC handshake and maps chat messages',
-      () async {
-    final inbound = StreamController<dynamic>();
-    final socket = _FakeTwitchSocketClient(inbound.stream);
-    final session = TwitchDanmakuSession(
-      roomId: 'xqc',
-      nick: 'justinfan4242',
-      socketClientFactory: (_) => socket,
-    );
-    final messages = <LiveMessage>[];
-    final subscription = session.messages.listen(messages.add);
+  test(
+    'twitch danmaku session performs IRC handshake and maps chat messages',
+    () async {
+      final inbound = StreamController<dynamic>();
+      final socket = _FakeTwitchSocketClient(inbound.stream);
+      final session = TwitchDanmakuSession(
+        roomId: 'xqc',
+        nick: 'justinfan4242',
+        socketClientFactory: (_) => socket,
+      );
+      final messages = <LiveMessage>[];
+      final subscription = session.messages.listen(messages.add);
 
-    await session.connect();
-    expect(
-      socket.sent,
-      containsAll([
-        'CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership',
-        'PASS SCHMOOPIIE',
-        'NICK justinfan4242',
-        'USER justinfan4242 8 * :justinfan4242',
-        'JOIN #xqc',
-      ]),
-    );
+      await session.connect();
+      expect(
+        socket.sent,
+        containsAll([
+          'CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership',
+          'PASS SCHMOOPIIE',
+          'NICK justinfan4242',
+          'USER justinfan4242 8 * :justinfan4242',
+          'JOIN #xqc',
+        ]),
+      );
 
-    inbound.add(':tmi.twitch.tv ROOMSTATE #xqc');
-    inbound.add(
-      '@display-name=Alice;tmi-sent-ts=1711111111111 '
-      ':alice!alice@alice.tmi.twitch.tv PRIVMSG #xqc :hello world',
-    );
-    inbound.add('PING :tmi.twitch.tv');
-    await Future<void>.delayed(Duration.zero);
+      inbound.add(':tmi.twitch.tv ROOMSTATE #xqc');
+      inbound.add(
+        '@display-name=Alice;tmi-sent-ts=1711111111111 '
+        ':alice!alice@alice.tmi.twitch.tv PRIVMSG #xqc :hello world',
+      );
+      inbound.add('PING :tmi.twitch.tv');
+      await Future<void>.delayed(Duration.zero);
 
-    expect(socket.sent, contains('PONG :tmi.twitch.tv'));
-    expect(messages, hasLength(2));
-    expect(messages.first.type, LiveMessageType.notice);
-    expect(messages.last.type, LiveMessageType.chat);
-    expect(messages.last.userName, 'Alice');
-    expect(messages.last.content, 'hello world');
+      expect(socket.sent, contains('PONG :tmi.twitch.tv'));
+      expect(messages, hasLength(2));
+      expect(messages.first.type, LiveMessageType.notice);
+      expect(messages.last.type, LiveMessageType.chat);
+      expect(messages.last.userName, 'Alice');
+      expect(messages.last.content, 'hello world');
 
-    await session.disconnect();
-    await subscription.cancel();
-    await inbound.close();
-  });
+      await session.disconnect();
+      await subscription.cancel();
+      await inbound.close();
+    },
+  );
 
   test('twitch danmaku session emits inactivity timeout notice', () async {
     final inbound = StreamController<dynamic>();
@@ -119,10 +125,7 @@ void main() {
     await session.connect();
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    expect(
-      messages.any((item) => item.content.contains('连接活动超时')),
-      isTrue,
-    );
+    expect(messages.any((item) => item.content.contains('连接活动超时')), isTrue);
 
     await session.disconnect();
     await subscription.cancel();
@@ -131,10 +134,8 @@ void main() {
 }
 
 class _FakeTwitchSocketClient implements TwitchSocketClient {
-  _FakeTwitchSocketClient(
-    this._stream, {
-    Future<void>? ready,
-  }) : _ready = ready ?? Future<void>.value();
+  _FakeTwitchSocketClient(this._stream, {Future<void>? ready})
+    : _ready = ready ?? Future<void>.value();
 
   final Stream<dynamic> _stream;
   final Future<void> _ready;

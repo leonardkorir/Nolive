@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:flutter/services.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -12,6 +13,7 @@ import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'sync_local_platform.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 class _LocalSyncPairingPayload {
   const _LocalSyncPairingPayload({
@@ -136,6 +138,8 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
   List<DiscoveredPeer> _peers = const [];
   List<String> _localAddresses = const [];
   bool _busy = false;
+  /// 用户显式开启后，全量/设置类同步会附带平台 Cookie 与 WebDAV 密码。
+  bool _includeSensitiveCredentials = false;
 
   @override
   void initState() {
@@ -152,6 +156,36 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
             _peers = peers;
           });
         });
+    // Auto-start LAN server so the page is usable without an extra tap
+    // Always-on receive side.
+    unawaited(_ensureLocalServerStarted());
+  }
+
+  Future<void> _ensureLocalServerStarted() async {
+    if (widget.dependencies.localSyncServer.isRunning) {
+      return;
+    }
+    try {
+      await widget.dependencies.localSyncServer.start();
+      if (!mounted) {
+        return;
+      }
+      final preferences = await widget.dependencies.loadSyncPreferences();
+      final addresses = await _readLocalAddresses();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _localAddresses = addresses;
+      });
+      await _rememberSelfIdentity(addresses: addresses);
+      await _refresh();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showAppSnackBar(context, describeLocalSyncError(error));
+    }
   }
 
   @override
@@ -168,7 +202,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     final addresses = await _readLocalAddresses();
     _localAddresses = addresses;
     if (widget.dependencies.localSyncServer.isRunning) {
-      _syncSelfPeer(preferences, addresses: addresses);
+      await _rememberSelfIdentity(addresses: addresses);
     }
     return _SyncLocalPageData(
       snapshot: snapshot,
@@ -190,43 +224,31 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
         .toList(growable: false);
   }
 
-  void _syncSelfPeer(SyncPreferences preferences, {List<String>? addresses}) {
-    unawaited(_syncSelfPeerAsync(preferences, addresses: addresses));
-  }
-
-  Future<void> _syncSelfPeerAsync(
-    SyncPreferences preferences, {
-    List<String>? addresses,
-  }) async {
+  /// 只记录本机 deviceId / 地址，用于过滤发现列表；**绝不**把本机写进「附近设备」。
+  Future<void> _rememberSelfIdentity({List<String>? addresses}) async {
     final availableAddresses = addresses ?? _localAddresses;
-    if (availableAddresses.isEmpty) {
-      _removeSelfPeer();
-      return;
+    try {
+      final info = await widget.dependencies.localSyncServer.readInfo();
+      if (!mounted) {
+        return;
+      }
+      final previousSelfPeerId = _selfPeerDeviceId;
+      _selfPeerDeviceId = info.deviceId;
+      // 清掉历史版本误注入的本机条目。
+      if (previousSelfPeerId != null) {
+        widget.dependencies.localDiscoveryService.removePeer(previousSelfPeerId);
+      }
+      widget.dependencies.localDiscoveryService.removePeer(info.deviceId);
+      widget.dependencies.localDiscoveryService.removePeer('self');
+      if (availableAddresses.isNotEmpty) {
+        // 保险：若旧逻辑按地址残留，remove 只能按 id；UI 侧再按地址过滤。
+      }
+    } catch (_) {
+      // 读本机信息失败时不影响同步主流程。
     }
-    final host = availableAddresses.first;
-    final info = await widget.dependencies.localSyncServer.readInfo();
-    if (!mounted) {
-      return;
-    }
-    final previousSelfPeerId = _selfPeerDeviceId;
-    if (previousSelfPeerId != null && previousSelfPeerId != info.deviceId) {
-      widget.dependencies.localDiscoveryService.removePeer(previousSelfPeerId);
-    }
-    _selfPeerDeviceId = info.deviceId;
-    widget.dependencies.localDiscoveryService.addOrReplacePeer(
-      DiscoveredPeer(
-        deviceId: info.deviceId,
-        displayName: preferences.localDeviceName,
-        address: host,
-        port: widget.dependencies.localSyncServer.endpoint.port,
-        platform: widget.platformName(),
-        accessToken: info.accessToken,
-        lastSeenAt: DateTime.now(),
-      ),
-    );
   }
 
-  void _removeSelfPeer() {
+  void _clearSelfIdentityFromDiscovery() {
     final selfPeerDeviceId = _selfPeerDeviceId;
     if (selfPeerDeviceId != null) {
       widget.dependencies.localDiscoveryService.removePeer(selfPeerDeviceId);
@@ -237,8 +259,16 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
 
   bool _isSelfPeer(DiscoveredPeer peer) {
     final selfPeerDeviceId = _selfPeerDeviceId;
-    return peer.deviceId == 'self' ||
-        (selfPeerDeviceId != null && peer.deviceId == selfPeerDeviceId);
+    if (peer.deviceId == 'self' ||
+        (selfPeerDeviceId != null && peer.deviceId == selfPeerDeviceId)) {
+      return true;
+    }
+    // 本机同步地址已在上方展示；同地址:端口视为本机，不进附近设备。
+    final selfPort = widget.dependencies.localSyncServer.endpoint.port;
+    if (peer.port != selfPort) {
+      return false;
+    }
+    return _localAddresses.any((address) => address == peer.address);
   }
 
   Future<void> _refresh() async {
@@ -375,20 +405,31 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       );
     }
     await widget.dependencies.updateSyncPreferences(nextPreferences);
-    if (nextPreferences.localPeerAddress.trim().isEmpty) {
-      widget.dependencies.localDiscoveryService.removePeer('manual-peer');
-    } else if (verifiedPeer != null) {
+    // 目标只保存在偏好里（上方「当前同步目标」）；不再往发现列表塞 manual-peer，
+    // 避免与网络发现的同一 address:port 出现两条一模一样的设备。
+    widget.dependencies.localDiscoveryService.removePeer('manual-peer');
+    if (verifiedPeer != null &&
+        verifiedPeer.deviceId.isNotEmpty &&
+        verifiedPeer.deviceId != 'manual-peer') {
+      // 可选：用真实 deviceId 刷新发现缓存，便于列表标「已选中」。
       widget.dependencies.localDiscoveryService.addOrReplacePeer(
-        verifiedPeer.copyWith(
-          deviceId: 'manual-peer',
-          lastSeenAt: DateTime.now(),
-        ),
+        verifiedPeer.copyWith(lastSeenAt: DateTime.now()),
       );
     }
     if (widget.dependencies.localSyncServer.isRunning) {
-      _syncSelfPeer(nextPreferences);
+      await _rememberSelfIdentity();
     }
     await _refresh();
+    if (!mounted) {
+      return;
+    }
+    if (nextPreferences.localPeerAddress.trim().isEmpty) {
+      showAppSnackBar(context, '已保存本机名称');
+    } else if (nextPreferences.localPeerAccessToken.trim().isEmpty) {
+      showAppSnackBar(context, '已保存目标，但仍缺配对码');
+    } else {
+      showAppSnackBar(context, '目标已保存，可直接一键全量同步');
+    }
   }
 
   Future<void> _scanPairingCodeInto({
@@ -397,9 +438,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     required TextEditingController tokenController,
   }) async {
     if (!widget.supportsPairingScanner()) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('当前平台不支持扫码，请手动输入配对码')));
+          showAppSnackBar(context, '当前平台不支持扫码，请手动输入配对码');
       return;
     }
     final payload = await Navigator.of(context).push<_LocalSyncPairingPayload>(
@@ -429,9 +468,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('$error')));
+      showAppSnackBar(context, describeLocalSyncError(error));
     } finally {
       if (mounted) {
         setState(() {
@@ -445,7 +482,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     await _runBusy(() async {
       if (widget.dependencies.localSyncServer.isRunning) {
         await widget.dependencies.localSyncServer.stop();
-        _removeSelfPeer();
+        _clearSelfIdentityFromDiscovery();
       } else {
         await widget.dependencies.localSyncServer.start();
         final addresses = await _readLocalAddresses();
@@ -454,20 +491,16 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
             _localAddresses = addresses;
           });
         }
-        _syncSelfPeer(preferences, addresses: addresses);
+        await _rememberSelfIdentity(addresses: addresses);
       }
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+      showAppSnackBar(context, 
             widget.dependencies.localSyncServer.isRunning
                 ? '局域网同步服务已启动'
                 : '局域网同步服务已停止',
-          ),
-        ),
-      );
+          );
       await _refresh();
     });
   }
@@ -499,21 +532,25 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('目标在线：${info.displayName}')));
+          showAppSnackBar(context, '目标在线：${info.displayName}');
     });
   }
 
   Future<void> _pushLocal(SyncPreferences preferences) async {
     await _runBusy(() async {
-      await widget.dependencies.pushLocalSyncSnapshot(preferences);
+      await widget.dependencies.pushLocalSyncSnapshot(
+        preferences,
+        includeSensitiveCredentials: _includeSensitiveCredentials,
+      );
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
+      showAppSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('已推送本地快照到目标设备')));
+        _includeSensitiveCredentials
+            ? '已全量同步（含账号 Cookie / WebDAV 密码）'
+            : '已全量同步（不含敏感账号凭证）',
+      );
     });
   }
 
@@ -522,47 +559,148 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     SyncDataCategory category,
   ) async {
     await _runBusy(() async {
+      final includeCredentials = _includeSensitiveCredentials &&
+          category == SyncDataCategory.settings;
       await widget.dependencies.pushLocalSyncSnapshot(
         preferences,
         categories: <SyncDataCategory>{category},
+        includeSensitiveCredentials: includeCredentials,
       );
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已同步 ${_labelOfCategory(category)}')),
+      final credentialNote = includeCredentials ? '（含敏感凭证）' : '';
+      showAppSnackBar(
+        context,
+        '已同步 ${_labelOfCategory(category)}$credentialNote',
       );
     });
   }
 
-  Future<void> _savePeerAsTarget(
+  Future<SyncPreferences> _savePeerAsTarget(
     SyncPreferences preferences,
-    DiscoveredPeer peer,
-  ) async {
+    DiscoveredPeer peer, {
+    bool announce = true,
+  }) async {
+    var accessToken = peer.accessToken?.trim() ?? '';
+    if (accessToken.isEmpty) {
+      accessToken = preferences.localPeerAccessToken.trim();
+    }
+    if (accessToken.isEmpty && announce && mounted) {
+      showAppSnackBar(
+        context,
+        '该设备未提供配对码，请扫描对方二维码或在「编辑目标」中填写后再同步。',
+      );
+    }
     final nextPreferences = preferences.copyWith(
       localPeerAddress: peer.address,
       localPeerPort: peer.port,
-      localPeerAccessToken: peer.accessToken ?? '',
+      localPeerAccessToken: accessToken.isEmpty
+          ? preferences.localPeerAccessToken
+          : accessToken,
     );
     await widget.dependencies.updateSyncPreferences(nextPreferences);
-    widget.dependencies.localDiscoveryService.addOrReplacePeer(
-      DiscoveredPeer(
-        deviceId: 'manual-peer',
-        displayName: peer.displayName,
-        address: peer.address,
-        port: peer.port,
-        platform: peer.platform,
-        accessToken: peer.accessToken,
-        lastSeenAt: DateTime.now(),
-      ),
-    );
+    // 不写入 manual-peer，避免与 UDP 发现条目重复。
+    widget.dependencies.localDiscoveryService.removePeer('manual-peer');
+    if (peer.deviceId.isNotEmpty &&
+        peer.deviceId != 'manual-peer' &&
+        peer.deviceId != 'self') {
+      widget.dependencies.localDiscoveryService.addOrReplacePeer(
+        peer.copyWith(
+          accessToken: accessToken.isEmpty ? peer.accessToken : accessToken,
+          lastSeenAt: DateTime.now(),
+        ),
+      );
+    }
+    if (announce && mounted) {
+      showAppSnackBar(
+        context,
+        accessToken.isEmpty
+            ? '已选中 ${peer.displayName}（仍需配对码）'
+            : '已选中 ${peer.displayName}，可直接点「一键全量同步」',
+      );
+    }
+    await _refresh();
+    return nextPreferences;
+  }
+
+  Future<void> _syncToPeer(
+    SyncPreferences preferences,
+    DiscoveredPeer peer,
+  ) async {
+    await _runBusy(() async {
+      final next = await _savePeerAsTarget(
+        preferences,
+        peer,
+        announce: false,
+      );
+      if (next.localPeerAccessToken.trim().isEmpty) {
+        if (!mounted) {
+          return;
+        }
+        showAppSnackBar(
+          context,
+          '缺少配对码：请扫对方二维码，或等设备广播更新后再试。',
+        );
+        return;
+      }
+      await widget.dependencies.pushLocalSyncSnapshot(
+        next,
+        includeSensitiveCredentials: _includeSensitiveCredentials,
+      );
+      if (!mounted) {
+        return;
+      }
+      showAppSnackBar(
+        context,
+        _includeSensitiveCredentials
+            ? '已同步到 ${peer.displayName}（含账号 Cookie / WebDAV 密码）'
+            : '已同步到 ${peer.displayName}',
+      );
+    });
+  }
+
+  Future<void> _setIncludeSensitiveCredentials(bool enabled) async {
+    if (!enabled) {
+      setState(() {
+        _includeSensitiveCredentials = false;
+      });
+      return;
+    }
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('传输敏感凭证'),
+              content: const Text(
+                '开启后，全量同步与「我的-设置」同步会把本机的：\n'
+                '· 各平台账号 Cookie\n'
+                '· WebDAV 密码\n'
+                '一并推到目标设备。\n\n'
+                '仅建议在你信任的私有局域网、且目标设备也是你本人时使用。'
+                '本机局域网身份（设备 ID / 本机配对码）不会被覆盖。',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('确认开启'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('已选中 ${peer.address}:${peer.port}')));
-    await _refresh();
+    setState(() {
+      _includeSensitiveCredentials = confirmed;
+    });
   }
 
   Future<void> _copyAddress(String value) async {
@@ -570,9 +708,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('同步地址已复制')));
+        showAppSnackBar(context, '同步地址已复制');
   }
 
   Future<void> _copyPairingCode(String value) async {
@@ -580,9 +716,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('配对码已复制')));
+        showAppSnackBar(context, '配对码已复制');
   }
 
   String _normalizePairingCode(String value) {
@@ -595,11 +729,43 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
 
   String _labelOfCategory(SyncDataCategory category) {
     return switch (category) {
-      SyncDataCategory.settings => '设置',
-      SyncDataCategory.library => '资料库',
-      SyncDataCategory.history => '历史',
-      SyncDataCategory.blockedKeywords => '屏蔽词',
+      SyncDataCategory.settings => '我的-设置',
+      SyncDataCategory.library => '关注与标签',
+      SyncDataCategory.history => '观看历史',
+      SyncDataCategory.blockedKeywords => '弹幕屏蔽词',
     };
+  }
+
+  String _subtitleOfCategory(SyncDataCategory category) {
+    return switch (category) {
+      SyncDataCategory.settings => '主题、播放器、布局等偏好（不含敏感密码，除非上方开关开启）',
+      SyncDataCategory.library => '关注的主播记录 + 自定义标签',
+      SyncDataCategory.history => '最近观看的直播间记录',
+      SyncDataCategory.blockedKeywords => '弹幕关键词屏蔽列表',
+    };
+  }
+
+  bool _isSelectedPeer(SyncPreferences preferences, DiscoveredPeer peer) {
+    return preferences.localPeerAddress == peer.address &&
+        preferences.localPeerPort == peer.port;
+  }
+
+  /// 附近设备：排除本机，并按 address:port 再去重（UI 层兜底）。
+  List<DiscoveredPeer> _remotePeers() {
+    final byEndpoint = <String, DiscoveredPeer>{};
+    for (final peer in _peers) {
+      if (_isSelfPeer(peer)) {
+        continue;
+      }
+      final key = '${peer.address}:${peer.port}';
+      final existing = byEndpoint[key];
+      if (existing == null ||
+          peer.lastSeenAt.isAfter(existing.lastSeenAt) ||
+          (existing.deviceId == 'manual-peer' && peer.deviceId != 'manual-peer')) {
+        byEndpoint[key] = peer;
+      }
+    }
+    return byEndpoint.values.toList(growable: false);
   }
 
   String _relativeLastSeen(DateTime value) {
@@ -631,7 +797,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
             if (snapshot.hasError || !snapshot.hasData) {
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
+                padding: kSettingsPagePadding,
                 children: [
                   EmptyStateCard(
                     title: '局域网同步页面加载失败',
@@ -657,11 +823,21 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
               port: widget.dependencies.localSyncServer.endpoint.port,
               accessToken: pairingCode,
             );
+            final remotePeers = _remotePeers();
+            final hasTarget = preferences.localPeerAddress.trim().isNotEmpty;
+            final hasPairing = preferences.localPeerAccessToken.trim().isNotEmpty;
+
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+              padding: kSettingsPagePadding,
               children: [
                 const SectionHeader(title: '局域网数据同步'),
+                const SizedBox(height: 8),
+                Text(
+                  '双方打开本页 → 点附近设备或扫码 → 一键全量同步。'
+                  '需要账号 Cookie / WebDAV 密码时打开下方开关。',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
                 const SizedBox(height: 12),
                 AppSurfaceCard(
                   child: Column(
@@ -676,23 +852,30 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                       ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: const Icon(Icons.send_to_mobile_outlined),
-                        title: const Text('目标设备'),
+                        title: const Text('当前同步目标'),
                         subtitle: Text(
-                          preferences.localPeerAddress.trim().isEmpty
-                              ? '未配置'
+                          !hasTarget
+                              ? '未选择（点附近设备，或编辑目标/扫码）'
                               : '${preferences.localPeerAddress}:${preferences.localPeerPort}',
                         ),
-                        trailing: preferences.localPeerAccessToken.isEmpty
-                            ? const Text('未配对')
-                            : const Text('已配对'),
+                        trailing: Text(
+                          !hasTarget
+                              ? '未选择'
+                              : hasPairing
+                              ? '已就绪'
+                              : '缺配对码',
+                        ),
                       ),
                       const Divider(height: 1),
                       ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: const Icon(Icons.storage_outlined),
-                        title: const Text('当前快照'),
+                        title: const Text('本机可同步数据'),
                         subtitle: Text(
-                          '关注 ${data.snapshot.follows.length} · 历史 ${data.snapshot.history.length} · 标签 ${data.snapshot.tags.length}',
+                          '关注 ${data.snapshot.follows.length} · '
+                          '标签 ${data.snapshot.tags.length} · '
+                          '历史 ${data.snapshot.history.length} · '
+                          '弹幕屏蔽词 ${data.snapshot.blockedKeywords.length}',
                         ),
                       ),
                     ],
@@ -707,7 +890,24 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                         '同步动作',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        key: const Key('sync-local-include-credentials-switch'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: const Text('同时传输账号与 WebDAV 密码'),
+                        subtitle: Text(
+                          _includeSensitiveCredentials
+                              ? '已开启：全量 /「我的-设置」会附带 Cookie 与 WebDAV 密码'
+                              : '默认关闭：不含敏感凭证',
+                        ),
+                        value: _includeSensitiveCredentials,
+                        onChanged: _busy
+                            ? null
+                            : (value) => unawaited(
+                                _setIncludeSensitiveCredentials(value),
+                              ),
+                      ),
+                      const SizedBox(height: 4),
                       Wrap(
                         spacing: 12,
                         runSpacing: 12,
@@ -734,46 +934,20 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                           ),
                           FilledButton.tonalIcon(
                             key: const Key('sync-local-test-button'),
-                            onPressed:
-                                _busy ||
-                                    preferences.localPeerAddress.trim().isEmpty
+                            onPressed: _busy || !hasTarget
                                 ? null
                                 : () => _probeTarget(preferences),
                             icon: const Icon(Icons.verified_outlined),
                             label: const Text('测试目标'),
                           ),
-                          FilledButton.tonalIcon(
+                          FilledButton.icon(
                             key: const Key('sync-local-push-button'),
-                            onPressed:
-                                _busy ||
-                                    preferences.localPeerAddress.trim().isEmpty
+                            onPressed: _busy || !hasTarget || !hasPairing
                                 ? null
                                 : () => _pushLocal(preferences),
                             icon: const Icon(Icons.send_outlined),
                             label: const Text('一键全量同步'),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          for (final category in SyncDataCategory.values)
-                            OutlinedButton.icon(
-                              key: Key(
-                                'sync-local-category-${category.apiValue}',
-                              ),
-                              onPressed:
-                                  _busy ||
-                                      preferences.localPeerAddress
-                                          .trim()
-                                          .isEmpty
-                                  ? null
-                                  : () => _pushCategory(preferences, category),
-                              icon: const Icon(Icons.sync_alt_rounded),
-                              label: Text(_labelOfCategory(category)),
-                            ),
                         ],
                       ),
                     ],
@@ -785,12 +959,106 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '本机同步地址',
+                        '附近设备',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '点设备选中目标；「同步到此设备」= 选中并立即全量同步。',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      if (remotePeers.isEmpty)
+                        const Text(
+                          '暂未发现其他设备。本机地址见上方「当前同步目标」旁的本机信息与下方二维码，不会出现在此列表。',
+                        )
+                      else
+                        for (final peer in remotePeers)
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              _isSelectedPeer(preferences, peer)
+                                  ? Icons.check_circle
+                                  : Icons.devices_other_outlined,
+                            ),
+                            title: Text(peer.displayName),
+                            subtitle: Text(
+                              '${peer.platform} · ${peer.address}:${peer.port}'
+                              '${peer.accessToken == null || peer.accessToken!.isEmpty ? ' · 无配对码' : ''}'
+                              '\n${_relativeLastSeen(peer.lastSeenAt)}',
+                            ),
+                            isThreeLine: true,
+                            trailing: FilledButton.tonal(
+                              key: Key(
+                                'sync-local-peer-push-${peer.deviceId}',
+                              ),
+                              onPressed: _busy
+                                  ? null
+                                  : () => _syncToPeer(preferences, peer),
+                              child: Text(
+                                _isSelectedPeer(preferences, peer)
+                                    ? '同步'
+                                    : '同步到此设备',
+                              ),
+                            ),
+                            onTap: _busy
+                                ? null
+                                : () => unawaited(
+                                    _savePeerAsTarget(preferences, peer),
+                                  ),
+                          ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                AppSurfaceCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '分类同步',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '数据量大时可比全量更稳。每项含义如下：',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      for (final category in SyncDataCategory.values)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.sync_alt_rounded),
+                          title: Text(_labelOfCategory(category)),
+                          subtitle: Text(_subtitleOfCategory(category)),
+                          onTap: _busy || !hasTarget || !hasPairing
+                              ? null
+                              : () => _pushCategory(preferences, category),
+                          trailing: FilledButton.tonal(
+                            key: Key(
+                              'sync-local-category-${category.apiValue}',
+                            ),
+                            onPressed: _busy || !hasTarget || !hasPairing
+                                ? null
+                                : () => _pushCategory(preferences, category),
+                            child: const Text('同步'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                AppSurfaceCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '本机同步地址与配对二维码',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 8),
                       if (!localServerRunning)
-                        const Text('未启动')
+                        const Text('服务未启动（打开本页通常会自动启动）。')
                       else if (endpoints.isEmpty)
                         const Text('未检测到可分享的局域网地址，请在目标设备上手动输入本机地址。')
                       else
@@ -807,7 +1075,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                       if (localServerRunning && pairingCode.isNotEmpty) ...[
                         const Divider(height: 20),
                         Text(
-                          '本机配对码',
+                          '本机配对码（对方扫这个）',
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                         const SizedBox(height: 8),
@@ -820,7 +1088,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                         Text(
                           _localAddresses.isEmpty
                               ? '扫码后会自动填写端口和配对码；目标地址需手动输入。'
-                              : '扫码后会自动填写本机地址、端口和配对码。',
+                              : '扫码后会自动填写本机地址、端口和配对码，保存后即可同步。',
                         ),
                         const SizedBox(height: 8),
                         Align(
@@ -832,43 +1100,6 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                           ),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                AppSurfaceCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '已发现设备',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      if (_peers.isEmpty)
-                        const Text('暂无设备')
-                      else
-                        for (final peer in _peers)
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.devices_other_outlined),
-                            title: Text(peer.displayName),
-                            subtitle: Text(
-                              '${peer.platform} · ${peer.address}:${peer.port}',
-                            ),
-                            trailing: Text(
-                              _isSelfPeer(peer)
-                                  ? '本机'
-                                  : preferences.localPeerAddress ==
-                                            peer.address &&
-                                        preferences.localPeerPort == peer.port
-                                  ? '已选中'
-                                  : _relativeLastSeen(peer.lastSeenAt),
-                            ),
-                            onTap: _busy || _isSelfPeer(peer)
-                                ? null
-                                : () => _savePeerAsTarget(preferences, peer),
-                          ),
                     ],
                   ),
                 ),
@@ -942,9 +1173,7 @@ class _LocalSyncPairingScannerPageState
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('扫码器停止失败：$error')));
+            showAppErrorSnackBar(context, error, prefix: '扫码器停止失败：');
     }
   }
 

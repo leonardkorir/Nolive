@@ -173,7 +173,7 @@ void main() {
       response: const PagedResponse<LiveRoom>(
         items: [
           LiveRoom(
-            providerId: 'twitch',
+            providerId: ProviderId.twitch,
             roomId: 'alpha-1',
             title: 'Alpha 房间',
             streamerName: 'Alpha',
@@ -198,7 +198,7 @@ void main() {
       response: const PagedResponse<LiveRoom>(
         items: [
           LiveRoom(
-            providerId: 'twitch',
+            providerId: ProviderId.twitch,
             roomId: 'beta-1',
             title: 'Beta 房间',
             streamerName: 'Beta',
@@ -215,7 +215,7 @@ void main() {
       response: const PagedResponse<LiveRoom>(
         items: [
           LiveRoom(
-            providerId: 'twitch',
+            providerId: ProviderId.twitch,
             roomId: 'alpha-2',
             title: 'Stale Alpha 房间',
             streamerName: 'Alpha',
@@ -280,7 +280,7 @@ class _ScriptedSearchProvider extends LiveProvider
       return const PagedResponse<LiveRoom>(
         items: [
           LiveRoom(
-            providerId: 'twitch',
+            providerId: ProviderId.twitch,
             roomId: 'room-1',
             title: 'Alpha 房间',
             streamerName: 'Alpha',
@@ -292,13 +292,13 @@ class _ScriptedSearchProvider extends LiveProvider
     return const PagedResponse<LiveRoom>(
       items: [
         LiveRoom(
-          providerId: 'twitch',
+          providerId: ProviderId.twitch,
           roomId: 'room-1',
           title: 'Alpha 房间',
           streamerName: 'Alpha',
         ),
         LiveRoom(
-          providerId: 'twitch',
+          providerId: ProviderId.twitch,
           roomId: 'room-2',
           title: 'Beta 房间',
           streamerName: 'Beta',

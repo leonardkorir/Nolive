@@ -1,18 +1,16 @@
 export 'src/provider_registry.dart';
 export 'src/providers/bilibili/bilibili_provider.dart';
-export 'src/providers/chaturbate/chaturbate_mapper.dart';
 export 'src/providers/chaturbate/chaturbate_provider.dart';
-export 'src/providers/chaturbate/chaturbate_hls_master_playlist_parser.dart';
-export 'src/providers/chaturbate/chaturbate_room_page_parser.dart';
+export 'src/providers/chaturbate/chaturbate_request_scheduler.dart';
 export 'src/providers/douyin/douyin_provider.dart';
 export 'src/providers/douyu/douyu_provider.dart';
 export 'src/providers/huya/huya_provider.dart';
 export 'src/providers/migration_placeholder_provider.dart';
 export 'src/providers/twitch/twitch_provider.dart';
-export 'src/providers/twitch/twitch_playback_bootstrap.dart';
-export 'src/providers/twitch/twitch_playback_manifest.dart';
 export 'src/providers/youtube/youtube_provider.dart';
 export 'src/reference/reference_provider_catalog.dart';
 export 'src/providers/bilibili/bilibili_account_client.dart';
 export 'src/providers/douyin/douyin_account_client.dart';
 export 'src/providers/stripchat/stripchat_provider.dart';
+export 'src/providers/youtube/youtube_decipher_service.dart'
+    show YouTubeNSigSolver;

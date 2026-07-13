@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:flutter/services.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
@@ -8,6 +9,7 @@ import 'package:nolive_app/src/features/parse/application/parse_room_input_use_c
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 class ParseRoomPage extends StatefulWidget {
   const ParseRoomPage({required this.dependencies, super.key});
@@ -88,7 +90,7 @@ class _ParseRoomPageState extends State<ParseRoomPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('房间解析')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+        padding: kSettingsPagePadding,
         children: [
           const SectionHeader(title: '房间解析工具'),
           const SizedBox(height: 12),
@@ -189,9 +191,7 @@ class _ParseRoomPageState extends State<ParseRoomPage> {
                 if (!context.mounted) {
                   return;
                 }
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已复制直播间链接')),
-                );
+                showAppSnackBar(context, '已复制直播间链接');
               },
               onOpen: () {
                 Navigator.of(context).pushNamed(

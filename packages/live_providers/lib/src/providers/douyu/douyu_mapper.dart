@@ -16,7 +16,8 @@ class DouyuMapper {
     final items = rooms
         .map((item) => mapSearchRoom(_asMap(item)))
         .toList(growable: false);
-    final pageCount = _asInt(data['pageCount']) ??
+    final pageCount =
+        _asInt(data['pageCount']) ??
         _asInt(data['pgcnt']) ??
         _asInt(data['totalPage']);
 
@@ -30,15 +31,17 @@ class DouyuMapper {
   static LiveRoom mapSearchRoom(Map<String, dynamic> item) {
     final avatar = item['avatar']?.toString();
     return LiveRoom(
-      providerId: ProviderId.douyu.value,
+      providerId: ProviderId.douyu,
       roomId: item['rid']?.toString() ?? '',
-      title:
-          normalizeDisplayText(_stripHighlight(item['roomName']?.toString())),
+      title: normalizeDisplayText(
+        _stripHighlight(item['roomName']?.toString()),
+      ),
       streamerName: normalizeDisplayText(item['nickName']?.toString()),
       coverUrl: _normalizeAssetUrl(item['roomSrc']?.toString()),
       keyframeUrl: _normalizeAssetUrl(item['roomSrc']?.toString()),
-      areaName:
-          normalizeDisplayText(_stripHighlight(item['cateName']?.toString())),
+      areaName: normalizeDisplayText(
+        _stripHighlight(item['cateName']?.toString()),
+      ),
       streamerAvatarUrl: _normalizeAvatarUrl(avatar),
       viewerCount: parseHotCount(item['hot']),
       isLive: true,
@@ -62,7 +65,7 @@ class DouyuMapper {
     final isLive = (_asInt(roomInfo['show_status']) ?? 0) == 1 && !isRecord;
 
     return LiveRoomDetail(
-      providerId: ProviderId.douyu.value,
+      providerId: ProviderId.douyu,
       roomId: roomId,
       title: normalizeDisplayText(title),
       streamerName: normalizeDisplayText(roomInfo['owner_name']?.toString()),
@@ -219,18 +222,21 @@ class DouyuMapper {
 
     final normalized = text.replaceAll(',', '').toUpperCase();
     if (normalized.endsWith('万')) {
-      final number =
-          double.tryParse(normalized.substring(0, normalized.length - 1));
+      final number = double.tryParse(
+        normalized.substring(0, normalized.length - 1),
+      );
       return number == null ? null : (number * 10000).round();
     }
     if (normalized.endsWith('W')) {
-      final number =
-          double.tryParse(normalized.substring(0, normalized.length - 1));
+      final number = double.tryParse(
+        normalized.substring(0, normalized.length - 1),
+      );
       return number == null ? null : (number * 10000).round();
     }
     if (normalized.endsWith('K')) {
-      final number =
-          double.tryParse(normalized.substring(0, normalized.length - 1));
+      final number = double.tryParse(
+        normalized.substring(0, normalized.length - 1),
+      );
       return number == null ? null : (number * 1000).round();
     }
     return int.tryParse(normalized);

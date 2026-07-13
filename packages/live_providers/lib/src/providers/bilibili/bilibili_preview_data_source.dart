@@ -17,15 +17,13 @@ class BilibiliPreviewDataSource implements BilibiliDataSource {
     LiveCategory(
       id: '2',
       name: '娱乐',
-      children: [
-        LiveSubCategory(id: '201', parentId: '2', name: '聊天互动'),
-      ],
+      children: [LiveSubCategory(id: '201', parentId: '2', name: '聊天互动')],
     ),
   ];
 
   static const List<LiveRoom> _rooms = [
     LiveRoom(
-      providerId: 'bilibili',
+      providerId: ProviderId.bilibili,
       roomId: '6',
       title: '新项目参考直播间',
       streamerName: '系统演示主播',
@@ -36,7 +34,7 @@ class BilibiliPreviewDataSource implements BilibiliDataSource {
       viewerCount: 1024,
     ),
     LiveRoom(
-      providerId: 'bilibili',
+      providerId: ProviderId.bilibili,
       roomId: '66666',
       title: '架构迁移验证房间',
       streamerName: '迁移样例主播',
@@ -50,7 +48,7 @@ class BilibiliPreviewDataSource implements BilibiliDataSource {
 
   static const Map<String, LiveRoomDetail> _details = {
     '6': LiveRoomDetail(
-      providerId: 'bilibili',
+      providerId: ProviderId.bilibili,
       roomId: '6',
       title: '新项目参考直播间',
       streamerName: '系统演示主播',
@@ -65,7 +63,7 @@ class BilibiliPreviewDataSource implements BilibiliDataSource {
       danmakuToken: PreviewDanmakuToken(),
     ),
     '66666': LiveRoomDetail(
-      providerId: 'bilibili',
+      providerId: ProviderId.bilibili,
       roomId: '66666',
       title: '架构迁移验证房间',
       streamerName: '迁移样例主播',
@@ -115,9 +113,11 @@ class BilibiliPreviewDataSource implements BilibiliDataSource {
 
   @override
   Future<PagedResponse<LiveRoom>> fetchRecommendRooms({int page = 1}) async {
-    final items = [..._rooms]..sort((left, right) {
-        final compare =
-            (right.viewerCount ?? -1).compareTo(left.viewerCount ?? -1);
+    final items = [..._rooms]
+      ..sort((left, right) {
+        final compare = (right.viewerCount ?? -1).compareTo(
+          left.viewerCount ?? -1,
+        );
         if (compare != 0) {
           return compare;
         }
@@ -127,16 +127,20 @@ class BilibiliPreviewDataSource implements BilibiliDataSource {
   }
 
   @override
-  Future<PagedResponse<LiveRoom>> searchRooms(String query,
-      {int page = 1}) async {
+  Future<PagedResponse<LiveRoom>> searchRooms(
+    String query, {
+    int page = 1,
+  }) async {
     final normalizedQuery = query.trim().toLowerCase();
-    final filtered = _rooms.where((room) {
-      if (normalizedQuery.isEmpty) {
-        return true;
-      }
-      return room.title.toLowerCase().contains(normalizedQuery) ||
-          room.streamerName.toLowerCase().contains(normalizedQuery);
-    }).toList(growable: false);
+    final filtered = _rooms
+        .where((room) {
+          if (normalizedQuery.isEmpty) {
+            return true;
+          }
+          return room.title.toLowerCase().contains(normalizedQuery) ||
+              room.streamerName.toLowerCase().contains(normalizedQuery);
+        })
+        .toList(growable: false);
 
     return PagedResponse(items: filtered, hasMore: false, page: page);
   }
@@ -156,7 +160,8 @@ class BilibiliPreviewDataSource implements BilibiliDataSource {
 
   @override
   Future<List<LivePlayQuality>> fetchPlayQualities(
-      LiveRoomDetail detail) async {
+    LiveRoomDetail detail,
+  ) async {
     return _qualities;
   }
 

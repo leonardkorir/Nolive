@@ -25,17 +25,12 @@ void main() {
       failingQueries: const {'esports live'},
     );
 
-    final gaming = (await dataSource.fetchCategories())
-        .single
-        .children
+    final gaming = (await dataSource.fetchCategories()).single.children
         .firstWhere((item) => item.id == 'gaming');
     final rooms = await dataSource.fetchCategoryRooms(gaming, page: 1);
 
     expect(rooms.items, isNotEmpty);
-    expect(
-      rooms.items.map((item) => item.roomId),
-      contains('@WenzelTCG/live'),
-    );
+    expect(rooms.items.map((item) => item.roomId), contains('@WenzelTCG/live'));
   });
 
   test('youtube recommend rooms pages through query batches', () async {
@@ -45,9 +40,13 @@ void main() {
     expect(firstPage.items, isNotEmpty);
     expect(firstPage.hasMore, isTrue);
     expect(
-        firstPage.items.map((item) => item.roomId), contains('@NewsNow/live'));
+      firstPage.items.map((item) => item.roomId),
+      contains('@NewsNow/live'),
+    );
     expect(
-        firstPage.items.map((item) => item.roomId), contains('@MusicNow/live'));
+      firstPage.items.map((item) => item.roomId),
+      contains('@MusicNow/live'),
+    );
 
     final secondPage = await dataSource.fetchRecommendRooms(page: 2);
     expect(secondPage.items, isNotEmpty);
@@ -56,10 +55,7 @@ void main() {
       secondPage.items.map((item) => item.roomId),
       contains('@BreakingDesk/live'),
     );
-    expect(
-      secondPage.items.map((item) => item.roomId),
-      contains('@ESL/live'),
-    );
+    expect(secondPage.items.map((item) => item.roomId), contains('@ESL/live'));
   });
 
   test('youtube live data source caps HLS caches', () {
@@ -68,16 +64,9 @@ void main() {
 
     for (var index = 0; index < limit + 8; index += 1) {
       final url = 'https://example.com/$index.m3u8';
-      dataSource.debugRememberHlsVariantCache(
-        url,
-        [
-          YouTubeHlsVariant(
-            url: url,
-            bandwidth: index,
-            label: '$index p',
-          ),
-        ],
-      );
+      dataSource.debugRememberHlsVariantCache(url, [
+        YouTubeHlsVariant(url: url, bandwidth: index, label: '$index p'),
+      ]);
       dataSource.debugRememberHlsUsabilityCache(url, index.isEven);
     }
 
@@ -137,11 +126,8 @@ Object? _readNestedLeafValue(
 }
 
 class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
-  _FakeYouTubeCategoryDataSource({
-    this.failingQueries = const {},
-  }) : super(
-          apiClient: _NoopYouTubeApiClient(),
-        );
+  _FakeYouTubeCategoryDataSource({this.failingQueries = const {}})
+    : super(apiClient: _NoopYouTubeApiClient());
 
   final Set<String> failingQueries;
 
@@ -159,7 +145,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
     final rooms = <String, List<LiveRoom>>{
       'live news': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@NewsNow/live',
           title: 'Live News Desk',
           streamerName: 'News Now',
@@ -168,7 +154,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       ],
       'breaking news live': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@BreakingDesk/live',
           title: 'Breaking News',
           streamerName: 'Breaking Desk',
@@ -177,7 +163,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       ],
       'world news live': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@WorldWire/live',
           title: 'World Wire Live',
           streamerName: 'World Wire',
@@ -186,7 +172,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       ],
       'politics live': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@PoliticsNow/live',
           title: 'Politics Live',
           streamerName: 'Politics Now',
@@ -195,7 +181,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       ],
       'financial news live': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@MarketWatch/live',
           title: 'Market Watch',
           streamerName: 'Market Watch',
@@ -204,7 +190,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       ],
       'gaming live': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@WenzelTCG/live',
           title: 'WENZ VAULT!',
           streamerName: 'Wenzel TCG',
@@ -213,7 +199,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       ],
       'music live': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@MusicNow/live',
           title: 'Music Now',
           streamerName: 'Music Now',
@@ -222,7 +208,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       ],
       'sports live': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@SportsNow/live',
           title: 'Sports Live',
           streamerName: 'Sports Now',
@@ -231,7 +217,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       ],
       'podcast live': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@TalkLive/live',
           title: 'Talk Live',
           streamerName: 'Talk Live',
@@ -240,7 +226,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       ],
       'esports live': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@ESL/live',
           title: 'ESL Live Finals',
           streamerName: 'ESL',
@@ -249,7 +235,7 @@ class _FakeYouTubeCategoryDataSource extends YouTubeLiveDataSource {
       ],
       'gameplay live': const [
         LiveRoom(
-          providerId: 'youtube',
+          providerId: ProviderId.youtube,
           roomId: '@WenzelTCG/live',
           title: 'WENZ VAULT!',
           streamerName: 'Wenzel TCG',
@@ -302,7 +288,8 @@ class _NoopYouTubeApiClient implements YouTubeApiClient {
     Map<String, dynamic> innertubeContext = const {},
     String rolloutToken = '',
     String poToken = '',
-    YouTubePlayerClientProfile clientProfile = YouTubePlayerClientProfile.web,
+    YouTubePlayerClientProfile clientProfile =
+        YouTubePlayerClientProfile.streamlinkAndroid,
   }) async {
     throw UnimplementedError();
   }

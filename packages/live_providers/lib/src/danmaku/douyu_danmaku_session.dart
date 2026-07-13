@@ -17,11 +17,12 @@ abstract interface class DouyuSocketClient {
   Future<void> close();
 }
 
-typedef DouyuSocketClientConnector = Future<DouyuSocketClient> Function(
-  Uri uri, {
-  required Map<String, dynamic> headers,
-  required Duration connectTimeout,
-});
+typedef DouyuSocketClientConnector =
+    Future<DouyuSocketClient> Function(
+      Uri uri, {
+      required Map<String, dynamic> headers,
+      required Duration connectTimeout,
+    });
 
 class DouyuDanmakuSession implements DanmakuSession {
   DouyuDanmakuSession({
@@ -29,9 +30,9 @@ class DouyuDanmakuSession implements DanmakuSession {
     List<String>? socketUrls,
     DouyuSocketClientConnector? socketConnector,
     Duration inactivityTimeout = const Duration(minutes: 2),
-  })  : _candidateSocketUrls = socketUrls ?? _defaultCandidateSocketUrls,
-        _socketConnector = socketConnector ?? _defaultSocketConnector,
-        _inactivityTimeout = inactivityTimeout;
+  }) : _candidateSocketUrls = socketUrls ?? _defaultCandidateSocketUrls,
+       _socketConnector = socketConnector ?? _defaultSocketConnector,
+       _inactivityTimeout = inactivityTimeout;
 
   static const List<String> _defaultCandidateSocketUrls = <String>[
     'wss://danmuproxy.douyu.com:8502/',
@@ -336,31 +337,26 @@ class DouyuDanmakuSession implements DanmakuSession {
     Object? lastError;
 
     for (final rawUrl in _candidateSocketUrls) {
-      unawaited(
-        () async {
-          try {
-            final client = await _socketConnector(
-              Uri.parse(rawUrl),
-              headers: _socketHeaders,
-              connectTimeout: _endpointConnectTimeout,
-            );
-            if (completer.isCompleted) {
-              await client.close();
-              return;
-            }
-            completer.complete(client);
-          } catch (error, stackTrace) {
-            lastError = error;
-            remaining -= 1;
-            if (remaining == 0 && !completer.isCompleted) {
-              completer.completeError(
-                error,
-                stackTrace,
-              );
-            }
+      unawaited(() async {
+        try {
+          final client = await _socketConnector(
+            Uri.parse(rawUrl),
+            headers: _socketHeaders,
+            connectTimeout: _endpointConnectTimeout,
+          );
+          if (completer.isCompleted) {
+            await client.close();
+            return;
           }
-        }(),
-      );
+          completer.complete(client);
+        } catch (error, stackTrace) {
+          lastError = error;
+          remaining -= 1;
+          if (remaining == 0 && !completer.isCompleted) {
+            completer.completeError(error, stackTrace);
+          }
+        }
+      }());
     }
 
     try {

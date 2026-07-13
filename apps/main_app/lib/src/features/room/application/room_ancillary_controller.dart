@@ -23,8 +23,12 @@ class RoomAncillaryController {
   });
 
   final RoomAncillaryDependencies dependencies;
-  final ProviderId providerId;
+  ProviderId providerId;
   final void Function(String message)? trace;
+
+  void retargetRoom({required ProviderId providerId}) {
+    this.providerId = providerId;
+  }
 
   Future<RoomAncillaryLoadResult> load({
     required LoadedRoomSnapshot snapshot,

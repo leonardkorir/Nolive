@@ -23,12 +23,15 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byKey(const Key('bootstrap-status-title')), findsOneWidget);
-      expect(find.text('正在启动 Nolive'), findsOneWidget);
+      // Under FlutterNativeSplash.preserve the Flutter shell is solid-only;
+      // brand mark is only on the native splash (single stage).
+      expect(find.byKey(const Key('bootstrap-status-splash')), findsOneWidget);
       expect(
-        find.byKey(const Key('bootstrap-status-progress')),
-        findsOneWidget,
+        find.byKey(const Key('bootstrap-status-splash-image')),
+        findsNothing,
       );
+      expect(find.text('正在启动 Nolive'), findsNothing);
+      expect(find.byKey(const Key('bootstrap-status-progress')), findsNothing);
       final loadingApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
       expect(loadingApp.locale, kZhHansCnLocale);
 

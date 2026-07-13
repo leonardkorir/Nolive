@@ -22,47 +22,35 @@ void main() {
     expect(descriptor.displayName, 'Stripchat');
     expect(descriptor.maturity, ProviderMaturity.inMigration);
     expect(descriptor.validate(), isEmpty);
-    expect(
-      descriptor.capabilities,
-      contains(ProviderCapability.categories),
-    );
-    expect(
-      descriptor.capabilities,
-      contains(ProviderCapability.danmaku),
-    );
-    expect(
-      descriptor.roomIdPatterns,
-      contains(r'^[A-Za-z0-9_-]+$'),
-    );
-    expect(
-      descriptor.roomIdPatterns,
-      contains(r'^\d+$'),
-    );
-    expect(
-      descriptor.supportedPlatforms,
-      contains(ProviderPlatform.android),
-    );
+    expect(descriptor.capabilities, contains(ProviderCapability.categories));
+    expect(descriptor.capabilities, contains(ProviderCapability.danmaku));
+    expect(descriptor.roomIdPatterns, contains(r'^[A-Za-z0-9_-]+$'));
+    expect(descriptor.roomIdPatterns, contains(r'^\d+$'));
+    expect(descriptor.supportedPlatforms, contains(ProviderPlatform.android));
     expect(
       descriptor.supportedPlatforms,
       isNot(contains(ProviderPlatform.web)),
     );
   });
 
-  test('fetchCategories returns non-empty list and matches structure', () async {
-    final categories = await provider.fetchCategories();
-    expect(categories, isNotEmpty);
-    expect(categories.length, greaterThanOrEqualTo(2));
-    for (final category in categories) {
-      expect(category.id, isNotEmpty);
-      expect(category.name, isNotEmpty);
-      expect(category.children, isNotEmpty);
-      for (final subCategory in category.children) {
-        expect(subCategory.id, isNotEmpty);
-        expect(subCategory.name, isNotEmpty);
-        expect(subCategory.parentId, category.id);
+  test(
+    'fetchCategories returns non-empty list and matches structure',
+    () async {
+      final categories = await provider.fetchCategories();
+      expect(categories, isNotEmpty);
+      expect(categories.length, greaterThanOrEqualTo(2));
+      for (final category in categories) {
+        expect(category.id, isNotEmpty);
+        expect(category.name, isNotEmpty);
+        expect(category.children, isNotEmpty);
+        for (final subCategory in category.children) {
+          expect(subCategory.id, isNotEmpty);
+          expect(subCategory.name, isNotEmpty);
+          expect(subCategory.parentId, category.id);
+        }
       }
-    }
-  });
+    },
+  );
 
   test('fetchCategoryRooms returns paged response', () async {
     final categories = await provider.fetchCategories();
@@ -79,7 +67,7 @@ void main() {
     expect(response.page, 1);
     expect(response.hasMore, false);
     for (final room in response.items) {
-      expect(room.providerId, ProviderId.stripchat.value);
+      expect(room.providerId, ProviderId.stripchat);
       expect(room.roomId, isNotEmpty);
       expect(room.streamerName, isNotEmpty);
     }
@@ -94,13 +82,15 @@ void main() {
     );
 
     final emptyResponse = await provider.searchRooms('');
-    expect(emptyResponse.items.length,
-        greaterThanOrEqualTo(response.items.length));
+    expect(
+      emptyResponse.items.length,
+      greaterThanOrEqualTo(response.items.length),
+    );
   });
 
   test('fetchRoomDetail returns detail for known room', () async {
     final detail = await provider.fetchRoomDetail('alice_demo');
-    expect(detail.providerId, ProviderId.stripchat.value);
+    expect(detail.providerId, ProviderId.stripchat);
     expect(detail.roomId, 'alice_demo');
     expect(detail.title, isNotEmpty);
     expect(detail.danmakuToken, isA<PreviewDanmakuToken>());
@@ -140,73 +130,96 @@ void main() {
   });
 
   group('createDanmakuSession with various tokens', () {
-    test('returns ProviderUnavailableDanmakuSession with reason for UnavailableDanmakuToken', () async {
-      final detail = LiveRoomDetail(
-        providerId: 'stripchat',
-        roomId: 'test',
-        title: 'test',
-        streamerName: 'test',
-        isLive: true,
-        danmakuToken: const UnavailableDanmakuToken(reason: 'Specific rejection reason'),
-      );
-      final session = await provider.createDanmakuSession(detail);
-      expect(session, isA<ProviderUnavailableDanmakuSession>());
-      expect((session as ProviderUnavailableDanmakuSession).reason, 'Specific rejection reason');
-    });
+    test(
+      'returns ProviderUnavailableDanmakuSession with reason for UnavailableDanmakuToken',
+      () async {
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.stripchat,
+          roomId: 'test',
+          title: 'test',
+          streamerName: 'test',
+          isLive: true,
+          danmakuToken: const UnavailableDanmakuToken(
+            reason: 'Specific rejection reason',
+          ),
+        );
+        final session = await provider.createDanmakuSession(detail);
+        expect(session, isA<ProviderUnavailableDanmakuSession>());
+        expect(
+          (session as ProviderUnavailableDanmakuSession).reason,
+          'Specific rejection reason',
+        );
+      },
+    );
 
-    test('returns ProviderUnavailableDanmakuSession for empty modelId StripchatDanmakuToken', () async {
-      final detail = LiveRoomDetail(
-        providerId: 'stripchat',
-        roomId: 'test',
-        title: 'test',
-        streamerName: 'test',
-        isLive: true,
-        danmakuToken: const StripchatDanmakuToken(
-          modelId: '',
-          websocketUrl: 'wss://test',
-          jwt: 'some_jwt',
-        ),
-      );
-      final session = await provider.createDanmakuSession(detail);
-      expect(session, isA<ProviderUnavailableDanmakuSession>());
-      expect((session as ProviderUnavailableDanmakuSession).reason, contains('弹幕Token缺少modelId'));
-    });
+    test(
+      'returns ProviderUnavailableDanmakuSession for empty modelId StripchatDanmakuToken',
+      () async {
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.stripchat,
+          roomId: 'test',
+          title: 'test',
+          streamerName: 'test',
+          isLive: true,
+          danmakuToken: const StripchatDanmakuToken(
+            modelId: '',
+            websocketUrl: 'wss://test',
+            jwt: 'some_jwt',
+          ),
+        );
+        final session = await provider.createDanmakuSession(detail);
+        expect(session, isA<ProviderUnavailableDanmakuSession>());
+        expect(
+          (session as ProviderUnavailableDanmakuSession).reason,
+          contains('弹幕Token缺少modelId'),
+        );
+      },
+    );
 
-    test('returns ProviderUnavailableDanmakuSession for empty jwt StripchatDanmakuToken', () async {
-      final detail = LiveRoomDetail(
-        providerId: 'stripchat',
-        roomId: 'test',
-        title: 'test',
-        streamerName: 'test',
-        isLive: true,
-        danmakuToken: const StripchatDanmakuToken(
-          modelId: '123',
-          websocketUrl: 'wss://test',
-          jwt: ' ',
-        ),
-      );
-      final session = await provider.createDanmakuSession(detail);
-      expect(session, isA<ProviderUnavailableDanmakuSession>());
-      expect((session as ProviderUnavailableDanmakuSession).reason, contains('弹幕Token JWT为空'));
-    });
+    test(
+      'returns ProviderUnavailableDanmakuSession for empty jwt StripchatDanmakuToken',
+      () async {
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.stripchat,
+          roomId: 'test',
+          title: 'test',
+          streamerName: 'test',
+          isLive: true,
+          danmakuToken: const StripchatDanmakuToken(
+            modelId: '123',
+            websocketUrl: 'wss://test',
+            jwt: ' ',
+          ),
+        );
+        final session = await provider.createDanmakuSession(detail);
+        expect(session, isA<ProviderUnavailableDanmakuSession>());
+        expect(
+          (session as ProviderUnavailableDanmakuSession).reason,
+          contains('弹幕Token JWT为空'),
+        );
+      },
+    );
 
-    test('returns StripchatDanmakuSession for valid StripchatDanmakuToken', () async {
-      final detail = LiveRoomDetail(
-        providerId: 'stripchat',
-        roomId: 'test',
-        title: 'test',
-        streamerName: 'test',
-        isLive: true,
-        danmakuToken: const StripchatDanmakuToken(
-          modelId: '123',
-          websocketUrl: 'wss://test',
-          jwt: 'some_jwt',
-        ),
-      );
-      final session = await provider.createDanmakuSession(detail);
-      expect(session, isA<StripchatDanmakuSession>());
-      await session.disconnect();
-    });
+    test(
+      'returns StripchatDanmakuSession for valid StripchatDanmakuToken',
+      () async {
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.stripchat,
+          roomId: 'test',
+          title: 'test',
+          streamerName: 'test',
+          isLive: true,
+          danmakuToken: const StripchatDanmakuToken(
+            modelId: '123',
+            websocketUrl: 'wss://test',
+            jwt: 'some_jwt',
+          ),
+        );
+        final session = await provider.createDanmakuSession(detail);
+        expect(session, isA<StripchatDanmakuSession>());
+        await session.disconnect();
+      },
+    );
   });
 
   group('StripchatProvider.live', () {
@@ -215,9 +228,7 @@ void main() {
 
     setUp(() {
       mockApiClient = _MockStripchatApiClient();
-      liveProvider = StripchatProvider.live(
-        apiClient: mockApiClient,
-      );
+      liveProvider = StripchatProvider.live(apiClient: mockApiClient);
     });
 
     tearDown(() {
@@ -232,7 +243,11 @@ void main() {
 
     test('fetchCategoryRooms returns mapped response', () async {
       final response = await liveProvider.fetchCategoryRooms(
-        const LiveSubCategory(id: 'tagLanguageChinese', parentId: 'country-asia_pacific', name: 'Chinese'),
+        const LiveSubCategory(
+          id: 'tagLanguageChinese',
+          parentId: 'country-asia_pacific',
+          name: 'Chinese',
+        ),
       );
       expect(response.items, isNotEmpty);
       expect(response.items.first.roomId, 'alice_demo');
@@ -250,17 +265,20 @@ void main() {
       expect(response.items.first.roomId, 'alice_demo');
     });
 
-    test('fetchRoomDetail returns detail for modelId and maps settings', () async {
-      // numeric ID test
-      final detail = await liveProvider.fetchRoomDetail('12345');
-      expect(detail.roomId, '12345');
-      expect(detail.streamerName, 'alice_demo');
-      expect(detail.viewerCount, 665); // 200 + 300 + 100 + 50 + 10 + 5
-      expect(detail.danmakuToken, isA<StripchatDanmakuToken>());
-      final token = detail.danmakuToken as StripchatDanmakuToken;
-      expect(token.modelId, '12345');
-      expect(token.jwt, 'mock-jwt');
-    });
+    test(
+      'fetchRoomDetail returns detail for modelId and maps settings',
+      () async {
+        // numeric ID test
+        final detail = await liveProvider.fetchRoomDetail('12345');
+        expect(detail.roomId, '12345');
+        expect(detail.streamerName, 'alice_demo');
+        expect(detail.viewerCount, 665); // 200 + 300 + 100 + 50 + 10 + 5
+        expect(detail.danmakuToken, isA<StripchatDanmakuToken>());
+        final token = detail.danmakuToken as StripchatDanmakuToken;
+        expect(token.modelId, '12345');
+        expect(token.jwt, 'mock-jwt');
+      },
+    );
 
     test('fetchPlayQualities returns resolved qualities', () async {
       final detail = await liveProvider.fetchRoomDetail('alice_demo');
@@ -273,7 +291,10 @@ void main() {
       final detail = await liveProvider.fetchRoomDetail('alice_demo');
       final qualities = await liveProvider.fetchPlayQualities(detail);
       final quality720 = qualities.firstWhere((q) => q.id == '720p');
-      final urls = await liveProvider.fetchPlayUrls(detail: detail, quality: quality720);
+      final urls = await liveProvider.fetchPlayUrls(
+        detail: detail,
+        quality: quality720,
+      );
       expect(urls, isNotEmpty);
       expect(urls.first.url.toString(), contains('doppiocdn.net'));
     });
@@ -305,10 +326,7 @@ class _MockStripchatApiClient implements StripchatApiClient {
   @override
   Future<Map<String, dynamic>> fetchLiveTags() async {
     return {
-      'liveTagDetails': {
-        'tagLanguageChinese': {},
-        'tagLanguageUSModels': {},
-      },
+      'liveTagDetails': {'tagLanguageChinese': {}, 'tagLanguageUSModels': {}},
       'liveTagGroups': [
         {
           'alias': 'ethnicity',
@@ -342,7 +360,7 @@ class _MockStripchatApiClient implements StripchatApiClient {
           'previewUrlThumbSmall': 'https://img.test/alice.jpg',
           'country': 'China',
           'avatarUrl': 'https://img.test/alice_avatar.jpg',
-        }
+        },
       ],
       'totalCount': 1,
     };
@@ -370,9 +388,9 @@ class _MockStripchatApiClient implements StripchatApiClient {
               'previewUrlThumbSmall': 'https://img.test/alice.jpg',
               'country': 'China',
               'avatarUrl': 'https://img.test/alice_avatar.jpg',
-            }
+            },
           ],
-        }
+        },
       ],
       'totalCount': 1,
     };
@@ -399,10 +417,10 @@ class _MockStripchatApiClient implements StripchatApiClient {
               'previewUrlThumbSmall': 'https://img.test/alice.jpg',
               'country': 'China',
               'avatarUrl': 'https://img.test/alice_avatar.jpg',
-            }
+            },
           ],
-        }
-      }
+        },
+      },
     };
   }
 
@@ -425,7 +443,7 @@ class _MockStripchatApiClient implements StripchatApiClient {
           'previewUrlThumbSmall': 'https://img.test/alice.jpg',
           'country': 'China',
           'avatarUrl': 'https://img.test/alice_avatar.jpg',
-        }
+        },
       ],
     };
   }
@@ -519,4 +537,3 @@ class _MockStripchatApiClient implements StripchatApiClient {
   @override
   void close() {}
 }
-

@@ -2,11 +2,12 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:nolive_app/src/app/bootstrap/default_state.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
 import 'manage_layout_preferences_use_case.dart';
 import 'secure_snapshot_import_coordinator.dart';
@@ -40,9 +41,7 @@ class ExportLegacyConfigJsonUseCase {
       'version': 1,
       'time': DateTime.now().millisecondsSinceEpoch,
       'config': _encodeLegacyConfigPayload(settings),
-      'shield': {
-        for (final keyword in blockedKeywords) keyword: keyword,
-      },
+      'shield': {for (final keyword in blockedKeywords) keyword: keyword},
       if (snapshotJson is Map<String, dynamic>) ...snapshotJson,
     });
   }
@@ -118,11 +117,11 @@ class ImportSyncSnapshotJsonUseCase {
       await settingsRepository.remove(key);
     }
 
-    final sanitizedSettings =
-        await snapshotImportCoordinator.sanitizeAndPersistSettings(
-      snapshot.settings,
-      clearExistingSecureSettings: true,
-    );
+    final sanitizedSettings = await snapshotImportCoordinator
+        .sanitizeAndPersistSettings(
+          snapshot.settings,
+          clearExistingSecureSettings: true,
+        );
     for (final entry in sanitizedSettings.entries) {
       await settingsRepository.writeValue(entry.key, entry.value);
     }
@@ -195,11 +194,7 @@ class ResetAppDataUseCase {
   }
 }
 
-enum _ImportMode {
-  fullSnapshot,
-  legacyConfig,
-  legacyFollowList,
-}
+enum _ImportMode { fullSnapshot, legacyConfig, legacyFollowList }
 
 class _DecodedImportPayload {
   const _DecodedImportPayload({
@@ -259,8 +254,8 @@ bool _isLegacyConfigPayload(Map<String, dynamic> json) {
 
 bool _isLegacyFollowListPayload(List<dynamic> json) {
   return json.whereType<Map>().any(
-        (item) => item.containsKey('siteId') || item.containsKey('roomId'),
-      );
+    (item) => item.containsKey('siteId') || item.containsKey('roomId'),
+  );
 }
 
 bool _isSyncSnapshotPayload(Map<String, dynamic> json) {
@@ -272,10 +267,7 @@ bool _isSyncSnapshotPayload(Map<String, dynamic> json) {
 }
 
 SyncSnapshot _decodeLegacyConfigPayload(Map<String, dynamic> json) {
-  final rawSettings = _stringKeyObjectMap(
-    json['config'],
-    fieldName: 'config',
-  );
+  final rawSettings = _stringKeyObjectMap(json['config'], fieldName: 'config');
   final blockedKeywords = <String>{}
     ..addAll(_stringListFlexible(rawSettings.remove('blocked_keywords')))
     ..addAll(_decodeShieldKeywords(json['shield']));
@@ -299,24 +291,28 @@ SyncSnapshot _decodeLegacyFollowListPayload(List<dynamic> json) {
       continue;
     }
     final tag = _trimmedString(item['tag'], allowEmpty: true) ?? '';
-    final recordTags =
-        tag.isEmpty || tag == '全部' ? const <String>[] : <String>[tag];
+    final recordTags = tag.isEmpty || tag == '全部'
+        ? const <String>[]
+        : <String>[tag];
     tags.addAll(recordTags);
     follows.add(
       FollowRecord(
-        providerId: providerId,
+        providerId: ProviderId.from(providerId),
         roomId: roomId,
         streamerName: _trimmedString(item['userName']) ?? roomId,
         streamerAvatarUrl: _trimmedString(item['face'], allowEmpty: false),
-        lastTitle: _trimmedString(item['title'], allowEmpty: false) ??
+        lastTitle:
+            _trimmedString(item['title'], allowEmpty: false) ??
             _trimmedString(item['liveTitle'], allowEmpty: false),
-        lastAreaName: _trimmedString(item['areaName'], allowEmpty: false) ??
+        lastAreaName:
+            _trimmedString(item['areaName'], allowEmpty: false) ??
             _trimmedString(item['liveAreaName'], allowEmpty: false),
-        lastCoverUrl: _trimmedString(item['coverUrl'], allowEmpty: false) ??
+        lastCoverUrl:
+            _trimmedString(item['coverUrl'], allowEmpty: false) ??
             _trimmedString(item['cover'], allowEmpty: false),
         lastKeyframeUrl:
             _trimmedString(item['keyframeUrl'], allowEmpty: false) ??
-                _trimmedString(item['keyframe'], allowEmpty: false),
+            _trimmedString(item['keyframe'], allowEmpty: false),
         tags: recordTags,
       ),
     );
@@ -328,13 +324,14 @@ SyncSnapshot _decodeLegacyFollowListPayload(List<dynamic> json) {
   );
 }
 
-Map<String, Object?> _encodeLegacyConfigPayload(
-  Map<String, Object?> settings,
-) {
+Map<String, Object?> _encodeLegacyConfigPayload(Map<String, Object?> settings) {
   final encoded = <String, Object?>{};
 
   _putIfNotNull(
-      encoded, 'ThemeMode', _encodeLegacyThemeMode(settings['theme_mode']));
+    encoded,
+    'ThemeMode',
+    _encodeLegacyThemeMode(settings['theme_mode']),
+  );
   _putIfNotNull(
     encoded,
     'BilibiliCookie',
@@ -356,12 +353,18 @@ Map<String, Object?> _encodeLegacyConfigPayload(
     _trimmedString(settings['account_youtube_cookie']),
   );
   _putIfNotNull(
-      encoded, 'DanmuEnable', _asBool(settings['danmaku_enabled_by_default']));
+    encoded,
+    'DanmuEnable',
+    _asBool(settings['danmaku_enabled_by_default']),
+  );
   _putIfNotNull(encoded, 'DanmuSize', _asDouble(settings['danmaku_font_size']));
   _putIfNotNull(encoded, 'DanmuArea', _asDouble(settings['danmaku_area']));
   _putIfNotNull(encoded, 'DanmuSpeed', _asDouble(settings['danmaku_speed']));
   _putIfNotNull(
-      encoded, 'DanmuOpacity', _asDouble(settings['danmaku_opacity']));
+    encoded,
+    'DanmuOpacity',
+    _asDouble(settings['danmaku_opacity']),
+  );
   _putIfNotNull(
     encoded,
     'DanmuStrokeWidth',
@@ -388,9 +391,15 @@ Map<String, Object?> _encodeLegacyConfigPayload(
     _asInt(settings['danmaku_font_weight']),
   );
   _putIfNotNull(
-      encoded, 'ChatTextSize', _asDouble(settings['room_chat_text_size']));
+    encoded,
+    'ChatTextSize',
+    _asDouble(settings['room_chat_text_size']),
+  );
   _putIfNotNull(
-      encoded, 'ChatTextGap', _asDouble(settings['room_chat_text_gap']));
+    encoded,
+    'ChatTextGap',
+    _asDouble(settings['room_chat_text_gap']),
+  );
   _putIfNotNull(
     encoded,
     'ChatBubbleStyle',
@@ -417,9 +426,15 @@ Map<String, Object?> _encodeLegacyConfigPayload(
     _encodeLegacyFollowStyleNotGrid(settings['follow_display_mode']),
   );
   _putIfNotNull(
-      encoded, 'PlayerCompatMode', _asBool(settings['player_mpv_compat_mode']));
+    encoded,
+    'PlayerCompatMode',
+    _asBool(settings['player_mpv_compat_mode']),
+  );
   _putIfNotNull(
-      encoded, 'PlayerForceHttps', _asBool(settings['player_force_https']));
+    encoded,
+    'PlayerForceHttps',
+    _asBool(settings['player_force_https']),
+  );
   _putIfNotNull(
     encoded,
     'AutoFullScreen',
@@ -440,8 +455,11 @@ Map<String, Object?> _encodeLegacyConfigPayload(
     'MdkAndroidTunnel',
     _asBool(settings['player_mdk_android_tunnel']),
   );
-  _putIfNotNull(encoded, 'PlayerType',
-      _encodeLegacyPlayerType(settings['player_backend']));
+  _putIfNotNull(
+    encoded,
+    'PlayerType',
+    _encodeLegacyPlayerType(settings['player_backend']),
+  );
   _putIfNotNull(
     encoded,
     'PlayerVolume',
@@ -477,7 +495,10 @@ Map<String, Object?> _encodeLegacyConfigPayload(
   }
 
   _putIfNotNull(
-      encoded, 'WebDAVUri', _trimmedString(settings['sync_webdav_base_url']));
+    encoded,
+    'WebDAVUri',
+    _trimmedString(settings['sync_webdav_base_url']),
+  );
   _putIfNotNull(
     encoded,
     'WebDAVDirectory',
@@ -509,7 +530,10 @@ Map<String, Object?> _normalizeLegacyConfigSettings(
       case 'theme_mode':
       case 'ThemeMode':
         _putIfNotNull(
-            normalized, 'theme_mode', _normalizeThemeMode(entry.value));
+          normalized,
+          'theme_mode',
+          _normalizeThemeMode(entry.value),
+        );
         break;
       case 'player_auto_play':
         _putIfNotNull(normalized, 'player_auto_play', _asBool(entry.value));
@@ -538,7 +562,10 @@ Map<String, Object?> _normalizeLegacyConfigSettings(
       case 'player_volume':
       case 'PlayerVolume':
         _putIfNotNull(
-            normalized, 'player_volume', _normalizeVolume(entry.value));
+          normalized,
+          'player_volume',
+          _normalizeVolume(entry.value),
+        );
         break;
       case 'player_mpv_hardware_acceleration':
         _putIfNotNull(
@@ -577,7 +604,10 @@ Map<String, Object?> _normalizeLegacyConfigSettings(
       case 'player_mpv_compat_mode':
       case 'PlayerCompatMode':
         _putIfNotNull(
-            normalized, 'player_mpv_compat_mode', _asBool(entry.value));
+          normalized,
+          'player_mpv_compat_mode',
+          _asBool(entry.value),
+        );
         break;
       case 'player_mdk_android_tunnel':
       case 'MdkAndroidTunnel':
@@ -657,11 +687,7 @@ Map<String, Object?> _normalizeLegacyConfigSettings(
         break;
       case 'danmaku_top_margin':
       case 'DanmuTopMargin':
-        _putIfNotNull(
-          normalized,
-          'danmaku_top_margin',
-          _asDouble(entry.value),
-        );
+        _putIfNotNull(normalized, 'danmaku_top_margin', _asDouble(entry.value));
         break;
       case 'danmaku_bottom_margin':
       case 'DanmuBottomMargin':
@@ -678,7 +704,10 @@ Map<String, Object?> _normalizeLegacyConfigSettings(
       case 'room_chat_text_size':
       case 'ChatTextSize':
         _putIfNotNull(
-            normalized, 'room_chat_text_size', _asDouble(entry.value));
+          normalized,
+          'room_chat_text_size',
+          _asDouble(entry.value),
+        );
         break;
       case 'room_chat_text_gap':
       case 'ChatTextGap':
@@ -687,7 +716,10 @@ Map<String, Object?> _normalizeLegacyConfigSettings(
       case 'room_chat_bubble_style':
       case 'ChatBubbleStyle':
         _putIfNotNull(
-            normalized, 'room_chat_bubble_style', _asBool(entry.value));
+          normalized,
+          'room_chat_bubble_style',
+          _asBool(entry.value),
+        );
         break;
       case 'room_show_player_super_chat':
       case 'PlayerShowSuperChat':
@@ -737,7 +769,10 @@ Map<String, Object?> _normalizeLegacyConfigSettings(
         break;
       case 'account_bilibili_user_id':
         _putIfNotNull(
-            normalized, 'account_bilibili_user_id', _asInt(entry.value));
+          normalized,
+          'account_bilibili_user_id',
+          _asInt(entry.value),
+        );
         break;
       case 'account_douyin_cookie':
       case 'DouyinCookie':
@@ -776,8 +811,9 @@ Map<String, Object?> _normalizeLegacyConfigSettings(
         }
         break;
       case 'layout_provider_order':
-        final currentProviderOrder =
-            _normalizeCurrentProviderOrder(entry.value);
+        final currentProviderOrder = _normalizeCurrentProviderOrder(
+          entry.value,
+        );
         if (currentProviderOrder.isNotEmpty) {
           normalized['layout_provider_order'] = currentProviderOrder;
         }
@@ -929,9 +965,9 @@ List<String> _normalizeCurrentShellTabOrder(Object? raw) {
   if (values.isEmpty) {
     return const <String>[];
   }
-  return LoadLayoutPreferencesUseCase.normalizeShellTabOrder(values)
-      .map((item) => item.value)
-      .toList(growable: false);
+  return LoadLayoutPreferencesUseCase.normalizeShellTabOrder(
+    values,
+  ).map((item) => item.value).toList(growable: false);
 }
 
 List<String> _decodeLegacyHomeSort(Object? raw) {
@@ -963,13 +999,15 @@ List<String> _encodeLegacyHomeSort(Object? raw) {
   );
   return normalized
       .where((item) => item != ShellTabId.search)
-      .map((item) => switch (item) {
-            ShellTabId.library => 'follow',
-            ShellTabId.home => 'recommend',
-            ShellTabId.browse => 'category',
-            ShellTabId.profile => 'user',
-            ShellTabId.search => 'search',
-          })
+      .map(
+        (item) => switch (item) {
+          ShellTabId.library => 'follow',
+          ShellTabId.home => 'recommend',
+          ShellTabId.browse => 'category',
+          ShellTabId.profile => 'user',
+          ShellTabId.search => 'search',
+        },
+      )
       .toList(growable: false);
 }
 
@@ -1193,8 +1231,9 @@ String? _normalizeLegacyWebDavPath(Object? raw) {
   if (value.endsWith('.json')) {
     return value;
   }
-  final normalized =
-      value.endsWith('/') ? value.substring(0, value.length - 1) : value;
+  final normalized = value.endsWith('/')
+      ? value.substring(0, value.length - 1)
+      : value;
   return '$normalized/snapshot.json';
 }
 

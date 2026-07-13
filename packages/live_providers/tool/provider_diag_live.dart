@@ -69,9 +69,9 @@ Future<void> inspectTwitch() async {
   }
 
   final target = recommend.items.cast<LiveRoom?>().firstWhere(
-        (item) => item != null && item.roomId.trim().isNotEmpty,
-        orElse: () => null,
-      );
+    (item) => item != null && item.roomId.trim().isNotEmpty,
+    orElse: () => null,
+  );
   if (target == null) {
     print('no target room');
     return;

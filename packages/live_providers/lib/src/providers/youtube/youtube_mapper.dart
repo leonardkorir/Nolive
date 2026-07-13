@@ -10,9 +10,9 @@ class YouTubeMapper {
   static LiveRoom mapSearchRoom(YouTubeSearchCandidate candidate) {
     final roomId =
         canonicalRoomIdFromOwnerProfileUrl(candidate.ownerProfileUrl) ??
-            candidate.videoId;
+        candidate.videoId;
     return LiveRoom(
-      providerId: ProviderId.youtube.value,
+      providerId: ProviderId.youtube,
       roomId: roomId,
       title: candidate.title,
       streamerName: candidate.streamerName,
@@ -51,10 +51,11 @@ class YouTubeMapper {
     );
     final viewerCount =
         pageCandidate?.viewerCount ?? _asInt(videoDetails['viewCount']);
-    final playbackUnavailableReason =
-        _playbackUnavailableReason(playabilityStatus);
+    final playbackUnavailableReason = _playbackUnavailableReason(
+      playabilityStatus,
+    );
     return LiveRoomDetail(
-      providerId: ProviderId.youtube.value,
+      providerId: ProviderId.youtube,
       roomId: resolvedRoomId,
       title: _firstNonEmpty([
         normalizeDisplayText(videoDetails['title']?.toString()),
@@ -66,10 +67,12 @@ class YouTubeMapper {
       ]),
       streamerAvatarUrl: pageCandidate?.streamerAvatarUrl,
       coverUrl: _lastThumbnailUrl(
-          _asList(_asMap(microformat['thumbnail'])['thumbnails'])),
+        _asList(_asMap(microformat['thumbnail'])['thumbnails']),
+      ),
       areaName: normalizeDisplayText(microformat['category']?.toString()),
-      description:
-          normalizeDisplayText(videoDetails['shortDescription']?.toString()),
+      description: normalizeDisplayText(
+        videoDetails['shortDescription']?.toString(),
+      ),
       sourceUrl: 'https://www.youtube.com/watch?v=$resolvedVideoId',
       startedAt: _asDateTime(liveBroadcastDetails['startTimestamp']),
       isLive: _isLive(playerResponse),
@@ -125,19 +128,18 @@ class YouTubeMapper {
       LivePlayQuality(
         id: 'auto',
         label: 'Auto',
-        isDefault: true,
-        metadata: {
-          'playlistUrl': manifestUrl,
-          'headers': headers,
-        },
+        isDefault: false,
+        metadata: {'playlistUrl': manifestUrl, 'headers': headers},
       ),
     ];
-    for (final variant in variants) {
+    for (var i = 0; i < variants.length; i++) {
+      final variant = variants[i];
       qualities.add(
         LivePlayQuality(
           id: variant.height?.toString() ?? variant.bandwidth.toString(),
           label: variant.label,
           sortOrder: variant.sortOrder,
+          isDefault: i == 0,
           metadata: {
             'playlistUrl': variant.url,
             'headers': headers,
@@ -156,7 +158,8 @@ class YouTubeMapper {
     LiveRoomDetail detail,
     LivePlayQuality quality,
   ) {
-    final url = quality.metadata?['playlistUrl']?.toString().trim() ??
+    final url =
+        quality.metadata?['playlistUrl']?.toString().trim() ??
         detail.metadata?['hlsManifestUrl']?.toString().trim() ??
         '';
     if (url.isEmpty) {
@@ -195,9 +198,9 @@ class YouTubeMapper {
     if (normalized.startsWith('@')) {
       return normalized.endsWith('/live') ? normalized : '$normalized/live';
     }
-    final match = RegExp(r'^(channel|c|user)/([^/]+)(/live)?$').firstMatch(
-      normalized,
-    );
+    final match = RegExp(
+      r'^(channel|c|user)/([^/]+)(/live)?$',
+    ).firstMatch(normalized);
     if (match == null) {
       return null;
     }
@@ -209,7 +212,8 @@ class YouTubeMapper {
     if (normalized.isEmpty) {
       return null;
     }
-    final path = Uri.tryParse(
+    final path =
+        Uri.tryParse(
           normalized.startsWith('http')
               ? normalized
               : 'https://www.youtube.com$normalized',

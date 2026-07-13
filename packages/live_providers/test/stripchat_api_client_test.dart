@@ -122,10 +122,7 @@ void main() {
             'userHash': 'test-hash',
             'csrfToken': 'test-csrf',
             'guestId': -999,
-            'websocket': {
-              'url': 'wss://test.ws',
-              'token': 'test-jwt',
-            },
+            'websocket': {'url': 'wss://test.ws', 'token': 'test-jwt'},
           },
         }),
       );
@@ -149,7 +146,7 @@ void main() {
       mockHttp.respond(
         'initial-dynamic',
         body: jsonEncode({
-          'initialDynamic': {'userHash': 'cached'}
+          'initialDynamic': {'userHash': 'cached'},
         }),
       );
 
@@ -160,42 +157,38 @@ void main() {
       expect(mockHttp.requests.length, 1);
     });
 
-    test('refreshes initialDynamic when cached websocket jwt is expired',
-        () async {
-      final expiredJwt = _buildJwt(
-        exp: DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
-      );
-      final freshJwt = _buildJwt(
-        exp: DateTime.now().toUtc().add(const Duration(hours: 1)),
-      );
-      mockHttp.respondSequence('initial-dynamic', [
-        jsonEncode({
-          'initialDynamic': {
-            'userHash': 'expired-cache',
-            'websocket': {
-              'url': 'wss://test.ws',
-              'token': expiredJwt,
+    test(
+      'refreshes initialDynamic when cached websocket jwt is expired',
+      () async {
+        final expiredJwt = _buildJwt(
+          exp: DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+        );
+        final freshJwt = _buildJwt(
+          exp: DateTime.now().toUtc().add(const Duration(hours: 1)),
+        );
+        mockHttp.respondSequence('initial-dynamic', [
+          jsonEncode({
+            'initialDynamic': {
+              'userHash': 'expired-cache',
+              'websocket': {'url': 'wss://test.ws', 'token': expiredJwt},
             },
-          },
-        }),
-        jsonEncode({
-          'initialDynamic': {
-            'userHash': 'fresh-cache',
-            'websocket': {
-              'url': 'wss://test.ws',
-              'token': freshJwt,
+          }),
+          jsonEncode({
+            'initialDynamic': {
+              'userHash': 'fresh-cache',
+              'websocket': {'url': 'wss://test.ws', 'token': freshJwt},
             },
-          },
-        }),
-      ]);
+          }),
+        ]);
 
-      final first = await client.fetchInitialDynamic();
-      final second = await client.fetchInitialDynamic();
+        final first = await client.fetchInitialDynamic();
+        final second = await client.fetchInitialDynamic();
 
-      expect(first['userHash'], 'expired-cache');
-      expect(second['userHash'], 'fresh-cache');
-      expect(mockHttp.requests.length, 2);
-    });
+        expect(first['userHash'], 'expired-cache');
+        expect(second['userHash'], 'fresh-cache');
+        expect(mockHttp.requests.length, 2);
+      },
+    );
 
     test('deduplicates concurrent fetchInitialDynamic calls', () async {
       mockHttp.respond(
@@ -205,7 +198,9 @@ void main() {
             'userHash': 'dedup-hash',
             'websocket': {
               'url': 'wss://test.ws',
-              'token': _buildJwt(exp: DateTime.now().add(const Duration(hours: 1))),
+              'token': _buildJwt(
+                exp: DateTime.now().add(const Duration(hours: 1)),
+              ),
             },
           },
         }),
@@ -350,15 +345,18 @@ void main() {
   });
 
   group('listModels', () {
-    test('handles multiple modelIds correctly without overriding keys', () async {
-      mockHttp.respond('models/list');
+    test(
+      'handles multiple modelIds correctly without overriding keys',
+      () async {
+        mockHttp.respond('models/list');
 
-      await client.listModels(modelIds: [123, 456]);
+        await client.listModels(modelIds: [123, 456]);
 
-      final request = mockHttp.requests.last;
-      expect(request.url.path, '/api/front/models/list');
-      expect(request.url.queryParametersAll['modelIds[]'], ['123', '456']);
-    });
+        final request = mockHttp.requests.last;
+        expect(request.url.path, '/api/front/models/list');
+        expect(request.url.queryParametersAll['modelIds[]'], ['123', '456']);
+      },
+    );
   });
 
   group('network error handling / retries', () {
@@ -411,62 +409,69 @@ void main() {
   });
 
   group('probePlaybackPlaylist', () {
-    test('rejects advertisement child playlist behind master playlist',
-        () async {
-      mockHttp.respond(
-        'master/12345_auto.m3u8',
-        body: '#EXTM3U\n'
-            '#EXT-X-STREAM-INF:BANDWIDTH=1200000\n'
-            'https://media-hls.doppiocdn.net/b-hls-09/12345/12345_720p.m3u8\n',
-      );
-      mockHttp.respond(
-        '12345_720p.m3u8',
-        body: '#EXTM3U\n#EXT-X-MOUFLON-ADVERT\n#EXT-X-PLAYLIST-TYPE:VOD\n',
-      );
+    test(
+      'rejects advertisement child playlist behind master playlist',
+      () async {
+        mockHttp.respond(
+          'master/12345_auto.m3u8',
+          body:
+              '#EXTM3U\n'
+              '#EXT-X-STREAM-INF:BANDWIDTH=1200000\n'
+              'https://media-hls.doppiocdn.net/b-hls-09/12345/12345_720p.m3u8\n',
+        );
+        mockHttp.respond(
+          '12345_720p.m3u8',
+          body: '#EXTM3U\n#EXT-X-MOUFLON-ADVERT\n#EXT-X-PLAYLIST-TYPE:VOD\n',
+        );
 
-      final result = await client.probePlaybackPlaylist(
-        'https://edge-hls.doppiocdn.net/hls/12345/master/12345_auto.m3u8',
-      );
+        final result = await client.probePlaybackPlaylist(
+          'https://edge-hls.doppiocdn.net/hls/12345/master/12345_auto.m3u8',
+        );
 
-      expect(result.isPlayable, isFalse);
-      expect(result.reason, 'stripchat_advertisement_playlist');
-    });
+        expect(result.isPlayable, isFalse);
+        expect(result.reason, 'stripchat_advertisement_playlist');
+      },
+    );
 
-    test('prefers requested quality variant when master playlist offers it',
-        () async {
-      mockHttp.respond(
-        'master/12345_auto.m3u8',
-        body: '#EXTM3U\n'
-            '#EXT-X-MOUFLON:PSCH:v2:test-key\n'
-            '#EXT-X-STREAM-INF:BANDWIDTH=800000\n'
-            'https://media-hls.doppiocdn.net/b-hls-09/12345/12345_480p.m3u8\n'
-            '#EXT-X-STREAM-INF:BANDWIDTH=1600000\n'
-            'https://media-hls.doppiocdn.net/b-hls-09/12345/12345_1080p.m3u8\n',
-      );
-      mockHttp.respond(
-        '12345_480p.m3u8',
-        body: '#EXTM3U\n#EXT-X-TARGETDURATION:1\n',
-      );
-      mockHttp.respond(
-        '12345_1080p.m3u8',
-        body: '#EXTM3U\n#EXT-X-TARGETDURATION:1\n',
-      );
+    test(
+      'prefers requested quality variant when master playlist offers it',
+      () async {
+        mockHttp.respond(
+          'master/12345_auto.m3u8',
+          body:
+              '#EXTM3U\n'
+              '#EXT-X-MOUFLON:PSCH:v2:test-key\n'
+              '#EXT-X-STREAM-INF:BANDWIDTH=800000\n'
+              'https://media-hls.doppiocdn.net/b-hls-09/12345/12345_480p.m3u8\n'
+              '#EXT-X-STREAM-INF:BANDWIDTH=1600000\n'
+              'https://media-hls.doppiocdn.net/b-hls-09/12345/12345_1080p.m3u8\n',
+        );
+        mockHttp.respond(
+          '12345_480p.m3u8',
+          body: '#EXTM3U\n#EXT-X-TARGETDURATION:1\n',
+        );
+        mockHttp.respond(
+          '12345_1080p.m3u8',
+          body: '#EXTM3U\n#EXT-X-TARGETDURATION:1\n',
+        );
 
-      final result = await client.probePlaybackPlaylist(
-        'https://edge-hls.doppiocdn.net/hls/12345/master/12345_auto.m3u8',
-        preferredVariantId: '480p',
-      );
+        final result = await client.probePlaybackPlaylist(
+          'https://edge-hls.doppiocdn.net/hls/12345/master/12345_auto.m3u8',
+          preferredVariantId: '480p',
+        );
 
-      expect(result.isPlayable, isTrue);
-      expect(result.finalUrl.toString(), contains('12345_480p.m3u8'));
-      expect(result.finalUrl.queryParameters['psch'], 'v2');
-      expect(result.finalUrl.queryParameters['pkey'], 'test-key');
-    });
+        expect(result.isPlayable, isTrue);
+        expect(result.finalUrl.toString(), contains('12345_480p.m3u8'));
+        expect(result.finalUrl.queryParameters['psch'], 'v2');
+        expect(result.finalUrl.queryParameters['pkey'], 'test-key');
+      },
+    );
 
     test('appends master mouflon auth to child playlist requests', () async {
       mockHttp.respond(
         'master/12345_auto.m3u8',
-        body: '#EXTM3U\n'
+        body:
+            '#EXTM3U\n'
             '#EXT-X-MOUFLON:PSCH:v2:abc123\n'
             '#EXT-X-STREAM-INF:BANDWIDTH=1600000\n'
             'https://media-hls.doppiocdn.net/b-hls-09/12345/12345_1080p.m3u8?minHeight=240&playlistType=lowLatency\n',
@@ -494,7 +499,8 @@ void main() {
     test('extracts source and fixed qualities from master playlist', () async {
       mockHttp.respond(
         'master/12345_auto.m3u8',
-        body: '#EXTM3U\n'
+        body:
+            '#EXTM3U\n'
             '#EXT-X-MOUFLON:PSCH:v2:test-key\n'
             '#EXT-X-STREAM-INF:BANDWIDTH=1200000\n'
             'https://media-hls.doppiocdn.net/b-hls-09/12345/12345.m3u8\n'
@@ -508,10 +514,11 @@ void main() {
         'https://edge-hls.doppiocdn.net/hls/12345/master/12345_auto.m3u8',
       );
 
-      expect(
-        variants.map((variant) => variant.qualityId),
-        ['source', '240p', '480p'],
-      );
+      expect(variants.map((variant) => variant.qualityId), [
+        'source',
+        '240p',
+        '480p',
+      ]);
       expect(variants.first.url.queryParameters['psch'], 'v2');
       expect(variants.first.url.queryParameters['pkey'], 'test-key');
     });
@@ -549,44 +556,49 @@ void main() {
       await server.close(force: true);
     });
 
-    test('real loopback server handles fetchInitialDynamic correctly', () async {
-      final mockResponseData = {
-        'initialDynamic': {
-          'userHash': 'loopback-hash',
-          'csrfToken': 'loopback-csrf',
-          'guestId': 12345,
-          'websocket': {
-            'url': 'wss://loopback.ws',
-            'token': _buildJwt(exp: DateTime.now().add(const Duration(hours: 1))),
+    test(
+      'real loopback server handles fetchInitialDynamic correctly',
+      () async {
+        final mockResponseData = {
+          'initialDynamic': {
+            'userHash': 'loopback-hash',
+            'csrfToken': 'loopback-csrf',
+            'guestId': 12345,
+            'websocket': {
+              'url': 'wss://loopback.ws',
+              'token': _buildJwt(
+                exp: DateTime.now().add(const Duration(hours: 1)),
+              ),
+            },
           },
-        },
-      };
+        };
 
-      // Set up the listener on the loopback server
-      server.listen((HttpRequest request) {
-        try {
-          expect(request.uri.path, '/api/front/v3/config/initial-dynamic');
-          expect(request.uri.queryParameters['requestPath'], '/');
-          expect(request.headers.value('user-agent'), contains('Mozilla'));
+        // Set up the listener on the loopback server
+        server.listen((HttpRequest request) {
+          try {
+            expect(request.uri.path, '/api/front/v3/config/initial-dynamic');
+            expect(request.uri.queryParameters['requestPath'], '/');
+            expect(request.headers.value('user-agent'), contains('Mozilla'));
 
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.contentType = ContentType.json
-            ..write(jsonEncode(mockResponseData))
-            ..close();
-        } catch (e) {
-          // Send error response to not block the client infinitely
-          request.response
-            ..statusCode = HttpStatus.internalServerError
-            ..write(e.toString())
-            ..close();
-        }
-      });
+            request.response
+              ..statusCode = HttpStatus.ok
+              ..headers.contentType = ContentType.json
+              ..write(jsonEncode(mockResponseData))
+              ..close();
+          } catch (e) {
+            // Send error response to not block the client infinitely
+            request.response
+              ..statusCode = HttpStatus.internalServerError
+              ..write(e.toString())
+              ..close();
+          }
+        });
 
-      final result = await loopbackClient.fetchInitialDynamic();
-      expect(result['userHash'], 'loopback-hash');
-      expect(result['csrfToken'], 'loopback-csrf');
-    });
+        final result = await loopbackClient.fetchInitialDynamic();
+        expect(result['userHash'], 'loopback-hash');
+        expect(result['csrfToken'], 'loopback-csrf');
+      },
+    );
   });
 }
 
@@ -594,7 +606,8 @@ String _buildJwt({required DateTime exp}) {
   final header = base64Url.encode(utf8.encode(jsonEncode({'alg': 'none'})));
   final payload = base64Url.encode(
     utf8.encode(
-        jsonEncode({'exp': exp.toUtc().millisecondsSinceEpoch ~/ 1000})),
+      jsonEncode({'exp': exp.toUtc().millisecondsSinceEpoch ~/ 1000}),
+    ),
   );
   return '$header.$payload.signature';
 }

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart';
@@ -14,10 +15,48 @@ import 'player_backend.dart';
 import 'player_diagnostics.dart';
 import 'player_state.dart';
 
+part 'mpv_android_surface_manager.dart';
+part 'mpv_hls_manifest_service.dart';
+part 'mpv_player_runtime_bindings.dart';
+part 'mpv_property_configurator.dart';
+
 const String _mediaKitNativeReferenceHolderPrefix =
     'com.alexmercerind.media_kit.NativeReferenceHolder.';
+const String kMpvAndroidSurfaceTimeoutError =
+    'MPV Android surface initialization timed out';
+const String kMpvNoMediaTrackStartupError =
+    'MPV did not expose audio/video tracks after startup';
 
 Future<void>? _pendingAndroidDebugMediaKitReferenceCleanup;
+
+@visibleForTesting
+bool hasMpvStartupMediaSignal({
+  required PlayerState state,
+  required PlayerDiagnostics diagnostics,
+}) {
+  return (diagnostics.width ?? 0) > 0 ||
+      (diagnostics.height ?? 0) > 0 ||
+      diagnostics.videoParams.isNotEmpty ||
+      diagnostics.audioParams.isNotEmpty ||
+      state.position > Duration.zero ||
+      state.buffered > Duration.zero ||
+      diagnostics.buffered > Duration.zero;
+}
+
+@visibleForTesting
+Duration resolveMpvStartupMediaSignalTimeout(PlaybackSource source) {
+  if (source.externalAudio != null ||
+      source.masterPlaylistContent?.trim().isNotEmpty == true ||
+      source.masterPlaylistUrl != null ||
+      _looksLikeLiveHlsSource(source) ||
+      source.url.host.contains('googlevideo.com')) {
+    return MpvPlayer._androidStartupBufferedMediaSignalTimeout;
+  }
+  if (source.bufferProfile != PlaybackBufferProfile.defaultLowLatency) {
+    return MpvPlayer._androidStartupBufferedMediaSignalTimeout;
+  }
+  return MpvPlayer._androidStartupMediaSignalTimeout;
+}
 
 @visibleForTesting
 bool isMediaKitNativeReferenceHolderPath(String filePath) {
@@ -34,8 +73,7 @@ Future<int> deleteMediaKitNativeReferenceHolderFilesInDirectory(
   }
   var deleted = 0;
   await for (final entity in directory.list(followLinks: false)) {
-    if (entity is! File ||
-        !isMediaKitNativeReferenceHolderPath(entity.path)) {
+    if (entity is! File || !isMediaKitNativeReferenceHolderPath(entity.path)) {
       continue;
     }
     try {
@@ -57,6 +95,7 @@ class MpvPlayer implements BasePlayer {
     this.doubleBufferingEnabled = false,
     this.customOutputEnabled = false,
     this.videoOutputDriver = 'gpu-next',
+    this.audioOutputDriver = 'auto',
     this.hardwareDecoder = 'auto-safe',
     this.logEnabled = false,
     this.eventLogger,
@@ -65,39 +104,59 @@ class MpvPlayer implements BasePlayer {
 
   static const Duration _progressBroadcastStep = Duration(seconds: 1);
   static const Duration _bufferBroadcastStep = Duration(seconds: 1);
-  static const Duration _disposeStopSettleDelay = Duration(milliseconds: 650);
-  static const Duration _sourceSwitchStopSettleDelay =
-      Duration(milliseconds: 650);
-  static const Duration _initialAndroidOpenSettleDelay =
-      Duration(milliseconds: 150);
-  static const Duration _androidInitialEmbeddedViewMountReadyTimeout =
-      Duration(milliseconds: 250);
-  static const Duration _androidInitialEmbeddedPlatformReadyTimeout =
-      Duration(milliseconds: 250);
-  static const Duration _androidInitialEmbeddedSurfaceReadyBudget =
-      Duration(milliseconds: 800);
+  static const Duration _disposeStopSettleDelay = Duration(seconds: 1);
+  static const Duration _sourceSwitchStopSettleDelay = Duration(seconds: 1);
+  // Fresh open only needs a short settle; 150ms was pure dead wait after
+  // loadRoom in device logs (loadRoom done → setSource delayed by barrier).
+  static const Duration _initialAndroidOpenSettleDelay = Duration(
+    milliseconds: 48,
+  );
+  static const Duration _androidInitialEmbeddedViewMountReadyTimeout = Duration(
+    milliseconds: 250,
+  );
+  static const Duration _androidInitialEmbeddedPlatformReadyTimeout = Duration(
+    milliseconds: 250,
+  );
+  static const Duration _androidInitialEmbeddedSurfaceReadyBudget = Duration(
+    milliseconds: 800,
+  );
   static const Duration _androidInitialEmbeddedSurfaceReadyPollInterval =
       Duration(milliseconds: 150);
   static const Duration _androidInitialEmbeddedSurfaceAttachStabilizeTimeout =
       Duration(milliseconds: 220);
-  static const Duration _androidEmbeddedViewMountReadyTimeout =
-      Duration(milliseconds: 250);
-  static const Duration _androidEmbeddedPlatformReadyTimeout =
-      Duration(milliseconds: 250);
-  static const Duration _androidEmbeddedSurfaceReadyBudget =
-      Duration(milliseconds: 350);
-  static const Duration _androidEmbeddedSurfaceReadyPollInterval =
-      Duration(milliseconds: 150);
+  static const Duration _androidEmbeddedViewMountReadyTimeout = Duration(
+    milliseconds: 250,
+  );
+  static const Duration _androidEmbeddedPlatformReadyTimeout = Duration(
+    milliseconds: 250,
+  );
+  static const Duration _androidEmbeddedSurfaceReadyBudget = Duration(
+    milliseconds: 350,
+  );
+  static const Duration _androidEmbeddedSurfaceReadyPollInterval = Duration(
+    milliseconds: 150,
+  );
   static const Duration _androidEmbeddedSurfaceAttachStabilizeTimeout =
       Duration(milliseconds: 220);
-  static const Duration _androidReopenFreshSurfaceWaitBudget =
-      Duration(milliseconds: 800);
+  static const Duration _androidReopenFreshSurfaceWaitBudget = Duration(
+    milliseconds: 800,
+  );
   static const Duration _androidInitialEmbeddedPlaySurfaceReadyTimeout =
-      Duration(milliseconds: 80);
+      Duration(milliseconds: 1000);
   static const Duration _androidInitialEmbeddedPlaySurfaceFallbackTimeout =
-      Duration(milliseconds: 50);
-  static const Duration _androidEmbeddedHardwareDecoderReadyTimeout =
-      Duration(milliseconds: 900);
+      Duration(milliseconds: 500);
+  static const Duration _androidEmbeddedHardwareDecoderReadyTimeout = Duration(
+    milliseconds: 900,
+  );
+  static const Duration _androidStartupMediaSignalTimeout = Duration(
+    milliseconds: 3500,
+  );
+  static const Duration _androidStartupBufferedMediaSignalTimeout = Duration(
+    seconds: 10,
+  );
+  static const Duration _androidStartupMediaSignalPollInterval = Duration(
+    milliseconds: 100,
+  );
   static const Duration _androidMediaCodecReinitClassificationThreshold =
       Duration(milliseconds: 50);
   static const String _fallbackVideoOutputDriver = 'gpu-next';
@@ -110,6 +169,7 @@ class MpvPlayer implements BasePlayer {
   final bool doubleBufferingEnabled;
   final bool customOutputEnabled;
   final String videoOutputDriver;
+  final String audioOutputDriver;
   final String hardwareDecoder;
   final bool logEnabled;
   final void Function(String message)? eventLogger;
@@ -201,6 +261,16 @@ class MpvPlayer implements BasePlayer {
         'audioHeaders=${source.externalAudio?.headers.keys.join(',') ?? '-'} '
         'strategy=${openPlan.strategy}',
       );
+      _logEvent(
+        'open plan strategy=${openPlan.strategy} '
+        'media=${_shortSourceDescriptor(openPlan.mediaUri)} '
+        'scheme=${openPlan.mediaUri.scheme.isEmpty ? '-' : openPlan.mediaUri.scheme} '
+        'localFile=${openPlan.mediaUri.scheme == 'file'} '
+        'loadsAudioInside=${openPlan.loadsAudioInsideMedia} '
+        'master=${source.masterPlaylistUrl == null ? '-' : _shortSourceDescriptor(source.masterPlaylistUrl!)} '
+        'embeddedMaster=${source.masterPlaylistContent?.trim().isNotEmpty == true} '
+        'hlsBitrate=${source.hlsBitrate?.trim().isNotEmpty == true ? source.hlsBitrate : '-'}',
+      );
       _emitDiagnostics(_freshDiagnostics(clearRecentLogs: true));
       _emit(
         _currentState.copyWith(
@@ -222,9 +292,24 @@ class MpvPlayer implements BasePlayer {
         source,
       );
       if (androidOpenPreparation.deferPlayUntilSurfaceReady) {
-        await _waitForAndroidSurfaceBeforeInitialOpen(
-          previousSurface: androidOpenPreparation.previousSurface,
-        );
+        final surfaceReadyBeforeOpen =
+            await _waitForAndroidSurfaceBeforeInitialOpen(
+              previousSurface: androidOpenPreparation.previousSurface,
+            );
+        if (!surfaceReadyBeforeOpen) {
+          _pendingAndroidEmbeddedPlayGate = (
+            generation: _androidEmbeddedPlayGateGeneration,
+            previousSurface: androidOpenPreparation.previousSurface,
+            isInitialOpen: !androidOpenPreparation.shouldStopBeforeOpen,
+          );
+          _logEvent(
+            'setSource play-gate pending '
+            'initial=${!androidOpenPreparation.shouldStopBeforeOpen} '
+            'wid-before=${androidOpenPreparation.previousSurface.wid} '
+            'texture-before=${androidOpenPreparation.previousSurface.textureId} '
+            'reason=surface-published-after-open',
+          );
+        }
       }
       await player.open(
         mk.Media(
@@ -236,114 +321,29 @@ class MpvPlayer implements BasePlayer {
       if (openPlan.loadsAudioInsideMedia || preloadedExternalAudioConfigured) {
         await player.setAudioTrack(mk.AudioTrack.auto());
       } else if (source.externalAudio != null) {
-        await player.setAudioTrack(
-          mk.AudioTrack.uri(
-            source.externalAudio!.url.toString(),
-            title: source.externalAudio!.label,
-          ),
-        );
+        await _addExternalAudioAfterOpen(player, source);
       } else {
         await player.setAudioTrack(mk.AudioTrack.auto());
       }
-      _emit(
-        _currentState.copyWith(
-          status: PlaybackStatus.ready,
-          source: source,
-          clearErrorMessage: true,
-        ),
-      );
+      if (_currentState.status == PlaybackStatus.error &&
+          _currentState.source == source) {
+        _logEvent(
+          'setSource ready skipped current-error error=${_currentState.errorMessage ?? '-'}',
+        );
+      } else {
+        _emit(
+          _currentState.copyWith(
+            status: PlaybackStatus.ready,
+            source: source,
+            clearErrorMessage: true,
+          ),
+        );
+      }
       await _deleteSyntheticPlaylistFile(
         previousSyntheticPlaylistFile,
         preserveIfSameAsActive: true,
       );
     });
-  }
-
-  Future<_MpvOpenPlan> _resolveOpenPlan(PlaybackSource source) async {
-    if (shouldInlineSplitHlsAudioIntoSource(source)) {
-      final resolvedMasterFile =
-          await maybeWriteResolvedSplitHlsMasterPlaylistFile(source);
-      if (resolvedMasterFile != null) {
-        _activeSyntheticPlaylistFile = resolvedMasterFile;
-        return _MpvOpenPlan(
-          mediaUri: resolvedMasterFile.uri,
-          httpHeaders:
-              _sharedHttpHeadersForSplitHls(source) ?? const <String, String>{},
-          loadsAudioInsideMedia: true,
-          strategy: 'resolved-inline-hls-master',
-        );
-      }
-      if (shouldFallbackToSyntheticSplitMaster(source)) {
-        final file = await writeSplitHlsMasterPlaylistFile(source);
-        _activeSyntheticPlaylistFile = file;
-        return _MpvOpenPlan(
-          mediaUri: file.uri,
-          httpHeaders:
-              _sharedHttpHeadersForSplitHls(source) ?? const <String, String>{},
-          loadsAudioInsideMedia: true,
-          strategy: 'inline-hls-master',
-        );
-      }
-    }
-    final rewrittenManifestFile =
-        await maybeWriteResolvedSingleSourceHlsPlaylistFile(source);
-    if (rewrittenManifestFile != null) {
-      _activeSyntheticPlaylistFile = rewrittenManifestFile;
-      return _MpvOpenPlan(
-        mediaUri: rewrittenManifestFile.uri,
-        httpHeaders: source.headers,
-        loadsAudioInsideMedia: false,
-        strategy: 'resolved-hls-manifest',
-      );
-    }
-    _activeSyntheticPlaylistFile = null;
-    return _MpvOpenPlan(
-      mediaUri: source.url,
-      httpHeaders: source.headers,
-      loadsAudioInsideMedia: false,
-      strategy:
-          source.externalAudio == null ? 'single-source' : 'external-audio',
-    );
-  }
-
-  Future<bool> _configureSourceOptions(
-    mk.Player player,
-    PlaybackSource source,
-  ) async {
-    final dynamic platform = player.platform;
-    if (platform == null) {
-      return false;
-    }
-    final properties = resolveMpvSourcePlatformProperties(
-      source: source,
-      doubleBufferingEnabled: doubleBufferingEnabled,
-      hardwareDecoder:
-          _runtimeConfiguration?.controllerConfiguration.hwdec?.trim(),
-      videoTrackSelection: 'auto',
-    );
-    _logEvent(
-      'source options '
-      'hwdec=${properties['hwdec'] ?? 'inherit'} '
-      'vid=${properties['vid'] ?? 'inherit'} '
-      'cache=${properties['cache']} '
-      'cache-secs=${properties['cache-secs']} '
-      'demuxer-readahead-secs=${properties['demuxer-readahead-secs'] ?? 'inherit'} '
-      'demuxer-max-bytes=${properties['demuxer-max-bytes'] ?? 'inherit'} '
-      'hls-bitrate=${properties['hls-bitrate'] ?? 'inherit'} '
-      'bufferProfile=${source.bufferProfile.name}',
-    );
-    var preloadedExternalAudioConfigured = false;
-    for (final entry in properties.entries) {
-      try {
-        await platform.setProperty(entry.key, entry.value);
-        if (entry.key == 'audio-files' && entry.value.trim().isNotEmpty) {
-          preloadedExternalAudioConfigured = true;
-        }
-      } catch (_) {
-        // Older media_kit backends may not expose direct mpv property writes.
-      }
-    }
-    return preloadedExternalAudioConfigured;
   }
 
   @override
@@ -353,249 +353,100 @@ class MpvPlayer implements BasePlayer {
       if (player == null) {
         return;
       }
-      await _awaitAndroidEmbeddedPlayGateIfNeeded();
+      final surfaceReady = await _awaitAndroidEmbeddedPlayGateIfNeeded();
+      if (!surfaceReady) {
+        return;
+      }
+      final source = _currentState.source;
       await player.play();
+      await _awaitAndroidStartupMediaSignalAfterPlay(source);
     });
   }
 
-  Future<void> _waitForAndroidSurfaceBeforeInitialOpen({
-    required AndroidSurfaceSnapshot previousSurface,
-  }) async {
-    if (!isAndroid) {
+  Future<void> _addExternalAudioAfterOpen(
+    mk.Player player,
+    PlaybackSource source,
+  ) async {
+    final externalAudio = source.externalAudio;
+    if (externalAudio == null) {
+      await player.setAudioTrack(mk.AudioTrack.auto());
       return;
     }
-    final controller = _controller;
-    if (controller == null) {
-      return;
-    }
-    final platform = controller.notifier.value;
-    if (platform == null) {
-      return;
-    }
-    final refresh = await waitForFreshAndroidSurfacePublication(
-      platform: platform,
-      textureId: controller.id,
-      previousSurface: previousSurface,
-      timeout: _androidInitialEmbeddedPlaySurfaceReadyTimeout,
-      requireSurfaceHandle: true,
-    );
-    if (_isClosedForOperations) {
-      return;
-    }
-    if (refresh.ready) {
-      await waitForAndroidSurfaceAttachStabilization(
-        platform,
-        timeout: _androidEmbeddedSurfaceAttachStabilizeTimeout,
-      );
-      await _awaitAndroidEmbeddedSurfaceFrames();
-      _logEvent(
-        'setSource surface-ready before-open '
-        'wid=${refresh.currentSurface.wid} '
-        'texture=${refresh.currentSurface.textureId}',
-      );
-      return;
-    }
-    final lateRefresh = await waitForFreshAndroidSurfacePublication(
-      platform: platform,
-      textureId: controller.id,
-      previousSurface: refresh.currentSurface,
-      timeout: _androidInitialEmbeddedPlaySurfaceFallbackTimeout,
-      requireSurfaceHandle: true,
-    );
-    if (_isClosedForOperations) {
-      return;
-    }
-    if (lateRefresh.ready) {
-      await waitForAndroidSurfaceAttachStabilization(
-        platform,
-        timeout: _androidEmbeddedSurfaceAttachStabilizeTimeout,
-      );
-      await _awaitAndroidEmbeddedSurfaceFrames();
-      _logEvent(
-        'setSource surface-ready before-open late=true '
-        'wid=${lateRefresh.currentSurface.wid} '
-        'texture=${lateRefresh.currentSurface.textureId}',
-      );
-      return;
-    }
-    _logEvent(
-      'setSource surface still pending before open '
-      'wid=${lateRefresh.currentSurface.wid} '
-      'texture=${lateRefresh.currentSurface.textureId}',
-    );
-  }
-
-  Future<void> _awaitAndroidEmbeddedPlayGateIfNeeded() async {
-    if (!isAndroid) {
-      return;
-    }
-    final gate = _pendingAndroidEmbeddedPlayGate;
-    if (gate == null) {
-      return;
-    }
-    if (gate.generation != _androidEmbeddedPlayGateGeneration ||
-        _isClosedForOperations) {
-      _pendingAndroidEmbeddedPlayGate = null;
-      return;
-    }
-    final controller = _controller;
-    final platform = controller?.notifier.value;
-    if (controller == null || platform == null) {
-      _pendingAndroidEmbeddedPlayGate = null;
-      return;
-    }
-    _logEvent(
-      'play gate wait-surface '
-      'initial=${gate.isInitialOpen} '
-      'wid-before=${gate.previousSurface.wid} '
-      'texture-before=${gate.previousSurface.textureId}',
-    );
-    final refresh = await waitForFreshAndroidSurfacePublication(
-      platform: platform,
-      textureId: controller.id,
-      previousSurface: gate.previousSurface,
-      timeout: _androidInitialEmbeddedPlaySurfaceReadyTimeout,
-      requireSurfaceHandle: true,
-    );
-    if (gate.generation != _androidEmbeddedPlayGateGeneration ||
-        _isClosedForOperations) {
-      _pendingAndroidEmbeddedPlayGate = null;
-      return;
-    }
-    if (refresh.ready) {
-      await waitForAndroidSurfaceAttachStabilization(
-        platform,
-        timeout: _androidEmbeddedSurfaceAttachStabilizeTimeout,
-      );
-      await _awaitAndroidEmbeddedSurfaceFrames();
-      _logEvent(
-        'play gate surface-ready '
-        'initial=${gate.isInitialOpen} '
-        'wid=${refresh.currentSurface.wid} '
-        'texture=${refresh.currentSurface.textureId}',
-      );
-      await _awaitAndroidEmbeddedHardwareDecoderReadyIfNeeded(
-        surfaceReadyAt: DateTime.now(),
-      );
-      _pendingAndroidEmbeddedPlayGate = null;
-      return;
-    }
-    final lateRefresh = await waitForFreshAndroidSurfacePublication(
-      platform: platform,
-      textureId: controller.id,
-      previousSurface: refresh.currentSurface,
-      timeout: _androidInitialEmbeddedPlaySurfaceFallbackTimeout,
-      requireSurfaceHandle: true,
-    );
-    if (gate.generation != _androidEmbeddedPlayGateGeneration ||
-        _isClosedForOperations) {
-      _pendingAndroidEmbeddedPlayGate = null;
-      return;
-    }
-    if (lateRefresh.ready) {
-      await waitForAndroidSurfaceAttachStabilization(
-        platform,
-        timeout: _androidEmbeddedSurfaceAttachStabilizeTimeout,
-      );
-      await _awaitAndroidEmbeddedSurfaceFrames();
-      _logEvent(
-        'play gate surface-ready '
-        'initial=${gate.isInitialOpen} '
-        'wid=${lateRefresh.currentSurface.wid} '
-        'texture=${lateRefresh.currentSurface.textureId} '
-        'late=true',
-      );
-      await _awaitAndroidEmbeddedHardwareDecoderReadyIfNeeded(
-        surfaceReadyAt: DateTime.now(),
-      );
-      _pendingAndroidEmbeddedPlayGate = null;
-      return;
-    }
-    _logEvent(
-      'play gate surface-timeout '
-      'initial=${gate.isInitialOpen} '
-      'wid=${lateRefresh.currentSurface.wid} '
-      'texture=${lateRefresh.currentSurface.textureId}',
-    );
-    _logEvent(
-        'player diagnostics decoder=software reason=surface-timeout-fallback');
-    _pendingAndroidEmbeddedPlayGate = null;
-  }
-
-  Future<void> _awaitAndroidEmbeddedHardwareDecoderReadyIfNeeded({
-    required DateTime surfaceReadyAt,
-  }) async {
-    if (!isAndroid) {
-      return;
-    }
-    final controllerConfiguration =
-        _runtimeConfiguration?.controllerConfiguration;
-    final runtimeVideoOutput =
-        controllerConfiguration?.vo?.trim().toLowerCase() ?? '';
-    final runtimeHwdec = _effectiveAndroidRuntimeHardwareDecoder(
-      _runtimeConfiguration,
-    ).toLowerCase();
-    if (!shouldWarmAndroidMediaCodecOpenPath(
-      videoOutputDriver: runtimeVideoOutput,
-      hardwareDecoder: runtimeHwdec,
-      isAndroid: true,
-    )) {
-      return;
-    }
-    final existingReadyAt = _lastMediaCodecHardwareDecoderReadyAt;
-    if (existingReadyAt != null) {
-      final delta = resolveAndroidEmbeddedHardwareDecoderReadyDelta(
-        surfaceReadyAt: surfaceReadyAt,
-        hardwareDecoderReadyAt: existingReadyAt,
-      );
-      _logEvent(
-        'play gate hw-ready delta=${delta.inMilliseconds}ms '
-        'runtime-vo=${runtimeVideoOutput.isEmpty ? 'platform-default' : runtimeVideoOutput} '
-        'runtime-hwdec=${runtimeHwdec.isEmpty ? 'platform-default' : runtimeHwdec}',
-      );
-      return;
-    }
-    final completer = Completer<DateTime>();
-    _pendingMediaCodecHardwareDecoderReadyCompleter = completer;
-    final lateReadyAt = _lastMediaCodecHardwareDecoderReadyAt;
-    if (lateReadyAt != null && !completer.isCompleted) {
-      completer.complete(lateReadyAt);
-    }
-    DateTime? readyAt;
-    try {
-      readyAt = await completer.future.timeout(
-        _androidEmbeddedHardwareDecoderReadyTimeout,
-      );
-    } on TimeoutException {
-      readyAt = null;
-    } finally {
-      if (identical(
-        _pendingMediaCodecHardwareDecoderReadyCompleter,
-        completer,
-      )) {
-        _pendingMediaCodecHardwareDecoderReadyCompleter = null;
+    final platform = player.platform;
+    if (platform is mk.NativePlayer) {
+      await _configureExternalAudioHeaders(platform, externalAudio.headers);
+      final title = externalAudio.label?.trim().isNotEmpty == true
+          ? externalAudio.label!.trim()
+          : 'external audio';
+      try {
+        await platform.command([
+          'audio-add',
+          externalAudio.url.toString(),
+          'select',
+          title,
+        ], waitForInitialization: false);
+        _logEvent(
+          'external audio-add url=${_shortSourceDescriptor(externalAudio.url)} '
+          'headers=${externalAudio.headers.keys.join(',')}',
+        );
+        return;
+      } catch (error) {
+        _logEvent('external audio-add failed error=$error');
       }
     }
-    if (_isClosedForOperations) {
-      return;
-    }
-    if (readyAt == null) {
-      _logEvent(
-        'play gate hw-ready timeout=${_androidEmbeddedHardwareDecoderReadyTimeout.inMilliseconds}ms '
-        'runtime-vo=${runtimeVideoOutput.isEmpty ? 'platform-default' : runtimeVideoOutput} '
-        'runtime-hwdec=${runtimeHwdec.isEmpty ? 'platform-default' : runtimeHwdec}',
-      );
-      return;
-    }
-    final delta = resolveAndroidEmbeddedHardwareDecoderReadyDelta(
-      surfaceReadyAt: surfaceReadyAt,
-      hardwareDecoderReadyAt: readyAt,
+    await player.setAudioTrack(
+      mk.AudioTrack.uri(
+        externalAudio.url.toString(),
+        title: externalAudio.label,
+      ),
     );
     _logEvent(
-      'play gate hw-ready delta=${delta.inMilliseconds}ms '
-      'runtime-vo=${runtimeVideoOutput.isEmpty ? 'platform-default' : runtimeVideoOutput} '
-      'runtime-hwdec=${runtimeHwdec.isEmpty ? 'platform-default' : runtimeHwdec}',
+      'external audio-track uri url=${_shortSourceDescriptor(externalAudio.url)}',
     );
+  }
+
+  Future<void> _configureExternalAudioHeaders(
+    mk.NativePlayer platform,
+    Map<String, String> audioHeaders,
+  ) async {
+    final userAgent = audioHeaders['user-agent'] ?? audioHeaders['User-Agent'];
+    if (userAgent != null) {
+      try {
+        await platform.setProperty('user-agent', userAgent);
+      } catch (_) {}
+    }
+    final referer =
+        audioHeaders['referer'] ??
+        audioHeaders['Referer'] ??
+        audioHeaders['referrer'] ??
+        audioHeaders['Referrer'];
+    if (referer != null) {
+      try {
+        await platform.setProperty('referrer', referer);
+      } catch (_) {}
+    }
+    final cookie = audioHeaders['cookie'] ?? audioHeaders['Cookie'];
+    if (cookie != null) {
+      try {
+        await platform.setProperty('cookies', cookie);
+      } catch (_) {}
+    }
+    final customHeaders = audioHeaders.entries
+        .where(
+          (e) => ![
+            'user-agent',
+            'referer',
+            'referrer',
+            'cookie',
+          ].contains(e.key.toLowerCase()),
+        )
+        .map((e) => '${e.key}: ${e.value}')
+        .join(',');
+    if (customHeaders.isNotEmpty) {
+      try {
+        await platform.setProperty('http-header-fields', customHeaders);
+      } catch (_) {}
+    }
   }
 
   @override
@@ -695,55 +546,6 @@ class MpvPlayer implements BasePlayer {
     });
   }
 
-  Future<Uint8List?> _captureScreenshotToTempFile(mk.Player player) async {
-    final platform = player.platform;
-    if (platform is! mk.NativePlayer) {
-      return null;
-    }
-    final directory =
-        await Directory.systemTemp.createTemp('nolive-mpv-screenshot-');
-    final file = File(
-      '${directory.path}${Platform.pathSeparator}screenshot.png',
-    );
-    try {
-      const attemptCommands = <List<String>>[
-        <String>['screenshot-to-file', 'video'],
-        <String>['screenshot-to-file'],
-      ];
-      for (final command in attemptCommands) {
-        try {
-          await platform.command(<String>[
-            command.first,
-            file.path,
-            ...command.skip(1),
-          ]);
-        } catch (_) {
-          continue;
-        }
-        final bytes = await waitForScreenshotFileBytes(file);
-        if (bytes != null && bytes.isNotEmpty) {
-          return bytes;
-        }
-      }
-      return null;
-    } finally {
-      try {
-        if (await file.exists()) {
-          await file.delete();
-        }
-      } catch (_) {
-        // Best-effort cleanup for temporary screenshot files.
-      }
-      try {
-        if (await directory.exists()) {
-          await directory.delete(recursive: true);
-        }
-      } catch (_) {
-        // Best-effort cleanup for temporary screenshot directories.
-      }
-    }
-  }
-
   @override
   Widget buildView({
     Key? key,
@@ -783,69 +585,41 @@ class MpvPlayer implements BasePlayer {
       return;
     }
     _disposing = true;
-    await _runSerialized(
-      'dispose',
-      () async {
-        final player = _player;
-        if (player != null) {
-          await _stopPlayerBeforeDispose(player);
-        }
-        _player = null;
-        _controller = null;
-        _controllerNotifier.value = null;
-        _runtimeConfiguration = null;
-        _androidEmbeddedPlayGateGeneration += 1;
-        _pendingAndroidEmbeddedPlayGate = null;
-        _initialized = false;
-        for (final subscription in _subscriptions) {
-          await subscription.cancel();
-        }
-        _subscriptions.clear();
-        await player?.dispose();
-        _disposed = true;
-        await _deleteSyntheticPlaylistFile(_activeSyntheticPlaylistFile);
-        _activeSyntheticPlaylistFile = null;
-        await _stateController.close();
-        await _diagnosticsController.close();
-      },
-      allowWhileClosing: true,
-    );
-  }
-
-  Future<void> _deleteSyntheticPlaylistFile(
-    File? file, {
-    bool preserveIfSameAsActive = false,
-  }) async {
-    if (file == null) {
-      return;
-    }
-    if (preserveIfSameAsActive &&
-        _activeSyntheticPlaylistFile?.path == file.path) {
-      return;
-    }
-    try {
-      final parent = file.parent;
-      if (await file.exists()) {
-        await file.delete();
+    await _runSerialized('dispose', () async {
+      final player = _player;
+      if (player != null) {
+        await _stopPlayerBeforeDispose(player);
       }
-      if (await parent.exists()) {
-        await parent.delete(recursive: true);
+      _player = null;
+      _controller = null;
+      _controllerNotifier.value = null;
+      _runtimeConfiguration = null;
+      _androidEmbeddedPlayGateGeneration += 1;
+      _pendingAndroidEmbeddedPlayGate = null;
+      _initialized = false;
+      for (final subscription in _subscriptions) {
+        await subscription.cancel();
       }
-    } catch (_) {
-      // Best-effort cleanup for transient synthetic manifests.
-    }
+      _subscriptions.clear();
+      await player?.dispose();
+      _disposed = true;
+      await _deleteSyntheticPlaylistFile(_activeSyntheticPlaylistFile);
+      _activeSyntheticPlaylistFile = null;
+      await _stateController.close();
+      await _diagnosticsController.close();
+    }, allowWhileClosing: true);
   }
 
   Future<void> _stopPlayerBeforeDispose(mk.Player player) async {
     final state = _currentState;
-    final shouldStop = state.source != null ||
+    final shouldStop =
+        state.source != null ||
         switch (state.status) {
           PlaybackStatus.buffering ||
           PlaybackStatus.playing ||
           PlaybackStatus.paused ||
           PlaybackStatus.completed ||
-          PlaybackStatus.error =>
-            true,
+          PlaybackStatus.error => true,
           _ => false,
         };
     if (!shouldStop) {
@@ -862,286 +636,6 @@ class MpvPlayer implements BasePlayer {
     } catch (error) {
       _logEvent('dispose graceful stop ignored error=$error');
     }
-  }
-
-  Future<AndroidOpenPreparationResult> _preparePlayerForNextOpen(
-    mk.Player player, {
-    required bool shouldStopBeforeOpen,
-    required Duration barrierDuration,
-    required bool isInitialOpen,
-  }) async {
-    final previousSurface = readAndroidSurfaceSnapshot(
-      platform: _controller?.notifier.value,
-      textureId: _controller?.id,
-    );
-    if (shouldStopBeforeOpen) {
-      try {
-        _logEvent('setSource source-switch stop start');
-        await player.stop();
-        _logEvent('setSource source-switch stop settle');
-      } catch (error) {
-        _logEvent('setSource source-switch stop ignored error=$error');
-      }
-    }
-    if (barrierDuration > Duration.zero) {
-      _logEvent('setSource open barrier ${barrierDuration.inMilliseconds}ms');
-      await Future<void>.delayed(barrierDuration);
-    }
-    if (shouldStopBeforeOpen) {
-      await _awaitAndroidEmbeddedSurfaceRefreshForReopen(
-        previousSurface,
-      );
-    }
-    var warmupResult = await _awaitAndroidEmbeddedSurfaceReadyForOpen(
-      isInitialOpen: isInitialOpen,
-    );
-    final deferPlayUntilSurfaceReady =
-        shouldDelayAndroidEmbeddedPlayUntilSurfaceReady(
-      isInitialOpen: isInitialOpen,
-      previousSurface: previousSurface,
-      warmupResult: warmupResult,
-    );
-    if (deferPlayUntilSurfaceReady) {
-      _logEvent(
-        'setSource play-gate pending '
-        'initial=$isInitialOpen wid-before=${previousSurface.wid} '
-        'texture-before=${previousSurface.textureId} '
-        'reason=surface-published-after-open',
-      );
-    }
-    return (
-      previousSurface: previousSurface,
-      deferPlayUntilSurfaceReady: deferPlayUntilSurfaceReady,
-      shouldStopBeforeOpen: shouldStopBeforeOpen,
-    );
-  }
-
-  Future<AndroidSurfaceRefreshResult?>
-      _awaitAndroidEmbeddedSurfaceRefreshForReopen(
-    AndroidSurfaceSnapshot previousSurface,
-  ) async {
-    if (!isAndroid) {
-      return null;
-    }
-    final controller = _controller;
-    final controllerConfiguration =
-        _runtimeConfiguration?.controllerConfiguration;
-    if (controller == null || controllerConfiguration == null) {
-      return null;
-    }
-    final runtimeVideoOutput =
-        controllerConfiguration.vo?.trim().toLowerCase() ?? '';
-    final runtimeHwdec = _effectiveAndroidRuntimeHardwareDecoder(
-      _runtimeConfiguration,
-    ).toLowerCase();
-    if (!shouldWarmAndroidMediaCodecOpenPath(
-      videoOutputDriver: runtimeVideoOutput,
-      hardwareDecoder: runtimeHwdec,
-      isAndroid: true,
-    )) {
-      return null;
-    }
-    await _awaitAndroidEmbeddedSurfaceFrames();
-    final platformReady = await waitForVideoControllerPlatformReady(
-      controller.notifier,
-      timeout: _androidEmbeddedPlatformReadyTimeout,
-    );
-    if (!platformReady) {
-      _logEvent(
-        'setSource surface-refresh skipped platform-timeout '
-        'runtime-vo=${runtimeVideoOutput.isEmpty ? 'platform-default' : runtimeVideoOutput} '
-        'runtime-hwdec=${runtimeHwdec.isEmpty ? 'platform-default' : runtimeHwdec}',
-      );
-      return null;
-    }
-    final currentSurface = readAndroidSurfaceSnapshot(
-      platform: controller.notifier.value,
-      textureId: controller.id,
-    );
-    if (shouldReuseExistingAndroidSurfaceForReopen(
-      previousSurface: previousSurface,
-      currentSurface: currentSurface,
-    )) {
-      _logEvent(
-        'setSource surface-refresh reopen '
-        'wid-before=${previousSurface.wid} texture-before=${previousSurface.textureId} '
-        'wid-after=${currentSurface.wid} texture-after=${currentSurface.textureId} '
-        'wid-changed=false ready=true reuse=true '
-        'runtime-vo=${runtimeVideoOutput.isEmpty ? 'platform-default' : runtimeVideoOutput} '
-        'runtime-hwdec=${runtimeHwdec.isEmpty ? 'platform-default' : runtimeHwdec}',
-      );
-      return (
-        currentSurface: currentSurface,
-        changed: false,
-        ready: true,
-      );
-    }
-    final refresh = await waitForFreshAndroidSurfacePublication(
-      platform: controller.notifier.value,
-      textureId: controller.id,
-      previousSurface: previousSurface,
-      timeout: _androidReopenFreshSurfaceWaitBudget,
-      requireSurfaceHandle: true,
-    );
-    final refreshedSurface = refresh.currentSurface;
-    _logEvent(
-      'setSource surface-refresh reopen '
-      'wid-before=${previousSurface.wid} texture-before=${previousSurface.textureId} '
-      'wid-after=${refreshedSurface.wid} texture-after=${refreshedSurface.textureId} '
-      'wid-changed=${refresh.changed} ready=${refresh.ready} '
-      'runtime-vo=${runtimeVideoOutput.isEmpty ? 'platform-default' : runtimeVideoOutput} '
-      'runtime-hwdec=${runtimeHwdec.isEmpty ? 'platform-default' : runtimeHwdec}',
-    );
-    return refresh;
-  }
-
-  Future<AndroidEmbeddedSurfaceWarmupResult?>
-      _awaitAndroidEmbeddedSurfaceReadyForOpen({
-    required bool isInitialOpen,
-    AndroidEmbeddedSurfaceWarmupPolicy? warmupPolicy,
-    String phase = 'warmup',
-  }) async {
-    if (!isAndroid) {
-      return null;
-    }
-    final controller = _controller;
-    final controllerConfiguration =
-        _runtimeConfiguration?.controllerConfiguration;
-    if (controller == null || controllerConfiguration == null) {
-      return null;
-    }
-    final runtimeVideoOutput =
-        controllerConfiguration.vo?.trim().toLowerCase() ?? '';
-    final runtimeHwdec = _effectiveAndroidRuntimeHardwareDecoder(
-      _runtimeConfiguration,
-    ).toLowerCase();
-    if (!shouldWarmAndroidMediaCodecOpenPath(
-      videoOutputDriver: runtimeVideoOutput,
-      hardwareDecoder: runtimeHwdec,
-      isAndroid: true,
-    )) {
-      _logEvent(
-        'setSource surface-ready skipped '
-        'runtime-vo=${runtimeVideoOutput.isEmpty ? 'platform-default' : runtimeVideoOutput} '
-        'runtime-hwdec=${runtimeHwdec.isEmpty ? 'platform-default' : runtimeHwdec}',
-      );
-      return null;
-    }
-    final policy = warmupPolicy ??
-        resolveAndroidEmbeddedSurfaceWarmupPolicy(
-          isInitialOpen: isInitialOpen,
-        );
-    final stopwatch = Stopwatch()..start();
-    final mounted = await waitForValueListenableValue<bool>(
-      _embeddedViewMounted,
-      isReady: (value) => value,
-      timeout: policy.viewMountTimeout,
-    );
-    var platformReady = false;
-    var surfaceReady = false;
-    var stabilized = false;
-    var attempts = 0;
-    if (mounted) {
-      await _awaitAndroidEmbeddedSurfaceFrames();
-      platformReady = await waitForVideoControllerPlatformReady(
-        controller.notifier,
-        timeout: policy.platformTimeout,
-      );
-      if (platformReady) {
-        final deadline = DateTime.now().add(policy.surfaceReadyBudget);
-        while (true) {
-          final remaining = deadline.difference(DateTime.now());
-          if (remaining <= Duration.zero) {
-            break;
-          }
-          attempts += 1;
-          final waitTimeout = remaining < policy.surfaceReadyPollInterval
-              ? remaining
-              : policy.surfaceReadyPollInterval;
-          surfaceReady = await waitForVideoControllerSurfaceReady(
-            controller: controller,
-            timeout: waitTimeout,
-          );
-          if (!surfaceReady) {
-            await _awaitAndroidEmbeddedSurfaceFrames();
-            continue;
-          }
-          stabilized = await waitForAndroidSurfaceAttachStabilization(
-            controller.notifier.value,
-            timeout: policy.attachStabilizeTimeout,
-          );
-          if (stabilized) {
-            break;
-          }
-          await _awaitAndroidEmbeddedSurfaceFrames();
-        }
-      }
-    }
-    stopwatch.stop();
-    final currentWid = tryReadAndroidSurfaceHandle(
-      controller.notifier.value,
-    );
-    final currentTextureId = controller.id.value;
-    final result = (
-      mounted: mounted,
-      platformReady: platformReady,
-      surfaceReady: surfaceReady,
-      stabilized: stabilized,
-      attempts: attempts,
-      elapsed: stopwatch.elapsed,
-      wid: currentWid,
-      textureId: currentTextureId,
-    );
-    if (!mounted) {
-      _logEvent(
-        'setSource surface-ready $phase skipped view-not-mounted '
-        'initial=$isInitialOpen elapsed=${stopwatch.elapsedMilliseconds}ms',
-      );
-      return result;
-    }
-    if (!platformReady) {
-      _logEvent(
-        'setSource surface-ready $phase platform-timeout '
-        'initial=$isInitialOpen elapsed=${stopwatch.elapsedMilliseconds}ms',
-      );
-      return result;
-    }
-    if (isInitialOpen && !surfaceReady) {
-      _logEvent(
-        'setSource surface-ready $phase skipped '
-        'reason=wid-pending initial=$isInitialOpen attempts=$attempts '
-        'elapsed=${stopwatch.elapsedMilliseconds}ms '
-        'budget=${policy.surfaceReadyBudget.inMilliseconds}ms '
-        'wid=${currentWid ?? 0} texture=${currentTextureId ?? 0} '
-        'runtime-vo=${runtimeVideoOutput.isEmpty ? 'platform-default' : runtimeVideoOutput} '
-        'runtime-hwdec=${runtimeHwdec.isEmpty ? 'platform-default' : runtimeHwdec}',
-      );
-      return result;
-    }
-    _logEvent(
-      'setSource surface-ready $phase '
-      'mounted=$mounted platform=$platformReady '
-      'surface=$surfaceReady stabilized=$stabilized '
-      'initial=$isInitialOpen attempts=$attempts '
-      'elapsed=${stopwatch.elapsedMilliseconds}ms '
-      'budget=${policy.surfaceReadyBudget.inMilliseconds}ms '
-      'wid=${currentWid ?? 0} texture=${currentTextureId ?? 0} '
-      'runtime-vo=${runtimeVideoOutput.isEmpty ? 'platform-default' : runtimeVideoOutput} '
-      'runtime-hwdec=${runtimeHwdec.isEmpty ? 'platform-default' : runtimeHwdec}',
-    );
-    return result;
-  }
-
-  Future<void> _awaitAndroidEmbeddedSurfaceFrames() async {
-    final binding = WidgetsBinding.instance;
-    if (!binding.hasScheduledFrame) {
-      binding.scheduleFrame();
-    }
-    await binding.endOfFrame;
-    if (!binding.hasScheduledFrame) {
-      binding.scheduleFrame();
-    }
-    await binding.endOfFrame;
   }
 
   Future<void> _initializeInternal() async {
@@ -1161,6 +655,7 @@ class MpvPlayer implements BasePlayer {
       doubleBufferingEnabled: doubleBufferingEnabled,
       customOutputEnabled: customOutputEnabled,
       videoOutputDriver: videoOutputDriver,
+      audioOutputDriver: audioOutputDriver,
       hardwareDecoder: hardwareDecoder,
       logEnabled: logEnabled,
     );
@@ -1197,180 +692,6 @@ class MpvPlayer implements BasePlayer {
     );
   }
 
-  Future<void> _configurePlayerProperties(
-    mk.Player player, {
-    required Map<String, String> properties,
-  }) async {
-    final platform = player.platform;
-    if (platform is! mk.NativePlayer) {
-      return;
-    }
-    for (final entry in properties.entries) {
-      try {
-        await platform.setProperty(entry.key, entry.value);
-      } catch (_) {
-        // Ignore unsupported native properties on older backends.
-      }
-    }
-  }
-
-  void _bindPlayer(mk.Player player) {
-    _subscriptions.addAll([
-      player.stream.playing.listen((playing) {
-        if (playing) {
-          _logEvent('stream playing=true');
-          _emit(_currentState.copyWith(status: PlaybackStatus.playing));
-        } else if (_currentState.status == PlaybackStatus.playing) {
-          _logEvent('stream playing=false');
-          _emit(_currentState.copyWith(status: PlaybackStatus.paused));
-        }
-      }),
-      player.stream.completed.listen((completed) {
-        if (completed) {
-          _logEvent('stream completed=true');
-          _emit(_currentState.copyWith(status: PlaybackStatus.completed));
-        }
-      }),
-      player.stream.position.listen((position) {
-        final nextState = _currentState.copyWith(position: position);
-        final shouldBroadcast = _shouldBroadcastProgress(
-          previous: _lastBroadcastPosition,
-          next: position,
-          step: _progressBroadcastStep,
-        );
-        _emit(nextState, broadcast: shouldBroadcast);
-        if (shouldBroadcast) {
-          _lastBroadcastPosition = position;
-        }
-      }),
-      player.stream.duration.listen((duration) {
-        _emit(_currentState.copyWith(duration: duration));
-      }),
-      player.stream.volume.listen((volume) {
-        _emit(_currentState.copyWith(volume: (volume / 100).clamp(0, 1)));
-      }),
-      player.stream.buffering.listen((buffering) {
-        _logEvent('stream buffering=$buffering');
-        _emitDiagnostics(_currentDiagnostics.copyWith(buffering: buffering));
-        if (buffering) {
-          _emit(_currentState.copyWith(status: PlaybackStatus.buffering));
-          return;
-        }
-        if (_currentState.status == PlaybackStatus.buffering &&
-            _currentState.source != null) {
-          _emit(_currentState.copyWith(status: PlaybackStatus.ready));
-        }
-      }),
-      player.stream.buffer.listen((buffered) {
-        _emitDiagnostics(_currentDiagnostics.copyWith(buffered: buffered));
-        final nextState = _currentState.copyWith(buffered: buffered);
-        final shouldBroadcast = _shouldBroadcastProgress(
-          previous: _lastBroadcastBuffered,
-          next: buffered,
-          step: _bufferBroadcastStep,
-        );
-        _emit(nextState, broadcast: shouldBroadcast);
-        if (shouldBroadcast) {
-          _lastBroadcastBuffered = buffered;
-        }
-      }),
-      player.stream.error.listen((message) {
-        if (message.isEmpty) {
-          return;
-        }
-        if (_shouldIgnoreRuntimeMessage(message)) {
-          _logEvent('stream warning ignored=$message');
-          return;
-        }
-        _logEvent('stream error=$message');
-        _emitDiagnostics(_currentDiagnostics.copyWith(error: message));
-        _emit(
-          _currentState.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: message,
-          ),
-        );
-      }),
-      player.stream.width.listen((width) {
-        _emitDiagnostics(_currentDiagnostics.copyWith(width: width));
-      }),
-      player.stream.height.listen((height) {
-        _emitDiagnostics(_currentDiagnostics.copyWith(height: height));
-      }),
-      player.stream.videoParams.listen((params) {
-        _emitDiagnostics(
-          _currentDiagnostics.copyWith(
-            videoParams: _videoParamsToMap(params),
-          ),
-        );
-      }),
-      player.stream.audioParams.listen((params) {
-        _emitDiagnostics(
-          _currentDiagnostics.copyWith(
-            audioParams: _audioParamsToMap(params),
-          ),
-        );
-      }),
-      if (logEnabled)
-        player.stream.log.listen((entry) {
-          final message = entry.text.trim();
-          if (message.isEmpty) {
-            return;
-          }
-          if (_shouldIgnoreRuntimeMessage(message)) {
-            return;
-          }
-          final normalizedMessage = message.toLowerCase();
-          if (normalizedMessage.contains('opening done:')) {
-            _lastMpvOpeningDoneAt = DateTime.now();
-          }
-          if (normalizedMessage.contains(
-            'using hardware decoding (mediacodec)',
-          )) {
-            final readyAt = DateTime.now();
-            _lastMediaCodecHardwareDecoderReadyAt = readyAt;
-            final completer = _pendingMediaCodecHardwareDecoderReadyCompleter;
-            if (completer != null && !completer.isCompleted) {
-              completer.complete(readyAt);
-            }
-            _logEvent('player diagnostics decoder=hardware');
-          }
-          if (!_emittedMediaCodecDeviceFailureForSource &&
-              normalizedMessage.contains('could not create device')) {
-            _emittedMediaCodecDeviceFailureForSource = true;
-            final failureTimestamp = DateTime.now();
-            final failureReason = classifyAndroidMediaCodecDeviceFailureReason(
-              lastOpeningDoneAt: _lastMpvOpeningDoneAt,
-              failureTimestamp: failureTimestamp,
-              reinitThreshold: _androidMediaCodecReinitClassificationThreshold,
-            );
-            final openingDoneDelta = _lastMpvOpeningDoneAt == null
-                ? null
-                : failureTimestamp.difference(_lastMpvOpeningDoneAt!);
-            _logEvent(
-              'player diagnostics decoder=software '
-              'reason=$failureReason'
-              '${openingDoneDelta == null ? '' : ' delta=${openingDoneDelta.inMilliseconds}ms'}',
-            );
-          }
-          final nextEntry = '[${entry.level}] ${entry.prefix}: $message';
-          _logEvent('mpv $nextEntry');
-          final nextLogs = List<String>.from(_recentLogs)..add(nextEntry);
-          while (nextLogs.length > 24) {
-            nextLogs.removeAt(0);
-          }
-          _recentLogs
-            ..clear()
-            ..addAll(nextLogs);
-          _emitDiagnostics(
-            _currentDiagnostics.copyWith(
-              recentLogs: List<String>.unmodifiable(nextLogs),
-            ),
-          );
-        }),
-    ]);
-  }
-
   bool _shouldBroadcastProgress({
     required Duration previous,
     required Duration next,
@@ -1392,6 +713,50 @@ class MpvPlayer implements BasePlayer {
     if (!_diagnosticsController.isClosed) {
       _diagnosticsController.add(_currentDiagnostics);
     }
+  }
+
+  Future<void> _awaitAndroidStartupMediaSignalAfterPlay(
+    PlaybackSource? source,
+  ) async {
+    if (!isAndroid || source == null) {
+      return;
+    }
+    final timeout = resolveMpvStartupMediaSignalTimeout(source);
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (_isClosedForOperations ||
+          _currentState.source != source ||
+          _currentState.status == PlaybackStatus.error ||
+          hasMpvStartupMediaSignal(
+            state: _currentState,
+            diagnostics: _currentDiagnostics,
+          )) {
+        return;
+      }
+      await Future<void>.delayed(_androidStartupMediaSignalPollInterval);
+    }
+    if (_isClosedForOperations ||
+        _currentState.source != source ||
+        _currentState.status == PlaybackStatus.error ||
+        hasMpvStartupMediaSignal(
+          state: _currentState,
+          diagnostics: _currentDiagnostics,
+        )) {
+      return;
+    }
+    _logEvent(
+      'startup health failed timeout=${timeout.inMilliseconds}ms '
+      'error=$kMpvNoMediaTrackStartupError',
+    );
+    _emitDiagnostics(
+      _currentDiagnostics.copyWith(error: kMpvNoMediaTrackStartupError),
+    );
+    _emit(
+      _currentState.copyWith(
+        status: PlaybackStatus.error,
+        errorMessage: kMpvNoMediaTrackStartupError,
+      ),
+    );
   }
 
   PlayerDiagnostics _freshDiagnostics({bool clearRecentLogs = false}) {
@@ -1475,8 +840,8 @@ class MpvPlayer implements BasePlayer {
         final supportDirectory = await getApplicationSupportDirectory();
         final deleted =
             await deleteMediaKitNativeReferenceHolderFilesInDirectory(
-          supportDirectory,
-        );
+              supportDirectory,
+            );
         _logEvent(
           'debug native-reference-holder cleanup deleted=$deleted '
           'dir=${supportDirectory.path}',
@@ -1526,6 +891,16 @@ class MpvPlayer implements BasePlayer {
   }
 
   String _shortSourceDescriptor(Uri uri) {
+    if (uri.scheme == 'file') {
+      final segments = uri.pathSegments;
+      final fileName = segments.isEmpty ? uri.path : segments.last;
+      final parent = segments.length > 1 ? segments[segments.length - 2] : '';
+      return [
+        'file',
+        if (parent.isNotEmpty) parent,
+        if (fileName.isNotEmpty) fileName,
+      ].join(' ');
+    }
     final itagMatch = RegExp(r'/itag/([^/]+)').firstMatch(uri.path);
     final idMatch = RegExp(r'/id/([^/]+)').firstMatch(uri.path);
     final parts = <String>[uri.host];
@@ -1542,1834 +917,4 @@ class MpvPlayer implements BasePlayer {
     }
     return parts.join(' ');
   }
-}
-
-class MpvRuntimeConfiguration {
-  const MpvRuntimeConfiguration({
-    required this.controllerConfiguration,
-    required this.logLevel,
-    required this.platformProperties,
-    this.androidOutputFallbackReason,
-  });
-
-  final VideoControllerConfiguration controllerConfiguration;
-  final mk.MPVLogLevel logLevel;
-  final Map<String, String> platformProperties;
-  final String? androidOutputFallbackReason;
-}
-
-class _MpvOpenPlan {
-  const _MpvOpenPlan({
-    required this.mediaUri,
-    required this.httpHeaders,
-    required this.loadsAudioInsideMedia,
-    required this.strategy,
-  });
-
-  final Uri mediaUri;
-  final Map<String, String> httpHeaders;
-  final bool loadsAudioInsideMedia;
-  final String strategy;
-}
-
-@visibleForTesting
-bool shouldForceSeekableForSource(PlaybackSource source) {
-  if (source.url.host == '127.0.0.1' &&
-      source.url.path.contains('/twitch-ad-guard/')) {
-    return true;
-  }
-  return false;
-}
-
-@visibleForTesting
-bool shouldInlineSplitHlsAudioIntoSource(PlaybackSource source) {
-  // CB/mmcdn split LL-HLS is more stable when mpv demuxes audio + video inside
-  // a single HLS session instead of attaching audio afterwards via audio-add.
-  // This now applies to both legacy live-hls and v1/edge split LL-HLS, but we
-  // keep single-source master localization restricted to true edge masters.
-  return _looksLikeMmcdnSplitLowLatencyHlsSource(source) &&
-      _sharedHttpHeadersForSplitHls(source) != null;
-}
-
-@visibleForTesting
-bool shouldFallbackToSyntheticSplitMaster(PlaybackSource source) {
-  // The simplified synthetic master drops LL-HLS attributes that the updated
-  // /v1/edge streams depend on. Keep it only for older split-HLS layouts.
-  return !_looksLikeMmcdnEdgeSplitHls(source.url);
-}
-
-@visibleForTesting
-bool shouldUseAudioFilesPropertyForSource(PlaybackSource source) {
-  // `audio-files` is a path-list option in mpv. Passing HTTPS URLs via the
-  // string property API causes the URL to be tokenized as separate entries
-  // (`https`, `//host/...`), which matches the "Can not open external file
-  // https." failures seen in the latest Chaturbate logs. Keep split HLS audio
-  // on either the synthetic master or runtime `audio-add` paths instead.
-  return false;
-}
-
-Map<String, String>? _sharedHttpHeadersForSplitHls(PlaybackSource source) {
-  final externalAudio = source.externalAudio;
-  if (externalAudio == null) {
-    return null;
-  }
-  if (source.headers.isEmpty && externalAudio.headers.isEmpty) {
-    return const <String, String>{};
-  }
-  if (source.headers.isEmpty) {
-    return Map<String, String>.unmodifiable(
-      Map<String, String>.from(externalAudio.headers),
-    );
-  }
-  if (externalAudio.headers.isEmpty) {
-    return Map<String, String>.unmodifiable(
-      Map<String, String>.from(source.headers),
-    );
-  }
-  if (_sameHttpHeaders(source.headers, externalAudio.headers)) {
-    return Map<String, String>.unmodifiable(
-      Map<String, String>.from(source.headers),
-    );
-  }
-  return null;
-}
-
-bool _sameHttpHeaders(
-  Map<String, String> left,
-  Map<String, String> right,
-) {
-  if (identical(left, right)) {
-    return true;
-  }
-  if (left.length != right.length) {
-    return false;
-  }
-  for (final entry in left.entries) {
-    if (right[entry.key] != entry.value) {
-      return false;
-    }
-  }
-  return true;
-}
-
-@visibleForTesting
-String buildSplitHlsMasterPlaylistContent(PlaybackSource source) {
-  final externalAudio = source.externalAudio;
-  if (externalAudio == null) {
-    throw ArgumentError(
-      'Split HLS master playlist requires an external audio source.',
-    );
-  }
-  final audioLabel = _escapeHlsQuotedString(
-    externalAudio.label?.trim().isNotEmpty == true
-        ? externalAudio.label!.trim()
-        : 'external',
-  );
-  final videoUrl = source.url.toString();
-  final audioUrl = _escapeHlsQuotedString(externalAudio.url.toString());
-  final bandwidth = _estimateSyntheticHlsBandwidth(source);
-  return <String>[
-    '#EXTM3U',
-    '#EXT-X-VERSION:6',
-    '#EXT-X-INDEPENDENT-SEGMENTS',
-    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="$audioLabel",DEFAULT=YES,AUTOSELECT=YES,URI="$audioUrl"',
-    '#EXT-X-STREAM-INF:BANDWIDTH=$bandwidth,AUDIO="audio"',
-    videoUrl,
-  ].join('\n');
-}
-
-@visibleForTesting
-Future<File> writeSplitHlsMasterPlaylistFile(PlaybackSource source) async {
-  final manifest = buildSplitHlsMasterPlaylistContent(source);
-  return writeSyntheticHlsPlaylistFile(
-    manifest,
-    prefix: 'nolive-mpv-hls-',
-    fileName: 'inline-master.m3u8',
-  );
-}
-
-@visibleForTesting
-Future<File?> maybeWriteResolvedSplitHlsMasterPlaylistFile(
-  PlaybackSource source,
-) async {
-  final masterPlaylistUrl = source.masterPlaylistUrl;
-  if (masterPlaylistUrl == null || source.externalAudio == null) {
-    return null;
-  }
-  final embeddedManifest = source.masterPlaylistContent?.trim() ?? '';
-  if (embeddedManifest.isNotEmpty) {
-    final rewritten = rewriteHlsManifestWithAbsoluteUris(
-      playlistUri: masterPlaylistUrl,
-      manifest: embeddedManifest,
-    );
-    if (!rewritten.contains('#EXT-X-STREAM-INF:')) {
-      return null;
-    }
-    final selectedManifest = buildResolvedSelectedSplitHlsMasterPlaylistContent(
-      source: source,
-      manifest: rewritten,
-    );
-    return writeSyntheticHlsPlaylistFile(
-      selectedManifest,
-      prefix: 'nolive-mpv-hls-',
-      fileName: 'resolved-inline-master.m3u8',
-    );
-  }
-  try {
-    final manifest = await _fetchHlsManifest(
-      masterPlaylistUrl,
-      headers: _sharedHttpHeadersForSplitHls(source) ?? source.headers,
-    );
-    if (!manifest.contains('#EXT-X-STREAM-INF:')) {
-      return null;
-    }
-    final rewritten = rewriteHlsManifestWithAbsoluteUris(
-      playlistUri: masterPlaylistUrl,
-      manifest: manifest,
-    );
-    final selectedManifest = buildResolvedSelectedSplitHlsMasterPlaylistContent(
-      source: source,
-      manifest: rewritten,
-    );
-    return writeSyntheticHlsPlaylistFile(
-      selectedManifest,
-      prefix: 'nolive-mpv-hls-',
-      fileName: 'resolved-inline-master.m3u8',
-    );
-  } catch (_) {
-    return null;
-  }
-}
-
-@visibleForTesting
-bool shouldRewriteSingleSourceHlsManifest(PlaybackSource source) {
-  if (source.externalAudio != null || !_looksLikeHlsPlaylist(source.url)) {
-    return false;
-  }
-  final manifestUri = source.masterPlaylistUrl ?? source.url;
-  return _looksLikeMmcdnEdgeLowLatencyMasterUri(source.url) ||
-      _looksLikeMmcdnEdgeLowLatencyMasterUri(manifestUri) ||
-      _looksLikeDoppioLowLatencyHlsUri(source.url) ||
-      _looksLikeDoppioLowLatencyHlsUri(manifestUri);
-}
-
-bool _isSingleSourceLocalizedLowLatencyMaster(PlaybackSource source) {
-  if (source.externalAudio != null) {
-    return false;
-  }
-  final manifestUri = source.masterPlaylistUrl ?? source.url;
-  return _looksLikeMmcdnEdgeLowLatencyMasterUri(source.url) ||
-      _looksLikeMmcdnEdgeLowLatencyMasterUri(manifestUri) ||
-      _looksLikeDoppioLowLatencyHlsUri(source.url) ||
-      _looksLikeDoppioLowLatencyHlsUri(manifestUri);
-}
-
-@visibleForTesting
-String rewriteHlsManifestWithAbsoluteUris({
-  required Uri playlistUri,
-  required String manifest,
-}) {
-  final lines = manifest.split('\n');
-  final rewritten = <String>[];
-  String? pendingMouflonUri;
-
-  for (final originalLine in lines) {
-    final trimmed = originalLine.trim();
-    if (trimmed.startsWith('#EXT-X-MOUFLON:URI:')) {
-      pendingMouflonUri = trimmed.substring('#EXT-X-MOUFLON:URI:'.length);
-      continue;
-    }
-    final line = _rewriteHlsManifestLine(
-      playlistUri: playlistUri,
-      line: originalLine,
-      pendingMouflonUri: pendingMouflonUri,
-    );
-    if (pendingMouflonUri != null &&
-        _consumedPendingMouflonUri(originalLine.trim())) {
-      pendingMouflonUri = null;
-    }
-    rewritten.add(line);
-  }
-
-  return rewritten.join('\n');
-}
-
-@visibleForTesting
-String buildResolvedSelectedSplitHlsMasterPlaylistContent({
-  required PlaybackSource source,
-  required String manifest,
-}) {
-  final externalAudio = source.externalAudio;
-  if (externalAudio == null) {
-    throw ArgumentError(
-      'Resolved split HLS master playlist requires an external audio source.',
-    );
-  }
-  final lines = manifest.split('\n');
-  String? versionLine;
-  var hasIndependentSegments = false;
-  final audioLinesByGroupId = <String, String>{};
-  String? matchedAudioLine;
-  String? matchedStreamInfLine;
-  String? matchedVideoUri;
-  String? matchedAudioGroupId;
-
-  for (var index = 0; index < lines.length; index += 1) {
-    final trimmed = lines[index].trim();
-    if (trimmed.isEmpty) {
-      continue;
-    }
-    if (versionLine == null && trimmed.startsWith('#EXT-X-VERSION:')) {
-      versionLine = trimmed;
-      continue;
-    }
-    if (trimmed == '#EXT-X-INDEPENDENT-SEGMENTS') {
-      hasIndependentSegments = true;
-      continue;
-    }
-    if (trimmed.startsWith('#EXT-X-MEDIA:TYPE=AUDIO')) {
-      final audioGroupId =
-          _extractHlsAttributeValue(trimmed, 'GROUP-ID')?.trim();
-      if (audioGroupId != null && audioGroupId.isNotEmpty) {
-        audioLinesByGroupId[audioGroupId] = trimmed;
-      }
-      final audioUri = _extractHlsAttributeValue(trimmed, 'URI');
-      if (_hlsUrisMatch(audioUri, externalAudio.url.toString())) {
-        matchedAudioLine = trimmed;
-      }
-      continue;
-    }
-    if (trimmed.startsWith('#EXT-X-STREAM-INF:')) {
-      final videoUri = _nextHlsUriLine(lines, startIndex: index + 1);
-      if (!_hlsUrisMatch(videoUri, source.url.toString())) {
-        continue;
-      }
-      matchedStreamInfLine = trimmed;
-      matchedVideoUri = videoUri;
-      final audioGroupId = _extractHlsAttributeValue(trimmed, 'AUDIO')?.trim();
-      if (audioGroupId != null && audioGroupId.isNotEmpty) {
-        matchedAudioGroupId = audioGroupId;
-      }
-    }
-  }
-
-  if (matchedAudioGroupId != null && matchedAudioGroupId.isNotEmpty) {
-    matchedAudioLine =
-        audioLinesByGroupId[matchedAudioGroupId] ?? matchedAudioLine;
-  }
-
-  if (matchedAudioLine == null ||
-      matchedStreamInfLine == null ||
-      matchedVideoUri == null) {
-    return buildSplitHlsMasterPlaylistContent(source);
-  }
-
-  return <String>[
-    '#EXTM3U',
-    versionLine ?? '#EXT-X-VERSION:6',
-    if (hasIndependentSegments) '#EXT-X-INDEPENDENT-SEGMENTS',
-    matchedAudioLine,
-    matchedStreamInfLine,
-    matchedVideoUri,
-  ].join('\n');
-}
-
-@visibleForTesting
-Future<File> writeSyntheticHlsPlaylistFile(
-  String manifest, {
-  required String prefix,
-  required String fileName,
-}) async {
-  final directory = await Directory.systemTemp.createTemp(prefix);
-  final file = File('${directory.path}${Platform.pathSeparator}$fileName');
-  await file.writeAsString(
-    manifest,
-    encoding: utf8,
-    flush: true,
-  );
-  return file;
-}
-
-Future<File?> maybeWriteResolvedSingleSourceHlsPlaylistFile(
-  PlaybackSource source,
-) async {
-  if (!shouldRewriteSingleSourceHlsManifest(source)) {
-    return null;
-  }
-  final manifestUri = source.masterPlaylistUrl ?? source.url;
-  try {
-    final embeddedManifest = source.masterPlaylistContent?.trim() ?? '';
-    final manifest = embeddedManifest.isNotEmpty
-        ? embeddedManifest
-        : await _fetchHlsManifest(
-            manifestUri,
-            headers: source.headers,
-          );
-    final rewritten = rewriteHlsManifestWithAbsoluteUris(
-      playlistUri: manifestUri,
-      manifest: manifest,
-    );
-    if (rewritten == manifest &&
-        !shouldAlwaysLocalizeSingleSourceHlsManifest(source)) {
-      return null;
-    }
-    return writeSyntheticHlsPlaylistFile(
-      rewritten,
-      prefix: 'nolive-mpv-hls-',
-      fileName: 'resolved-master.m3u8',
-    );
-  } catch (_) {
-    return null;
-  }
-}
-
-@visibleForTesting
-bool shouldAlwaysLocalizeSingleSourceHlsManifest(PlaybackSource source) {
-  final manifestUri = source.masterPlaylistUrl ?? source.url;
-  return _looksLikeMmcdnEdgeLowLatencyMasterUri(source.url) ||
-      _looksLikeMmcdnEdgeLowLatencyMasterUri(manifestUri) ||
-      _looksLikeDoppioLowLatencyHlsUri(source.url) ||
-      _looksLikeDoppioLowLatencyHlsUri(manifestUri);
-}
-
-Future<String> _fetchHlsManifest(
-  Uri uri, {
-  required Map<String, String> headers,
-}) async {
-  final client = HttpClient();
-  try {
-    final request = await client.getUrl(uri);
-    headers.forEach(request.headers.set);
-    final response = await request.close();
-    if (response.statusCode != HttpStatus.ok) {
-      throw HttpException(
-        'Unexpected HLS manifest status ${response.statusCode}',
-        uri: uri,
-      );
-    }
-    return await response.transform(utf8.decoder).join();
-  } finally {
-    client.close(force: true);
-  }
-}
-
-const _hlsUriAttributePattern = r'URI=("([^"]*)"|([^,]+))';
-
-String? _extractHlsAttributeValue(String line, String attribute) {
-  final match = RegExp('$attribute=("([^"]*)"|([^,]+))').firstMatch(line);
-  if (match == null) {
-    return null;
-  }
-  return match.group(2) ?? match.group(3);
-}
-
-String? _nextHlsUriLine(List<String> lines, {required int startIndex}) {
-  for (var index = startIndex; index < lines.length; index += 1) {
-    final trimmed = lines[index].trim();
-    if (trimmed.isEmpty || trimmed.startsWith('#')) {
-      continue;
-    }
-    return trimmed;
-  }
-  return null;
-}
-
-bool _hlsUrisMatch(String? left, String? right) {
-  final normalizedLeft = left?.trim() ?? '';
-  final normalizedRight = right?.trim() ?? '';
-  if (normalizedLeft.isEmpty || normalizedRight.isEmpty) {
-    return false;
-  }
-  if (normalizedLeft == normalizedRight) {
-    return true;
-  }
-  final leftKey = _canonicalHlsUriMatchKey(normalizedLeft);
-  final rightKey = _canonicalHlsUriMatchKey(normalizedRight);
-  if (leftKey != null && leftKey == rightKey) {
-    return true;
-  }
-  final leftLeaf = _hlsUriLeafName(normalizedLeft);
-  final rightLeaf = _hlsUriLeafName(normalizedRight);
-  return leftLeaf.isNotEmpty && leftLeaf == rightLeaf;
-}
-
-String? _canonicalHlsUriMatchKey(String raw) {
-  final uri = Uri.tryParse(raw);
-  if (uri == null) {
-    return null;
-  }
-  final normalizedPairs = <String>[];
-  final keys = uri.queryParametersAll.keys.toList()..sort();
-  for (final key in keys) {
-    final values = [...?uri.queryParametersAll[key]]..sort();
-    if (values.isEmpty) {
-      normalizedPairs.add(key);
-      continue;
-    }
-    for (final value in values) {
-      normalizedPairs.add('$key=$value');
-    }
-  }
-  return '${uri.path}?${normalizedPairs.join('&')}';
-}
-
-String _hlsUriLeafName(String raw) {
-  final uri = Uri.tryParse(raw);
-  if (uri != null && uri.pathSegments.isNotEmpty) {
-    return uri.pathSegments.last;
-  }
-  final index = raw.lastIndexOf('/');
-  if (index >= 0 && index + 1 < raw.length) {
-    return raw.substring(index + 1);
-  }
-  return raw;
-}
-
-String _rewriteHlsManifestLine({
-  required Uri playlistUri,
-  required String line,
-  String? pendingMouflonUri,
-}) {
-  if (pendingMouflonUri != null && line.trim().startsWith('#EXT-X-PART:')) {
-    final replacedPartLine = line.replaceAllMapped(
-      RegExp(_hlsUriAttributePattern),
-      (match) {
-        final resolved = playlistUri.resolve(pendingMouflonUri).toString();
-        if (match.group(2) != null) {
-          return 'URI="${_escapeHlsQuotedString(resolved)}"';
-        }
-        return 'URI=$resolved';
-      },
-    );
-    return replacedPartLine;
-  }
-  final replacedAttributes = line.replaceAllMapped(
-    RegExp(_hlsUriAttributePattern),
-    (match) {
-      final raw = match.group(2) ?? match.group(3) ?? '';
-      if (raw.isEmpty) {
-        return match.group(0) ?? '';
-      }
-      final resolved = playlistUri.resolve(raw).toString();
-      if (match.group(2) != null) {
-        return 'URI="${_escapeHlsQuotedString(resolved)}"';
-      }
-      return 'URI=$resolved';
-    },
-  );
-  final trimmed = replacedAttributes.trim();
-  if (trimmed.isEmpty || trimmed.startsWith('#')) {
-    return replacedAttributes;
-  }
-  if (pendingMouflonUri != null) {
-    return playlistUri.resolve(pendingMouflonUri).toString();
-  }
-  return playlistUri.resolve(trimmed).toString();
-}
-
-bool _consumedPendingMouflonUri(String trimmedLine) {
-  if (trimmedLine.isEmpty) {
-    return false;
-  }
-  if (trimmedLine.startsWith('#EXT-X-PART:')) {
-    return true;
-  }
-  return !trimmedLine.startsWith('#');
-}
-
-@visibleForTesting
-Future<Uint8List?> waitForScreenshotFileBytes(
-  File file, {
-  Duration timeout = const Duration(seconds: 2),
-  Duration pollInterval = const Duration(milliseconds: 40),
-}) async {
-  final deadline = DateTime.now().add(timeout);
-  while (DateTime.now().isBefore(deadline)) {
-    if (await file.exists()) {
-      final bytes = await file.readAsBytes();
-      if (bytes.isNotEmpty) {
-        return bytes;
-      }
-    }
-    await Future<void>.delayed(pollInterval);
-  }
-  return null;
-}
-
-@visibleForTesting
-bool shouldIgnoreMpvErrorMessage({
-  required PlaybackSource? source,
-  required String message,
-}) {
-  final normalized = message.toLowerCase();
-  if (normalized.contains("could not set avoption tls_verify='0'")) {
-    return true;
-  }
-  if (normalized.contains('failed to create file cache')) {
-    return true;
-  }
-  if (source == null) {
-    return normalized.contains('mbedtls_ssl_read returned -0x0');
-  }
-  final isLiveSource =
-      _looksLikeLiveFlv(source.url) || _looksLikeLiveHlsSource(source);
-  if (normalized.contains('mbedtls_ssl_read returned -0x0') && isLiveSource) {
-    return true;
-  }
-  if (isLiveSource &&
-      (normalized.contains('invalid nal unit size') ||
-          normalized.contains('missing picture in access unit'))) {
-    return true;
-  }
-  if (source.bufferProfile ==
-          PlaybackBufferProfile.chaturbateLlHlsProxyStable &&
-      (normalized.contains('found duplicated moov atom') ||
-          normalized.contains('audio device underrun'))) {
-    return true;
-  }
-  final isSeekabilityWarning =
-      normalized.contains('cannot seek in this stream') ||
-          normalized.contains('force-seekable=yes');
-  if (!isSeekabilityWarning) {
-    return false;
-  }
-  return shouldForceSeekableForSource(source) ||
-      _looksLikeLiveFlv(source.url) ||
-      _looksLikeLiveHlsSource(source);
-}
-
-@visibleForTesting
-bool looksLikeMpvScreenshotFailureMessage(String message) {
-  final normalized = message.trim().toLowerCase();
-  return normalized.contains('taking screenshot failed') ||
-      normalized
-          .contains('error running command _command(screenshot-to-file') ||
-      normalized.contains('error running command event:');
-}
-
-@visibleForTesting
-bool shouldBypassNativeMpvScreenshot({
-  required bool compatMode,
-  required bool customOutputEnabled,
-  required String videoOutputDriver,
-  required String hardwareDecoder,
-  required bool isAndroid,
-}) {
-  if (!isAndroid) {
-    return false;
-  }
-  final normalizedVideoOutput = videoOutputDriver.trim().toLowerCase();
-  final normalizedHardwareDecoder = hardwareDecoder.trim().toLowerCase();
-  if (compatMode) {
-    return true;
-  }
-  if (customOutputEnabled &&
-      (normalizedVideoOutput.contains('mediacodec') ||
-          normalizedHardwareDecoder.startsWith('mediacodec'))) {
-    return true;
-  }
-  return false;
-}
-
-@visibleForTesting
-bool shouldStopBeforeOpeningNextSource(PlayerState state) {
-  if (state.source != null) {
-    return true;
-  }
-  return switch (state.status) {
-    PlaybackStatus.buffering ||
-    PlaybackStatus.playing ||
-    PlaybackStatus.paused ||
-    PlaybackStatus.completed ||
-    PlaybackStatus.error =>
-      true,
-    _ => false,
-  };
-}
-
-@visibleForTesting
-({bool shouldStopBeforeOpen, Duration barrierDuration})
-    resolveMpvOpenPreparation({
-  required PlayerState previousState,
-  required bool isAndroid,
-}) {
-  final shouldStopBeforeOpen = shouldStopBeforeOpeningNextSource(previousState);
-  return (
-    shouldStopBeforeOpen: shouldStopBeforeOpen,
-    barrierDuration: resolveAndroidMpvOpenBarrierDuration(
-      isAndroid: isAndroid,
-      hasPreviousSource: shouldStopBeforeOpen,
-    ),
-  );
-}
-
-@visibleForTesting
-Duration resolveAndroidMpvOpenBarrierDuration({
-  required bool isAndroid,
-  required bool hasPreviousSource,
-}) {
-  if (!isAndroid) {
-    return Duration.zero;
-  }
-  return hasPreviousSource
-      ? MpvPlayer._sourceSwitchStopSettleDelay
-      : MpvPlayer._initialAndroidOpenSettleDelay;
-}
-
-@visibleForTesting
-bool usesEmbeddedAndroidMediaCodecOutput({
-  required bool compatMode,
-  required bool customOutputEnabled,
-  required String videoOutputDriver,
-  bool enableHardwareAcceleration = true,
-  String hardwareDecoder = 'auto-safe',
-}) {
-  final normalizedVideoOutput = videoOutputDriver.trim().toLowerCase();
-  final normalizedHardwareDecoder = hardwareDecoder.trim().toLowerCase();
-
-  final isDirectMediaCodec = enableHardwareAcceleration &&
-      ((normalizedHardwareDecoder.startsWith('mediacodec') &&
-              !normalizedHardwareDecoder.endsWith('-copy')) ||
-          normalizedHardwareDecoder == 'auto' ||
-          normalizedHardwareDecoder == 'auto-safe');
-
-  return compatMode ||
-      (customOutputEnabled && normalizedVideoOutput == 'mediacodec_embed') ||
-      (!customOutputEnabled && isDirectMediaCodec);
-}
-
-@visibleForTesting
-bool shouldWarmAndroidMediaCodecOpenPath({
-  required String videoOutputDriver,
-  required String hardwareDecoder,
-  required bool isAndroid,
-}) {
-  if (!isAndroid) {
-    return false;
-  }
-  final normalizedVideoOutput = videoOutputDriver.trim().toLowerCase();
-  final normalizedHardwareDecoder = hardwareDecoder.trim().toLowerCase();
-
-  final isDirectMediaCodec = (normalizedHardwareDecoder.startsWith('mediacodec') &&
-          !normalizedHardwareDecoder.endsWith('-copy')) ||
-      normalizedHardwareDecoder == 'auto' ||
-      normalizedHardwareDecoder == 'auto-safe';
-
-  return isDirectMediaCodec || normalizedVideoOutput == 'mediacodec_embed';
-}
-
-typedef AndroidEmbeddedSurfaceWarmupPolicy = ({
-  Duration viewMountTimeout,
-  Duration platformTimeout,
-  Duration surfaceReadyBudget,
-  Duration surfaceReadyPollInterval,
-  Duration attachStabilizeTimeout,
-});
-
-typedef AndroidEmbeddedSurfaceWarmupResult = ({
-  bool mounted,
-  bool platformReady,
-  bool surfaceReady,
-  bool stabilized,
-  int attempts,
-  Duration elapsed,
-  int? wid,
-  int? textureId,
-});
-
-typedef AndroidSurfaceSnapshot = ({
-  int wid,
-  int textureId,
-});
-
-typedef AndroidSurfaceRefreshResult = ({
-  AndroidSurfaceSnapshot currentSurface,
-  bool changed,
-  bool ready,
-});
-
-typedef AndroidOpenPreparationResult = ({
-  AndroidSurfaceSnapshot previousSurface,
-  bool deferPlayUntilSurfaceReady,
-  bool shouldStopBeforeOpen,
-});
-
-typedef AndroidEmbeddedPlayGate = ({
-  int generation,
-  AndroidSurfaceSnapshot previousSurface,
-  bool isInitialOpen,
-});
-
-@visibleForTesting
-AndroidEmbeddedSurfaceWarmupPolicy resolveAndroidEmbeddedSurfaceWarmupPolicy({
-  required bool isInitialOpen,
-}) {
-  return (
-    viewMountTimeout: isInitialOpen
-        ? MpvPlayer._androidInitialEmbeddedViewMountReadyTimeout
-        : MpvPlayer._androidEmbeddedViewMountReadyTimeout,
-    platformTimeout: isInitialOpen
-        ? MpvPlayer._androidInitialEmbeddedPlatformReadyTimeout
-        : MpvPlayer._androidEmbeddedPlatformReadyTimeout,
-    surfaceReadyBudget: isInitialOpen
-        ? MpvPlayer._androidInitialEmbeddedSurfaceReadyBudget
-        : MpvPlayer._androidEmbeddedSurfaceReadyBudget,
-    surfaceReadyPollInterval: isInitialOpen
-        ? MpvPlayer._androidInitialEmbeddedSurfaceReadyPollInterval
-        : MpvPlayer._androidEmbeddedSurfaceReadyPollInterval,
-    attachStabilizeTimeout: isInitialOpen
-        ? MpvPlayer._androidInitialEmbeddedSurfaceAttachStabilizeTimeout
-        : MpvPlayer._androidEmbeddedSurfaceAttachStabilizeTimeout,
-  );
-}
-
-@visibleForTesting
-Future<bool> waitForVideoControllerTextureReady(
-  ValueListenable<int?> textureId, {
-  Duration timeout = const Duration(milliseconds: 350),
-}) async {
-  return waitForValueListenableValue<int?>(
-    textureId,
-    isReady: (value) => value != null && value > 0,
-    timeout: timeout,
-  );
-}
-
-@visibleForTesting
-Future<bool> waitForVideoControllerPlatformReady(
-  ValueListenable<Object?> platformNotifier, {
-  Duration timeout = const Duration(milliseconds: 350),
-}) {
-  return waitForValueListenableValue<Object?>(
-    platformNotifier,
-    isReady: (value) => value != null,
-    timeout: timeout,
-  );
-}
-
-@visibleForTesting
-ValueListenable<int?>? tryGetAndroidSurfaceHandleListenable(Object? platform) {
-  if (platform == null) {
-    return null;
-  }
-  try {
-    final dynamic dynamicPlatform = platform;
-    final candidate = dynamicPlatform.wid;
-    if (candidate is ValueListenable<int?>) {
-      return candidate;
-    }
-  } catch (_) {
-    // Non-Android platform controllers do not expose `wid`.
-  }
-  return null;
-}
-
-@visibleForTesting
-int? tryReadAndroidSurfaceHandle(Object? platform) {
-  return tryGetAndroidSurfaceHandleListenable(platform)?.value;
-}
-
-@visibleForTesting
-AndroidSurfaceSnapshot readAndroidSurfaceSnapshot({
-  required Object? platform,
-  ValueListenable<int?>? textureId,
-}) {
-  return (
-    wid: tryReadAndroidSurfaceHandle(platform) ?? 0,
-    textureId: textureId?.value ?? 0,
-  );
-}
-
-@visibleForTesting
-bool isAndroidSurfaceSnapshotReady(AndroidSurfaceSnapshot snapshot) {
-  return snapshot.wid > 0 || snapshot.textureId > 0;
-}
-
-@visibleForTesting
-bool isAndroidSurfaceSnapshotReadyForMediaCodec(
-    AndroidSurfaceSnapshot snapshot) {
-  return snapshot.wid > 0;
-}
-
-@visibleForTesting
-bool didAndroidSurfaceSnapshotChange({
-  required AndroidSurfaceSnapshot previous,
-  required AndroidSurfaceSnapshot current,
-}) {
-  return previous.wid != current.wid || previous.textureId != current.textureId;
-}
-
-@visibleForTesting
-Future<bool> waitForVideoControllerSurfaceReady({
-  required VideoController controller,
-  Duration timeout = const Duration(milliseconds: 350),
-}) {
-  final androidSurfaceHandle =
-      tryGetAndroidSurfaceHandleListenable(controller.notifier.value);
-  if (androidSurfaceHandle != null) {
-    return waitForEitherValueListenableValue<int?>(
-      primary: androidSurfaceHandle,
-      secondary: controller.id,
-      isReady: (value) => value != null && value > 0,
-      timeout: timeout,
-    );
-  }
-  return waitForVideoControllerTextureReady(
-    controller.id,
-    timeout: timeout,
-  );
-}
-
-@visibleForTesting
-Future<bool> waitForEitherValueListenableValue<T>({
-  required ValueListenable<T> primary,
-  required ValueListenable<T> secondary,
-  required bool Function(T value) isReady,
-  Duration timeout = const Duration(milliseconds: 350),
-}) async {
-  if (isReady(primary.value) || isReady(secondary.value)) {
-    return true;
-  }
-  final completer = Completer<bool>();
-
-  void tryComplete() {
-    if (completer.isCompleted) {
-      return;
-    }
-    if (isReady(primary.value) || isReady(secondary.value)) {
-      completer.complete(true);
-    }
-  }
-
-  primary.addListener(tryComplete);
-  secondary.addListener(tryComplete);
-  try {
-    tryComplete();
-    if (completer.isCompleted) {
-      return true;
-    }
-    return await completer.future.timeout(timeout, onTimeout: () => false);
-  } finally {
-    primary.removeListener(tryComplete);
-    secondary.removeListener(tryComplete);
-  }
-}
-
-@visibleForTesting
-Future<AndroidSurfaceRefreshResult> waitForFreshAndroidSurfacePublication({
-  required Object? platform,
-  required ValueListenable<int?> textureId,
-  required AndroidSurfaceSnapshot previousSurface,
-  Duration timeout = const Duration(milliseconds: 800),
-  bool requireSurfaceHandle = false,
-}) async {
-  final widListenable = tryGetAndroidSurfaceHandleListenable(platform);
-  final readinessPredicate = requireSurfaceHandle
-      ? isAndroidSurfaceSnapshotReadyForMediaCodec
-      : isAndroidSurfaceSnapshotReady;
-  final currentSurface = readAndroidSurfaceSnapshot(
-    platform: platform,
-    textureId: textureId,
-  );
-  if (readinessPredicate(currentSurface) &&
-      didAndroidSurfaceSnapshotChange(
-        previous: previousSurface,
-        current: currentSurface,
-      )) {
-    return (
-      currentSurface: currentSurface,
-      changed: true,
-      ready: true,
-    );
-  }
-  final completer = Completer<AndroidSurfaceRefreshResult>();
-
-  void tryComplete() {
-    if (completer.isCompleted) {
-      return;
-    }
-    final nextSurface = readAndroidSurfaceSnapshot(
-      platform: platform,
-      textureId: textureId,
-    );
-    final changed = didAndroidSurfaceSnapshotChange(
-      previous: previousSurface,
-      current: nextSurface,
-    );
-    final ready = readinessPredicate(nextSurface);
-    if (changed && ready) {
-      completer.complete(
-        (
-          currentSurface: nextSurface,
-          changed: changed,
-          ready: ready,
-        ),
-      );
-    }
-  }
-
-  widListenable?.addListener(tryComplete);
-  textureId.addListener(tryComplete);
-  try {
-    tryComplete();
-    if (completer.isCompleted) {
-      return completer.future;
-    }
-    return await completer.future.timeout(
-      timeout,
-      onTimeout: () => (
-        currentSurface: readAndroidSurfaceSnapshot(
-          platform: platform,
-          textureId: textureId,
-        ),
-        changed: false,
-        ready: false,
-      ),
-    );
-  } finally {
-    widListenable?.removeListener(tryComplete);
-    textureId.removeListener(tryComplete);
-  }
-}
-
-@visibleForTesting
-Future<bool> waitForAndroidSurfaceAttachStabilization(
-  Object? platform, {
-  Duration timeout = const Duration(milliseconds: 350),
-}) async {
-  if (platform == null) {
-    return true;
-  }
-  try {
-    final dynamic dynamicPlatform = platform;
-    final dynamic lock = dynamicPlatform.lock;
-    final result = lock.synchronized(() async {});
-    if (result is Future) {
-      await result.timeout(timeout);
-    }
-    return true;
-  } on TimeoutException {
-    return false;
-  } catch (_) {
-    return true;
-  }
-}
-
-@visibleForTesting
-Rect? tryReadAndroidSurfaceRect(Object? platform) {
-  if (platform == null) {
-    return null;
-  }
-  try {
-    final dynamic dynamicPlatform = platform;
-    final candidate = dynamicPlatform.rect;
-    if (candidate is ValueListenable<Rect?>) {
-      return candidate.value;
-    }
-    if (candidate is ValueListenable) {
-      final value = candidate.value;
-      if (value is Rect) {
-        return value;
-      }
-    }
-  } catch (_) {
-    // Non-Android platform controllers may not expose `rect`.
-  }
-  return null;
-}
-
-@visibleForTesting
-String? tryReadAndroidConfiguredVideoOutput(Object? platform) {
-  if (platform == null) {
-    return null;
-  }
-  try {
-    final dynamic dynamicPlatform = platform;
-    final configuration = dynamicPlatform.configuration;
-    final candidate = configuration?.vo;
-    if (candidate is String) {
-      final trimmed = candidate.trim();
-      return trimmed.isEmpty ? null : trimmed;
-    }
-  } catch (_) {
-    // Non-Android platform controllers may not expose `configuration.vo`.
-  }
-  return null;
-}
-
-String _effectiveAndroidRuntimeHardwareDecoder(
-  MpvRuntimeConfiguration? runtimeConfiguration,
-) {
-  return runtimeConfiguration?.controllerConfiguration.hwdec?.trim() ?? '';
-}
-
-AndroidSurfaceSnapshot _surfaceSnapshotFromWarmupResult(
-  AndroidEmbeddedSurfaceWarmupResult? result,
-) {
-  return (
-    wid: result?.wid ?? 0,
-    textureId: result?.textureId ?? 0,
-  );
-}
-
-@visibleForTesting
-bool shouldDelayAndroidEmbeddedPlayUntilSurfaceReady({
-  required bool isInitialOpen,
-  required AndroidSurfaceSnapshot previousSurface,
-  required AndroidEmbeddedSurfaceWarmupResult? warmupResult,
-}) {
-  if (!isInitialOpen || warmupResult == null) {
-    return false;
-  }
-  final currentSurface = _surfaceSnapshotFromWarmupResult(warmupResult);
-  if (isAndroidSurfaceSnapshotReadyForMediaCodec(currentSurface)) {
-    return false;
-  }
-  return !isAndroidSurfaceSnapshotReadyForMediaCodec(previousSurface);
-}
-
-@visibleForTesting
-bool shouldReuseExistingAndroidSurfaceForReopen({
-  required AndroidSurfaceSnapshot previousSurface,
-  required AndroidSurfaceSnapshot currentSurface,
-}) {
-  if (!isAndroidSurfaceSnapshotReadyForMediaCodec(previousSurface)) {
-    return false;
-  }
-  return !didAndroidSurfaceSnapshotChange(
-        previous: previousSurface,
-        current: currentSurface,
-      ) &&
-      isAndroidSurfaceSnapshotReadyForMediaCodec(currentSurface);
-}
-
-@visibleForTesting
-String classifyAndroidMediaCodecDeviceFailureReason({
-  required DateTime? lastOpeningDoneAt,
-  required DateTime failureTimestamp,
-  Duration reinitThreshold = const Duration(milliseconds: 50),
-}) {
-  if (lastOpeningDoneAt == null) {
-    return 'mediacodec-device-creation-failed';
-  }
-  final delta = failureTimestamp.difference(lastOpeningDoneAt);
-  if (delta > reinitThreshold) {
-    return 'mpv-vd-reinit';
-  }
-  return 'mediacodec-device-creation-failed';
-}
-
-@visibleForTesting
-Duration resolveAndroidEmbeddedHardwareDecoderReadyDelta({
-  required DateTime surfaceReadyAt,
-  required DateTime hardwareDecoderReadyAt,
-}) {
-  final delta = hardwareDecoderReadyAt.difference(surfaceReadyAt);
-  return delta.isNegative ? Duration.zero : delta;
-}
-
-@visibleForTesting
-Future<bool> rebindAndroidVideoControllerSurface(
-  Object? platform, {
-  Duration timeout = const Duration(milliseconds: 500),
-}) async {
-  if (platform == null) {
-    return false;
-  }
-  final wid = tryReadAndroidSurfaceHandle(platform);
-  final rect = tryReadAndroidSurfaceRect(platform);
-  final configuredVo =
-      tryReadAndroidConfiguredVideoOutput(platform)?.trim().toLowerCase() ??
-          'null';
-  final width = rect?.width.toInt() ?? 1;
-  final height = rect?.height.toInt() ?? 1;
-  final widValue = (wid ?? 0).toString();
-  final voValue = widValue == '0' ? 'null' : configuredVo;
-  final vidValue = widValue == '0' ? 'no' : 'auto';
-  Future<void> apply(dynamic dynamicPlatform) async {
-    await dynamicPlatform.setProperty('vo', 'null');
-    await dynamicPlatform.setProperty(
-      'android-surface-size',
-      '${width}x$height',
-    );
-    await dynamicPlatform.setProperty('wid', widValue);
-    await dynamicPlatform.setProperty('vo', voValue);
-    if (configuredVo == 'mediacodec_embed') {
-      await dynamicPlatform.setProperty('vid', vidValue);
-    }
-  }
-
-  try {
-    final dynamic dynamicPlatform = platform;
-    final dynamic lock = dynamicPlatform.lock;
-    if (lock != null) {
-      final result = lock.synchronized(() => apply(dynamicPlatform));
-      if (result is Future) {
-        await result.timeout(timeout);
-      }
-    } else {
-      await apply(dynamicPlatform).timeout(timeout);
-    }
-    return true;
-  } on TimeoutException {
-    return false;
-  } catch (_) {
-    return false;
-  }
-}
-
-@visibleForTesting
-Future<bool> waitForValueListenableValue<T>(
-  ValueListenable<T> listenable, {
-  required bool Function(T value) isReady,
-  Duration timeout = const Duration(milliseconds: 350),
-}) async {
-  final current = listenable.value;
-  if (isReady(current)) {
-    return true;
-  }
-  final completer = Completer<bool>();
-  void listener() {
-    final value = listenable.value;
-    if (isReady(value) && !completer.isCompleted) {
-      completer.complete(true);
-    }
-  }
-
-  listenable.addListener(listener);
-  try {
-    final refreshed = listenable.value;
-    if (isReady(refreshed)) {
-      return true;
-    }
-    return await completer.future.timeout(timeout, onTimeout: () => false);
-  } finally {
-    listenable.removeListener(listener);
-  }
-}
-
-@visibleForTesting
-Map<String, String> resolveMpvSourcePlatformProperties({
-  required PlaybackSource source,
-  required bool doubleBufferingEnabled,
-  String? hardwareDecoder,
-  String? videoTrackSelection,
-}) {
-  final prefersChaturbateProxyStableBuffer =
-      source.bufferProfile == PlaybackBufferProfile.chaturbateLlHlsProxyStable;
-  final prefersLoopbackStableBuffer =
-      source.bufferProfile == PlaybackBufferProfile.loopbackStableHls;
-  final prefersChaturbateDirectStableFallback =
-      prefersChaturbateProxyStableBuffer &&
-          !_looksLikeChaturbateLoopbackProxySource(source);
-  final prefersEdgeLowLatencyHls =
-      source.bufferProfile == PlaybackBufferProfile.edgeLowLatencyHls;
-  final prefersStableSplitEdgeHls = prefersEdgeLowLatencyHls &&
-      _looksLikeMmcdnSplitLowLatencyHlsSource(source);
-  final prefersLocalizedSplitEdgeMaster = prefersStableSplitEdgeHls &&
-      shouldInlineSplitHlsAudioIntoSource(source) &&
-      (source.masterPlaylistUrl != null ||
-          (source.masterPlaylistContent?.trim().isNotEmpty ?? false));
-  final prefersStableMasterEdgeHls = prefersEdgeLowLatencyHls &&
-      _isSingleSourceLocalizedLowLatencyMaster(source);
-  final prefersStripchatLoopbackStableMaster = prefersEdgeLowLatencyHls &&
-      _looksLikeStripchatLoopbackProxySource(source);
-  final inlinesStableSplitEdgeHls =
-      prefersStableSplitEdgeHls && shouldInlineSplitHlsAudioIntoSource(source);
-  final prefersStableBuffer =
-      source.bufferProfile == PlaybackBufferProfile.heavyStreamStable;
-  final normalizedHardwareDecoder = hardwareDecoder?.trim() ?? '';
-  final normalizedVideoTrackSelection = videoTrackSelection?.trim() ?? '';
-  final properties = <String, String>{
-    'force-seekable': shouldForceSeekableForSource(source) ? 'yes' : 'no',
-    'demuxer-lavf-o': '',
-    // Reset per-source lavf probe limits for the next source. `mpv` reports
-    // a displayed default of `0` for demuxer-lavf-probesize, but libmpv
-    // rejects runtime writes below 32. Use FFmpeg's writable default probe
-    // size instead so plain FLV/HLS rooms do not trip a player error.
-    'demuxer-lavf-analyzeduration': '0',
-    'demuxer-lavf-probesize': '5000000',
-    'cache-on-disk': 'no',
-    // Keep these runtime knobs explicitly reset so a Chaturbate-specific
-    // buffering profile cannot leak into the next room/source.
-    'cache-pause': 'yes',
-    'cache-pause-wait': '1',
-    'cache-pause-initial': 'no',
-    'audio-buffer': '0.2',
-    // Default: use display-tempo for non-LL-HLS; overridden to `audio` below
-    // for split LL-HLS where PTS discontinuities between the separate video
-    // and audio chunklists would otherwise cause A/V desynchronisation.
-    'video-sync': 'display-tempo',
-    if (normalizedVideoTrackSelection.isNotEmpty)
-      'vid': normalizedVideoTrackSelection,
-    if (normalizedHardwareDecoder.isNotEmpty)
-      'hwdec': normalizedHardwareDecoder,
-  };
-  if (prefersChaturbateProxyStableBuffer) {
-    properties.addAll(const <String, String>{
-      'cache': 'yes',
-      'cache-secs': '10',
-      'demuxer-seekable-cache': 'no',
-      'demuxer-donate-buffer': 'no',
-      'demuxer-max-back-bytes': '33554432',
-      'demuxer-max-bytes': '33554432',
-      'demuxer-readahead-secs': '10',
-      'cache-pause': 'no',
-      'cache-pause-wait': '1',
-      'cache-pause-initial': 'no',
-      'audio-buffer': '1.2',
-    });
-    properties['demuxer-lavf-o'] = _buildLavfOptionString(const {
-      'live_start_index': '-1',
-      'seg_max_retry': '3',
-      'http_persistent': '1',
-      'http_multiple': '0',
-    });
-    if (prefersChaturbateDirectStableFallback) {
-      properties['demuxer-lavf-analyzeduration'] = '5';
-      properties['demuxer-lavf-probesize'] = '5000000';
-      properties['hwdec'] = 'auto-safe';
-    } else {
-      properties['demuxer-lavf-analyzeduration'] = '2';
-      properties['demuxer-lavf-probesize'] = '500000';
-    }
-    properties['video-sync'] = 'audio';
-  } else if (prefersEdgeLowLatencyHls) {
-    if (prefersStripchatLoopbackStableMaster) {
-      properties.addAll(const <String, String>{
-        'cache': 'yes',
-        'cache-secs': '3',
-        'demuxer-seekable-cache': 'no',
-        'demuxer-donate-buffer': 'no',
-        'demuxer-max-back-bytes': '25165824',
-        'demuxer-max-bytes': '25165824',
-        'demuxer-readahead-secs': '3',
-        'cache-pause': 'no',
-        'cache-pause-wait': '1',
-        'cache-pause-initial': 'no',
-        'audio-buffer': '0.2',
-      });
-      properties['demuxer-lavf-o'] = _buildLavfOptionString(const {
-        'protocol_whitelist': 'file,crypto,data,http,https,tcp,tls',
-        'live_start_index': '-2',
-        'seg_max_retry': '6',
-        'http_persistent': '1',
-        'http_multiple': '1',
-      });
-      properties['demuxer-lavf-analyzeduration'] = '2';
-      properties['demuxer-lavf-probesize'] = '500000';
-      properties['video-sync'] = 'audio';
-    } else if (prefersStableSplitEdgeHls || prefersStableMasterEdgeHls) {
-      // Split LL-HLS on mmcdn becomes unstable when mpv hugs the live edge
-      // too tightly. When we can localize a real master for the split stream,
-      // reuse the buffered edge-master startup profile instead of the tighter
-      // split profile so playback starts far enough behind the live window.
-      properties.addAll(
-        prefersLocalizedSplitEdgeMaster
-            ? const <String, String>{
-                'cache': 'yes',
-                'cache-secs': '8',
-                'demuxer-seekable-cache': 'no',
-                'demuxer-donate-buffer': 'no',
-                'demuxer-max-back-bytes': '67108864',
-                'demuxer-max-bytes': '67108864',
-                'demuxer-readahead-secs': '8',
-                'cache-pause': 'yes',
-                'cache-pause-wait': '2',
-                'cache-pause-initial': 'yes',
-                'audio-buffer': '0.4',
-              }
-            : (prefersStableMasterEdgeHls ||
-                    prefersStripchatLoopbackStableMaster)
-                ? const <String, String>{
-                    'cache': 'yes',
-                    'cache-secs': '8',
-                    'demuxer-seekable-cache': 'no',
-                    'demuxer-donate-buffer': 'no',
-                    'demuxer-max-back-bytes': '67108864',
-                    'demuxer-max-bytes': '67108864',
-                    'demuxer-readahead-secs': '8',
-                    'cache-pause': 'yes',
-                    'cache-pause-wait': '2',
-                    'cache-pause-initial': 'yes',
-                    'audio-buffer': '0.4',
-                  }
-                : const <String, String>{
-                    'cache': 'yes',
-                    'cache-secs': '10',
-                    'demuxer-seekable-cache': 'no',
-                    'demuxer-donate-buffer': 'no',
-                    'demuxer-max-back-bytes': '100663296',
-                    'demuxer-max-bytes': '100663296',
-                    'demuxer-readahead-secs': '10',
-                    'cache-pause': 'yes',
-                    'cache-pause-wait': '4',
-                    'cache-pause-initial': 'yes',
-                    'audio-buffer': '0.6',
-                  },
-      );
-      properties['demuxer-lavf-o'] = _buildLavfOptionString({
-        if (inlinesStableSplitEdgeHls ||
-            prefersStableMasterEdgeHls)
-          'protocol_whitelist': 'file,crypto,data,http,https,tcp,tls',
-        'live_start_index': '-1',
-        'seg_max_retry': '3',
-        'http_persistent': '1',
-        'http_multiple': '0',
-      });
-      // Cap avformat_find_stream_info() at 3 seconds.
-      // IMPORTANT: demuxer-lavf-analyzeduration unit is SECONDS (not µs).
-      // Passing 3000000 (µs equivalent) is out-of-range and triggers a
-      // player error which causes a black-screen / restart loop. Use 3.
-      properties['demuxer-lavf-analyzeduration'] = '3';
-      // demuxer-lavf-probesize unit is bytes; 500000 = 500 KB, which is fine.
-      properties['demuxer-lavf-probesize'] = '500000';
-      // Use audio clock as the synchronisation reference for split LL-HLS.
-      // Without this, PTS discontinuities between the separate video and
-      // audio chunklists cause repeated `Invalid audio PTS` / underrun
-      // / `Audio/Video desynchronisation` events.
-      properties['video-sync'] = 'audio';
-    } else {
-      properties.addAll(const <String, String>{
-        'cache': 'yes',
-        'cache-secs': '3',
-        'demuxer-seekable-cache': 'no',
-        'demuxer-donate-buffer': 'no',
-        'demuxer-max-back-bytes': '16777216',
-        'demuxer-max-bytes': '16777216',
-        'demuxer-readahead-secs': '3',
-        'cache-pause': 'no',
-        'cache-pause-wait': '1',
-        'cache-pause-initial': 'no',
-      });
-      properties['demuxer-lavf-o'] =
-          'live_start_index=-1,seg_max_retry=6,http_persistent=1,http_multiple=1';
-    }
-  } else if (prefersLoopbackStableBuffer) {
-    properties.addAll(const <String, String>{
-      'cache': 'yes',
-      'cache-secs': '8',
-      'demuxer-seekable-cache': 'no',
-      'demuxer-donate-buffer': 'no',
-      'demuxer-max-back-bytes': '67108864',
-      'demuxer-max-bytes': '67108864',
-      'demuxer-readahead-secs': '8',
-      'cache-pause': 'yes',
-      'cache-pause-wait': '2',
-      'cache-pause-initial': 'yes',
-      'audio-buffer': '0.4',
-    });
-    properties['demuxer-lavf-analyzeduration'] = '3';
-    properties['demuxer-lavf-probesize'] = '500000';
-    properties['video-sync'] = 'display-tempo';
-  } else if (prefersStableBuffer) {
-    final isFlv = _looksLikeLiveFlv(source.url);
-    properties.addAll(<String, String>{
-      'cache': 'yes',
-      'cache-secs': '10',
-      'demuxer-seekable-cache': isFlv ? 'no' : 'yes',
-      'demuxer-donate-buffer': 'yes',
-      'demuxer-max-back-bytes': '67108864',
-      'demuxer-max-bytes': '67108864',
-      'demuxer-readahead-secs': '10',
-    });
-  } else if (prefersLoopbackStableBuffer) {
-    properties.addAll(const <String, String>{
-      'cache': 'yes',
-      'cache-secs': '8',
-      'demuxer-seekable-cache': 'no',
-      'demuxer-donate-buffer': 'no',
-      'demuxer-max-back-bytes': '67108864',
-      'demuxer-max-bytes': '67108864',
-      'demuxer-readahead-secs': '8',
-      'cache-pause': 'yes',
-      'cache-pause-wait': '2',
-      'cache-pause-initial': 'yes',
-      'audio-buffer': '0.4',
-    });
-  } else {
-    final isFlv = _looksLikeLiveFlv(source.url);
-    properties.addAll(<String, String>{
-      'cache': 'yes',
-      'cache-secs': doubleBufferingEnabled ? '3' : '2',
-      'demuxer-seekable-cache':
-          (doubleBufferingEnabled && !isFlv) ? 'yes' : 'no',
-      'demuxer-donate-buffer': doubleBufferingEnabled ? 'yes' : 'no',
-      'demuxer-max-back-bytes':
-          doubleBufferingEnabled ? '33554432' : '16777216',
-      'demuxer-max-bytes': doubleBufferingEnabled ? '33554432' : '16777216',
-      'demuxer-readahead-secs': doubleBufferingEnabled ? '3' : '2',
-      if (!doubleBufferingEnabled) 'cache-pause': 'no',
-      if (!doubleBufferingEnabled) 'cache-pause-wait': '1',
-      if (!doubleBufferingEnabled) 'cache-pause-initial': 'no',
-    });
-  }
-  properties['load-unsafe-playlists'] =
-      shouldAllowUnsafePlaylistsForSource(source) ? 'yes' : 'no';
-  final normalizedHlsBitrate = source.hlsBitrate?.trim() ?? '';
-  if (prefersChaturbateProxyStableBuffer ||
-      prefersLocalizedSplitEdgeMaster ||
-      prefersStableMasterEdgeHls ||
-      prefersStripchatLoopbackStableMaster ||
-      prefersLoopbackStableBuffer) {
-    properties.remove('hls-bitrate');
-  } else if (normalizedHlsBitrate.isNotEmpty) {
-    properties['hls-bitrate'] = normalizedHlsBitrate;
-  } else if (_looksLikeLiveHlsSource(source)) {
-    properties['hls-bitrate'] = 'max';
-  }
-  if (shouldUseAudioFilesPropertyForSource(source)) {
-    properties['audio-files'] = source.externalAudio!.url.toString();
-  }
-  return properties;
-}
-
-String _buildLavfOptionString(Map<String, String> options) {
-  return options.entries
-      .map((entry) => '${entry.key}=${_quoteLavfOptionValue(entry.value)}')
-      .join(',');
-}
-
-String _quoteLavfOptionValue(String value) {
-  if (!value.contains(',')) {
-    return value;
-  }
-  return '[${value.replaceAll(']', r'\]')}]';
-}
-
-@visibleForTesting
-MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
-  required bool enableHardwareAcceleration,
-  required bool compatMode,
-  required bool doubleBufferingEnabled,
-  required bool customOutputEnabled,
-  required String videoOutputDriver,
-  required String hardwareDecoder,
-  required bool logEnabled,
-}) {
-  final sanitizedVideoOutputDriver = videoOutputDriver.trim().isEmpty
-      ? MpvPlayer._fallbackVideoOutputDriver
-      : videoOutputDriver.trim();
-  final sanitizedHardwareDecoder = hardwareDecoder.trim().isEmpty
-      ? MpvPlayer._fallbackHardwareDecoder
-      : hardwareDecoder.trim();
-  final attachAfterVideoParameters = _resolveAndroidAttachSurfaceTiming(
-    compatMode: compatMode,
-    customOutputEnabled: customOutputEnabled,
-    videoOutputDriver: sanitizedVideoOutputDriver,
-    enableHardwareAcceleration: enableHardwareAcceleration,
-    hardwareDecoder: sanitizedHardwareDecoder,
-  );
-  final controllerConfiguration = customOutputEnabled
-      ? VideoControllerConfiguration(
-          vo: sanitizedVideoOutputDriver,
-          hwdec: enableHardwareAcceleration ? sanitizedHardwareDecoder : 'no',
-          androidAttachSurfaceAfterVideoParameters: attachAfterVideoParameters,
-        )
-      : compatMode
-          ? VideoControllerConfiguration(
-              vo: 'mediacodec_embed',
-              hwdec: 'mediacodec',
-              androidAttachSurfaceAfterVideoParameters:
-                  attachAfterVideoParameters,
-            )
-          : VideoControllerConfiguration(
-              enableHardwareAcceleration: enableHardwareAcceleration,
-              hwdec:
-                  enableHardwareAcceleration ? sanitizedHardwareDecoder : 'no',
-              androidAttachSurfaceAfterVideoParameters:
-                  attachAfterVideoParameters,
-            );
-  final platformProperties = <String, String>{
-    'cache': 'yes',
-    'cache-secs': doubleBufferingEnabled ? '3' : '2',
-    'demuxer-seekable-cache': doubleBufferingEnabled ? 'yes' : 'no',
-    'demuxer-donate-buffer': doubleBufferingEnabled ? 'yes' : 'no',
-    'demuxer-max-back-bytes': doubleBufferingEnabled ? '33554432' : '16777216',
-    'demuxer-max-bytes': doubleBufferingEnabled ? '33554432' : '16777216',
-    'demuxer-readahead-secs': doubleBufferingEnabled ? '3' : '2',
-    'cache-on-disk': 'no',
-    if (!doubleBufferingEnabled) 'cache-pause': 'no',
-    if (!doubleBufferingEnabled) 'cache-pause-wait': '1',
-    if (!doubleBufferingEnabled) 'cache-pause-initial': 'no',
-  };
-  return MpvRuntimeConfiguration(
-    controllerConfiguration: controllerConfiguration,
-    logLevel: logEnabled ? mk.MPVLogLevel.debug : mk.MPVLogLevel.error,
-    platformProperties: platformProperties,
-    androidOutputFallbackReason: null,
-  );
-}
-
-@visibleForTesting
-bool shouldFallbackToSafeAndroidVideoOutput({
-  required bool compatMode,
-  required bool customOutputEnabled,
-  required String videoOutputDriver,
-}) {
-  // Keep this hook for future targeted fallbacks, but do not override the
-  // user's explicit Android MediaCodec path. Reference projects keep
-  // `mediacodec` meaningful by preserving the runtime hwdec selection and
-  // letting media_kit_video's Android controller manage `vo/wid/vid`.
-  return false;
-}
-
-bool? _resolveAndroidAttachSurfaceTiming({
-  required bool compatMode,
-  required bool customOutputEnabled,
-  required String videoOutputDriver,
-  required bool enableHardwareAcceleration,
-  required String hardwareDecoder,
-}) {
-  if (shouldFallbackToSafeAndroidVideoOutput(
-    compatMode: compatMode,
-    customOutputEnabled: customOutputEnabled,
-    videoOutputDriver: videoOutputDriver,
-  )) {
-    return null;
-  }
-  if (!usesEmbeddedAndroidMediaCodecOutput(
-    compatMode: compatMode,
-    customOutputEnabled: customOutputEnabled,
-    videoOutputDriver: videoOutputDriver,
-    enableHardwareAcceleration: enableHardwareAcceleration,
-    hardwareDecoder: hardwareDecoder,
-  )) {
-    return null;
-  }
-  // Fresh opens now wait for the embedded view + platform + surface handle
-  // before calling `open()`. Forcing `attachAfterVideoParams=true` makes that
-  // surface handle unavailable until *after* demux/decoder init, which matches
-  // the latest domestic-platform regression: deterministic `surface-ready
-  // timeout`, 3-5s black screen, then `Could not create device` and software
-  // fallback. Keep the Android surface attached up-front for embedded
-  // MediaCodec output so `open()` starts with a real target surface.
-  return false;
-}
-
-@visibleForTesting
-bool shouldAwaitAndroidEmbeddedSurfaceBeforeOpen({
-  required bool compatMode,
-  required bool customOutputEnabled,
-  required String videoOutputDriver,
-  required String hardwareDecoder,
-  required bool isAndroid,
-}) {
-  final effectiveVideoOutput = compatMode
-      ? 'mediacodec_embed'
-      : customOutputEnabled
-          ? videoOutputDriver
-          : '';
-  return shouldWarmAndroidMediaCodecOpenPath(
-    videoOutputDriver: effectiveVideoOutput,
-    hardwareDecoder: hardwareDecoder,
-    isAndroid: isAndroid,
-  );
-}
-
-bool _looksLikeHlsPlaylist(Uri uri) {
-  final path = uri.path.toLowerCase();
-  if (path.endsWith('.m3u8') || path.contains('chunklist_')) {
-    return true;
-  }
-  return uri.queryParameters.values.any(
-    (value) => value.toLowerCase().contains('.m3u8'),
-  );
-}
-
-bool _looksLikeLiveHlsSource(PlaybackSource source) {
-  if (_looksLikeHlsPlaylist(source.url)) {
-    return true;
-  }
-  final externalAudio = source.externalAudio;
-  return externalAudio != null && _looksLikeHlsPlaylist(externalAudio.url);
-}
-
-bool _isMmcdnHlsUri(Uri uri) {
-  return uri.host.toLowerCase().endsWith('live.mmcdn.com') &&
-      _looksLikeHlsPlaylist(uri);
-}
-
-bool _looksLikeMmcdnEdgeSplitHls(Uri uri) {
-  if (!_isMmcdnHlsUri(uri)) {
-    return false;
-  }
-  final path = uri.path.toLowerCase();
-  return path.contains('/v1/edge/streams/') &&
-      path.contains('chunklist_') &&
-      path.endsWith('.m3u8');
-}
-
-bool _looksLikeMmcdnLowLatencyHlsUri(Uri uri) {
-  if (!_isMmcdnHlsUri(uri)) {
-    return false;
-  }
-  final path = uri.path.toLowerCase();
-  if (path.contains('/v1/edge/streams/')) {
-    return path.contains('llhls') || path.endsWith('/llhls.m3u8');
-  }
-  if (path.contains('/live-hls/amlst:')) {
-    return _looksLikeLowLatencyChunklist(uri);
-  }
-  return false;
-}
-
-class _MpvEmbeddedViewHost extends StatefulWidget {
-  const _MpvEmbeddedViewHost({
-    required this.mountedListenable,
-    required this.child,
-  });
-
-  final ValueNotifier<bool> mountedListenable;
-  final Widget child;
-
-  @override
-  State<_MpvEmbeddedViewHost> createState() => _MpvEmbeddedViewHostState();
-}
-
-class _MpvEmbeddedViewHostState extends State<_MpvEmbeddedViewHost> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      widget.mountedListenable.value = true;
-    });
-  }
-
-  @override
-  void dispose() {
-    widget.mountedListenable.value = false;
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return widget.child;
-  }
-}
-
-bool _looksLikeChaturbateLoopbackProxySource(PlaybackSource source) {
-  final uri = source.url;
-  final host = uri.host.toLowerCase();
-  final isLoopback = host == '127.0.0.1' ||
-      host == 'localhost' ||
-      host == '::1' ||
-      host == '[::1]';
-  return isLoopback && uri.path.contains('/chaturbate-llhls/');
-}
-
-bool _looksLikeStripchatLoopbackProxySource(PlaybackSource source) {
-  final uri = source.url;
-  final host = uri.host.toLowerCase();
-  final isLoopback = host == '127.0.0.1' ||
-      host == 'localhost' ||
-      host == '::1' ||
-      host == '[::1]';
-  return isLoopback && uri.path.contains('/stripchat-llhls/');
-}
-
-bool _looksLikeMmcdnEdgeLowLatencyMasterUri(Uri uri) {
-  if (!_isMmcdnHlsUri(uri)) {
-    return false;
-  }
-  final path = uri.path.toLowerCase();
-  return path.contains('/v1/edge/streams/') && path.endsWith('/llhls.m3u8');
-}
-
-bool _looksLikeDoppioLowLatencyHlsUri(Uri uri) {
-  final host = uri.host.toLowerCase();
-  if (!(host.startsWith('media-hls.') || host.startsWith('edge-hls.'))) {
-    return false;
-  }
-  final path = uri.path.toLowerCase();
-  if (!path.endsWith('.m3u8')) {
-    return false;
-  }
-  return uri.queryParameters['playlistType']?.toLowerCase() == 'lowlatency';
-}
-
-bool _looksLikeMmcdnSplitLowLatencyHlsSource(PlaybackSource source) {
-  final externalAudio = source.externalAudio;
-  if (externalAudio == null) {
-    return false;
-  }
-  return _looksLikeMmcdnLowLatencyHlsUri(source.url) &&
-      _looksLikeMmcdnLowLatencyHlsUri(externalAudio.url) &&
-      _looksLikeLowLatencyChunklist(source.url) &&
-      _looksLikeLowLatencyChunklist(externalAudio.url);
-}
-
-@visibleForTesting
-bool shouldAllowUnsafePlaylistsForSource(PlaybackSource source) {
-  if (_isMmcdnHlsUri(source.url) ||
-      _looksLikeDoppioLowLatencyHlsUri(source.url) ||
-      _looksLikeStripchatLoopbackProxySource(source)) {
-    return true;
-  }
-  final masterPlaylistUrl = source.masterPlaylistUrl;
-  if (masterPlaylistUrl != null &&
-      (_isMmcdnHlsUri(masterPlaylistUrl) ||
-          _looksLikeDoppioLowLatencyHlsUri(masterPlaylistUrl))) {
-    return true;
-  }
-  final externalAudio = source.externalAudio;
-  return externalAudio != null &&
-      (_isMmcdnHlsUri(externalAudio.url) ||
-          _looksLikeDoppioLowLatencyHlsUri(externalAudio.url));
-}
-
-bool _looksLikeLiveFlv(Uri uri) {
-  final host = uri.host.toLowerCase();
-  if (host.split(RegExp(r'[\.\-]')).contains('flv')) {
-    return true;
-  }
-  final path = uri.path.toLowerCase();
-  if (path.endsWith('.flv') || path.contains('/live-bvc/')) {
-    return true;
-  }
-  return uri.queryParameters.values.any(
-    (value) => value.toLowerCase().contains('.flv'),
-  );
-}
-
-bool _looksLikeLowLatencyChunklist(Uri uri) {
-  final path = uri.path.toLowerCase();
-  if (path.contains('chunklist_') || path.contains('llhls')) {
-    return true;
-  }
-  return uri.queryParameters.keys.any(
-        (key) => key.toLowerCase().contains('llhls'),
-      ) ||
-      uri.queryParameters.values.any(
-        (value) => value.toLowerCase().contains('llhls'),
-      );
-}
-
-int _estimateSyntheticHlsBandwidth(PlaybackSource source) {
-  final candidates = <int>[
-    _extractBandwidthFromUri(source.url),
-    if (source.externalAudio != null)
-      _extractBandwidthFromUri(source.externalAudio!.url),
-  ].where((item) => item > 0);
-  final total = candidates.fold<int>(0, (sum, item) => sum + item);
-  return total > 0 ? total : 1;
-}
-
-int _extractBandwidthFromUri(Uri uri) {
-  final queryBandwidth = int.tryParse(uri.queryParameters['bandwidth'] ?? '') ??
-      int.tryParse(uri.queryParameters['bw'] ?? '');
-  if (queryBandwidth != null && queryBandwidth > 0) {
-    return queryBandwidth;
-  }
-  final path = uri.path.toLowerCase();
-  final match = RegExp(r'(?:^|[_-])b(\d+)(?:[_-]|$)').firstMatch(path);
-  final pathBandwidth = int.tryParse(match?.group(1) ?? '');
-  return pathBandwidth != null && pathBandwidth > 0 ? pathBandwidth : 0;
-}
-
-String _escapeHlsQuotedString(String value) {
-  return value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
 }

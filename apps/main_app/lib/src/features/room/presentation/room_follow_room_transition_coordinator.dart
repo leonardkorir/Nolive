@@ -71,37 +71,13 @@ class RoomFollowRoomTransitionCoordinator extends ChangeNotifier {
     _replaceState(inFlight: true);
     final preserveFullscreen =
         fullscreenSessionController.fullscreenSessionActive;
-    final stateBeforeTransition = runtime.readCurrentState();
-    final shouldResetMdk = shouldResetMdkBeforeFullscreenFollowRoomSwitch(
-      fullscreenSessionActive: preserveFullscreen,
-      playerState: stateBeforeTransition,
-      runtimeBackend: runtime.resolveBackend(),
-    );
-    var restorePlaybackOnFailure = false;
-    fullscreenSessionController.prepareForFollowRoomTransition();
-    var navigationCommitted = false;
+    // In-place switch keeps the page and player surface mounted. Do not pre-stop
+    // MDK/fullscreen playback here — that caused a long black flash while the
+    // next room was still loading. The new source rebinds when load resolves.
+    fullscreenSessionController.prepareForInPlaceFollowRoomSwitch();
     try {
-      if (shouldResetMdk) {
-        restorePlaybackOnFailure = true;
-        await _prepareMdkFullscreenFollowRoomTransition(
-          generation: generation,
-          stateBeforeCleanup: stateBeforeTransition,
-        );
-        if (!_isActive(generation)) {
-          return;
-        }
-      }
       await commitNavigation(preserveFullscreen);
-      navigationCommitted = true;
     } catch (error, stackTrace) {
-      if (restorePlaybackOnFailure) {
-        await _restorePlaybackAfterFailedFollowRoomTransition(
-          generation: generation,
-          stateBeforeTransition: stateBeforeTransition,
-          failureError: error,
-          failureStackTrace: stackTrace,
-        );
-      }
       trace('follow-room transition failed error=$error');
       AppLog.instance.error(
         'room',
@@ -114,10 +90,9 @@ class RoomFollowRoomTransitionCoordinator extends ChangeNotifier {
         showMessage('切换直播间失败，请稍后重试');
       }
     } finally {
-      if (!navigationCommitted) {
-        fullscreenSessionController.rollbackFollowRoomTransition();
-        _clearTransitionState(generation);
-      }
+      // Always clear transition lock after in-place commit finishes so the next
+      // follow switch is not blocked by a stuck inFlight flag.
+      _clearTransitionState(generation);
     }
   }
 

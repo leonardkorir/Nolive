@@ -7,29 +7,37 @@ import 'package:web_socket_channel/io.dart';
 
 import 'danmaku_activity_watchdog.dart';
 import 'danmaku_web_socket.dart';
-import 'tars/codec/tars_input_stream.dart';
+import 'isolate_danmaku_session.dart';
 import 'tars/codec/tars_output_stream.dart';
-import 'tars/huya_danmaku.dart';
 
-class HuyaDanmakuSession implements DanmakuSession {
+typedef HuyaDanmakuSocketConnector =
+    Future<IOWebSocketChannel> Function(
+      Uri uri, {
+      Map<String, dynamic>? headers,
+      Iterable<String>? protocols,
+      Duration connectTimeout,
+    });
+
+class HuyaDanmakuSession extends IsolateDanmakuSession {
   HuyaDanmakuSession({
     required this.ayyuid,
     required this.topSid,
     required this.subSid,
     Duration inactivityTimeout = const Duration(minutes: 3),
-  }) : _inactivityTimeout = inactivityTimeout;
+    HuyaDanmakuSocketConnector? channelConnector,
+  }) : _inactivityTimeout = inactivityTimeout,
+       _channelConnector = channelConnector ?? connectDanmakuWebSocket;
 
   static const _serverUrl = 'wss://cdnws.api.huya.com';
-  static final Uint8List _heartbeatData =
-      Uint8List.fromList(base64.decode('ABQdAAwsNgBM'));
+  static final Uint8List _heartbeatData = Uint8List.fromList(
+    base64.decode('ABQdAAwsNgBM'),
+  );
 
   final int ayyuid;
   final int topSid;
   final int subSid;
   final Duration _inactivityTimeout;
-
-  final StreamController<LiveMessage> _controller =
-      StreamController<LiveMessage>.broadcast();
+  final HuyaDanmakuSocketConnector _channelConnector;
 
   IOWebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
@@ -38,14 +46,11 @@ class HuyaDanmakuSession implements DanmakuSession {
   bool _connected = false;
 
   @override
-  Stream<LiveMessage> get messages => _controller.stream;
-
-  @override
   Future<void> connect() async {
     if (_connected) {
       return;
     }
-    final channel = await connectDanmakuWebSocket(Uri.parse(_serverUrl));
+    final channel = await _channelConnector(Uri.parse(_serverUrl));
     try {
       _channel = channel;
       _connected = true;
@@ -82,7 +87,7 @@ class HuyaDanmakuSession implements DanmakuSession {
         const Duration(seconds: 60),
         (_) => _channel?.sink.add(_heartbeatData),
       );
-      _emit(
+      emit(
         LiveMessage(
           type: LiveMessageType.notice,
           content: '虎牙实时弹幕已连接',
@@ -114,9 +119,7 @@ class HuyaDanmakuSession implements DanmakuSession {
     _subscription = null;
     await _channel?.sink.close();
     _channel = null;
-    if (!_controller.isClosed) {
-      await _controller.close();
-    }
+    await closeIsolateDanmakuSession();
   }
 
   Future<void> _teardownRemoteDisconnect({
@@ -135,7 +138,7 @@ class HuyaDanmakuSession implements DanmakuSession {
     _activityWatchdog = null;
     _subscription = null;
     _channel = null;
-    _emit(
+    emit(
       LiveMessage(
         type: LiveMessageType.notice,
         content: notice,
@@ -178,58 +181,9 @@ class HuyaDanmakuSession implements DanmakuSession {
       return;
     }
     _activityWatchdog?.ping();
-    try {
-      var input = TarsInputStream(bytes);
-      final type = input.read(0, 0, false);
-      if (type != 7) {
-        return;
-      }
-      input = TarsInputStream(input.readBytes(1, false));
-      final pushMessage = HYPushMessage()..readFrom(input);
-      if (pushMessage.uri == 1400) {
-        final message = HYMessage();
-        message.readFrom(
-          TarsInputStream(Uint8List.fromList(pushMessage.msg)),
-        );
-        _emit(
-          LiveMessage(
-            type: LiveMessageType.chat,
-            content: message.content,
-            userName: message.userInfo.nickName,
-            timestamp: DateTime.now(),
-          ),
-        );
-        return;
-      }
-      if (pushMessage.uri == 8006) {
-        final onlineStream =
-            TarsInputStream(Uint8List.fromList(pushMessage.msg));
-        final online = onlineStream.read(0, 0, false);
-        _emit(
-          LiveMessage(
-            type: LiveMessageType.online,
-            content: '当前人气 $online',
-            payload: online,
-            timestamp: DateTime.now(),
-          ),
-        );
-      }
-    } catch (error) {
-      _emit(
-        LiveMessage(
-          type: LiveMessageType.notice,
-          content: '虎牙弹幕解析失败：$error',
-          timestamp: DateTime.now(),
-        ),
-      );
-    }
-  }
-
-  void _emit(LiveMessage message) {
-    if (_controller.isClosed) {
-      return;
-    }
-    _controller.add(message);
+    unawaited(
+      parseInWorker(DanmakuIsolateParserIds.huya, bytes, emitParsedMessages),
+    );
   }
 
   Future<void> _handleActivityTimeout() async {
@@ -245,7 +199,7 @@ class HuyaDanmakuSession implements DanmakuSession {
     _subscription = null;
     await _channel?.sink.close();
     _channel = null;
-    _emit(
+    emit(
       LiveMessage(
         type: LiveMessageType.notice,
         content: '虎牙弹幕连接活动超时',

@@ -84,10 +84,9 @@ class StripchatFixtureLoader {
             responseBody = text;
           }
 
-          fixtures.add(StripchatHARFixture(
-            requestUrl: url,
-            responseBody: responseBody,
-          ));
+          fixtures.add(
+            StripchatHARFixture(requestUrl: url, responseBody: responseBody),
+          );
         }
       } on FormatException catch (e, s) {
         print('Warning: Failed to parse HAR file ${entry.key} as JSON: $e\n$s');

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:test/test.dart';
@@ -7,15 +8,12 @@ import 'package:test/test.dart';
 void main() {
   test('sync snapshot json codec round-trips snapshot state', () {
     final snapshot = SyncSnapshot(
-      settings: const {
-        'theme_mode': 'dark',
-        'player_auto_play': true,
-      },
+      settings: const {'theme_mode': 'dark', 'player_auto_play': true},
       blockedKeywords: const ['剧透'],
       tags: const ['常看'],
       history: [
         HistoryRecord(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili,
           roomId: '100',
           title: '测试房间',
           streamerName: '主播A',
@@ -24,7 +22,7 @@ void main() {
       ],
       follows: const [
         FollowRecord(
-          providerId: 'douyu',
+          providerId: ProviderId.douyu,
           roomId: '200',
           streamerName: '主播B',
           streamerAvatarUrl: 'https://example.com/avatar-b.png',
@@ -74,19 +72,20 @@ void main() {
     );
   });
 
-  test('sync snapshot json codec accepts legacy payload without format version',
-      () {
-    final decoded = SyncSnapshotJsonCodec.decode(
-      '{"settings":{"theme_mode":"dark"},"blocked_keywords":["剧透"],"tags":["常看"],"history":[],"follows":[]}',
-    );
+  test(
+    'sync snapshot json codec accepts legacy payload without format version',
+    () {
+      final decoded = SyncSnapshotJsonCodec.decode(
+        '{"settings":{"theme_mode":"dark"},"blocked_keywords":["剧透"],"tags":["常看"],"history":[],"follows":[]}',
+      );
 
-    expect(decoded.settings['theme_mode'], 'dark');
-    expect(decoded.blockedKeywords, ['剧透']);
-    expect(decoded.tags, ['常看']);
-  });
+      expect(decoded.settings['theme_mode'], 'dark');
+      expect(decoded.blockedKeywords, ['剧透']);
+      expect(decoded.tags, ['常看']);
+    },
+  );
 
-  test('sync snapshot json codec rejects unsupported future format version',
-      () {
+  test('sync snapshot json codec rejects unsupported future format version', () {
     expect(
       () => SyncSnapshotJsonCodec.decode(
         '{"format_version":99,"settings":{},"blocked_keywords":[],"tags":[],"history":[],"follows":[]}',
@@ -95,12 +94,15 @@ void main() {
     );
   });
 
-  test('sync snapshot json codec rejects malformed history timestamps', () {
-    expect(
-      () => SyncSnapshotJsonCodec.decode(
+  test(
+    'sync snapshot json codec skips malformed history timestamps and parses valid ones',
+    () {
+      final decoded = SyncSnapshotJsonCodec.decode(
         '{"settings":{},"blocked_keywords":[],"tags":[],"history":[{"provider_id":"bilibili","room_id":"100","title":"坏记录","streamer_name":"主播","viewed_at":"not-a-date"},{"provider_id":"bilibili","room_id":"101","title":"好记录","streamer_name":"主播","viewed_at":"2026-03-10T20:00:00Z"}],"follows":[]}',
-      ),
-      throwsA(isA<FormatException>()),
-    );
-  });
+      );
+      expect(decoded.history, hasLength(1));
+      expect(decoded.history.first.roomId, '101');
+      expect(decoded.history.first.title, '好记录');
+    },
+  );
 }

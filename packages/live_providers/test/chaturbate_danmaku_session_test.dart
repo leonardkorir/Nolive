@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/src/danmaku/chaturbate_danmaku_session.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_api_client.dart';
+import 'package:live_providers/src/providers/chaturbate/chaturbate_request_scheduler.dart';
 import 'package:test/test.dart';
 
 import 'support/chaturbate_fixture_loader.dart';
@@ -12,165 +13,213 @@ void main() {
     'fixture-backed chaturbate danmaku coverage',
     skip: ChaturbateFixtureLoader.skipReason,
     () {
-      test('chaturbate danmaku session replays history and websocket fixtures',
-          () async {
-        final socket = _FixtureSocketClient(
-          incomingFrames: const [
-            '{"action":4}',
-          ],
-        );
-        final session = ChaturbateDanmakuSession(
-          roomId: 'realcest',
-          broadcasterUid: 'EZ8KVAC',
-          csrfToken: 'fixture-csrf',
-          backend: 'a',
-          apiClient: _FixtureDanmakuApiClient(
-            authResponse: ChaturbateFixtureLoader.loadPushAuthResponse(),
-            history: ChaturbateFixtureLoader.loadRoomHistory(),
-          ),
-          socketClientFactory: (_) => socket,
-          presenceId: '+fixture',
-        );
+      test(
+        'chaturbate danmaku session replays history and websocket fixtures',
+        () async {
+          final socket = _FixtureSocketClient(
+            incomingFrames: const ['{"action":4}'],
+          );
+          final session = ChaturbateDanmakuSession(
+            roomId: 'realcest',
+            broadcasterUid: 'EZ8KVAC',
+            csrfToken: 'fixture-csrf',
+            backend: 'a',
+            apiClient: _FixtureDanmakuApiClient(
+              authResponse: ChaturbateFixtureLoader.loadPushAuthResponse(),
+              history: ChaturbateFixtureLoader.loadRoomHistory(),
+            ),
+            socketClientFactory: (_) => socket,
+            presenceId: '+fixture',
+          );
 
-        final collected = <LiveMessage>[];
-        final subscription = session.messages.listen(collected.add);
+          final collected = <LiveMessage>[];
+          final subscription = session.messages.listen(collected.add);
 
-        await session.connect();
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+          await session.connect();
+          await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(
-          collected.any(
-            (item) =>
-                item.type == LiveMessageType.chat &&
-                item.userName == 'nicolasmonzon',
-          ),
-          isTrue,
-        );
-        expect(
-          collected.any((item) => item.type == LiveMessageType.gift),
-          isTrue,
-        );
-        await subscription.cancel();
-        await session.disconnect();
-      });
+          expect(
+            collected.any(
+              (item) =>
+                  item.type == LiveMessageType.chat &&
+                  item.userName == 'nicolasmonzon',
+            ),
+            isTrue,
+          );
+          expect(
+            collected.any((item) => item.type == LiveMessageType.gift),
+            isTrue,
+          );
+          await subscription.cancel();
+          await session.disconnect();
+        },
+      );
     },
   );
 
   test(
-      'chaturbate danmaku session retries backup websocket host on ready error',
-      () async {
-    final attemptedHosts = <String>[];
-    final session = ChaturbateDanmakuSession(
-      roomId: 'realcest',
-      broadcasterUid: 'EZ8KVAC',
-      csrfToken: 'fixture-csrf',
-      backend: 'a',
-      apiClient: _FixtureDanmakuApiClient(
-        authResponse: {
-          'token': 'fixture-token',
-          'channels': {
-            'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': 'room:message',
+    'chaturbate danmaku session retries backup websocket host on ready error',
+    () async {
+      final attemptedHosts = <String>[];
+      final session = ChaturbateDanmakuSession(
+        roomId: 'realcest',
+        broadcasterUid: 'EZ8KVAC',
+        csrfToken: 'fixture-csrf',
+        backend: 'a',
+        apiClient: _FixtureDanmakuApiClient(
+          authResponse: {
+            'token': 'fixture-token',
+            'channels': {
+              'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': 'room:message',
+            },
+            'settings': {
+              'host': 'realtime-primary.example',
+              'rest_host': 'realtime-backup.example',
+            },
           },
-          'settings': {
-            'host': 'realtime-primary.example',
-            'rest_host': 'realtime-backup.example',
-          },
+          history: const [],
+        ),
+        socketClientFactory: (uri) {
+          attemptedHosts.add(uri.host);
+          return _FixtureSocketClient(
+            incomingFrames: uri.host == 'realtime-backup.example'
+                ? const ['{"action":4}']
+                : const [],
+            ready: uri.host == 'realtime-backup.example'
+                ? Future<void>.value()
+                : Future<void>.error('primary down'),
+          );
         },
-        history: const [],
-      ),
-      socketClientFactory: (uri) {
-        attemptedHosts.add(uri.host);
-        return _FixtureSocketClient(
-          incomingFrames: uri.host == 'realtime-backup.example'
-              ? const ['{"action":4}']
-              : const [],
-          ready: uri.host == 'realtime-backup.example'
-              ? Future<void>.value()
-              : Future<void>.error('primary down'),
-        );
-      },
-      presenceId: '+fixture',
-    );
+        presenceId: '+fixture',
+      );
 
-    final collected = <LiveMessage>[];
-    final subscription = session.messages.listen(collected.add);
+      final collected = <LiveMessage>[];
+      final subscription = session.messages.listen(collected.add);
 
-    await session.connect();
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      await session.connect();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    expect(
-      attemptedHosts,
-      ['realtime-primary.example', 'realtime-backup.example'],
-    );
-    expect(
-      collected.any(
-        (item) =>
-            item.type == LiveMessageType.notice &&
-            item.content.contains('实时弹幕已连接'),
-      ),
-      isTrue,
-    );
+      expect(attemptedHosts, [
+        'realtime-primary.example',
+        'realtime-backup.example',
+      ]);
+      expect(
+        collected.any(
+          (item) =>
+              item.type == LiveMessageType.notice &&
+              item.content.contains('实时弹幕已连接'),
+        ),
+        isTrue,
+      );
 
-    await subscription.cancel();
-    await session.disconnect();
-  });
+      await subscription.cancel();
+      await session.disconnect();
+    },
+  );
 
   test(
-      'chaturbate danmaku session keeps realtime connection when room history returns 403',
-      () async {
-    final socket = _FixtureSocketClient(
-      incomingFrames: const ['{"action":4}'],
-    );
-    final session = ChaturbateDanmakuSession(
-      roomId: 'realcest',
-      broadcasterUid: 'EZ8KVAC',
-      csrfToken: 'fixture-csrf',
-      backend: 'a',
-      apiClient: _FixtureDanmakuApiClient(
-        authResponse: {
-          'token': 'fixture-token',
-          'channels': {
-            'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': 'room:message',
+    'chaturbate danmaku session retries realtime hosts from room page token',
+    () async {
+      final attemptedHosts = <String>[];
+      final session = ChaturbateDanmakuSession(
+        roomId: 'realcest',
+        broadcasterUid: 'EZ8KVAC',
+        csrfToken: 'fixture-csrf',
+        backend: 'a',
+        apiClient: _FixtureDanmakuApiClient(
+          authResponse: {
+            'token': 'fixture-token',
+            'channels': {
+              'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': 'room:message',
+            },
+            'settings': {'host': 'realtime-primary.example'},
           },
-          'settings': {
-            'host': 'realtime-primary.example',
-          },
-        },
-        history: const [],
-        historyError: ChaturbateRoomHistoryUnavailableException(
-          statusCode: 403,
+          history: const [],
         ),
-      ),
-      socketClientFactory: (_) => socket,
-      presenceId: '+fixture',
-    );
+        realtimeHosts: const [
+          'realtime-primary.example',
+          'token-fallback.example',
+        ],
+        socketClientFactory: (uri) {
+          attemptedHosts.add(uri.host);
+          return _FixtureSocketClient(
+            incomingFrames: uri.host == 'token-fallback.example'
+                ? const ['{"action":4}']
+                : const [],
+            ready: uri.host == 'token-fallback.example'
+                ? Future<void>.value()
+                : Future<void>.error('primary down'),
+          );
+        },
+        presenceId: '+fixture',
+      );
 
-    final collected = <LiveMessage>[];
-    final subscription = session.messages.listen(collected.add);
+      await session.connect();
 
-    await session.connect();
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(attemptedHosts, [
+        'realtime-primary.example',
+        'token-fallback.example',
+      ]);
 
-    expect(
-      collected.any(
-        (item) =>
-            item.type == LiveMessageType.notice &&
-            item.content.contains('仅实时弹幕'),
-      ),
-      isTrue,
-    );
-    expect(
-      collected.any(
-        (item) =>
-            item.type == LiveMessageType.notice &&
-            item.content.contains('实时弹幕已连接'),
-      ),
-      isTrue,
-    );
+      await session.disconnect();
+    },
+  );
 
-    await subscription.cancel();
-    await session.disconnect();
-  });
+  test(
+    'chaturbate danmaku session keeps realtime connection when room history returns 403',
+    () async {
+      final socket = _FixtureSocketClient(
+        incomingFrames: const ['{"action":4}'],
+      );
+      final session = ChaturbateDanmakuSession(
+        roomId: 'realcest',
+        broadcasterUid: 'EZ8KVAC',
+        csrfToken: 'fixture-csrf',
+        backend: 'a',
+        apiClient: _FixtureDanmakuApiClient(
+          authResponse: {
+            'token': 'fixture-token',
+            'channels': {
+              'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': 'room:message',
+            },
+            'settings': {'host': 'realtime-primary.example'},
+          },
+          history: const [],
+          historyError: ChaturbateRoomHistoryUnavailableException(
+            statusCode: 403,
+          ),
+        ),
+        socketClientFactory: (_) => socket,
+        presenceId: '+fixture',
+      );
+
+      final collected = <LiveMessage>[];
+      final subscription = session.messages.listen(collected.add);
+
+      await session.connect();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        collected.any(
+          (item) =>
+              item.type == LiveMessageType.notice &&
+              item.content.contains('仅实时弹幕'),
+        ),
+        isTrue,
+      );
+      expect(
+        collected.any(
+          (item) =>
+              item.type == LiveMessageType.notice &&
+              item.content.contains('实时弹幕已连接'),
+        ),
+        isTrue,
+      );
+
+      await subscription.cancel();
+      await session.disconnect();
+    },
+  );
 
   test('chaturbate danmaku session evicts old dedupe ids', () async {
     final session = ChaturbateDanmakuSession(
@@ -215,102 +264,106 @@ void main() {
   });
 
   test(
-      'chaturbate danmaku session clears state on WebSocket error and allows reconnect',
-      () async {
-    final errorController = StreamController<dynamic>();
-    var connectCallCount = 0;
-    late _ErrorSocketClient firstSocket;
-    final session = ChaturbateDanmakuSession(
-      roomId: 'realcest',
-      broadcasterUid: 'EZ8KVAC',
-      csrfToken: 'fixture-csrf',
-      backend: 'a',
-      apiClient: _FixtureDanmakuApiClient(
-        authResponse: {
-          'token': 'fixture-token',
-          'channels': {
-            'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': 'room:message',
+    'chaturbate danmaku session clears state on WebSocket error and allows reconnect',
+    () async {
+      final errorController = StreamController<dynamic>();
+      var connectCallCount = 0;
+      late _ErrorSocketClient firstSocket;
+      final session = ChaturbateDanmakuSession(
+        roomId: 'realcest',
+        broadcasterUid: 'EZ8KVAC',
+        csrfToken: 'fixture-csrf',
+        backend: 'a',
+        apiClient: _FixtureDanmakuApiClient(
+          authResponse: {
+            'token': 'fixture-token',
+            'channels': {
+              'RoomMessageTopic#RoomMessageTopic:EZ8KVAC': 'room:message',
+            },
+            'settings': {'host': 'realtime-primary.example'},
           },
-          'settings': {'host': 'realtime-primary.example'},
+          history: const [],
+        ),
+        socketClientFactory: (_) {
+          connectCallCount++;
+          if (connectCallCount == 1) {
+            firstSocket = _ErrorSocketClient(errorController);
+            return firstSocket;
+          }
+          return _FixtureSocketClient(incomingFrames: const ['{"action":4}']);
         },
-        history: const [],
-      ),
-      socketClientFactory: (_) {
-        connectCallCount++;
-        if (connectCallCount == 1) {
-          firstSocket = _ErrorSocketClient(errorController);
-          return firstSocket;
-        }
-        return _FixtureSocketClient(incomingFrames: const ['{"action":4}']);
-      },
-      presenceId: '+fixture',
-    );
+        presenceId: '+fixture',
+      );
 
-    final notices = <String>[];
-    session.messages.listen((msg) {
-      if (msg.type == LiveMessageType.notice) notices.add(msg.content);
-    });
+      final notices = <String>[];
+      session.messages.listen((msg) {
+        if (msg.type == LiveMessageType.notice) notices.add(msg.content);
+      });
 
-    await session.connect();
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(connectCallCount, 1);
+      await session.connect();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(connectCallCount, 1);
 
-    // Simulate WebSocket error — zombie fix clears _connected
-    errorController.addError(StateError('unexpected disconnect'));
-    await Future<void>.delayed(Duration.zero);
-    expect(firstSocket.closed, isTrue);
+      // Simulate WebSocket error — zombie fix clears _connected
+      errorController.addError(StateError('unexpected disconnect'));
+      await Future<void>.delayed(Duration.zero);
+      expect(firstSocket.closed, isTrue);
 
-    // Should allow reconnect (not blocked by _connected == true)
-    await session.connect();
-    expect(connectCallCount, 2);
-    expect(notices.any((n) => n.contains('Chaturbate 弹幕连接异常')), isTrue);
+      // Should allow reconnect (not blocked by _connected == true)
+      await session.connect();
+      expect(connectCallCount, 2);
+      expect(notices.any((n) => n.contains('Chaturbate 弹幕连接异常')), isTrue);
 
-    await session.disconnect();
-    await errorController.close();
-  });
-
-  test('chaturbate danmaku session closes owned api client on disconnect',
-      () async {
-    final apiClient = _ClosableDanmakuApiClient(
-      authResponse: const {},
-      history: const [],
-    );
-    final session = ChaturbateDanmakuSession(
-      roomId: 'realcest',
-      broadcasterUid: 'EZ8KVAC',
-      csrfToken: 'fixture-csrf',
-      backend: 'a',
-      apiClient: apiClient,
-      disposeOwnedApiClient: apiClient.close,
-      presenceId: '+fixture',
-    );
-
-    await session.disconnect();
-
-    expect(apiClient.closeCount, 1);
-  });
+      await session.disconnect();
+      await errorController.close();
+    },
+  );
 
   test(
-      'chaturbate danmaku session closes owned api client after connect failure',
-      () async {
-    final apiClient = _ClosableDanmakuApiClient(
-      authResponse: const {},
-      history: const [],
-      authError: StateError('auth failed'),
-    );
-    final session = ChaturbateDanmakuSession(
-      roomId: 'realcest',
-      broadcasterUid: 'EZ8KVAC',
-      csrfToken: 'fixture-csrf',
-      backend: 'a',
-      apiClient: apiClient,
-      disposeOwnedApiClient: apiClient.close,
-      presenceId: '+fixture',
-    );
+    'chaturbate danmaku session closes owned api client on disconnect',
+    () async {
+      final apiClient = _ClosableDanmakuApiClient(
+        authResponse: const {},
+        history: const [],
+      );
+      final session = ChaturbateDanmakuSession(
+        roomId: 'realcest',
+        broadcasterUid: 'EZ8KVAC',
+        csrfToken: 'fixture-csrf',
+        backend: 'a',
+        apiClient: apiClient,
+        disposeOwnedApiClient: apiClient.close,
+        presenceId: '+fixture',
+      );
 
-    await expectLater(session.connect, throwsStateError);
-    expect(apiClient.closeCount, 1);
-  });
+      await session.disconnect();
+
+      expect(apiClient.closeCount, 1);
+    },
+  );
+
+  test(
+    'chaturbate danmaku session closes owned api client after connect failure',
+    () async {
+      final apiClient = _ClosableDanmakuApiClient(
+        authResponse: const {},
+        history: const [],
+        authError: StateError('auth failed'),
+      );
+      final session = ChaturbateDanmakuSession(
+        roomId: 'realcest',
+        broadcasterUid: 'EZ8KVAC',
+        csrfToken: 'fixture-csrf',
+        backend: 'a',
+        apiClient: apiClient,
+        disposeOwnedApiClient: apiClient.close,
+        presenceId: '+fixture',
+      );
+
+      await expectLater(session.connect, throwsStateError);
+      expect(apiClient.closeCount, 1);
+    },
+  );
 }
 
 class _FixtureDanmakuApiClient implements ChaturbateApiClient {
@@ -374,6 +427,8 @@ class _FixtureDanmakuApiClient implements ChaturbateApiClient {
     String? genders,
     int limit = ChaturbateApiClient.searchPageSize,
     int offset = 0,
+    bool requireFingerprint = true,
+    String? cookie,
   }) async {
     fail(
       'Unexpected fetchRoomList call: query=$query genders=${genders ?? ''} offset=$offset',
@@ -381,7 +436,11 @@ class _FixtureDanmakuApiClient implements ChaturbateApiClient {
   }
 
   @override
-  Future<String> fetchRoomPage(String roomId) async {
+  Future<String> fetchRoomPage(
+    String roomId, {
+    String? cookie,
+    ChaturbateRequestPriority priority = ChaturbateRequestPriority.normal,
+  }) async {
     fail('Unexpected fetchRoomPage call: $roomId');
   }
 
@@ -389,6 +448,7 @@ class _FixtureDanmakuApiClient implements ChaturbateApiClient {
   Future<Map<String, dynamic>> fetchRoomContext(
     String roomId, {
     String? cookie,
+    ChaturbateRequestPriority priority = ChaturbateRequestPriority.normal,
   }) async {
     fail('Unexpected fetchRoomContext call: $roomId cookie=${cookie ?? ''}');
   }
@@ -398,6 +458,7 @@ class _FixtureDanmakuApiClient implements ChaturbateApiClient {
     String url, {
     String? referer,
     String? cookie,
+    ChaturbateRequestPriority priority = ChaturbateRequestPriority.normal,
   }) async {
     fail(
       'Unexpected fetchHlsPlaylist call: '
@@ -425,10 +486,8 @@ class _ClosableDanmakuApiClient extends _FixtureDanmakuApiClient {
 }
 
 class _FixtureSocketClient implements ChaturbateSocketClient {
-  _FixtureSocketClient({
-    required this.incomingFrames,
-    Future<void>? ready,
-  }) : _ready = ready ?? Future<void>.value() {
+  _FixtureSocketClient({required this.incomingFrames, Future<void>? ready})
+    : _ready = ready ?? Future<void>.value() {
     unawaited(_dispatchIncomingFrames());
   }
 

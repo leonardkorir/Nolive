@@ -2,21 +2,25 @@ import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:live_providers/live_providers.dart';
+import 'package:nolive_app/src/features/room/application/room_play_selection_policy.dart';
 
 typedef WrapTwitchPlayUrls =
     Future<List<LivePlayUrl>> Function({
+      required String roomId,
       required LivePlayQuality quality,
       required List<LivePlayUrl> playUrls,
     });
 
 typedef WrapChaturbatePlayUrls =
     Future<List<LivePlayUrl>> Function({
+      required String roomId,
       required LivePlayQuality quality,
       required List<LivePlayUrl> playUrls,
     });
 
 typedef WrapStripchatPlayUrls =
     Future<List<LivePlayUrl>> Function({
+      required String roomId,
       required LivePlayQuality quality,
       required List<LivePlayUrl> playUrls,
     });
@@ -56,6 +60,7 @@ class ResolvePlaySourceUseCase {
     var effectiveUrls = urls;
     if (providerId == ProviderId.chaturbate) {
       final proxied = await wrapChaturbatePlayUrls?.call(
+        roomId: detail.roomId,
         quality: quality,
         playUrls: urls,
       );
@@ -67,12 +72,13 @@ class ResolvePlaySourceUseCase {
         'chaturbate resolve quality=${quality.id}/${quality.label} '
         'source=${preloadedPlayUrls == null ? 'network' : 'preloaded'} '
         'urls=${urls.length} proxied=${effectiveUrls.length} '
-        'stableFallbacks=${effectiveUrls.where(_isChaturbateStableFallback).length} '
+        'stableFallbacks=${effectiveUrls.where(isChaturbateStableFallback).length} '
         'lines=${_describeLines(effectiveUrls)}',
       );
     }
     if (providerId == ProviderId.stripchat) {
       final proxied = await wrapStripchatPlayUrls?.call(
+        roomId: detail.roomId,
         quality: quality,
         playUrls: urls,
       );
@@ -84,12 +90,13 @@ class ResolvePlaySourceUseCase {
         'stripchat resolve quality=${quality.id}/${quality.label} '
         'source=${preloadedPlayUrls == null ? 'network' : 'preloaded'} '
         'urls=${urls.length} proxied=${effectiveUrls.length} '
-        'stableFallbacks=${effectiveUrls.where(_isStripchatStableFallback).length} '
+        'stableFallbacks=${effectiveUrls.where(isStripchatStableFallback).length} '
         'lines=${_describeLines(effectiveUrls)}',
       );
     }
     if (providerId == ProviderId.twitch) {
       final proxied = await wrapTwitchPlayUrls?.call(
+        roomId: detail.roomId,
         quality: quality,
         playUrls: urls,
       );
@@ -141,7 +148,7 @@ class ResolvePlaySourceUseCase {
     required List<LivePlayUrl> urls,
     required bool preferHttps,
   }) {
-    final preferred = _preferredUrlsForRequestedQuality(
+    final preferred = preferredPlayUrlsForQuality(
       providerId: providerId,
       requestedQuality: requestedQuality,
       urls: urls,
@@ -156,196 +163,16 @@ class ResolvePlaySourceUseCase {
     );
   }
 
-  List<LivePlayUrl> _preferredUrlsForRequestedQuality({
-    required ProviderId providerId,
-    required LivePlayQuality requestedQuality,
-    required List<LivePlayUrl> urls,
-  }) {
-    if (providerId == ProviderId.bilibili) {
-      final requestedQn = int.tryParse(requestedQuality.id);
-      final ordered = List<LivePlayUrl>.from(urls)
-        ..sort((left, right) {
-          return _compareBilibiliPlayUrls(
-            left,
-            right,
-            requestedQn: requestedQn,
-          );
-        });
-      if (requestedQn == null) {
-        return ordered;
-      }
-      final exactMatch = ordered
-          .where((item) {
-            return _extractBilibiliEffectiveQn(item) == requestedQn;
-          })
-          .toList(growable: false);
-      return exactMatch.isEmpty ? ordered : exactMatch;
-    }
-    if (providerId == ProviderId.chaturbate) {
-      final ordered = List<LivePlayUrl>.from(urls);
-      ordered.sort((left, right) {
-        return _chaturbatePlaybackPriority(
-          left,
-        ).compareTo(_chaturbatePlaybackPriority(right));
-      });
-      return ordered;
-    }
-    if (providerId == ProviderId.twitch) {
-      final ordered = List<LivePlayUrl>.from(urls);
-      ordered.sort((left, right) {
-        return _twitchPlayerTypePriority(
-          left.metadata?['playerType']?.toString(),
-        ).compareTo(
-          _twitchPlayerTypePriority(right.metadata?['playerType']?.toString()),
-        );
-      });
-      return ordered;
-    }
-    if (providerId != ProviderId.douyu) {
-      return urls;
-    }
-    final requestedRate = int.tryParse(requestedQuality.id);
-    if (requestedRate == null) {
-      return urls;
-    }
-    final exactMatch = urls
-        .where((item) {
-          return _extractIntMetadataValue(item, const ['rate']) ==
-              requestedRate;
-        })
-        .toList(growable: false);
-    return exactMatch.isEmpty ? urls : exactMatch;
-  }
-
-  int _compareBilibiliPlayUrls(
-    LivePlayUrl left,
-    LivePlayUrl right, {
-    required int? requestedQn,
-  }) {
-    final leftQn = _extractBilibiliEffectiveQn(left) ?? -1;
-    final rightQn = _extractBilibiliEffectiveQn(right) ?? -1;
-    if (requestedQn != null) {
-      final leftExact = leftQn == requestedQn;
-      final rightExact = rightQn == requestedQn;
-      if (leftExact != rightExact) {
-        return leftExact ? -1 : 1;
-      }
-    }
-    final qualityCompare = rightQn.compareTo(leftQn);
-    if (qualityCompare != 0) {
-      return qualityCompare;
-    }
-    final leftPenalty = left.url.contains('mcdn') ? 1 : 0;
-    final rightPenalty = right.url.contains('mcdn') ? 1 : 0;
-    if (leftPenalty != rightPenalty) {
-      return leftPenalty.compareTo(rightPenalty);
-    }
-    return 0;
-  }
-
-  int? _extractBilibiliEffectiveQn(LivePlayUrl item) {
-    return _extractIntMetadataValue(item, const ['expectedQn', 'qn']) ??
-        _extractIntQueryValue(item, const ['expected_qn', 'qn']);
-  }
-
-  int _chaturbatePlaybackPriority(LivePlayUrl playUrl) {
-    if (_isChaturbateLlHlsProxy(playUrl)) {
-      return 0;
-    }
-    if (_isChaturbateStableFallback(playUrl)) {
-      return 1;
-    }
-    return 2;
-  }
-
-  int _twitchPlayerTypePriority(String? playerType) {
-    switch (playerType?.trim().toLowerCase()) {
-      case 'popout':
-        return 0;
-      case 'embed':
-        return 1;
-      case 'site':
-        return 2;
-      case 'autoplay':
-        return 3;
-    }
-    return 99;
-  }
-
   LivePlayQuality _resolveEffectiveQuality({
     required ProviderId providerId,
     required LivePlayQuality requestedQuality,
     required LivePlayUrl selectedUrl,
   }) {
-    final effectiveId = switch (providerId) {
-      ProviderId.bilibili => _extractBilibiliEffectiveQn(selectedUrl),
-      ProviderId.douyu =>
-        _extractIntMetadataValue(selectedUrl, const ['rate']) ??
-            _extractIntQueryValue(selectedUrl, const ['rate']),
-      ProviderId.huya => _extractIntQueryValue(selectedUrl, const ['ratio']),
-      _ => null,
-    };
-    if (effectiveId == null || effectiveId.toString() == requestedQuality.id) {
-      return requestedQuality;
-    }
-
-    final qualityMap = _readIntLabelMap(
-      requestedQuality.metadata?['qualityMap'],
+    return resolveEffectivePlayQuality(
+      providerId: providerId,
+      requestedQuality: requestedQuality,
+      selectedUrl: selectedUrl,
     );
-    final label = qualityMap[effectiveId];
-    return LivePlayQuality(
-      id: effectiveId.toString(),
-      label: label ?? '实际 $effectiveId',
-      sortOrder: effectiveId,
-      metadata: {
-        ...?requestedQuality.metadata,
-        'requestedId': requestedQuality.id,
-      },
-    );
-  }
-
-  int? _extractIntQueryValue(LivePlayUrl item, List<String> keys) {
-    final uri = Uri.tryParse(item.url);
-    if (uri == null) {
-      return null;
-    }
-    for (final key in keys) {
-      final value = int.tryParse(uri.queryParameters[key] ?? '');
-      if (value != null) {
-        return value;
-      }
-    }
-    return null;
-  }
-
-  int? _extractIntMetadataValue(LivePlayUrl item, List<String> keys) {
-    final metadata = item.metadata;
-    if (metadata == null) {
-      return null;
-    }
-    for (final key in keys) {
-      final value = int.tryParse(metadata[key]?.toString() ?? '');
-      if (value != null) {
-        return value;
-      }
-    }
-    return null;
-  }
-
-  Map<int, String> _readIntLabelMap(Object? raw) {
-    if (raw is! Map) {
-      return const {};
-    }
-    final result = <int, String>{};
-    for (final entry in raw.entries) {
-      final key = int.tryParse(entry.key.toString());
-      final value = entry.value?.toString();
-      if (key == null || value == null || value.isEmpty) {
-        continue;
-      }
-      result[key] = value;
-    }
-    return result;
   }
 
   void _debugTrace(String message) {
@@ -425,7 +252,7 @@ PlaybackSource playbackSourceFromLivePlayUrl(
 }
 
 bool _shouldSuppressMasterMetadataForPlaybackSource(LivePlayUrl playUrl) {
-  return _isStripchatLlHlsProxy(playUrl);
+  return isStripchatLlHlsProxy(playUrl);
 }
 
 const _heavyStreamQualityKeywords = <String>['蓝光30m', '蓝光', '原画'];
@@ -435,12 +262,10 @@ PlaybackBufferProfile resolvePlaybackBufferProfile({
   required LivePlayUrl playUrl,
   LivePlayQuality? quality,
 }) {
-  if (_isStripchatLlHlsProxy(playUrl) ||
-      _isStripchatStableFallback(playUrl)) {
+  if (isStripchatLlHlsProxy(playUrl) || isStripchatStableFallback(playUrl)) {
     return PlaybackBufferProfile.loopbackStableHls;
   }
-  if (_isChaturbateLlHlsProxy(playUrl) ||
-      _isChaturbateStableFallback(playUrl)) {
+  if (isChaturbateLlHlsProxy(playUrl) || isChaturbateStableFallback(playUrl)) {
     return PlaybackBufferProfile.chaturbateLlHlsProxyStable;
   }
 
@@ -500,8 +325,8 @@ PlaybackBufferProfile resolvePlaybackBufferProfile({
 List<LivePlayUrl> _ensureChaturbateStableFallbackUrls(List<LivePlayUrl> urls) {
   return urls
       .map((playUrl) {
-        if (_isChaturbateLlHlsProxy(playUrl) ||
-            _isChaturbateStableFallback(playUrl) ||
+        if (isChaturbateLlHlsProxy(playUrl) ||
+            isChaturbateStableFallback(playUrl) ||
             !_looksLikeMmcdnLowLatencySource(playUrl)) {
           return playUrl;
         }
@@ -519,33 +344,11 @@ List<LivePlayUrl> _ensureChaturbateStableFallbackUrls(List<LivePlayUrl> urls) {
       .toList(growable: false);
 }
 
-bool _isChaturbateStableFallback(LivePlayUrl playUrl) {
-  return playUrl.metadata?['chaturbateStableFallback'] == true;
-}
-
-bool _isChaturbateLlHlsProxy(LivePlayUrl playUrl) {
-  final proxyKind = playUrl.metadata?['proxyKind']?.toString().trim();
-  if (proxyKind == 'chaturbate-llhls') {
-    return true;
-  }
-  final uri = Uri.tryParse(playUrl.url);
-  return uri != null && uri.path.contains('/chaturbate-llhls/');
-}
-
-bool _isStripchatLlHlsProxy(LivePlayUrl playUrl) {
-  final proxyKind = playUrl.metadata?['proxyKind']?.toString().trim();
-  if (proxyKind == 'stripchat-llhls') {
-    return true;
-  }
-  final uri = Uri.tryParse(playUrl.url);
-  return uri != null && uri.path.contains('/stripchat-llhls/');
-}
-
 List<LivePlayUrl> _ensureStripchatStableFallbackUrls(List<LivePlayUrl> urls) {
   return urls
       .map((playUrl) {
-        if (_isStripchatLlHlsProxy(playUrl) ||
-            _isStripchatStableFallback(playUrl)) {
+        if (isStripchatLlHlsProxy(playUrl) ||
+            isStripchatStableFallback(playUrl)) {
           return playUrl;
         }
         final uri = Uri.tryParse(playUrl.url);
@@ -566,10 +369,6 @@ List<LivePlayUrl> _ensureStripchatStableFallbackUrls(List<LivePlayUrl> urls) {
         );
       })
       .toList(growable: false);
-}
-
-bool _isStripchatStableFallback(LivePlayUrl playUrl) {
-  return playUrl.metadata?['stripchatStableFallback'] == true;
 }
 
 int? _readIntAcrossMetadata({

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fixnum/fixnum.dart' as $fixnum;
@@ -10,12 +9,11 @@ import 'package:web_socket_channel/io.dart';
 import 'danmaku_activity_watchdog.dart';
 import '../providers/douyin/douyin_request_params.dart';
 import 'danmaku_web_socket.dart';
+import 'isolate_danmaku_session.dart';
 import 'proto/douyin.pb.dart';
 
-typedef DouyinWebsocketSignatureBuilder = Future<String> Function(
-  String roomId,
-  String userUniqueId,
-);
+typedef DouyinWebsocketSignatureBuilder =
+    Future<String> Function(String roomId, String userUniqueId);
 
 PushFrame buildDouyinAckFrame($fixnum.Int64 logId, String internalExt) {
   return PushFrame()
@@ -24,7 +22,7 @@ PushFrame buildDouyinAckFrame($fixnum.Int64 logId, String internalExt) {
     ..payload = utf8.encode(internalExt);
 }
 
-class DouyinDanmakuSession implements DanmakuSession {
+class DouyinDanmakuSession extends IsolateDanmakuSession {
   DouyinDanmakuSession({
     required this.roomId,
     required this.userUniqueId,
@@ -32,8 +30,8 @@ class DouyinDanmakuSession implements DanmakuSession {
     required this.signatureBuilder,
     List<Uri>? serverUris,
     Duration inactivityTimeout = const Duration(minutes: 2),
-  })  : _serverUris = serverUris ?? _defaultServerUris,
-        _inactivityTimeout = inactivityTimeout;
+  }) : _serverUris = serverUris ?? _defaultServerUris,
+       _inactivityTimeout = inactivityTimeout;
 
   static final List<Uri> _defaultServerUris = <Uri>[
     Uri.parse('wss://webcast3-ws-web-lq.douyin.com/webcast/im/push/v2/'),
@@ -47,17 +45,11 @@ class DouyinDanmakuSession implements DanmakuSession {
   final List<Uri> _serverUris;
   final Duration _inactivityTimeout;
 
-  final StreamController<LiveMessage> _controller =
-      StreamController<LiveMessage>.broadcast();
-
   IOWebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
   Timer? _heartbeatTimer;
   DanmakuActivityWatchdog? _activityWatchdog;
   bool _connected = false;
-
-  @override
-  Stream<LiveMessage> get messages => _controller.stream;
 
   @override
   Future<void> connect() async {
@@ -68,43 +60,42 @@ class DouyinDanmakuSession implements DanmakuSession {
       throw StateError('DouyinDanmakuSession: serverUris must not be empty');
     }
     final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-    final baseUri = _serverUris.first.replace(queryParameters: {
-      'app_name': 'douyin_web',
-      'version_code': DouyinRequestParams.versionCodeValue,
-      'webcast_sdk_version': DouyinRequestParams.sdkVersion,
-      'update_version_code': DouyinRequestParams.sdkVersion,
-      'compress': 'gzip',
-      'cursor': 'h-1_t-${timestamp}_r-1_d-1_u-1',
-      'host': 'https://live.douyin.com',
-      'aid': DouyinRequestParams.aidValue,
-      'live_id': '1',
-      'did_rule': '3',
-      'debug': 'false',
-      'maxCacheMessageNumber': '20',
-      'endpoint': 'live_pc',
-      'support_wrds': '1',
-      'im_path': '/webcast/im/fetch/',
-      'user_unique_id': userUniqueId,
-      'device_platform': 'web',
-      'cookie_enabled': 'true',
-      'screen_width': '1080',
-      'screen_height': '2400',
-      'browser_language': 'zh-CN',
-      'browser_platform': DouyinRequestParams.browserPlatformValue,
-      'browser_name': DouyinRequestParams.browserNameValue,
-      'browser_version': DouyinRequestParams.browserVersionValue,
-      'browser_online': 'true',
-      'tz_name': 'Asia/Shanghai',
-      'identity': 'audience',
-      'room_id': roomId,
-      'heartbeatDuration': '0',
-    });
+    final baseUri = _serverUris.first.replace(
+      queryParameters: {
+        'app_name': 'douyin_web',
+        'version_code': DouyinRequestParams.versionCodeValue,
+        'webcast_sdk_version': DouyinRequestParams.sdkVersion,
+        'update_version_code': DouyinRequestParams.sdkVersion,
+        'compress': 'gzip',
+        'cursor': 'h-1_t-${timestamp}_r-1_d-1_u-1',
+        'host': 'https://live.douyin.com',
+        'aid': DouyinRequestParams.aidValue,
+        'live_id': '1',
+        'did_rule': '3',
+        'debug': 'false',
+        'maxCacheMessageNumber': '20',
+        'endpoint': 'live_pc',
+        'support_wrds': '1',
+        'im_path': '/webcast/im/fetch/',
+        'user_unique_id': userUniqueId,
+        'device_platform': 'web',
+        'cookie_enabled': 'true',
+        'screen_width': '1080',
+        'screen_height': '2400',
+        'browser_language': 'zh-CN',
+        'browser_platform': DouyinRequestParams.browserPlatformValue,
+        'browser_name': DouyinRequestParams.browserNameValue,
+        'browser_version': DouyinRequestParams.browserVersionValue,
+        'browser_online': 'true',
+        'tz_name': 'Asia/Shanghai',
+        'identity': 'audience',
+        'room_id': roomId,
+        'heartbeatDuration': '0',
+      },
+    );
     final signature = await signatureBuilder(roomId, userUniqueId);
     final uri = baseUri.replace(
-      queryParameters: {
-        ...baseUri.queryParameters,
-        'signature': signature,
-      },
+      queryParameters: {...baseUri.queryParameters, 'signature': signature},
     );
     final backupUri = _serverUris.length > 1
         ? _serverUris[1].replace(queryParameters: uri.queryParameters)
@@ -155,7 +146,7 @@ class DouyinDanmakuSession implements DanmakuSession {
         const Duration(seconds: 10),
         (_) => _sendJoinHeartbeat(),
       );
-      _emit(
+      emit(
         LiveMessage(
           type: LiveMessageType.notice,
           content: '抖音实时弹幕已连接',
@@ -187,9 +178,7 @@ class DouyinDanmakuSession implements DanmakuSession {
     _subscription = null;
     await _channel?.sink.close();
     _channel = null;
-    if (!_controller.isClosed) {
-      await _controller.close();
-    }
+    await closeIsolateDanmakuSession();
   }
 
   Future<void> _teardownRemoteDisconnect({
@@ -208,7 +197,7 @@ class DouyinDanmakuSession implements DanmakuSession {
     _activityWatchdog = null;
     _subscription = null;
     _channel = null;
-    _emit(
+    emit(
       LiveMessage(
         type: LiveMessageType.notice,
         content: notice,
@@ -263,62 +252,20 @@ class DouyinDanmakuSession implements DanmakuSession {
       return;
     }
     try {
-      final frame = PushFrame.fromBuffer(bytes);
-      final payload = gzip.decode(frame.payload);
-      final response = Response.fromBuffer(payload);
-      if (response.needAck) {
-        _sendAck(frame.logId, response.internalExt);
-      }
-      for (final message in response.messagesList) {
-        switch (message.method) {
-          case 'WebcastChatMessage':
-            _handleChatMessage(message.payload);
-          case 'WebcastRoomUserSeqMessage':
-            _handleUserSeqMessage(message.payload);
-        }
-      }
-    } catch (error) {
-      _emit(
-        LiveMessage(
-          type: LiveMessageType.notice,
-          content: '抖音弹幕解析失败：$error',
-          timestamp: DateTime.now(),
-        ),
+      unawaited(
+        parseInWorker(DanmakuIsolateParserIds.douyin, bytes, (output) {
+          for (final command in output.commands) {
+            if (command.kind == DanmakuIsolateCommands.douyinAck &&
+                command.bytes != null) {
+              _channel?.sink.add(command.bytes!);
+            }
+          }
+          emitParsedMessages(output);
+        }),
       );
+    } catch (error) {
+      emitNotice('抖音弹幕解析失败：$error');
     }
-  }
-
-  void _handleChatMessage(List<int> payload) {
-    final message = ChatMessage.fromBuffer(payload);
-    final content = message.content;
-    if (content.isEmpty) {
-      return;
-    }
-    _emit(
-      LiveMessage(
-        type: LiveMessageType.chat,
-        content: content,
-        userName: message.user.nickName,
-        timestamp: DateTime.now(),
-      ),
-    );
-  }
-
-  void _handleUserSeqMessage(List<int> payload) {
-    final message = RoomUserSeqMessage.fromBuffer(payload);
-    _emit(
-      LiveMessage(
-        type: LiveMessageType.online,
-        content: '当前人气 ${message.totalUser}',
-        payload: message.totalUser,
-        timestamp: DateTime.now(),
-      ),
-    );
-  }
-
-  void _sendAck($fixnum.Int64 logId, String internalExt) {
-    final frame = buildDouyinAckFrame(logId, internalExt);
-    _channel?.sink.add(frame.writeToBuffer());
   }
 
   Future<void> _handleActivityTimeout() async {
@@ -334,19 +281,12 @@ class DouyinDanmakuSession implements DanmakuSession {
     _subscription = null;
     await _channel?.sink.close();
     _channel = null;
-    _emit(
+    emit(
       LiveMessage(
         type: LiveMessageType.notice,
         content: '抖音弹幕连接活动超时',
         timestamp: DateTime.now(),
       ),
     );
-  }
-
-  void _emit(LiveMessage message) {
-    if (_controller.isClosed) {
-      return;
-    }
-    _controller.add(message);
   }
 }

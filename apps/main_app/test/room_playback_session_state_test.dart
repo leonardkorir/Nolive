@@ -20,7 +20,7 @@ void main() {
 
   test('copyWith updates playback session fields while preserving others', () {
     const roomDetail = LiveRoomDetail(
-      providerId: 'bilibili',
+      providerId: ProviderId.bilibili,
       roomId: '6',
       title: '系统演示直播间',
       streamerName: '系统演示主播',
@@ -65,7 +65,7 @@ void main() {
     final state =
         RoomPlaybackSessionState(
           activeRoomDetail: const LiveRoomDetail(
-            providerId: 'bilibili',
+            providerId: ProviderId.bilibili,
             roomId: '6',
             title: '系统演示直播间',
             streamerName: '系统演示主播',

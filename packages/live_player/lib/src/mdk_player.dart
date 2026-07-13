@@ -195,8 +195,12 @@ class MdkPlayer implements BasePlayer {
       'drop=${bufferStrategy.drop}',
     );
 
-    if (source.headers.isNotEmpty) {
-      final headerString = source.headers.entries
+    final combinedHeaders = <String, String>{
+      ...source.headers,
+      if (source.externalAudio != null) ...source.externalAudio!.headers,
+    };
+    if (combinedHeaders.isNotEmpty) {
+      final headerString = combinedHeaders.entries
           .map((entry) => '${entry.key}: ${entry.value}')
           .join('\r\n');
       player.setProperty('avio.headers', headerString);

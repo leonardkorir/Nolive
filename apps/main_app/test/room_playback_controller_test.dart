@@ -110,6 +110,94 @@ void main() {
   );
 
   test(
+    'room playback controller keeps MPV error after MPV surface timeout',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.ready,
+        ),
+        failNextPlayWithMpvSurfaceTimeout: true,
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      final resetLabels = <String>[];
+      final controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.youtube,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => null,
+        resetEmbeddedPlayerViewAfterBackendRefresh: (label) async {
+          resetLabels.add(label);
+        },
+        schedulePostFrame: scheduler.schedule,
+        delay: (_) async {},
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
+
+      final bound = await controller.bindPlaybackSource(
+        playbackSource: source('surface-timeout'),
+        label: 'mpv source',
+        autoPlay: true,
+      );
+
+      expect(bound, isTrue);
+      expect(runtime.backend, PlayerBackend.mpv);
+      expect(resetLabels, isEmpty);
+      expect(player.events, <String>['setSource', 'play']);
+      expect(runtime.currentState.status, PlaybackStatus.error);
+      expect(runtime.currentState.errorMessage, kMpvAndroidSurfaceTimeoutError);
+    },
+  );
+
+  test(
+    'room playback bootstrap keeps MPV error after MPV surface timeout',
+    () async {
+      final scheduler = _TestPlaybackScheduler();
+      final player = _TestPlaybackPlayer(
+        initialState: const PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.ready,
+        ),
+        failNextPlayWithMpvSurfaceTimeout: true,
+      );
+      final runtime = _RefreshTrackingRuntime(player);
+      final resetLabels = <String>[];
+      final controller = RoomPlaybackController(
+        playerRuntime: runtime,
+        providerId: ProviderId.youtube,
+        trace: (_) {},
+        isMounted: () => true,
+        resolveCurrentPlaybackSource: () => null,
+        resetEmbeddedPlayerViewAfterBackendRefresh: (label) async {
+          resetLabels.add(label);
+        },
+        schedulePostFrame: scheduler.schedule,
+        delay: (_) async {},
+        waitForEndOfFrame: () async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
+
+      controller.schedulePlaybackBootstrap(
+        playbackSource: source('bootstrap-surface-timeout'),
+        hasPlayback: true,
+        autoPlay: true,
+      );
+      await scheduler.flush();
+
+      expect(runtime.backend, PlayerBackend.mpv);
+      expect(resetLabels, isEmpty);
+      expect(player.events, <String>['setSource', 'play']);
+      expect(runtime.currentState.status, PlaybackStatus.error);
+      expect(runtime.currentState.errorMessage, kMpvAndroidSurfaceTimeoutError);
+    },
+  );
+
+  test(
     'room playback controller aborts stale retry after pending target changes',
     () async {
       final scheduler = _TestPlaybackScheduler();
@@ -542,11 +630,13 @@ class _TestPlaybackPlayer implements BasePlayer {
   _TestPlaybackPlayer({
     required PlayerState initialState,
     this.pendingSetSourceFailures = 0,
+    this.failNextPlayWithMpvSurfaceTimeout = false,
   }) : _currentState = initialState;
 
   final List<String> events = <String>[];
   final List<PlaybackSource> boundSources = <PlaybackSource>[];
   int pendingSetSourceFailures;
+  bool failNextPlayWithMpvSurfaceTimeout;
   final StreamController<PlayerState> _states =
       StreamController<PlayerState>.broadcast();
   final StreamController<PlayerDiagnostics> _diagnostics =
@@ -606,6 +696,16 @@ class _TestPlaybackPlayer implements BasePlayer {
   @override
   Future<void> play() async {
     events.add('play');
+    if (failNextPlayWithMpvSurfaceTimeout) {
+      failNextPlayWithMpvSurfaceTimeout = false;
+      _emit(
+        _currentState.copyWith(
+          status: PlaybackStatus.error,
+          errorMessage: kMpvAndroidSurfaceTimeoutError,
+        ),
+      );
+      return;
+    }
     _emit(_currentState.copyWith(status: PlaybackStatus.playing));
   }
 
@@ -658,7 +758,7 @@ class _TestPlaybackPlayer implements BasePlayer {
   }
 
   void _emit(PlayerState next) {
-    _currentState = next.copyWith(backend: backend);
+    _currentState = next.copyWith(backend: next.backend ?? backend);
     if (!_states.isClosed) {
       _states.add(_currentState);
     }

@@ -43,7 +43,7 @@ void main() {
             resolveAncillaryLoading: () => status.ancillaryLoading,
             resolveHasDanmakuSession: () => status.hasDanmakuSession,
             room: const LiveRoomDetail(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '1000',
               title: '测试直播间',
               streamerName: '测试主播',
@@ -87,7 +87,7 @@ void main() {
               resolveAncillaryLoading: () => status.ancillaryLoading,
               resolveHasDanmakuSession: () => status.hasDanmakuSession,
               room: const LiveRoomDetail(
-                providerId: 'chaturbate',
+                providerId: ProviderId.chaturbate,
                 roomId: 'cb-room',
                 title: 'cb-title',
                 streamerName: 'cb-streamer',
@@ -154,7 +154,7 @@ void main() {
             resolveAncillaryLoading: () => status.ancillaryLoading,
             resolveHasDanmakuSession: () => status.hasDanmakuSession,
             room: const LiveRoomDetail(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '1000',
               title: '测试直播间',
               streamerName: '测试主播',
@@ -209,7 +209,7 @@ void main() {
             resolveAncillaryLoading: () => status.ancillaryLoading,
             resolveHasDanmakuSession: () => status.hasDanmakuSession,
             room: const LiveRoomDetail(
-              providerId: 'douyin',
+              providerId: ProviderId.douyin,
               roomId: '1000',
               title: '测试直播间',
               streamerName: '测试主播',
@@ -252,7 +252,7 @@ void main() {
               resolveAncillaryLoading: () => status.ancillaryLoading,
               resolveHasDanmakuSession: () => status.hasDanmakuSession,
               room: const LiveRoomDetail(
-                providerId: 'douyu',
+                providerId: ProviderId.douyu,
                 roomId: '2140934',
                 title: '单机王中王',
                 streamerName: '老皮历险记',

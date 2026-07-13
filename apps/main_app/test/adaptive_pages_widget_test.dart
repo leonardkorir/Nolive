@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
-import 'package:nolive_app/src/app/home/presentation/home_page.dart';
+import 'package:nolive_app/src/features/home/presentation/home_page.dart';
 import 'package:nolive_app/src/features/browse/presentation/browse_page.dart';
 import 'package:nolive_app/src/features/category/presentation/provider_categories_page.dart';
 import 'package:nolive_app/src/features/search/presentation/search_page.dart';

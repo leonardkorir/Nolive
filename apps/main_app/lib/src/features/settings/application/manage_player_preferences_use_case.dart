@@ -7,11 +7,32 @@ enum PlayerScaleMode { contain, cover, fill, fitWidth, fitHeight }
 const String kDefaultMpvVideoOutputDriver = 'gpu-next';
 const String kDefaultMpvHardwareDecoder = 'auto-safe';
 
+const String kDefaultMpvAudioOutputDriver = 'auto';
+
 const Map<String, String> kMpvVideoOutputDrivers = <String, String>{
   'gpu': 'gpu',
   'gpu-next': 'gpu-next',
   'libmpv': 'libmpv',
-  'mediacodec_embed': 'mediacodec_embed',
+  'mediacodec_embed': 'mediacodec_embed (Android)',
+  'sdl': 'sdl',
+  'dmabuf-wayland': 'dmabuf-wayland',
+  'vaapi': 'vaapi',
+  'direct3d': 'direct3d (Windows)',
+  'null': 'null',
+};
+
+const Map<String, String> kMpvAudioOutputDrivers = <String, String>{
+  'auto': '自动',
+  'audiotrack': 'audiotrack (Android)',
+  'opensles': 'opensles (Android)',
+  'aaudio': 'aaudio (Android)',
+  'pulse': 'pulse (Linux)',
+  'pipewire': 'pipewire (Linux)',
+  'alsa': 'alsa (Linux)',
+  'wasapi': 'wasapi (Windows)',
+  'coreaudio': 'coreaudio (macOS)',
+  'sdl': 'sdl',
+  'null': 'null',
 };
 
 const Map<String, String> kMpvHardwareDecoders = <String, String>{
@@ -20,8 +41,70 @@ const Map<String, String> kMpvHardwareDecoders = <String, String>{
   'auto-copy': '自动（拷贝）',
   'mediacodec': 'MediaCodec',
   'mediacodec-copy': 'MediaCodec Copy',
+  'd3d11va': 'd3d11va',
+  'd3d11va-copy': 'd3d11va-copy',
+  'videotoolbox': 'videotoolbox',
+  'vaapi': 'vaapi',
+  'nvdec': 'nvdec',
   'no': '关闭硬解',
 };
+
+Map<String, String> mpvVideoOutputDriversForPlatform({
+  required bool isAndroid,
+  required bool isLinux,
+  required bool isWindows,
+  required bool isApple,
+}) {
+  return Map<String, String>.fromEntries(
+    kMpvVideoOutputDrivers.entries.where((entry) {
+      final key = entry.key;
+      if (key == 'mediacodec_embed') return isAndroid;
+      if (key == 'direct3d') return isWindows;
+      if (key == 'dmabuf-wayland' || key == 'vaapi') return isLinux;
+      return true;
+    }),
+  );
+}
+
+Map<String, String> mpvAudioOutputDriversForPlatform({
+  required bool isAndroid,
+  required bool isLinux,
+  required bool isWindows,
+  required bool isApple,
+}) {
+  return Map<String, String>.fromEntries(
+    kMpvAudioOutputDrivers.entries.where((entry) {
+      final key = entry.key;
+      if (key == 'auto' || key == 'sdl' || key == 'null') return true;
+      if (key == 'audiotrack' || key == 'opensles' || key == 'aaudio') {
+        return isAndroid;
+      }
+      if (key == 'pulse' || key == 'pipewire' || key == 'alsa') return isLinux;
+      if (key == 'wasapi') return isWindows;
+      if (key == 'coreaudio') return isApple;
+      return true;
+    }),
+  );
+}
+
+Map<String, String> mpvHardwareDecodersForPlatform({
+  required bool isAndroid,
+  required bool isLinux,
+  required bool isWindows,
+  required bool isApple,
+}) {
+  return Map<String, String>.fromEntries(
+    kMpvHardwareDecoders.entries.where((entry) {
+      final key = entry.key;
+      if (key.startsWith('mediacodec')) return isAndroid;
+      if (key.startsWith('d3d11va')) return isWindows;
+      if (key == 'videotoolbox') return isApple;
+      if (key == 'vaapi') return isLinux;
+      if (key == 'nvdec') return isLinux || isWindows;
+      return true;
+    }),
+  );
+}
 
 class PlayerPreferences {
   const PlayerPreferences({
@@ -34,8 +117,11 @@ class PlayerPreferences {
     required this.mpvDoubleBufferingEnabled,
     required this.mpvCustomOutputEnabled,
     required this.mpvVideoOutputDriver,
+    required this.mpvAudioOutputDriver,
     required this.mpvHardwareDecoder,
     required this.mpvLogEnabled,
+    required this.wifiQualityPreference,
+    required this.cellularQualityPreference,
     required this.mdkLowLatencyEnabled,
     required this.mdkAndroidTunnelEnabled,
     required this.mdkAndroidHardwareVideoDecoderEnabled,
@@ -55,8 +141,11 @@ class PlayerPreferences {
   final bool mpvDoubleBufferingEnabled;
   final bool mpvCustomOutputEnabled;
   final String mpvVideoOutputDriver;
+  final String mpvAudioOutputDriver;
   final String mpvHardwareDecoder;
   final bool mpvLogEnabled;
+  final NetworkQualityPreference wifiQualityPreference;
+  final NetworkQualityPreference cellularQualityPreference;
   final bool mdkLowLatencyEnabled;
   final bool mdkAndroidTunnelEnabled;
   final bool mdkAndroidHardwareVideoDecoderEnabled;
@@ -76,8 +165,11 @@ class PlayerPreferences {
     bool? mpvDoubleBufferingEnabled,
     bool? mpvCustomOutputEnabled,
     String? mpvVideoOutputDriver,
+    String? mpvAudioOutputDriver,
     String? mpvHardwareDecoder,
     bool? mpvLogEnabled,
+    NetworkQualityPreference? wifiQualityPreference,
+    NetworkQualityPreference? cellularQualityPreference,
     bool? mdkLowLatencyEnabled,
     bool? mdkAndroidTunnelEnabled,
     bool? mdkAndroidHardwareVideoDecoderEnabled,
@@ -100,8 +192,13 @@ class PlayerPreferences {
       mpvCustomOutputEnabled:
           mpvCustomOutputEnabled ?? this.mpvCustomOutputEnabled,
       mpvVideoOutputDriver: mpvVideoOutputDriver ?? this.mpvVideoOutputDriver,
+      mpvAudioOutputDriver: mpvAudioOutputDriver ?? this.mpvAudioOutputDriver,
       mpvHardwareDecoder: mpvHardwareDecoder ?? this.mpvHardwareDecoder,
       mpvLogEnabled: mpvLogEnabled ?? this.mpvLogEnabled,
+      wifiQualityPreference:
+          wifiQualityPreference ?? this.wifiQualityPreference,
+      cellularQualityPreference:
+          cellularQualityPreference ?? this.cellularQualityPreference,
       mdkLowLatencyEnabled: mdkLowLatencyEnabled ?? this.mdkLowLatencyEnabled,
       mdkAndroidTunnelEnabled:
           mdkAndroidTunnelEnabled ?? this.mdkAndroidTunnelEnabled,
@@ -165,6 +262,21 @@ class LoadPlayerPreferencesUseCase {
           'player_mpv_hardware_decoder',
         ) ??
         kDefaultMpvHardwareDecoder;
+    final mpvAudioOutputDriver =
+        await settingsRepository.readValue<String>(
+          'player_mpv_audio_output_driver',
+        ) ??
+        kDefaultMpvAudioOutputDriver;
+    final wifiQualityPreference = _decodeNetworkQualityPreference(
+      await settingsRepository.readValue<String>('player_wifi_quality_level'),
+      fallback: NetworkQualityPreference.middle,
+    );
+    final cellularQualityPreference = _decodeNetworkQualityPreference(
+      await settingsRepository.readValue<String>(
+        'player_cellular_quality_level',
+      ),
+      fallback: NetworkQualityPreference.lowest,
+    );
     final mpvLogEnabled =
         await settingsRepository.readValue<bool>('player_mpv_log_enable') ??
         false;
@@ -209,8 +321,11 @@ class LoadPlayerPreferencesUseCase {
       mpvDoubleBufferingEnabled: mpvDoubleBufferingEnabled,
       mpvCustomOutputEnabled: mpvCustomOutputEnabled,
       mpvVideoOutputDriver: _decodeMpvVideoOutputDriver(mpvVideoOutputDriver),
+      mpvAudioOutputDriver: _decodeMpvAudioOutputDriver(mpvAudioOutputDriver),
       mpvHardwareDecoder: _decodeMpvHardwareDecoder(mpvHardwareDecoder),
       mpvLogEnabled: mpvLogEnabled,
+      wifiQualityPreference: wifiQualityPreference,
+      cellularQualityPreference: cellularQualityPreference,
       mdkLowLatencyEnabled: mdkLowLatencyEnabled,
       mdkAndroidTunnelEnabled: mdkAndroidTunnelEnabled,
       mdkAndroidHardwareVideoDecoderEnabled:
@@ -244,11 +359,31 @@ class LoadPlayerPreferencesUseCase {
     return kDefaultMpvVideoOutputDriver;
   }
 
+  static String _decodeMpvAudioOutputDriver(String? raw) {
+    if (raw != null && kMpvAudioOutputDrivers.containsKey(raw)) {
+      return raw;
+    }
+    return kDefaultMpvAudioOutputDriver;
+  }
+
   static String _decodeMpvHardwareDecoder(String? raw) {
     if (raw != null && kMpvHardwareDecoders.containsKey(raw)) {
       return raw;
     }
     return kDefaultMpvHardwareDecoder;
+  }
+
+  static NetworkQualityPreference _decodeNetworkQualityPreference(
+    String? raw, {
+    required NetworkQualityPreference fallback,
+  }) {
+    final normalized = raw?.trim().toLowerCase() ?? '';
+    return switch (normalized) {
+      'highest' || '2' || 'high' => NetworkQualityPreference.highest,
+      'lowest' || '0' || 'low' => NetworkQualityPreference.lowest,
+      'middle' || '1' || 'medium' => NetworkQualityPreference.middle,
+      _ => fallback,
+    };
   }
 }
 
@@ -297,6 +432,18 @@ class UpdatePlayerPreferencesUseCase {
     await settingsRepository.writeValue(
       'player_mpv_hardware_decoder',
       preferences.mpvHardwareDecoder,
+    );
+    await settingsRepository.writeValue(
+      'player_mpv_audio_output_driver',
+      preferences.mpvAudioOutputDriver,
+    );
+    await settingsRepository.writeValue(
+      'player_wifi_quality_level',
+      preferences.wifiQualityPreference.name,
+    );
+    await settingsRepository.writeValue(
+      'player_cellular_quality_level',
+      preferences.cellularQualityPreference.name,
     );
     await settingsRepository.writeValue(
       'player_mpv_log_enable',
@@ -381,6 +528,7 @@ bool _requiresPlayerRuntimeRefresh({
           current.mpvDoubleBufferingEnabled != next.mpvDoubleBufferingEnabled ||
           current.mpvCustomOutputEnabled != next.mpvCustomOutputEnabled ||
           current.mpvVideoOutputDriver != next.mpvVideoOutputDriver ||
+          current.mpvAudioOutputDriver != next.mpvAudioOutputDriver ||
           current.mpvHardwareDecoder != next.mpvHardwareDecoder ||
           current.mpvLogEnabled != next.mpvLogEnabled,
     PlayerBackend.mdk =>

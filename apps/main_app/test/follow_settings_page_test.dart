@@ -14,7 +14,7 @@ void main() {
     await bootstrap.createTag('夜班');
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '6',
         streamerName: '系统演示主播',
         tags: ['夜班'],
@@ -68,7 +68,7 @@ void main() {
           onRoomDetail: (roomId) async {
             detailCalls += 1;
             return LiveRoomDetail(
-              providerId: _kFollowSettingsTestProviderId.value,
+              providerId: _kFollowSettingsTestProviderId,
               roomId: roomId,
               title: '$roomId-title',
               streamerName: roomId,
@@ -83,7 +83,7 @@ void main() {
 
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'follow_settings_test',
+        providerId: ProviderId('follow_settings_test'),
         roomId: 'room-1',
         streamerName: '本地关注房间',
       ),

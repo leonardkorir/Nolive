@@ -58,15 +58,11 @@ void main() {
       isA<SupportsPlayQualities>(),
     );
     expect(
-      provider.requireContract<SupportsPlayUrls>(
-        ProviderCapability.playUrls,
-      ),
+      provider.requireContract<SupportsPlayUrls>(ProviderCapability.playUrls),
       isA<SupportsPlayUrls>(),
     );
     expect(
-      provider.requireContract<SupportsDanmaku>(
-        ProviderCapability.danmaku,
-      ),
+      provider.requireContract<SupportsDanmaku>(ProviderCapability.danmaku),
       isA<SupportsDanmaku>(),
     );
   });

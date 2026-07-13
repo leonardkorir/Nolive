@@ -93,27 +93,10 @@ void main() {
     },
   );
 
-  test('live provider list hides chaturbate until browser cookie exists', () {
+  test('live provider list shows chaturbate without browser cookie', () {
     final useCase = ListAvailableProvidersUseCase(
       ReferenceProviderCatalog.buildLiveRegistry(stringSetting: (key) => ''),
       ValueNotifier(LayoutPreferences.defaults()),
-      stringSetting: (key) => '',
-    );
-
-    final providers = useCase();
-    expect(
-      providers.map((item) => item.id.value),
-      isNot(contains('chaturbate')),
-    );
-  });
-
-  test('live provider list shows chaturbate after browser cookie exists', () {
-    final useCase = ListAvailableProvidersUseCase(
-      ReferenceProviderCatalog.buildLiveRegistry(
-        stringSetting: (key) => 'csrftoken=demo; __cf_bm=demo',
-      ),
-      ValueNotifier(LayoutPreferences.defaults()),
-      stringSetting: (key) => 'csrftoken=demo; __cf_bm=demo',
     );
 
     final providers = useCase();
@@ -130,7 +113,6 @@ void main() {
           enabledProviderIds: const ['chaturbate'],
         ),
       ),
-      stringSetting: (key) => 'csrftoken=demo; __cf_bm=demo',
     );
 
     final providers = useCase().map((item) => item.id.value).toList();

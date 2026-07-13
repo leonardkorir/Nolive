@@ -18,9 +18,9 @@ class ChaturbateFixtureLoader {
   static final Map<String, ChaturbateHlsPlaylistFixture> _hlsPlaylistCache = {};
 
   static List<String> get missingArtifacts => [
-        for (final name in _requiredArtifacts)
-          if (_resolveArtifactIfExists(name) == null) name,
-      ];
+    for (final name in _requiredArtifacts)
+      if (_resolveArtifactIfExists(name) == null) name,
+  ];
 
   static String? get skipReason {
     final missing = missingArtifacts;
@@ -119,34 +119,29 @@ class ChaturbateFixtureLoader {
   static ChaturbateHlsPlaylistFixture loadHlsMasterPlaylist({
     String harName = 'room-page-realcest.har',
   }) {
-    return _hlsPlaylistCache.putIfAbsent(
-      harName,
-      () {
-        final entries = _entries(harName);
-        for (final entry in entries) {
-          final request = _asMap(entry['request']);
-          final url = request['url']?.toString() ?? '';
-          final response = _asMap(entry['response']);
-          final content = _asMap(response['content']);
-          final text = content['text']?.toString() ?? '';
-          if (url.isEmpty || text.isEmpty) {
-            continue;
-          }
-          if (!url.contains('.m3u8')) {
-            continue;
-          }
-          if (!text.contains('#EXT-X-STREAM-INF:')) {
-            continue;
-          }
-          return ChaturbateHlsPlaylistFixture(
-            url: url,
-            content: text,
-          );
+    return _hlsPlaylistCache.putIfAbsent(harName, () {
+      final entries = _entries(harName);
+      for (final entry in entries) {
+        final request = _asMap(entry['request']);
+        final url = request['url']?.toString() ?? '';
+        final response = _asMap(entry['response']);
+        final content = _asMap(response['content']);
+        final text = content['text']?.toString() ?? '';
+        if (url.isEmpty || text.isEmpty) {
+          continue;
         }
-        throw StateError(
-            'HLS master playlist fixture was not found in $harName.');
-      },
-    );
+        if (!url.contains('.m3u8')) {
+          continue;
+        }
+        if (!text.contains('#EXT-X-STREAM-INF:')) {
+          continue;
+        }
+        return ChaturbateHlsPlaylistFixture(url: url, content: text);
+      }
+      throw StateError(
+        'HLS master playlist fixture was not found in $harName.',
+      );
+    });
   }
 
   static Map<String, dynamic> loadPushAuthResponse({

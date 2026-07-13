@@ -11,15 +11,13 @@ class HuyaMapper {
     String responseText, {
     required int page,
   }) {
-    final response = _decodeMap(
-      responseText,
-      context: 'search response',
-    );
+    final response = _decodeMap(responseText, context: 'search response');
     final docs = _asList(_asMap(_asMap(response['response'])['3'])['docs']);
     final numFound =
         _asInt(_asMap(_asMap(response['response'])['3'])['numFound']) ?? 0;
-    final items =
-        docs.map((item) => mapSearchRoom(_asMap(item))).toList(growable: false);
+    final items = docs
+        .map((item) => mapSearchRoom(_asMap(item)))
+        .toList(growable: false);
     return PagedResponse(
       items: items,
       hasMore: numFound > page * 20,
@@ -36,7 +34,7 @@ class HuyaMapper {
         ? item['game_introduction'].toString()
         : item['game_roomName']?.toString() ?? '';
     return LiveRoom(
-      providerId: ProviderId.huya.value,
+      providerId: ProviderId.huya,
       roomId: 'yy/${item['yyid']}',
       title: normalizeDisplayText(title),
       streamerName: normalizeDisplayText(item['game_nick']?.toString()),
@@ -63,14 +61,8 @@ class HuyaMapper {
       );
     }
 
-    final roomData = _decodeMap(
-      roomDataJson,
-      context: 'room data',
-    );
-    final streamJson = _decodeMap(
-      streamJsonRaw,
-      context: 'stream data',
-    );
+    final roomData = _decodeMap(roomDataJson, context: 'room data');
+    final streamJson = _decodeMap(streamJsonRaw, context: 'stream data');
     final streamDataJson = _asMap(_asList(streamJson['data']).firstOrNull);
     final liveInfo = _asMap(streamDataJson['gameLiveInfo']);
     final streamInfoList = _asList(streamDataJson['gameStreamInfoList']);
@@ -133,7 +125,7 @@ class HuyaMapper {
     }
 
     return LiveRoomDetail(
-      providerId: ProviderId.huya.value,
+      providerId: ProviderId.huya,
       roomId: requestedRoomId,
       title: normalizeDisplayText(liveInfo['introduction']?.toString()),
       streamerName: normalizeDisplayText(liveInfo['nick']?.toString()),
@@ -170,22 +162,21 @@ class HuyaMapper {
         {'name': '原画', 'bitRate': 0},
       ];
     }
-    final qualities = bitRates.map((item) => _asMap(item)).map(
-      (item) {
-        final bitRate = _asInt(item['bitRate']) ?? 0;
-        return LivePlayQuality(
-          id: bitRate.toString(),
-          label: item['name']?.toString() ?? '未知清晰度',
-          isDefault: bitRate == 0,
-          sortOrder: bitRate == 0 ? 1 << 30 : bitRate,
-          metadata: {
-            'bitRate': bitRate,
-            'lines': lines,
-          },
-        );
-      },
-    ).toList(growable: false)
-      ..sort((a, b) => b.sortOrder.compareTo(a.sortOrder));
+    final qualities =
+        bitRates
+            .map((item) => _asMap(item))
+            .map((item) {
+              final bitRate = _asInt(item['bitRate']) ?? 0;
+              return LivePlayQuality(
+                id: bitRate.toString(),
+                label: item['name']?.toString() ?? '未知清晰度',
+                isDefault: bitRate == 0,
+                sortOrder: bitRate == 0 ? 1 << 30 : bitRate,
+                metadata: {'bitRate': bitRate, 'lines': lines},
+              );
+            })
+            .toList(growable: false)
+          ..sort((a, b) => b.sortOrder.compareTo(a.sortOrder));
     if (qualities.isNotEmpty && !qualities.any((item) => item.isDefault)) {
       final first = qualities.first;
       qualities[0] = LivePlayQuality(

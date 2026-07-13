@@ -27,6 +27,19 @@ class SensitiveSettingKeys {
     syncLocalPeerAccessToken,
   };
 
+  /// 用户显式开启「传输账号与 WebDAV 密码」时可随局域网同步迁移的键。
+  /// 不含本机局域网设备 ID / 本机 access token / 目标配对码（设备本地身份）。
+  static const Set<String> transferableCredentialKeys = <String>{
+    accountBilibiliCookie,
+    accountChaturbateCookie,
+    accountDouyinCookie,
+    accountStripchatCookie,
+    accountStripchatMouflonKeys,
+    accountTwitchCookie,
+    accountYouTubeCookie,
+    syncWebDavPassword,
+  };
+
   static const Set<String> snapshotExcludedKeys = <String>{
     ...secureCredentialKeys,
     syncLocalDeviceId,
@@ -38,5 +51,9 @@ class SensitiveSettingKeys {
 
   static bool isSnapshotExcludedKey(String key) {
     return snapshotExcludedKeys.contains(key);
+  }
+
+  static bool isTransferableCredentialKey(String key) {
+    return transferableCredentialKeys.contains(key);
   }
 }

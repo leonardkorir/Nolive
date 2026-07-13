@@ -16,7 +16,7 @@ class TwitchMapper {
       broadcaster['displayName']?.toString(),
     ]);
     return LiveRoom(
-      providerId: ProviderId.twitch.value,
+      providerId: ProviderId.twitch,
       roomId: roomId,
       title: _firstNonEmpty([
         normalizeDisplayText(settings['title']?.toString()),
@@ -48,7 +48,7 @@ class TwitchMapper {
     ]);
     final isLive = stream.isNotEmpty;
     return LiveRoom(
-      providerId: ProviderId.twitch.value,
+      providerId: ProviderId.twitch,
       roomId: roomId,
       title: _firstNonEmpty([
         normalizeDisplayText(settings['title']?.toString()),
@@ -81,7 +81,7 @@ class TwitchMapper {
       broadcaster['displayName']?.toString(),
     ]);
     return LiveRoom(
-      providerId: ProviderId.twitch.value,
+      providerId: ProviderId.twitch,
       roomId: roomId,
       title: _firstNonEmpty([
         normalizeDisplayText(payload['title']?.toString()),
@@ -123,10 +123,7 @@ class TwitchMapper {
     final game = _asMap(lastBroadcast['game']).isNotEmpty
         ? _asMap(lastBroadcast['game'])
         : _asMap(stream['game']);
-    final roomId = _firstNonEmpty([
-      shellUser['login']?.toString(),
-      login,
-    ]);
+    final roomId = _firstNonEmpty([shellUser['login']?.toString(), login]);
     final metadata = <String, Object?>{
       'channelId': _firstNonEmpty([
         shellUser['id']?.toString(),
@@ -137,12 +134,13 @@ class TwitchMapper {
       'bannerImageUrl': shellUser['bannerImageURL'],
     };
     return LiveRoomDetail(
-      providerId: ProviderId.twitch.value,
+      providerId: ProviderId.twitch,
       roomId: roomId,
       title: _firstNonEmpty([
         normalizeDisplayText(lastBroadcast['title']?.toString()),
         normalizeDisplayText(
-            _asMap(metadataUser['lastBroadcast'])['title']?.toString()),
+          _asMap(metadataUser['lastBroadcast'])['title']?.toString(),
+        ),
         roomId,
       ]),
       streamerName: _firstNonEmpty([
@@ -185,36 +183,36 @@ class TwitchMapper {
         : masterCandidates;
     final resolvedCandidateGroups = candidateGroups.isEmpty
         ? variants
-            .map(
-              (variant) => TwitchPlaybackQualityGroup(
-                id: variant.stableVariantId?.trim().isNotEmpty == true
-                    ? variant.stableVariantId!.trim()
-                    : variant.bandwidth.toString(),
-                label: variant.label,
-                sortOrder: variant.sortOrder,
-                bandwidth: variant.bandwidth,
-                width: variant.width,
-                height: variant.height,
-                frameRate: variant.frameRate,
-                codecs: variant.codecs,
-                candidates: [
-                  TwitchPlaybackCandidate(
-                    playlistUrl: variant.url,
-                    headers: headers,
-                    playerType: 'popout',
-                    platform: 'web',
-                    lineLabel: '默认 Popout',
-                    source: variant.source,
-                    bandwidth: variant.bandwidth,
-                    width: variant.width,
-                    height: variant.height,
-                    frameRate: variant.frameRate,
-                    codecs: variant.codecs,
-                  ),
-                ],
-              ),
-            )
-            .toList(growable: false)
+              .map(
+                (variant) => TwitchPlaybackQualityGroup(
+                  id: variant.stableVariantId?.trim().isNotEmpty == true
+                      ? variant.stableVariantId!.trim()
+                      : variant.bandwidth.toString(),
+                  label: variant.label,
+                  sortOrder: variant.sortOrder,
+                  bandwidth: variant.bandwidth,
+                  width: variant.width,
+                  height: variant.height,
+                  frameRate: variant.frameRate,
+                  codecs: variant.codecs,
+                  candidates: [
+                    TwitchPlaybackCandidate(
+                      playlistUrl: variant.url,
+                      headers: headers,
+                      playerType: 'popout',
+                      platform: 'web',
+                      lineLabel: '默认 Popout',
+                      source: variant.source,
+                      bandwidth: variant.bandwidth,
+                      width: variant.width,
+                      height: variant.height,
+                      frameRate: variant.frameRate,
+                      codecs: variant.codecs,
+                    ),
+                  ],
+                ),
+              )
+              .toList(growable: false)
         : candidateGroups;
     final qualities = <LivePlayQuality>[
       LivePlayQuality(
@@ -224,10 +222,12 @@ class TwitchMapper {
         metadata: {
           'playlistUrl': masterPlaylistUrl,
           'headers': headers,
-          'twitchPlaybackCandidates':
-              resolvedMasterCandidates.map((item) => item.toJson()).toList(),
-          'twitchPlaybackGroups':
-              resolvedCandidateGroups.map((item) => item.toJson()).toList(),
+          'twitchPlaybackCandidates': resolvedMasterCandidates
+              .map((item) => item.toJson())
+              .toList(),
+          'twitchPlaybackGroups': resolvedCandidateGroups
+              .map((item) => item.toJson())
+              .toList(),
         },
       ),
     ];
@@ -306,7 +306,8 @@ class TwitchMapper {
           )
           .toList(growable: false);
     }
-    final selectedUrl = quality.metadata?['playlistUrl']?.toString().trim() ??
+    final selectedUrl =
+        quality.metadata?['playlistUrl']?.toString().trim() ??
         detail.metadata?['masterPlaylistUrl']?.toString().trim() ??
         '';
     if (selectedUrl.isEmpty) {

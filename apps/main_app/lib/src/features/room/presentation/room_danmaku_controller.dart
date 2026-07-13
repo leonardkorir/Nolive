@@ -85,12 +85,16 @@ class RoomDanmakuController {
   static const Duration _douyuConnectTimeout = Duration(seconds: 20);
   static const Duration _chaturbateConnectTimeout = Duration(seconds: 20);
   static const Duration _stripchatConnectTimeout = Duration(seconds: 20);
+  static const Duration _defaultDanmakuTelemetryInterval = Duration(
+    seconds: 10,
+  );
 
   RoomDanmakuController({
     required this.dependencies,
     required this.providerId,
     this.trace,
     this.connectTimeout = _defaultConnectTimeout,
+    this.danmakuTelemetryInterval = _defaultDanmakuTelemetryInterval,
     this.reconnectDelayBuilder,
   }) : _state = ValueNotifier<RoomDanmakuState>(
          const RoomDanmakuState.initial(),
@@ -113,9 +117,14 @@ class RoomDanmakuController {
   ];
 
   final RoomDanmakuDependencies dependencies;
-  final ProviderId providerId;
+  ProviderId providerId;
   final void Function(String message)? trace;
+
+  void retargetRoom({required ProviderId providerId}) {
+    this.providerId = providerId;
+  }
   final Duration connectTimeout;
+  final Duration danmakuTelemetryInterval;
   final Duration Function(int attempt)? reconnectDelayBuilder;
   final ValueNotifier<RoomDanmakuState> _state;
   final ValueNotifier<List<LiveMessage>> _messages;
@@ -131,14 +140,26 @@ class RoomDanmakuController {
   );
   LiveRoomDetail? _activeRoomDetail;
   Timer? _danmakuFlushTimer;
+  Timer? _danmakuTelemetryTimer;
   Timer? _playerSuperChatOverlayTimer;
   Timer? _danmakuReconnectTimer;
   StreamSubscription<LiveMessage>? _danmakuSubscription;
   int _playerSuperChatDisplaySeconds = 8;
+  int _frequencyWindowSeconds = 8;
+  int _maxFrequency = 2;
   int _bindGeneration = 0;
   int _reconnectGeneration = 0;
   bool _suspendedByLifecycle = false;
   bool _disposed = false;
+  DateTime? _danmakuTelemetryWindowStartedAt;
+  int _danmakuWindowReceived = 0;
+  int _danmakuWindowDisplayed = 0;
+  int _danmakuWindowFilteredDropped = 0;
+  int _danmakuWindowBatchMaskDropped = 0;
+  int _danmakuTotalReceived = 0;
+  int _danmakuTotalDisplayed = 0;
+  int _danmakuTotalFilteredDropped = 0;
+  int _danmakuTotalBatchMaskDropped = 0;
 
   ValueListenable<RoomDanmakuState> get listenable => _state;
 
@@ -154,11 +175,15 @@ class RoomDanmakuController {
     required List<String> blockedKeywords,
     required bool preferNativeBatchMask,
     required int playerSuperChatDisplaySeconds,
+    int frequencyWindowSeconds = 8,
+    int maxFrequency = 2,
   }) {
     if (_disposed) {
       return;
     }
     _playerSuperChatDisplaySeconds = playerSuperChatDisplaySeconds;
+    _frequencyWindowSeconds = frequencyWindowSeconds;
+    _maxFrequency = maxFrequency;
     _filter = DanmakuFilterService(
       config: DanmakuFilterConfig(blockedKeywords: blockedKeywords.toSet()),
     );
@@ -213,6 +238,10 @@ class RoomDanmakuController {
     }
 
     _emit(current.copyWith(session: session));
+    _startDanmakuTelemetry(
+      activeRoomDetail: activeRoomDetail,
+      session: session,
+    );
     _danmakuFlushTimer = Timer.periodic(_danmakuFlushInterval, (_) {
       _flushPendingDanmaku();
     });
@@ -221,6 +250,7 @@ class RoomDanmakuController {
         if (_disposed) {
           return;
         }
+        _recordDanmakuMessageReceived();
         if (_shouldReconnectDanmaku(message)) {
           _trace(
             'danmaku reconnect trigger room=${_describeRoom(_activeRoomDetail)} '
@@ -414,6 +444,7 @@ class RoomDanmakuController {
     _activeRoomDetail = null;
     _danmakuFlushTimer?.cancel();
     _danmakuFlushTimer = null;
+    _stopDanmakuTelemetry(reason: 'dispose');
     _playerSuperChatOverlayTimer?.cancel();
     _playerSuperChatOverlayTimer = null;
     _danmakuReconnectTimer?.cancel();
@@ -451,7 +482,11 @@ class RoomDanmakuController {
 
   bool _updateBatchMask({required bool preferNative}) {
     _danmakuBatchMask?.dispose();
-    final resolution = resolveAppDanmakuBatchMask(preferNative: preferNative);
+    final resolution = resolveAppDanmakuBatchMask(
+      preferNative: preferNative,
+      window: Duration(seconds: _frequencyWindowSeconds.clamp(2, 60)),
+      burstLimit: _maxFrequency.clamp(1, 20),
+    );
     _danmakuBatchMask = resolution.mask;
     return resolution.usingNative;
   }
@@ -483,7 +518,8 @@ class RoomDanmakuController {
       return;
     }
     final attempt = current.reconnectAttempt + 1;
-    final delay = reconnectDelayBuilder?.call(attempt) ??
+    final delay =
+        reconnectDelayBuilder?.call(attempt) ??
         Duration(seconds: math.min(12, math.max(2, attempt * 2)));
     _emit(
       current.copyWith(reconnectAttempt: attempt, reconnectScheduled: true),
@@ -571,6 +607,7 @@ class RoomDanmakuController {
   }) async {
     _danmakuFlushTimer?.cancel();
     _danmakuFlushTimer = null;
+    _stopDanmakuTelemetry(reason: reason);
     _pendingDanmakuMessages.clear();
     _playerSuperChatOverlayTimer?.cancel();
     _playerSuperChatOverlayTimer = null;
@@ -669,15 +706,20 @@ class RoomDanmakuController {
     final batch = List<LiveMessage>.from(_pendingDanmakuMessages);
     _pendingDanmakuMessages.clear();
     final filtered = _filter.apply(batch);
+    final filteredDropped = batch.length - filtered.length;
+    _recordDanmakuFilteredDropped(filteredDropped);
     final batchMask = _danmakuBatchMask;
     if (batchMask == null) {
       _trace('danmaku batch mask unavailable, dropping pending batch');
+      _recordDanmakuBatchMaskDropped(filtered.length);
       return;
     }
     final allowListed = batchMask.allowListBatch(filtered);
+    _recordDanmakuBatchMaskDropped(filtered.length - allowListed.length);
     if (allowListed.isEmpty) {
       return;
     }
+    _recordDanmakuDisplayed(allowListed.length);
 
     final merged = mergeRoomDanmakuBatch(
       messages: _messages.value,
@@ -713,6 +755,124 @@ class RoomDanmakuController {
       return;
     }
     _state.value = next;
+  }
+
+  void _startDanmakuTelemetry({
+    required LiveRoomDetail activeRoomDetail,
+    required DanmakuSession session,
+  }) {
+    _stopDanmakuTelemetry(reason: 'rebind');
+    _resetDanmakuTelemetryCounters();
+    _danmakuTelemetryWindowStartedAt = DateTime.now();
+    if (danmakuTelemetryInterval <= Duration.zero) {
+      return;
+    }
+    _trace(
+      'danmaku throughput start room=${activeRoomDetail.roomId} '
+      'provider=${providerId.value} session=${_describeSession(session)} '
+      'intervalMs=${danmakuTelemetryInterval.inMilliseconds}',
+    );
+    _danmakuTelemetryTimer = Timer.periodic(danmakuTelemetryInterval, (_) {
+      _emitDanmakuTelemetry(finalSample: false, reason: 'periodic');
+    });
+  }
+
+  void _stopDanmakuTelemetry({required String reason}) {
+    _danmakuTelemetryTimer?.cancel();
+    _danmakuTelemetryTimer = null;
+    _emitDanmakuTelemetry(finalSample: true, reason: reason);
+    _danmakuTelemetryWindowStartedAt = null;
+  }
+
+  void _resetDanmakuTelemetryCounters() {
+    _danmakuWindowReceived = 0;
+    _danmakuWindowDisplayed = 0;
+    _danmakuWindowFilteredDropped = 0;
+    _danmakuWindowBatchMaskDropped = 0;
+    _danmakuTotalReceived = 0;
+    _danmakuTotalDisplayed = 0;
+    _danmakuTotalFilteredDropped = 0;
+    _danmakuTotalBatchMaskDropped = 0;
+  }
+
+  void _recordDanmakuMessageReceived() {
+    _danmakuWindowReceived += 1;
+    _danmakuTotalReceived += 1;
+  }
+
+  void _recordDanmakuDisplayed(int count) {
+    if (count <= 0) {
+      return;
+    }
+    _danmakuWindowDisplayed += count;
+    _danmakuTotalDisplayed += count;
+  }
+
+  void _recordDanmakuFilteredDropped(int count) {
+    if (count <= 0) {
+      return;
+    }
+    _danmakuWindowFilteredDropped += count;
+    _danmakuTotalFilteredDropped += count;
+  }
+
+  void _recordDanmakuBatchMaskDropped(int count) {
+    if (count <= 0) {
+      return;
+    }
+    _danmakuWindowBatchMaskDropped += count;
+    _danmakuTotalBatchMaskDropped += count;
+  }
+
+  void _emitDanmakuTelemetry({
+    required bool finalSample,
+    required String reason,
+  }) {
+    final windowStartedAt = _danmakuTelemetryWindowStartedAt;
+    if (windowStartedAt == null) {
+      return;
+    }
+    final hasWindowActivity =
+        _danmakuWindowReceived > 0 ||
+        _danmakuWindowDisplayed > 0 ||
+        _danmakuWindowFilteredDropped > 0 ||
+        _danmakuWindowBatchMaskDropped > 0;
+    if (!finalSample && !hasWindowActivity) {
+      return;
+    }
+    if (finalSample &&
+        !hasWindowActivity &&
+        _danmakuTotalReceived == 0 &&
+        _danmakuTotalDisplayed == 0) {
+      return;
+    }
+    final now = DateTime.now();
+    final elapsed = now.difference(windowStartedAt);
+    final elapsedMs = math.max(1, elapsed.inMilliseconds);
+    final elapsedSeconds = elapsedMs / Duration.millisecondsPerSecond;
+    final receivedPerSecond = _danmakuWindowReceived / elapsedSeconds;
+    final displayedPerSecond = _danmakuWindowDisplayed / elapsedSeconds;
+    _trace(
+      'danmaku throughput room=${_describeRoom(_activeRoomDetail)} '
+      'provider=${providerId.value} session=${_describeSession(current.session)} '
+      'intervalMs=$elapsedMs received=$_danmakuWindowReceived '
+      'receivedPerSec=${receivedPerSecond.toStringAsFixed(2)} '
+      'displayed=$_danmakuWindowDisplayed '
+      'displayedPerSec=${displayedPerSecond.toStringAsFixed(2)} '
+      'filteredDropped=$_danmakuWindowFilteredDropped '
+      'batchMaskDropped=$_danmakuWindowBatchMaskDropped '
+      'pending=${_pendingDanmakuMessages.length} '
+      'totalReceived=$_danmakuTotalReceived '
+      'totalDisplayed=$_danmakuTotalDisplayed '
+      'totalFilteredDropped=$_danmakuTotalFilteredDropped '
+      'totalBatchMaskDropped=$_danmakuTotalBatchMaskDropped '
+      'final=$finalSample reason=$reason',
+    );
+    _danmakuTelemetryWindowStartedAt = now;
+    _danmakuWindowReceived = 0;
+    _danmakuWindowDisplayed = 0;
+    _danmakuWindowFilteredDropped = 0;
+    _danmakuWindowBatchMaskDropped = 0;
   }
 
   void _trace(String message) {

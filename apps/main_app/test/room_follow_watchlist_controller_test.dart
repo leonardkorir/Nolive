@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/room/application/room_follow_watchlist_controller.dart';
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 
@@ -34,12 +34,12 @@ void main() {
         entries: [
           const FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: 'custom-room',
               streamerName: '自定义主播',
             ),
             detail: LiveRoomDetail(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: 'custom-room',
               title: '自定义房间',
               streamerName: '自定义主播',
@@ -73,12 +73,12 @@ void main() {
           entries: [
             const FollowWatchEntry(
               record: FollowRecord(
-                providerId: 'bilibili',
+                providerId: ProviderId.bilibili,
                 roomId: 'room-a',
                 streamerName: '主播A',
               ),
               detail: LiveRoomDetail(
-                providerId: 'bilibili',
+                providerId: ProviderId.bilibili,
                 roomId: 'room-a',
                 title: '房间A',
                 streamerName: '主播A',
@@ -94,12 +94,12 @@ void main() {
           entries: [
             const FollowWatchEntry(
               record: FollowRecord(
-                providerId: 'bilibili',
+                providerId: ProviderId.bilibili,
                 roomId: 'room-b',
                 streamerName: '主播B',
               ),
               detail: LiveRoomDetail(
-                providerId: 'bilibili',
+                providerId: ProviderId.bilibili,
                 roomId: 'room-b',
                 title: '房间B',
                 streamerName: '主播B',

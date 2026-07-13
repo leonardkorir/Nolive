@@ -1,4 +1,4 @@
-import 'package:nolive_app/src/app/home/application/home_feature_dependencies.dart';
+import 'package:nolive_app/src/features/home/application/home_feature_dependencies.dart';
 import 'package:nolive_app/src/features/browse/application/browse_feature_dependencies.dart';
 import 'package:nolive_app/src/features/library/application/library_feature_dependencies.dart';
 

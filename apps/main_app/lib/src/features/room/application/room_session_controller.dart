@@ -38,6 +38,7 @@ class RoomSessionLoadResult {
 TwitchStartupPlan resolveRoomStartupPlan({
   required LoadedRoomSnapshot snapshot,
   required LivePlayQuality requestedQuality,
+  bool promoteTwitchAutoStartup = false,
 }) {
   if (snapshot.providerId != ProviderId.twitch) {
     return TwitchStartupPlan(startupQuality: requestedQuality);
@@ -45,6 +46,7 @@ TwitchStartupPlan resolveRoomStartupPlan({
   return resolveTwitchStartupPlan(
     qualities: snapshot.qualities,
     requestedQuality: requestedQuality,
+    promoteAutoStartup: promoteTwitchAutoStartup,
   );
 }
 
@@ -59,8 +61,8 @@ class RoomSessionController {
   });
 
   final RoomSessionDependencies dependencies;
-  final ProviderId providerId;
-  final String roomId;
+  ProviderId providerId;
+  String roomId;
   final TargetPlatform targetPlatform;
   final bool isWeb;
   final void Function(String message)? trace;
@@ -72,6 +74,16 @@ class RoomSessionController {
 
   void clearCurrent() {
     _current = null;
+  }
+
+  void retargetRoom({
+    required ProviderId providerId,
+    required String roomId,
+  }) {
+    this.providerId = providerId;
+    this.roomId = roomId;
+    _current = null;
+    _generation += 1;
   }
 
   Future<RoomSessionLoadResult> load({String? preferredQualityId}) {
@@ -146,7 +158,10 @@ class RoomSessionController {
     required bool? recordHistory,
   }) async {
     final myGeneration = ++_generation;
-    _trace('load start preferredQuality=${preferredQualityId ?? '-'} generation=$myGeneration');
+    _trace(
+      'load start preferredQuality=${preferredQualityId ?? '-'} generation=$myGeneration',
+    );
+    await _waitForPendingRoomTeardown(myGeneration);
     final playerPreferences = await dependencies.loadPlayerPreferences();
     final blockedKeywords = await dependencies.loadBlockedKeywords();
     final danmakuPreferences = await dependencies.loadDanmakuPreferences();
@@ -180,6 +195,8 @@ class RoomSessionController {
       providerId: providerId,
       roomId: roomId,
       preferHighestQuality: playerPreferences.preferHighestQuality,
+      qualityPreference: playerPreferences.wifiQualityPreference,
+      cellularQualityPreference: playerPreferences.cellularQualityPreference,
       recordHistory: recordHistory,
     );
     _trace(
@@ -204,6 +221,7 @@ class RoomSessionController {
     final startupPlan = _resolveStartupPlan(
       snapshot: snapshot,
       requestedQuality: startupRequestedQuality,
+      explicitSelection: preferredQualityId != null,
     );
     final playbackQuality = startupPlan.startupQuality;
     if (snapshot.selectedQuality.id != requestedQuality.id ||
@@ -242,9 +260,26 @@ class RoomSessionController {
     if (myGeneration == _generation) {
       _current = result;
     } else {
-      _trace('Discarding outdated load result for generation $myGeneration (current: $_generation)');
+      _trace(
+        'Discarding outdated load result for generation $myGeneration (current: $_generation)',
+      );
     }
     return result;
+  }
+
+  Future<void> _waitForPendingRoomTeardown(int generation) async {
+    final runtime = dependencies.playerRuntime;
+    if (!runtime.hasPendingRoomTeardown) {
+      return;
+    }
+    final startedAt = DateTime.now();
+    _trace('load waiting for pending room teardown generation=$generation');
+    await runtime.waitForPendingRoomTeardown();
+    _trace(
+      'load pending room teardown released in '
+      '${DateTime.now().difference(startedAt).inMilliseconds}ms '
+      'generation=$generation',
+    );
   }
 
   LivePlayQuality _resolveRequestedQuality({
@@ -263,10 +298,12 @@ class RoomSessionController {
   TwitchStartupPlan _resolveStartupPlan({
     required LoadedRoomSnapshot snapshot,
     required LivePlayQuality requestedQuality,
+    required bool explicitSelection,
   }) {
     return resolveRoomStartupPlan(
       snapshot: snapshot,
       requestedQuality: requestedQuality,
+      promoteTwitchAutoStartup: !explicitSelection,
     );
   }
 

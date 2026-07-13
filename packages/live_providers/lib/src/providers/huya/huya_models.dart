@@ -1,17 +1,11 @@
 class HuyaRoomMediaData {
-  const HuyaRoomMediaData({
-    required this.lines,
-    required this.bitRates,
-  });
+  const HuyaRoomMediaData({required this.lines, required this.bitRates});
 
   final List<HuyaStreamLine> lines;
   final List<HuyaBitRate> bitRates;
 }
 
-enum HuyaLineType {
-  flv,
-  hls,
-}
+enum HuyaLineType { flv, hls }
 
 class HuyaStreamLine {
   const HuyaStreamLine({
@@ -42,10 +36,7 @@ class HuyaStreamLine {
 }
 
 class HuyaBitRate {
-  const HuyaBitRate({
-    required this.name,
-    required this.bitRate,
-  });
+  const HuyaBitRate({required this.name, required this.bitRate});
 
   final String name;
   final int bitRate;

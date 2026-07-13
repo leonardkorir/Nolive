@@ -248,6 +248,9 @@ class RoomPlayerRuntimeObserver {
     _unexpectedStopRecoverySignature = null;
   }
 
+  int? _lastNotifiedVideoWidth;
+  int? _lastNotifiedVideoHeight;
+
   void _handlePlayerDiagnostics(PlayerDiagnostics diagnostics) {
     if (_disposed) {
       return;
@@ -263,6 +266,23 @@ class RoomPlayerRuntimeObserver {
           ? null
           : diagnostics.recentLogs.last;
       _lastPlayerBufferProfile = null;
+      _lastNotifiedVideoWidth = null;
+      _lastNotifiedVideoHeight = null;
+    }
+    // First real video size must rebuild the room page so loading shell can
+    // dismiss even if position ticks are throttled (1s) in release.
+    final width = diagnostics.width ?? 0;
+    final height = diagnostics.height ?? 0;
+    if (width > 0 &&
+        height > 0 &&
+        (width != _lastNotifiedVideoWidth ||
+            height != _lastNotifiedVideoHeight)) {
+      _lastNotifiedVideoWidth = width;
+      _lastNotifiedVideoHeight = height;
+      context.onPlayerStateChanged(
+        context.runtime.readCurrentState(),
+        playbackAvailable: context.resolvePlaybackAvailable(),
+      );
     }
     if (source == null) {
       _lastPlayerDiagnosticsSummarySignature = null;

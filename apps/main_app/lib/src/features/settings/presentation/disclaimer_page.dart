@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/app_page_scaffold.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 
@@ -16,10 +18,10 @@ class DisclaimerPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('免责声明')),
+    return AppPageScaffold(
+      title: '免责声明',
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+        padding: kSettingsPagePadding,
         children: [
           const SectionHeader(title: '免责声明'),
           const SizedBox(height: 12),

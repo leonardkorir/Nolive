@@ -26,6 +26,14 @@ void main() {
         ),
         isTrue,
       );
+      expect(
+        AppLog.shouldFlushAppLogRecord(level: 'INFO', tag: 'nfr/isolate'),
+        isTrue,
+      );
+      expect(
+        AppLog.shouldFlushAppLogRecord(level: 'INFO', tag: 'nfr/frame'),
+        isTrue,
+      );
     });
 
     test('keeps generic info logs debounced', () {

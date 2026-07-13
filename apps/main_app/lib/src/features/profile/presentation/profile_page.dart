@@ -2,8 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:nolive_app/src/features/settings/application/github_app_update_service.dart';
-import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/shared/application/app_log.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
+import 'package:nolive_app/src/shared/presentation/app_settings_entries.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -12,11 +13,15 @@ class ProfilePage extends StatefulWidget {
     GithubAppUpdateService? updateService,
     this.versionLoader = GithubAppUpdateService.loadInstalledVersion,
     this.urlLauncher = _launchExternalUrl,
+    this.menuEntries = kProfileMenuEntries,
   }) : updateService = updateService ?? GithubAppUpdateService();
 
   final GithubAppUpdateService updateService;
   final Future<String> Function() versionLoader;
   final Future<bool> Function(Uri uri) urlLauncher;
+
+  /// Original flat menu for「我的」— not the Settings-page catalog.
+  final List<AppSettingsEntry> menuEntries;
 
   static Future<bool> _launchExternalUrl(Uri uri) {
     return launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -29,69 +34,6 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   String? _currentVersion;
   bool _checkingUpdate = false;
-
-  static const List<_ProfileEntry> _entries = [
-    _ProfileEntry(
-      icon: Icons.history_rounded,
-      title: '观看记录',
-      routeName: AppRoutes.watchHistory,
-    ),
-    _ProfileEntry(
-      icon: Icons.account_circle_outlined,
-      title: '账号管理',
-      routeName: AppRoutes.accountSettings,
-    ),
-    _ProfileEntry(
-      icon: Icons.sync_outlined,
-      title: '数据同步',
-      routeName: AppRoutes.syncCenter,
-    ),
-    _ProfileEntry(
-      icon: Icons.link_rounded,
-      title: '链接解析',
-      routeName: AppRoutes.parseRoom,
-    ),
-    _ProfileEntry(
-      icon: Icons.dark_mode_outlined,
-      title: '外观设置',
-      routeName: AppRoutes.appearanceSettings,
-    ),
-    _ProfileEntry(
-      icon: Icons.home_outlined,
-      title: '主页设置',
-      routeName: AppRoutes.layoutSettings,
-    ),
-    _ProfileEntry(
-      icon: Icons.live_tv_outlined,
-      title: '直播间设置',
-      routeName: AppRoutes.roomSettings,
-    ),
-    _ProfileEntry(
-      icon: Icons.video_settings_outlined,
-      title: '播放器设置',
-      routeName: AppRoutes.playerSettings,
-    ),
-    _ProfileEntry(
-      icon: Icons.subtitles_outlined,
-      title: '弹幕设置',
-      routeName: AppRoutes.danmakuSettings,
-    ),
-    _ProfileEntry(
-      icon: Icons.favorite_border_rounded,
-      title: '关注设置',
-      routeName: AppRoutes.followSettings,
-    ),
-    _ProfileEntry(
-      icon: Icons.widgets_outlined,
-      title: '其他设置',
-      routeName: AppRoutes.otherSettings,
-    ),
-    _ProfileEntry(
-      icon: Icons.info_outline_rounded,
-      title: '免责声明',
-      routeName: AppRoutes.disclaimer,
-    ),
-  ];
 
   @override
   void initState() {
@@ -129,9 +71,7 @@ class _ProfilePageState extends State<ProfilePage> {
       widget.updateService.repoHomepageUri,
     );
     if (!opened && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('无法打开开源主页。')));
+      showAppSnackBar(context, '无法打开开源主页。');
     }
   }
 
@@ -142,7 +82,6 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() {
       _checkingUpdate = true;
     });
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final result = await widget.updateService.checkForUpdate(
         currentVersion: _currentVersion,
@@ -155,9 +94,7 @@ class _ProfilePageState extends State<ProfilePage> {
       });
 
       if (!result.hasUpdate) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('当前已经是最新版本 v${result.currentVersion}')),
-        );
+        showAppSnackBar(context, '当前已经是最新版本 v${result.currentVersion}');
         return;
       }
 
@@ -189,7 +126,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
       final opened = await widget.urlLauncher(result.latestRelease.releaseUri);
       if (!opened && mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('无法打开更新页面。')));
+        showAppSnackBar(context, '无法打开更新页面。');
       }
     } catch (error, stackTrace) {
       AppLog.instance.error(
@@ -201,7 +138,7 @@ class _ProfilePageState extends State<ProfilePage> {
       if (!mounted) {
         return;
       }
-      messenger.showSnackBar(SnackBar(content: Text('检查更新失败：$error')));
+      showAppErrorSnackBar(context, error, prefix: '检查更新失败：');
     } finally {
       if (mounted) {
         setState(() {
@@ -213,20 +150,25 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
         children: [
           const _TopAppTile(),
           const SizedBox(height: 8),
-          for (var index = 0; index < _entries.length; index += 1) ...[
-            _ProfileEntryTile(entry: _entries[index]),
+          // Original flat menu — same order as before IA refactor.
+          for (var index = 0; index < widget.menuEntries.length; index += 1) ...[
+            _ProfileEntryTile(entry: widget.menuEntries[index]),
             const Divider(height: 1),
           ],
           _ActionProfileEntryTile(
             icon: Icons.code_rounded,
             title: '开源主页',
-            trailing: const Icon(Icons.chevron_right_rounded),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: colorScheme.onSurfaceVariant,
+            ),
             onTap: _openHomepage,
           ),
           const Divider(height: 1),
@@ -234,10 +176,13 @@ class _ProfilePageState extends State<ProfilePage> {
             icon: Icons.system_update_rounded,
             title: '检查更新',
             trailing: _checkingUpdate
-                ? const SizedBox(
+                ? SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: colorScheme.primary,
+                    ),
                   )
                 : Row(
                     mainAxisSize: MainAxisSize.min,
@@ -247,11 +192,14 @@ class _ProfilePageState extends State<ProfilePage> {
                             ? 'Ver -'
                             : 'Ver ${_currentVersion!}',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                       ),
                       const SizedBox(width: 4),
-                      const Icon(Icons.chevron_right_rounded),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                     ],
                   ),
             onTap: _checkForUpdate,
@@ -292,6 +240,7 @@ class _TopAppTile extends StatelessWidget {
         'Nolive',
         style: theme.textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.w700,
+          color: colorScheme.onSurface,
         ),
       ),
       subtitle: Text(
@@ -304,29 +253,20 @@ class _TopAppTile extends StatelessWidget {
   }
 }
 
-class _ProfileEntry {
-  const _ProfileEntry({
-    required this.icon,
-    required this.title,
-    required this.routeName,
-  });
-
-  final IconData icon;
-  final String title;
-  final String routeName;
-}
-
 class _ProfileEntryTile extends StatelessWidget {
   const _ProfileEntryTile({required this.entry});
 
-  final _ProfileEntry entry;
+  final AppSettingsEntry entry;
 
   @override
   Widget build(BuildContext context) {
     return _ActionProfileEntryTile(
       icon: entry.icon,
       title: entry.title,
-      trailing: const Icon(Icons.chevron_right_rounded),
+      trailing: Icon(
+        Icons.chevron_right_rounded,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
       onTap: () => Navigator.of(context).pushNamed(entry.routeName),
     );
   }
@@ -348,14 +288,17 @@ class _ActionProfileEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    // Match original「我的」row chrome: outline icons + onSurface title.
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       leading: Icon(icon, color: colorScheme.onSurfaceVariant, size: 30),
       title: Text(
         title,
-        style: Theme.of(
-          context,
-        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w500),
+        style: theme.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w500,
+          color: colorScheme.onSurface,
+        ),
       ),
       trailing: trailing,
       onTap: () {

@@ -3,7 +3,9 @@ import 'dart:collection';
 import 'package:live_storage/live_storage.dart';
 
 import '../model/sync_data_category.dart';
+import '../model/sync_import_mode.dart';
 import '../model/sync_snapshot.dart';
+import 'sync_snapshot_merger.dart';
 
 class RepositorySyncSnapshotService {
   const RepositorySyncSnapshotService({
@@ -12,6 +14,7 @@ class RepositorySyncSnapshotService {
     required this.followRepository,
     required this.tagRepository,
     this.shouldIncludeSettingInSnapshot,
+    this.merger = const SyncSnapshotMerger(),
   });
 
   final SettingsRepository settingsRepository;
@@ -19,6 +22,7 @@ class RepositorySyncSnapshotService {
   final FollowRepository followRepository;
   final TagRepository tagRepository;
   final bool Function(String key)? shouldIncludeSettingInSnapshot;
+  final SyncSnapshotMerger merger;
 
   Future<SyncSnapshot> exportSnapshot() async {
     final settings = Map<String, Object?>.from(
@@ -59,7 +63,20 @@ class RepositorySyncSnapshotService {
   Future<void> importSnapshot(
     SyncSnapshot snapshot, {
     bool clearExisting = true,
+    SyncImportMode mode = SyncImportMode.replace,
+    DateTime? lastSyncAt,
   }) async {
+    if (mode == SyncImportMode.merge) {
+      final local = await exportSnapshot();
+      final merged = merger.mergeSnapshots(
+        local: local,
+        remote: snapshot,
+        lastSyncAt: lastSyncAt,
+      );
+      await importSnapshot(merged, clearExisting: true);
+      return;
+    }
+
     if (clearExisting) {
       final existingSettings = await settingsRepository.listAll();
       for (final key in existingSettings.keys) {
@@ -85,6 +102,11 @@ class RepositorySyncSnapshotService {
       await historyRepository.add(record);
     }
     for (final record in snapshot.follows) {
+      if (record.deleted) {
+        // Keep tombstones in storage so later bidirectional sync can propagate.
+        await followRepository.upsert(record);
+        continue;
+      }
       await followRepository.upsert(record);
     }
     for (final tag in snapshot.tags) {
@@ -96,7 +118,32 @@ class RepositorySyncSnapshotService {
     SyncDataCategory category,
     SyncSnapshot snapshot, {
     bool clearExisting = true,
+    SyncImportMode mode = SyncImportMode.replace,
+    DateTime? lastSyncAt,
   }) async {
+    if (mode == SyncImportMode.merge) {
+      final local = await exportCategory(category);
+      final mergedFull = merger.mergeSnapshots(
+        local: local,
+        remote: snapshot,
+        lastSyncAt: lastSyncAt,
+      );
+      final partial = switch (category) {
+        SyncDataCategory.settings =>
+          SyncSnapshot(settings: mergedFull.settings),
+        SyncDataCategory.library => SyncSnapshot(
+            follows: mergedFull.follows,
+            tags: mergedFull.tags,
+          ),
+        SyncDataCategory.history => SyncSnapshot(history: mergedFull.history),
+        SyncDataCategory.blockedKeywords => SyncSnapshot(
+            blockedKeywords: mergedFull.blockedKeywords,
+          ),
+      };
+      await importCategory(category, partial, clearExisting: true);
+      return;
+    }
+
     switch (category) {
       case SyncDataCategory.settings:
         if (clearExisting) {

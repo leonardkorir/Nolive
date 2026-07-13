@@ -117,12 +117,9 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
       _emit();
       return;
     }
-    final socket = await RawDatagramSocket.bind(
-      InternetAddress.anyIPv4,
-      broadcastPort,
-      reuseAddress: true,
-      reusePort: true,
-    );
+    // Android/Dart 不支持 SO_REUSEPORT；硬开 reusePort 会刷 ERROR 且无收益。
+    // 仅 reuseAddress 即可满足局域网 UDP 发现。
+    final socket = await _bindDiscoverySocket();
     socket.broadcastEnabled = true;
     socket.readEventsEnabled = true;
     socket.listen(_handleSocketEvent);
@@ -169,13 +166,29 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
     final payload = utf8.encode(
       jsonEncode(<String, Object?>{
         'type': 'hello',
-        'deviceId': info.deviceId,
-        'displayName': info.displayName,
-        'platform': info.platform,
+        ...info.toJson(includeAccessToken: true),
         'port': _resolveSyncPort(info.snapshotPath),
       }),
     );
     socket.send(payload, InternetAddress('255.255.255.255'), broadcastPort);
+  }
+
+  Future<RawDatagramSocket> _bindDiscoverySocket() async {
+    try {
+      return await RawDatagramSocket.bind(
+        InternetAddress.anyIPv4,
+        broadcastPort,
+        reuseAddress: true,
+      );
+    } catch (_) {
+      // 端口偶发占用时再尝试 reusePort（多数移动端仍会忽略该选项）。
+      return RawDatagramSocket.bind(
+        InternetAddress.anyIPv4,
+        broadcastPort,
+        reuseAddress: true,
+        reusePort: false,
+      );
+    }
   }
 
   void _handleSocketEvent(RawSocketEvent event) {
@@ -245,7 +258,7 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
     final payload = utf8.encode(
       jsonEncode(<String, Object?>{
         'type': 'info',
-        ...info.toJson(),
+        ...info.toJson(includeAccessToken: true),
         'port': _resolveSyncPort(info.snapshotPath),
       }),
     );
@@ -324,19 +337,66 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
     if (_controller.isClosed) {
       return;
     }
-    final peers = <DiscoveredPeer>[
+    // 合并 manual + network，并按 address:port 去重。
+    // 常见重复：选中目标时写入 manual-peer，网络侧仍有真实 deviceId 的同地址条目。
+    final byEndpoint = <String, DiscoveredPeer>{};
+    for (final peer in [
+      ..._networkPeers.values,
       ..._manualPeers.values,
-      ..._networkPeers.values
-          .where((peer) => !_manualPeers.containsKey(peer.deviceId)),
-    ]..sort((left, right) {
-        if (left.deviceId == 'self') {
-          return -1;
-        }
-        if (right.deviceId == 'self') {
-          return 1;
-        }
-        return right.lastSeenAt.compareTo(left.lastSeenAt);
-      });
+    ]) {
+      if (_isSelfDeviceId(peer.deviceId)) {
+        continue;
+      }
+      final key = _endpointKey(peer);
+      final existing = byEndpoint[key];
+      if (existing == null) {
+        byEndpoint[key] = peer;
+        continue;
+      }
+      byEndpoint[key] = _preferPeer(existing, peer);
+    }
+    final peers = byEndpoint.values.toList(growable: false)
+      ..sort((left, right) => right.lastSeenAt.compareTo(left.lastSeenAt));
     _controller.add(List<DiscoveredPeer>.unmodifiable(peers));
+  }
+
+  bool _isSelfDeviceId(String deviceId) {
+    if (deviceId == 'self') {
+      return true;
+    }
+    final selfId = _selfDeviceId;
+    return selfId != null && selfId.isNotEmpty && deviceId == selfId;
+  }
+
+  String _endpointKey(DiscoveredPeer peer) {
+    return '${peer.address.trim()}:${peer.port}';
+  }
+
+  /// 同地址端口时优先保留：网络真实设备 ID > 非 manual 标签 > 更新鲜的。
+  DiscoveredPeer _preferPeer(DiscoveredPeer left, DiscoveredPeer right) {
+    final leftManual = left.deviceId == 'manual-peer' || left.platform == 'manual';
+    final rightManual =
+        right.deviceId == 'manual-peer' || right.platform == 'manual';
+    if (leftManual != rightManual) {
+      return leftManual ? right : left;
+    }
+    if (left.lastSeenAt.isAfter(right.lastSeenAt)) {
+      // 合并较新 token / 名称
+      return left.copyWith(
+        accessToken: left.accessToken?.isNotEmpty == true
+            ? left.accessToken
+            : right.accessToken,
+        displayName: left.displayName.isNotEmpty
+            ? left.displayName
+            : right.displayName,
+      );
+    }
+    return right.copyWith(
+      accessToken: right.accessToken?.isNotEmpty == true
+          ? right.accessToken
+          : left.accessToken,
+      displayName:
+          right.displayName.isNotEmpty ? right.displayName : left.displayName,
+    );
   }
 }

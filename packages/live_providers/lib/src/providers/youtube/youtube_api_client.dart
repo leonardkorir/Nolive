@@ -17,10 +17,7 @@ abstract interface class YouTubeApiClient {
     Map<String, String> headers = const {},
   });
 
-  Future<int> probeStatus(
-    String url, {
-    Map<String, String> headers = const {},
-  });
+  Future<int> probeStatus(String url, {Map<String, String> headers = const {}});
 
   Future<Map<String, dynamic>> postPlayer({
     required String apiKey,
@@ -29,7 +26,8 @@ abstract interface class YouTubeApiClient {
     Map<String, dynamic> innertubeContext = const {},
     String rolloutToken = '',
     String poToken = '',
-    YouTubePlayerClientProfile clientProfile = YouTubePlayerClientProfile.web,
+    YouTubePlayerClientProfile clientProfile =
+        YouTubePlayerClientProfile.streamlinkAndroid,
   });
 
   Future<Map<String, dynamic>> postLiveChat({
@@ -43,6 +41,24 @@ abstract interface class YouTubeApiClient {
 }
 
 enum YouTubePlayerClientProfile {
+  streamlinkAndroid(
+    id: 'streamlink_android',
+    clientName: 'ANDROID',
+    clientNameHeader: 3,
+    clientVersion: '21.08.266',
+    apiHost: 'www.youtube.com',
+    userAgent: YouTubeApiClient.browserUserAgent,
+    platform: 'DESKTOP',
+    browserName: 'Chrome',
+    osName: '',
+    osVersion: '',
+    clientScreen: 'EMBED',
+    clientFormFactor: 'UNKNOWN_FORM_FACTOR',
+    lineLabel: 'Streamlink Android',
+    streamlinkPlayerRequest: true,
+    includePoToken: false,
+    includeRolloutToken: false,
+  ),
   web(
     id: 'web',
     clientName: 'WEB',
@@ -64,7 +80,8 @@ enum YouTubePlayerClientProfile {
     clientNameHeader: 1,
     clientVersion: '2.20260114.08.00',
     apiHost: 'www.youtube.com',
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+    userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
         'AppleWebKit/605.1.15 (KHTML, like Gecko) '
         'Version/15.5 Safari/605.1.15,gzip(gfe)',
     platform: 'DESKTOP',
@@ -81,7 +98,8 @@ enum YouTubePlayerClientProfile {
     clientNameHeader: 2,
     clientVersion: '2.20260115.01.00',
     apiHost: 'm.youtube.com',
-    userAgent: 'Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) '
+    userAgent:
+        'Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) '
         'AppleWebKit/605.1.15 (KHTML, like Gecko) '
         'Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)',
     platform: 'MOBILE_WEB',
@@ -98,7 +116,8 @@ enum YouTubePlayerClientProfile {
     clientNameHeader: 5,
     clientVersion: '21.02.3',
     apiHost: 'www.youtube.com',
-    userAgent: 'com.google.ios.youtube/21.02.3 '
+    userAgent:
+        'com.google.ios.youtube/21.02.3 '
         '(iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)',
     platform: 'MOBILE',
     osName: 'iPhone',
@@ -121,10 +140,14 @@ enum YouTubePlayerClientProfile {
     required this.osVersion,
     required this.clientFormFactor,
     required this.lineLabel,
+    this.clientScreen,
     this.browserName,
     this.browserVersion,
     this.deviceMake,
     this.deviceModel,
+    this.streamlinkPlayerRequest = false,
+    this.includePoToken = true,
+    this.includeRolloutToken = true,
   });
 
   final String id;
@@ -134,6 +157,7 @@ enum YouTubePlayerClientProfile {
   final String apiHost;
   final String userAgent;
   final String platform;
+  final String? clientScreen;
   final String? browserName;
   final String? browserVersion;
   final String osName;
@@ -142,6 +166,9 @@ enum YouTubePlayerClientProfile {
   final String? deviceMake;
   final String? deviceModel;
   final String lineLabel;
+  final bool streamlinkPlayerRequest;
+  final bool includePoToken;
+  final bool includeRolloutToken;
 
   String get origin => 'https://$apiHost';
 
@@ -165,10 +192,10 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
         ProviderBrowserProfile.chromiumDesktop,
     ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
     void Function(String message)? diagnostics,
-  })  : _client = client ?? http.Client(),
-        _browserProfile = browserProfile,
-        _retryPolicy = retryPolicy,
-        _diagnostics = diagnostics;
+  }) : _client = client ?? http.Client(),
+       _browserProfile = browserProfile,
+       _retryPolicy = retryPolicy,
+       _diagnostics = diagnostics;
 
   final http.Client _client;
   final ProviderBrowserProfile _browserProfile;
@@ -188,9 +215,11 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
   }) async {
     var currentUri = Uri.parse(url);
     final visited = <String>{};
-    for (var redirectCount = 0;
-        redirectCount <= _maxRedirects;
-        redirectCount += 1) {
+    for (
+      var redirectCount = 0;
+      redirectCount <= _maxRedirects;
+      redirectCount += 1
+    ) {
       final response = await _sendRequest(
         method: 'GET',
         uri: currentUri,
@@ -221,8 +250,10 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
         currentUri = nextUri;
         continue;
       }
-      _ensureSuccess(response,
-          context: 'document request for ${currentUri.toString()}');
+      _ensureSuccess(
+        response,
+        context: 'document request for ${currentUri.toString()}',
+      );
       return utf8.decode(response.bodyBytes);
     }
     throw ProviderParseException(
@@ -239,9 +270,11 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
   }) async {
     var currentUri = Uri.parse(url);
     final visited = <String>{};
-    for (var redirectCount = 0;
-        redirectCount <= _maxRedirects;
-        redirectCount += 1) {
+    for (
+      var redirectCount = 0;
+      redirectCount <= _maxRedirects;
+      redirectCount += 1
+    ) {
       final response = await _sendRequest(
         method: 'HEAD',
         uri: currentUri,
@@ -283,17 +316,89 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
     Map<String, dynamic> innertubeContext = const {},
     String rolloutToken = '',
     String poToken = '',
-    YouTubePlayerClientProfile clientProfile = YouTubePlayerClientProfile.web,
+    YouTubePlayerClientProfile clientProfile =
+        YouTubePlayerClientProfile.streamlinkAndroid,
   }) async {
     final clientContext = _normalizeClientContext(innertubeContext);
     final resolvedOriginalUrl = clientProfile.rewriteOriginalUrl(originalUrl);
     final resolvedVisitorData =
         clientContext['visitorData']?.toString().trim() ?? '';
     final resolvedClientVersion = clientProfile.clientVersion;
-    final resolvedRolloutToken = rolloutToken.trim().isNotEmpty
-        ? rolloutToken.trim()
-        : clientContext['rolloutToken']?.toString().trim() ?? '';
-    final client = <String, Object?>{
+    final resolvedRolloutToken = clientProfile.includeRolloutToken
+        ? rolloutToken.trim().isNotEmpty
+              ? rolloutToken.trim()
+              : clientContext['rolloutToken']?.toString().trim() ?? ''
+        : '';
+    final client = clientProfile.streamlinkPlayerRequest
+        ? _buildStreamlinkPlayerClient(
+            clientProfile: clientProfile,
+            resolvedClientVersion: resolvedClientVersion,
+          )
+        : _buildDefaultPlayerClient(
+            clientContext: clientContext,
+            clientProfile: clientProfile,
+            resolvedClientVersion: resolvedClientVersion,
+            resolvedOriginalUrl: resolvedOriginalUrl,
+            resolvedRolloutToken: resolvedRolloutToken,
+            resolvedVisitorData: resolvedVisitorData,
+          );
+    final body = clientProfile.streamlinkPlayerRequest
+        ? _buildStreamlinkPlayerBody(videoId: videoId, client: client)
+        : _buildDefaultPlayerBody(
+            videoId: videoId,
+            originalUrl: originalUrl,
+            client: client,
+            poToken: clientProfile.includePoToken ? poToken : '',
+          );
+    final response = await _sendRequest(
+      method: 'POST',
+      uri: Uri.https(clientProfile.apiHost, '/youtubei/v1/player', {
+        'prettyPrint': 'false',
+        'key': apiKey,
+      }),
+      headers: clientProfile.streamlinkPlayerRequest
+          ? _buildStreamlinkPlayerHeaders(clientProfile)
+          : _buildDefaultPlayerHeaders(
+              clientProfile: clientProfile,
+              resolvedOriginalUrl: resolvedOriginalUrl,
+              resolvedVisitorData: resolvedVisitorData,
+              resolvedClientVersion: resolvedClientVersion,
+            ),
+      body: jsonEncode(body),
+    );
+    return _decodeJsonResponse(response, context: 'player request');
+  }
+
+  Map<String, Object?> _buildStreamlinkPlayerClient({
+    required YouTubePlayerClientProfile clientProfile,
+    required String resolvedClientVersion,
+  }) {
+    return <String, Object?>{
+      'clientName': clientProfile.clientName,
+      'clientVersion': resolvedClientVersion,
+      'platform': clientProfile.platform,
+      if ((clientProfile.clientScreen?.isNotEmpty ?? false))
+        'clientScreen': clientProfile.clientScreen,
+      'clientFormFactor': clientProfile.clientFormFactor,
+      if ((clientProfile.browserName?.isNotEmpty ?? false))
+        'browserName': clientProfile.browserName,
+    };
+  }
+
+  Map<String, Object?> _buildDefaultPlayerClient({
+    required Map<String, dynamic> clientContext,
+    required YouTubePlayerClientProfile clientProfile,
+    required String resolvedClientVersion,
+    required String resolvedOriginalUrl,
+    required String resolvedRolloutToken,
+    required String resolvedVisitorData,
+  }) {
+    final clientScreen =
+        clientProfile.clientScreen ??
+        (clientContext['clientScreen']?.toString().trim().isNotEmpty == true
+            ? clientContext['clientScreen']!.toString().trim()
+            : _inferClientScreen(resolvedOriginalUrl));
+    return <String, Object?>{
       'clientName': clientProfile.clientName,
       'clientVersion': resolvedClientVersion,
       'platform': clientProfile.platform,
@@ -304,10 +409,7 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
           ? clientContext['gl']!.toString().trim()
           : 'US',
       'originalUrl': resolvedOriginalUrl,
-      'clientScreen':
-          clientContext['clientScreen']?.toString().trim().isNotEmpty == true
-              ? clientContext['clientScreen']!.toString().trim()
-              : _inferClientScreen(resolvedOriginalUrl),
+      'clientScreen': clientScreen,
       'playerType': 'UNIPLAYER',
       'clientFormFactor': clientProfile.clientFormFactor,
       'osName': clientProfile.osName,
@@ -324,58 +426,87 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
       if ((clientProfile.deviceModel?.isNotEmpty ?? false))
         'deviceModel': clientProfile.deviceModel,
     };
-    final response = await _sendRequest(
-      method: 'POST',
-      uri: Uri.https(clientProfile.apiHost, '/youtubei/v1/player', {
-        'prettyPrint': 'false',
-        'key': apiKey,
-      }),
-      headers: {
-        'accept-language': 'en-US,en;q=0.9',
-        'content-type': 'application/json',
-        'origin': clientProfile.origin,
-        'referer': resolvedOriginalUrl,
-        'user-agent': clientProfile.userAgent,
-        if (resolvedVisitorData.isNotEmpty)
-          'x-goog-visitor-id': resolvedVisitorData,
-        'x-youtube-client-name': clientProfile.clientNameHeader.toString(),
-        'x-youtube-client-version': resolvedClientVersion,
+  }
+
+  Map<String, Object?> _buildStreamlinkPlayerBody({
+    required String videoId,
+    required Map<String, Object?> client,
+  }) {
+    return <String, Object?>{
+      'videoId': videoId,
+      'contentCheckOk': true,
+      'racyCheckOk': true,
+      'context': {
+        'client': client,
+        'user': {'lockedSafetyMode': 'false'},
+        'request': {'useSsl': 'true'},
       },
-      body: jsonEncode({
-        'videoId': videoId,
-        'contentCheckOk': true,
-        'racyCheckOk': true,
-        'context': {
-          'client': client,
-          'user': {'lockedSafetyMode': false},
-          'request': {
-            'useSsl': true,
-            'internalExperimentFlags': const [],
-            'consistencyTokenJars': const [],
-          },
+    };
+  }
+
+  Map<String, Object?> _buildDefaultPlayerBody({
+    required String videoId,
+    required String originalUrl,
+    required Map<String, Object?> client,
+    required String poToken,
+  }) {
+    return <String, Object?>{
+      'videoId': videoId,
+      'contentCheckOk': true,
+      'racyCheckOk': true,
+      'context': {
+        'client': client,
+        'user': {'lockedSafetyMode': false},
+        'request': {
+          'useSsl': true,
+          'internalExperimentFlags': const [],
+          'consistencyTokenJars': const [],
         },
-        'playbackContext': {
-          'contentPlaybackContext': {
-            'html5Preference': 'HTML5_PREF_WANTS',
-            'referer': originalUrl,
-            'autoplay': true,
-            'autoCaptionsDefaultOn': false,
-          },
-          'devicePlaybackCapabilities': {
-            'supportsVp9Encoding': true,
-            'supportXhr': true,
-          },
+      },
+      'playbackContext': {
+        'contentPlaybackContext': {
+          'html5Preference': 'HTML5_PREF_WANTS',
+          'referer': originalUrl,
+          'autoplay': true,
+          'autoCaptionsDefaultOn': false,
         },
-        if (poToken.trim().isNotEmpty)
-          'serviceIntegrityDimensions': {
-            'poToken': poToken.trim(),
-          },
-        'attestationRequest': {
-          'omitBotguardData': true,
+        'devicePlaybackCapabilities': {
+          'supportsVp9Encoding': true,
+          'supportXhr': true,
         },
-      }),
-    );
-    return _decodeJsonResponse(response, context: 'player request');
+      },
+      if (poToken.trim().isNotEmpty)
+        'serviceIntegrityDimensions': {'poToken': poToken.trim()},
+      'attestationRequest': {'omitBotguardData': true},
+    };
+  }
+
+  Map<String, String> _buildStreamlinkPlayerHeaders(
+    YouTubePlayerClientProfile clientProfile,
+  ) {
+    return {
+      'content-type': 'application/json',
+      'user-agent': clientProfile.userAgent,
+    };
+  }
+
+  Map<String, String> _buildDefaultPlayerHeaders({
+    required YouTubePlayerClientProfile clientProfile,
+    required String resolvedOriginalUrl,
+    required String resolvedVisitorData,
+    required String resolvedClientVersion,
+  }) {
+    return {
+      'accept-language': 'en-US,en;q=0.9',
+      'content-type': 'application/json',
+      'origin': clientProfile.origin,
+      'referer': resolvedOriginalUrl,
+      'user-agent': clientProfile.userAgent,
+      if (resolvedVisitorData.isNotEmpty)
+        'x-goog-visitor-id': resolvedVisitorData,
+      'x-youtube-client-name': clientProfile.clientNameHeader.toString(),
+      'x-youtube-client-version': resolvedClientVersion,
+    };
   }
 
   @override
@@ -389,11 +520,11 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
   }) async {
     final response = await _sendRequest(
       method: 'POST',
-      uri:
-          Uri.https('www.youtube.com', '/youtubei/v1/live_chat/get_live_chat', {
-        'prettyPrint': 'false',
-        'key': apiKey,
-      }),
+      uri: Uri.https(
+        'www.youtube.com',
+        '/youtubei/v1/live_chat/get_live_chat',
+        {'prettyPrint': 'false', 'key': apiKey},
+      ),
       headers: {
         'content-type': 'application/json',
         'origin': 'https://www.youtube.com',
@@ -415,17 +546,11 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
             'userAgent': _browserProfile.userAgent,
             'originalUrl': referer,
           },
-          'user': {
-            'lockedSafetyMode': false,
-          },
-          'request': {
-            'useSsl': true,
-          },
+          'user': {'lockedSafetyMode': false},
+          'request': {'useSsl': true},
         },
         'continuation': continuation,
-        'webClientInfo': {
-          'isDocumentHidden': false,
-        },
+        'webClientInfo': {'isDocumentHidden': false},
       }),
       timeout: timeout,
     );
@@ -515,8 +640,9 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
         if (separator <= 0) {
           continue;
         }
-        cookies[pair.substring(0, separator).trim()] =
-            pair.substring(separator + 1).trim();
+        cookies[pair.substring(0, separator).trim()] = pair
+            .substring(separator + 1)
+            .trim();
       }
     }
     if (cookies.isEmpty) {
@@ -538,8 +664,9 @@ class HttpYouTubeApiClient implements YouTubeApiClient {
       if (separator <= 0) {
         continue;
       }
-      _cookies[pair.substring(0, separator).trim()] =
-          pair.substring(separator + 1).trim();
+      _cookies[pair.substring(0, separator).trim()] = pair
+          .substring(separator + 1)
+          .trim();
     }
   }
 

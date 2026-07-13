@@ -18,10 +18,16 @@ class ChaturbateMapper {
       name: 'Genders',
       children: [
         LiveSubCategory(
-            id: 'female', parentId: categoriesRootId, name: 'Female'),
+          id: 'female',
+          parentId: categoriesRootId,
+          name: 'Female',
+        ),
         LiveSubCategory(id: 'male', parentId: categoriesRootId, name: 'Male'),
         LiveSubCategory(
-            id: 'couple', parentId: categoriesRootId, name: 'Couple'),
+          id: 'couple',
+          parentId: categoriesRootId,
+          name: 'Couple',
+        ),
         LiveSubCategory(id: 'trans', parentId: categoriesRootId, name: 'Trans'),
       ],
     ),
@@ -61,7 +67,7 @@ class ChaturbateMapper {
     ]);
 
     return LiveRoom(
-      providerId: ProviderId.chaturbate.value,
+      providerId: ProviderId.chaturbate,
       roomId: roomId,
       title: title,
       streamerName: normalizeDisplayText(roomId),
@@ -90,6 +96,41 @@ class ChaturbateMapper {
     );
   }
 
+  static LiveRoomDetail attachDanmakuBootstrap({
+    required LiveRoomDetail detail,
+    required String csrfToken,
+    required Map<String, dynamic> pushService,
+  }) {
+    final metadata = detail.metadata ?? const <String, Object?>{};
+    final token = _buildDanmakuToken(
+      roomId: detail.roomId,
+      broadcasterUid: metadata['broadcasterUid']?.toString() ?? '',
+      roomUid: metadata['roomUid']?.toString() ?? '',
+      csrfToken: csrfToken,
+      pushService: pushService,
+    );
+    if (token == null) {
+      return detail;
+    }
+    return LiveRoomDetail(
+      providerId: detail.providerId,
+      roomId: detail.roomId,
+      title: detail.title,
+      streamerName: detail.streamerName,
+      streamerAvatarUrl: detail.streamerAvatarUrl,
+      coverUrl: detail.coverUrl,
+      keyframeUrl: detail.keyframeUrl,
+      areaName: detail.areaName,
+      description: detail.description,
+      sourceUrl: detail.sourceUrl,
+      startedAt: detail.startedAt,
+      isLive: detail.isLive,
+      viewerCount: detail.viewerCount,
+      danmakuToken: token,
+      metadata: metadata,
+    );
+  }
+
   static LiveRoomDetail _mapRoomDetail({
     required Map<String, dynamic> dossier,
     required String csrfToken,
@@ -113,7 +154,7 @@ class ChaturbateMapper {
     };
 
     return LiveRoomDetail(
-      providerId: ProviderId.chaturbate.value,
+      providerId: ProviderId.chaturbate,
       roomId: roomId,
       title: _firstNonEmpty([
         normalizeDisplayText(dossier['room_title']?.toString()),
@@ -121,8 +162,9 @@ class ChaturbateMapper {
       ]),
       streamerName: normalizeDisplayText(roomId),
       areaName: _genderLabel(dossier['broadcaster_gender']),
-      sourceUrl:
-          roomId.isEmpty ? null : 'https://chaturbate.com/${roomId.trim()}/',
+      sourceUrl: roomId.isEmpty
+          ? null
+          : 'https://chaturbate.com/${roomId.trim()}/',
       isLive: roomStatus == 'public',
       viewerCount: _asInt(dossier['num_viewers']),
       danmakuToken: _buildDanmakuToken(
@@ -220,7 +262,8 @@ class ChaturbateMapper {
         return variant;
       }
     }
-    final ascending = [...variants]..sort((left, right) {
+    final ascending = [...variants]
+      ..sort((left, right) {
         final compare = left.sortOrder.compareTo(right.sortOrder);
         if (compare != 0) {
           return compare;
@@ -271,10 +314,12 @@ class ChaturbateMapper {
       masterPlaylistUrl: masterPlaylistUrl,
       qualityMetadata: quality.metadata,
     );
-    final useMasterPlaylist = masterPlaylistUrl.isNotEmpty &&
+    final useMasterPlaylist =
+        masterPlaylistUrl.isNotEmpty &&
         (variantPlaylistUrl.isEmpty || preferMasterPlaylist);
-    final selectedUrl =
-        useMasterPlaylist ? masterPlaylistUrl : variantPlaylistUrl;
+    final selectedUrl = useMasterPlaylist
+        ? masterPlaylistUrl
+        : variantPlaylistUrl;
     if (selectedUrl.isEmpty) {
       return const [];
     }
@@ -399,10 +444,7 @@ class ChaturbateMapper {
     if (variants.isEmpty) {
       return null;
     }
-    return _selectVariantForQuality(
-      quality: quality,
-      variants: variants,
-    );
+    return _selectVariantForQuality(quality: quality, variants: variants);
   }
 
   static ChaturbateHlsVariant? _selectVariantForQuality({
@@ -518,11 +560,11 @@ class ChaturbateMapper {
         final note = normalizeDisplayText(event['message']?.toString());
         final content = note.isEmpty
             ? amount == null
-                ? '送出打赏'
-                : '送出 $amount tokens'
+                  ? '送出打赏'
+                  : '送出 $amount tokens'
             : amount == null
-                ? '送出打赏 · $note'
-                : '送出 $amount tokens · $note';
+            ? '送出打赏 · $note'
+            : '送出 $amount tokens · $note';
         return LiveMessage(
           type: LiveMessageType.gift,
           userName: _nonEmptyString(event['from_username']),
@@ -589,10 +631,7 @@ class ChaturbateMapper {
   static String? dedupeKeyForDanmakuPayload(Map<String, dynamic> payload) {
     final event = _unwrapEvent(payload);
     return _nonEmptyString(
-      _firstNonEmpty([
-        event['tid']?.toString(),
-        event['id']?.toString(),
-      ]),
+      _firstNonEmpty([event['tid']?.toString(), event['id']?.toString()]),
     );
   }
 
@@ -611,10 +650,7 @@ class ChaturbateMapper {
       roomUid: roomUid,
       broadcasterUid: broadcasterUid,
       csrfToken: csrfToken,
-      backend: _firstNonEmpty([
-        pushService['backend']?.toString(),
-        'a',
-      ]),
+      backend: _firstNonEmpty([pushService['backend']?.toString(), 'a']),
       host: _nonEmptyString(pushService['host']),
       restHost: _nonEmptyString(pushService['rest_host']),
       fallbackHosts: _asList(pushService['fallback_hosts'])

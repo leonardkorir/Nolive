@@ -276,25 +276,60 @@ class RoomTwitchRecoveryController {
         );
         return;
       }
-      if (shouldAttemptTwitchPlaybackRecovery(currentState) &&
-          _current.recoveryAttempts == 1) {
-        _replaceState(_current.copyWith(recoveryAttempts: 2));
+      // Auto is already warming (has A/V or buffering). Keep waiting for
+      // position/buffer thresholds, then promote once. Do NOT re-setSource
+      // auto — that causes the visible "play then load again" flash.
+      if (isTwitchAutoWarmupInProgress(currentState)) {
+        if (_current.recoveryAttempts >= 4) {
+          // Warm-up played but never crossed promotion thresholds; upgrade
+          // once rather than thrashing auto refresh.
+          _trace(
+            '$providerTraceName startup promotion recovery '
+            'pos=${currentState.position.inMilliseconds}ms '
+            'buffer=${currentState.buffered.inMilliseconds}ms '
+            'switch-quality=${promotionQuality.id}/${promotionQuality.label}',
+          );
+          _replaceState(
+            _current.copyWith(
+              recoveryAttempts: 0,
+              clearStartupPromotionQuality: true,
+            ),
+          );
+          await switchQuality(
+            snapshot,
+            promotionQuality,
+            resetTwitchRecoveryAttempts: false,
+          );
+          return;
+        }
+        _replaceState(
+          _current.copyWith(recoveryAttempts: _current.recoveryAttempts + 1),
+        );
         _trace(
-          '$providerTraceName startup promotion refresh '
+          '$providerTraceName startup promotion wait '
           'pos=${currentState.position.inMilliseconds}ms '
           'buffer=${currentState.buffered.inMilliseconds}ms '
-          'quality=${currentQuality.id}/${currentQuality.label}',
+          'target=${promotionQuality.id}/${promotionQuality.label}',
         );
-        await refreshPlaybackSource(
-          snapshot,
-          currentQuality,
-          twitchStartupPromotionQuality: promotionQuality,
-          resetTwitchRecoveryAttempts: false,
+        _replaceState(_current.copyWith(clearRecoverySourceKey: true));
+        await scheduleRecovery(
+          providerId: providerId,
+          snapshot: snapshot,
+          playbackSource: playbackSource,
+          playUrls: playUrls,
+          selectedQuality: selectedQuality,
+          resolveCurrentQuality: resolveCurrentQuality,
+          isMounted: isMounted,
+          switchQuality: switchQuality,
+          refreshPlaybackSource: refreshPlaybackSource,
+          switchLine: switchLine,
         );
         return;
       }
+      // Auto never established media — promote to highest as recovery (no
+      // intermediate auto refresh; refresh used to re-open the same quality).
       if (shouldAttemptTwitchPlaybackRecovery(currentState) &&
-          _current.recoveryAttempts >= 2) {
+          _current.recoveryAttempts >= 1) {
         _trace(
           '$providerTraceName startup promotion recovery '
           'pos=${currentState.position.inMilliseconds}ms '

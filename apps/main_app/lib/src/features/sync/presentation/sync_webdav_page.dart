@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:nolive_app/src/features/sync/application/sync_feature_dependencies.dart';
 import 'package:nolive_app/src/features/sync/application/sync_preferences_use_case.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 class SyncWebDavPage extends StatefulWidget {
   const SyncWebDavPage({required this.dependencies, super.key});
@@ -134,9 +136,7 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$error')),
-      );
+      showAppErrorSnackBar(context, error);
     } finally {
       if (mounted) {
         setState(() {
@@ -152,9 +152,7 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('WebDAV 连接正常，远端目录已就绪')),
-      );
+      showAppSnackBar(context, 'WebDAV 连接正常，远端目录已就绪');
     });
   }
 
@@ -164,28 +162,29 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已上传远端快照')),
-      );
+      showAppSnackBar(context, '已上传远端快照');
     });
   }
 
-  Future<void> _restoreRemote(SyncPreferences preferences) async {
+  Future<void> _restoreRemote(
+    SyncPreferences preferences, {
+    required SyncImportMode mode,
+  }) async {
     await _runBusy(() async {
-      final snapshot =
-          await widget.dependencies.restoreWebDavSnapshot(preferences);
+      final snapshot = await widget.dependencies.restoreWebDavSnapshot(
+        preferences,
+        mode: mode,
+      );
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+      final modeLabel =
+          mode == SyncImportMode.merge ? '已双向合并' : '已覆盖恢复';
+      showAppSnackBar(context, 
             snapshot == null
                 ? '远端暂无快照'
-                : '已恢复远端快照：关注 ${snapshot.follows.length} · 历史 ${snapshot.history.length}',
-          ),
-        ),
-      );
+                : '$modeLabel：关注 ${snapshot.follows.length} · 历史 ${snapshot.history.length}',
+          );
       await _refresh();
     });
   }
@@ -205,7 +204,7 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
             if (snapshot.hasError || !snapshot.hasData) {
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
+                padding: kSettingsPagePadding,
                 children: [
                   EmptyStateCard(
                     title: 'WebDAV 页面加载失败',
@@ -220,7 +219,7 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
             final configured = data.preferences.toWebDavConfig().isConfigured;
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+              padding: kSettingsPagePadding,
               children: [
                 const SectionHeader(title: 'WebDAV 同步'),
                 const SizedBox(height: 12),
@@ -304,9 +303,23 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
                             key: const Key('sync-webdav-restore-button'),
                             onPressed: _busy || !configured
                                 ? null
-                                : () => _restoreRemote(data.preferences),
+                                : () => _restoreRemote(
+                                      data.preferences,
+                                      mode: SyncImportMode.replace,
+                                    ),
                             icon: const Icon(Icons.cloud_download_outlined),
-                            label: const Text('恢复远端'),
+                            label: const Text('覆盖恢复'),
+                          ),
+                          FilledButton.tonalIcon(
+                            key: const Key('sync-webdav-merge-button'),
+                            onPressed: _busy || !configured
+                                ? null
+                                : () => _restoreRemote(
+                                      data.preferences,
+                                      mode: SyncImportMode.merge,
+                                    ),
+                            icon: const Icon(Icons.merge_type_outlined),
+                            label: const Text('双向合并'),
                           ),
                         ],
                       ),

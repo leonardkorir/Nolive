@@ -14,10 +14,10 @@ class BilibiliSignService {
     ProviderBrowserProfile browserProfile =
         ProviderBrowserProfile.bilibiliLegacyDesktop,
     void Function(String message)? diagnostics,
-  })  : _transport = transport,
-        _authContext = authContext,
-        _browserProfile = browserProfile,
-        _diagnostics = diagnostics;
+  }) : _transport = transport,
+       _authContext = authContext,
+       _browserProfile = browserProfile,
+       _diagnostics = diagnostics;
 
   static const String defaultUserAgent = kBilibiliLegacyDesktopUserAgent;
   static const String defaultReferer = 'https://live.bilibili.com/';
@@ -110,8 +110,8 @@ class BilibiliSignService {
   String get browserFingerprintDiagnostics {
     final profileName =
         _browserProfile.userAgent == kBilibiliLegacyDesktopUserAgent
-            ? 'bilibili_legacy_desktop'
-            : 'custom';
+        ? 'bilibili_legacy_desktop'
+        : 'custom';
     return 'ua_profile=$profileName '
         'has_accept_language=${_browserProfile.acceptLanguage.trim().isNotEmpty}';
   }
@@ -137,9 +137,9 @@ class BilibiliSignService {
     final (imgKey, subKey) = await _getWbiKeys();
     final mixinKey = _getMixinKey(imgKey + subKey);
     final currentTime = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final queryParameters =
-        Map<String, String>.from(Uri.parse(url).queryParameters)
-          ..['wts'] = currentTime.toString();
+    final queryParameters = Map<String, String>.from(
+      Uri.parse(url).queryParameters,
+    )..['wts'] = currentTime.toString();
 
     final filtered = <String, String>{};
     final sortedKeys = queryParameters.keys.toList()..sort();
@@ -202,10 +202,9 @@ class BilibiliSignService {
         'https://live.bilibili.com/lol',
         headers: await buildHeaders(),
       );
-      final id = RegExp(r'\"access_id\":\"(.*?)\"')
-          .firstMatch(response)
-          ?.group(1)
-          ?.replaceAll('\\', '');
+      final id = RegExp(
+        r'\"access_id\":\"(.*?)\"',
+      ).firstMatch(response)?.group(1)?.replaceAll('\\', '');
       _authContext.accessId = id ?? '';
     } catch (error, stackTrace) {
       reportProviderDiagnostic(
@@ -273,10 +272,14 @@ class BilibiliSignService {
     final imgUrl = wbiImg['img_url']?.toString() ?? '';
     final subUrl = wbiImg['sub_url']?.toString() ?? '';
 
-    _authContext.imgKey =
-        imgUrl.substring(imgUrl.lastIndexOf('/') + 1).split('.').first;
-    _authContext.subKey =
-        subUrl.substring(subUrl.lastIndexOf('/') + 1).split('.').first;
+    _authContext.imgKey = imgUrl
+        .substring(imgUrl.lastIndexOf('/') + 1)
+        .split('.')
+        .first;
+    _authContext.subKey = subUrl
+        .substring(subUrl.lastIndexOf('/') + 1)
+        .split('.')
+        .first;
     return (_authContext.imgKey, _authContext.subKey);
   }
 
@@ -296,10 +299,7 @@ class BilibiliSignService {
 
   String _getMixinKey(String origin) {
     return _mixinKeyEncTable
-        .fold<String>(
-          '',
-          (buffer, index) => buffer + origin[index],
-        )
+        .fold<String>('', (buffer, index) => buffer + origin[index])
         .substring(0, 32);
   }
 
@@ -328,7 +328,8 @@ class BilibiliSignService {
     required bool respectPublicSuppression,
   }) {
     final parts = <String>[];
-    final allowAuthCookie = includeAuthCookie &&
+    final allowAuthCookie =
+        includeAuthCookie &&
         (!respectPublicSuppression ||
             !_authContext.suppressAuthCookieForPublicApis);
     final authCookie = allowAuthCookie ? _authContext.cookie.trim() : '';

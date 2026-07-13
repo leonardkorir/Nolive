@@ -45,9 +45,9 @@ class HttpHuyaTransport extends HuyaTransport {
     http.Client? client,
     ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
     void Function(String message)? diagnostics,
-  })  : _client = client ?? http.Client(),
-        _retryPolicy = retryPolicy,
-        _diagnostics = diagnostics;
+  }) : _client = client ?? http.Client(),
+       _retryPolicy = retryPolicy,
+       _diagnostics = diagnostics;
 
   final http.Client _client;
   final ProviderRetryPolicy _retryPolicy;

@@ -7,6 +7,7 @@ import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_presentation_helpers.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_view_data.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_controls_actions.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 class RoomPageUiEffects {
   const RoomPageUiEffects({
@@ -23,9 +24,7 @@ class RoomPageUiEffects {
     if (!isMounted()) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    showAppSnackBar(context, message);
   }
 
   Future<void> pushNamed(

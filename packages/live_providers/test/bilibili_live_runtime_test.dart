@@ -12,8 +12,10 @@ import 'package:test/test.dart';
 void main() {
   test('live bilibili runtime maps signed search/detail/play flow', () async {
     final transport = _FakeBilibiliTransport();
-    final authContext =
-        BilibiliAuthContext(cookie: 'SESSDATA=test', userId: 42);
+    final authContext = BilibiliAuthContext(
+      cookie: 'SESSDATA=test',
+      userId: 42,
+    );
     final signService = BilibiliSignService(
       transport: transport,
       authContext: authContext,
@@ -58,117 +60,133 @@ void main() {
     );
     expect(
       transport.requestedUrls
-          .where((item) =>
-              item.startsWith(
-                  'https://api.bilibili.com/x/web-interface/search/type') &&
-              item.contains('w_rid='))
+          .where(
+            (item) =>
+                item.startsWith(
+                  'https://api.bilibili.com/x/web-interface/search/type',
+                ) &&
+                item.contains('w_rid='),
+          )
           .length,
       1,
     );
   });
 
-  test('live bilibili runtime degrades danmaku when danmu info fails',
-      () async {
-    final transport = _FakeBilibiliDanmakuUnavailableTransport();
-    final authContext =
-        BilibiliAuthContext(cookie: 'SESSDATA=test; DedeUserID=42', userId: 7);
-    final provider = BilibiliProvider(
-      dataSource: BilibiliLiveDataSource(
-        transport: transport,
-        signService: BilibiliSignService(
+  test(
+    'live bilibili runtime degrades danmaku when danmu info fails',
+    () async {
+      final transport = _FakeBilibiliDanmakuUnavailableTransport();
+      final authContext = BilibiliAuthContext(
+        cookie: 'SESSDATA=test; DedeUserID=42',
+        userId: 7,
+      );
+      final provider = BilibiliProvider(
+        dataSource: BilibiliLiveDataSource(
           transport: transport,
+          signService: BilibiliSignService(
+            transport: transport,
+            authContext: authContext,
+          ),
           authContext: authContext,
         ),
-        authContext: authContext,
-      ),
-    );
+      );
 
-    final detail = await provider.fetchRoomDetail('32558935');
-    final token = detail.danmakuToken! as UnavailableDanmakuToken;
+      final detail = await provider.fetchRoomDetail('32558935');
+      final token = detail.danmakuToken! as UnavailableDanmakuToken;
 
-    expect(detail.roomId, '32558935');
-    expect(token.reason, isNotEmpty);
+      expect(detail.roomId, '32558935');
+      expect(token.reason, isNotEmpty);
 
-    final session = await provider.createDanmakuSession(detail);
-    expect(session, isA<ProviderUnavailableDanmakuSession>());
-  });
-
-  test('live bilibili runtime throws on room detail business failure',
-      () async {
-    final transport = _FakeBilibiliRoomInfoFailureTransport();
-    final authContext =
-        BilibiliAuthContext(cookie: 'SESSDATA=test', userId: 42);
-    final provider = BilibiliProvider(
-      dataSource: BilibiliLiveDataSource(
-        transport: transport,
-        signService: BilibiliSignService(
-          transport: transport,
-          authContext: authContext,
-        ),
-        authContext: authContext,
-      ),
-    );
-
-    expect(
-      () => provider.fetchRoomDetail('32558935'),
-      throwsA(isA<ProviderParseException>()),
-    );
-  });
-
-  test('live bilibili runtime retries room detail without WBI on -352',
-      () async {
-    final transport = _FakeBilibiliRoomInfoRiskControlTransport();
-    final authContext =
-        BilibiliAuthContext(cookie: 'SESSDATA=test', userId: 42);
-    final provider = BilibiliProvider(
-      dataSource: BilibiliLiveDataSource(
-        transport: transport,
-        signService: BilibiliSignService(
-          transport: transport,
-          authContext: authContext,
-        ),
-        authContext: authContext,
-      ),
-    );
-
-    final detail = await provider.fetchRoomDetail('32558935');
-
-    expect(detail.roomId, '32558935');
-    expect(transport.signedRoomInfoRequests, 1);
-    expect(transport.statelessRoomInfoRequests, 1);
-  });
+      final session = await provider.createDanmakuSession(detail);
+      expect(session, isA<ProviderUnavailableDanmakuSession>());
+    },
+  );
 
   test(
-      'live bilibili runtime falls back to anonymous public API when cookie is expired',
-      () async {
-    final transport = _FakeBilibiliExpiredCookieTransport();
-    final authContext = BilibiliAuthContext(
-      cookie: 'SESSDATA=expired-session; DedeUserID=42',
-      userId: 42,
-    );
-    final provider = BilibiliProvider(
-      dataSource: BilibiliLiveDataSource(
-        transport: transport,
-        signService: BilibiliSignService(
+    'live bilibili runtime throws on room detail business failure',
+    () async {
+      final transport = _FakeBilibiliRoomInfoFailureTransport();
+      final authContext = BilibiliAuthContext(
+        cookie: 'SESSDATA=test',
+        userId: 42,
+      );
+      final provider = BilibiliProvider(
+        dataSource: BilibiliLiveDataSource(
           transport: transport,
+          signService: BilibiliSignService(
+            transport: transport,
+            authContext: authContext,
+          ),
           authContext: authContext,
         ),
-        authContext: authContext,
-      ),
-    );
+      );
 
-    final recommend = await provider.fetchRecommendRooms();
-    expect(recommend.items, hasLength(1));
+      expect(
+        () => provider.fetchRoomDetail('32558935'),
+        throwsA(isA<ProviderParseException>()),
+      );
+    },
+  );
 
-    final detail = await provider.fetchRoomDetail('32558935');
-    final token = detail.danmakuToken! as BilibiliDanmakuToken;
+  test(
+    'live bilibili runtime retries room detail without WBI on -352',
+    () async {
+      final transport = _FakeBilibiliRoomInfoRiskControlTransport();
+      final authContext = BilibiliAuthContext(
+        cookie: 'SESSDATA=test',
+        userId: 42,
+      );
+      final provider = BilibiliProvider(
+        dataSource: BilibiliLiveDataSource(
+          transport: transport,
+          signService: BilibiliSignService(
+            transport: transport,
+            authContext: authContext,
+          ),
+          authContext: authContext,
+        ),
+      );
 
-    expect(detail.roomId, '32558935');
-    expect(token.roomId, 32558935);
-    expect(transport.unauthorizedAuthedRequests, 2);
-    expect(transport.navAnonymousRequests, 1);
-    expect(transport.publicApiRequestsWithExpiredCookie, isEmpty);
-  });
+      final detail = await provider.fetchRoomDetail('32558935');
+
+      expect(detail.roomId, '32558935');
+      expect(transport.signedRoomInfoRequests, 1);
+      expect(transport.statelessRoomInfoRequests, 1);
+    },
+  );
+
+  test(
+    'live bilibili runtime falls back to anonymous public API when cookie is expired',
+    () async {
+      final transport = _FakeBilibiliExpiredCookieTransport();
+      final authContext = BilibiliAuthContext(
+        cookie: 'SESSDATA=expired-session; DedeUserID=42',
+        userId: 42,
+      );
+      final provider = BilibiliProvider(
+        dataSource: BilibiliLiveDataSource(
+          transport: transport,
+          signService: BilibiliSignService(
+            transport: transport,
+            authContext: authContext,
+          ),
+          authContext: authContext,
+        ),
+      );
+
+      final recommend = await provider.fetchRecommendRooms();
+      expect(recommend.items, hasLength(1));
+
+      final detail = await provider.fetchRoomDetail('32558935');
+      final token = detail.danmakuToken! as BilibiliDanmakuToken;
+
+      expect(detail.roomId, '32558935');
+      expect(token.roomId, 32558935);
+      expect(transport.unauthorizedAuthedRequests, 2);
+      expect(transport.navAnonymousRequests, 1);
+      expect(transport.publicApiRequestsWithExpiredCookie, isEmpty);
+    },
+  );
 
   test('live bilibili runtime normalizes malformed display text', () async {
     final transport = _FakeBilibiliMalformedTextTransport();
@@ -197,114 +215,115 @@ void main() {
   });
 
   test(
-      'live bilibili runtime normalizes missing DedeUserID from stored user id',
-      () async {
-    final authContext = BilibiliAuthContext(
-      cookie: 'SESSDATA=test-session; bili_jct=test-jct',
-      userId: 42,
-    );
+    'live bilibili runtime normalizes missing DedeUserID from stored user id',
+    () async {
+      final authContext = BilibiliAuthContext(
+        cookie: 'SESSDATA=test-session; bili_jct=test-jct',
+        userId: 42,
+      );
 
-    expect(authContext.cookie, contains('SESSDATA=test-session'));
-    expect(authContext.cookie, contains('DedeUserID=42'));
-  });
-
-  test(
-      'live bilibili runtime falls back to search-based recommend rooms when WBI key loading keeps failing',
-      () async {
-    final transport = _FakeBilibiliRecommendFallbackTransport();
-    final authContext = BilibiliAuthContext(
-      cookie: 'SESSDATA=expired-session; DedeUserID=42',
-      userId: 42,
-    );
-    final provider = BilibiliProvider(
-      dataSource: BilibiliLiveDataSource(
-        transport: transport,
-        signService: BilibiliSignService(
-          transport: transport,
-          authContext: authContext,
-        ),
-        authContext: authContext,
-      ),
-    );
-
-    final recommend = await provider.fetchRecommendRooms();
-
-    expect(recommend.items, hasLength(1));
-    expect(recommend.items.single.title, '推荐回退房间');
-    expect(recommend.items.single.streamerName, '回退主播');
-    expect(transport.navRequests, greaterThanOrEqualTo(2));
-    expect(transport.searchRequests, greaterThanOrEqualTo(1));
-  });
+      expect(authContext.cookie, contains('SESSDATA=test-session'));
+      expect(authContext.cookie, contains('DedeUserID=42'));
+    },
+  );
 
   test(
-      'live bilibili runtime keeps public browse anonymous while using account cookie for WBI keys, play info and danmaku auth',
-      () async {
-    final transport = _FakeBilibiliAnonymousPublicTransport();
-    final authContext = BilibiliAuthContext(
-      cookie: 'SESSDATA=test-session; bili_jct=test-jct',
-      userId: 42,
-    );
-    final provider = BilibiliProvider(
-      dataSource: BilibiliLiveDataSource(
-        transport: transport,
-        signService: BilibiliSignService(
+    'live bilibili runtime falls back to search-based recommend rooms when WBI key loading keeps failing',
+    () async {
+      final transport = _FakeBilibiliRecommendFallbackTransport();
+      final authContext = BilibiliAuthContext(
+        cookie: 'SESSDATA=expired-session; DedeUserID=42',
+        userId: 42,
+      );
+      final provider = BilibiliProvider(
+        dataSource: BilibiliLiveDataSource(
           transport: transport,
+          signService: BilibiliSignService(
+            transport: transport,
+            authContext: authContext,
+          ),
           authContext: authContext,
         ),
-        authContext: authContext,
-      ),
-    );
+      );
 
-    final recommend = await provider.fetchRecommendRooms();
-    final detail = await provider.fetchRoomDetail('32558935');
-    final qualities = await provider.fetchPlayQualities(detail);
-    await provider.fetchPlayUrls(
-      detail: detail,
-      quality: qualities.first,
-    );
-    final token = detail.danmakuToken! as BilibiliDanmakuToken;
+      final recommend = await provider.fetchRecommendRooms();
 
-    expect(recommend.items, hasLength(1));
-    expect(transport.authedNavRequests, 1);
-    expect(transport.authedOtherPublicRequests, isEmpty);
-    expect(transport.authedDanmakuInfoRequests, hasLength(1));
-    expect(transport.authedPlayInfoRequests, hasLength(2));
-    expect(token.cookie, contains('SESSDATA=test-session'));
-    expect(token.cookie, contains('DedeUserID=42'));
-    expect(token.uid, 42);
-  });
+      expect(recommend.items, hasLength(1));
+      expect(recommend.items.single.title, '推荐回退房间');
+      expect(recommend.items.single.streamerName, '回退主播');
+      expect(transport.navRequests, greaterThanOrEqualTo(2));
+      expect(transport.searchRequests, greaterThanOrEqualTo(1));
+    },
+  );
 
   test(
-      'live bilibili runtime falls back to anonymous play info when account cookie is expired',
-      () async {
-    final transport = _FakeBilibiliPlayInfoAuthFallbackTransport();
-    final authContext = BilibiliAuthContext(
-      cookie: 'SESSDATA=expired-session; DedeUserID=42',
-      userId: 42,
-    );
-    final provider = BilibiliProvider(
-      dataSource: BilibiliLiveDataSource(
-        transport: transport,
-        signService: BilibiliSignService(
+    'live bilibili runtime keeps public browse anonymous while using account cookie for WBI keys, play info and danmaku auth',
+    () async {
+      final transport = _FakeBilibiliAnonymousPublicTransport();
+      final authContext = BilibiliAuthContext(
+        cookie: 'SESSDATA=test-session; bili_jct=test-jct',
+        userId: 42,
+      );
+      final provider = BilibiliProvider(
+        dataSource: BilibiliLiveDataSource(
           transport: transport,
+          signService: BilibiliSignService(
+            transport: transport,
+            authContext: authContext,
+          ),
           authContext: authContext,
         ),
-        authContext: authContext,
-      ),
-    );
+      );
 
-    final detail = await provider.fetchRoomDetail('32558935');
-    final qualities = await provider.fetchPlayQualities(detail);
-    final urls = await provider.fetchPlayUrls(
-      detail: detail,
-      quality: qualities.first,
-    );
+      final recommend = await provider.fetchRecommendRooms();
+      final detail = await provider.fetchRoomDetail('32558935');
+      final qualities = await provider.fetchPlayQualities(detail);
+      await provider.fetchPlayUrls(detail: detail, quality: qualities.first);
+      final token = detail.danmakuToken! as BilibiliDanmakuToken;
 
-    expect(qualities, isNotEmpty);
-    expect(urls, isNotEmpty);
-    expect(transport.authedPlayInfoRequests, 2);
-    expect(transport.anonymousPlayInfoRequests, 2);
-  });
+      expect(recommend.items, hasLength(1));
+      expect(transport.authedNavRequests, 1);
+      expect(transport.authedOtherPublicRequests, isEmpty);
+      expect(transport.authedDanmakuInfoRequests, hasLength(1));
+      expect(transport.authedPlayInfoRequests, hasLength(2));
+      expect(token.cookie, contains('SESSDATA=test-session'));
+      expect(token.cookie, contains('DedeUserID=42'));
+      expect(token.uid, 42);
+    },
+  );
+
+  test(
+    'live bilibili runtime falls back to anonymous play info when account cookie is expired',
+    () async {
+      final transport = _FakeBilibiliPlayInfoAuthFallbackTransport();
+      final authContext = BilibiliAuthContext(
+        cookie: 'SESSDATA=expired-session; DedeUserID=42',
+        userId: 42,
+      );
+      final provider = BilibiliProvider(
+        dataSource: BilibiliLiveDataSource(
+          transport: transport,
+          signService: BilibiliSignService(
+            transport: transport,
+            authContext: authContext,
+          ),
+          authContext: authContext,
+        ),
+      );
+
+      final detail = await provider.fetchRoomDetail('32558935');
+      final qualities = await provider.fetchPlayQualities(detail);
+      final urls = await provider.fetchPlayUrls(
+        detail: detail,
+        quality: qualities.first,
+      );
+
+      expect(qualities, isNotEmpty);
+      expect(urls, isNotEmpty);
+      expect(transport.authedPlayInfoRequests, 2);
+      expect(transport.anonymousPlayInfoRequests, 2);
+    },
+  );
 }
 
 class _FakeBilibiliTransport implements BilibiliTransport {
@@ -335,17 +354,17 @@ class _FakeBilibiliTransport implements BilibiliTransport {
     );
     requestedUrls.add(uri.toString());
 
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/frontend/finger/spi')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/frontend/finger/spi',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {'b_3': 'mock-buvid3', 'b_4': 'mock-buvid4'},
       });
     }
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/web-interface/nav')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/web-interface/nav',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -358,9 +377,9 @@ class _FakeBilibiliTransport implements BilibiliTransport {
         },
       });
     }
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/web-interface/search/type')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/web-interface/search/type',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -386,8 +405,8 @@ class _FakeBilibiliTransport implements BilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
+    )) {
       expect(uri.queryParameters['w_rid'], isNotNull);
       expect(uri.queryParameters['wts'], isNotNull);
       return jsonEncode({
@@ -415,8 +434,8 @@ class _FakeBilibiliTransport implements BilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo',
+    )) {
       expect(uri.queryParameters['w_rid'], isNotNull);
       expect(uri.queryParameters['wts'], isNotNull);
       return jsonEncode({
@@ -430,8 +449,8 @@ class _FakeBilibiliTransport implements BilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -487,8 +506,8 @@ class _FakeBilibiliDanmakuUnavailableTransport extends _FakeBilibiliTransport {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo',
+    )) {
       return jsonEncode({
         'code': -352,
         'message': 'risk control',
@@ -514,12 +533,9 @@ class _FakeBilibiliRoomInfoFailureTransport extends _FakeBilibiliTransport {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
-        )) {
-      return jsonEncode({
-        'code': -400,
-        'message': 'room detail blocked',
-      });
+      'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
+    )) {
+      return jsonEncode({'code': -400, 'message': 'room detail blocked'});
     }
     return super.getText(
       url,
@@ -543,16 +559,13 @@ class _FakeBilibiliRoomInfoRiskControlTransport extends _FakeBilibiliTransport {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
+    )) {
       if (queryParameters.containsKey('w_rid')) {
         signedRoomInfoRequests += 1;
         expect(headers['user-agent'], BilibiliSignService.defaultUserAgent);
         expect(headers.keys, isNot(contains('accept-language')));
-        return jsonEncode({
-          'code': -352,
-          'message': '-352',
-        });
+        return jsonEncode({'code': -352, 'message': '-352'});
       }
       statelessRoomInfoRequests += 1;
       expect(
@@ -626,30 +639,24 @@ class _FakeBilibiliExpiredCookieTransport extends BilibiliTransport {
     final hasExpiredSession = cookie.contains('SESSDATA=expired-session');
     final hasBuvid = cookie.contains('buvid3=');
 
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/frontend/finger/spi')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/frontend/finger/spi',
+    )) {
       if (hasExpiredSession) {
         unauthorizedAuthedRequests += 1;
-        return jsonEncode({
-          'code': -101,
-          'message': '账号未登录',
-        });
+        return jsonEncode({'code': -101, 'message': '账号未登录'});
       }
       return jsonEncode({
         'code': 0,
         'data': {'b_3': 'mock-buvid3', 'b_4': 'mock-buvid4'},
       });
     }
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/web-interface/nav')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/web-interface/nav',
+    )) {
       if (hasExpiredSession) {
         unauthorizedAuthedRequests += 1;
-        return jsonEncode({
-          'code': -101,
-          'message': '账号未登录',
-        });
+        return jsonEncode({'code': -101, 'message': '账号未登录'});
       }
       navAnonymousRequests += 1;
       expect(hasBuvid, isTrue);
@@ -671,8 +678,8 @@ class _FakeBilibiliExpiredCookieTransport extends BilibiliTransport {
       publicApiRequestsWithExpiredCookie.add(uri.toString());
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
+    )) {
       expect(uri.queryParameters['w_rid'], isNotNull);
       expect(uri.queryParameters['wts'], isNotNull);
       expect(hasExpiredSession, isFalse);
@@ -697,8 +704,8 @@ class _FakeBilibiliExpiredCookieTransport extends BilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
+    )) {
       expect(uri.queryParameters['w_rid'], isNotNull);
       expect(uri.queryParameters['wts'], isNotNull);
       expect(hasExpiredSession, isFalse);
@@ -727,14 +734,11 @@ class _FakeBilibiliExpiredCookieTransport extends BilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo',
+    )) {
       if (hasExpiredSession) {
         unauthorizedAuthedRequests += 1;
-        return jsonEncode({
-          'code': -101,
-          'message': '账号未登录',
-        });
+        return jsonEncode({'code': -101, 'message': '账号未登录'});
       }
       expect(uri.queryParameters['w_rid'], isNotNull);
       expect(uri.queryParameters['wts'], isNotNull);
@@ -771,24 +775,25 @@ class _FakeBilibiliAnonymousPublicTransport extends _FakeBilibiliTransport {
     );
     final cookie = headers['cookie'] ?? '';
     final hasAuthCookie = cookie.contains('SESSDATA=');
-    final isNavRequest = uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/web-interface/nav');
+    final isNavRequest = uri.toString().startsWith(
+      'https://api.bilibili.com/x/web-interface/nav',
+    );
     final isPlayInfoRequest = uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
-        );
+      'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
+    );
     final isDanmakuInfoRequest = uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo',
+      'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo',
+    );
+    final isOtherPublicRequest =
+        uri.toString().startsWith(
+          'https://api.bilibili.com/x/frontend/finger/spi',
+        ) ||
+        uri.toString().startsWith(
+          'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
+        ) ||
+        uri.toString().startsWith(
+          'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
         );
-    final isOtherPublicRequest = uri
-            .toString()
-            .startsWith('https://api.bilibili.com/x/frontend/finger/spi') ||
-        uri.toString().startsWith(
-              'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
-            ) ||
-        uri.toString().startsWith(
-              'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
-            );
     if (isNavRequest && hasAuthCookie) {
       authedNavRequests += 1;
     } else if (isPlayInfoRequest && hasAuthCookie) {
@@ -799,8 +804,8 @@ class _FakeBilibiliAnonymousPublicTransport extends _FakeBilibiliTransport {
       authedOtherPublicRequests.add(uri.toString());
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -843,8 +848,8 @@ class _FakeBilibiliPlayInfoAuthFallbackTransport
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
     final isPlayInfoRequest = uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
-        );
+      'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
+    );
     if (!isPlayInfoRequest) {
       return super.getText(
         url,
@@ -856,10 +861,7 @@ class _FakeBilibiliPlayInfoAuthFallbackTransport
     final hasAuthCookie = (headers['cookie'] ?? '').contains('SESSDATA=');
     if (hasAuthCookie) {
       authedPlayInfoRequests += 1;
-      return jsonEncode({
-        'code': -101,
-        'message': '账号未登录',
-      });
+      return jsonEncode({'code': -101, 'message': '账号未登录'});
     }
 
     anonymousPlayInfoRequests += 1;
@@ -889,17 +891,17 @@ class _FakeBilibiliMalformedTextTransport extends _FakeBilibiliTransport {
     );
     requestedUrls.add(uri.toString());
 
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/frontend/finger/spi')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/frontend/finger/spi',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {'b_3': 'mock-buvid3', 'b_4': 'mock-buvid4'},
       });
     }
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/web-interface/nav')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/web-interface/nav',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -913,8 +915,8 @@ class _FakeBilibiliMalformedTextTransport extends _FakeBilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -935,8 +937,8 @@ class _FakeBilibiliMalformedTextTransport extends _FakeBilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -962,8 +964,8 @@ class _FakeBilibiliMalformedTextTransport extends _FakeBilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -975,8 +977,8 @@ class _FakeBilibiliMalformedTextTransport extends _FakeBilibiliTransport {
       });
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
-        )) {
+      'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {
@@ -1044,26 +1046,23 @@ class _FakeBilibiliRecommendFallbackTransport extends BilibiliTransport {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
 
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/frontend/finger/spi')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/frontend/finger/spi',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': {'b_3': 'mock-buvid3', 'b_4': 'mock-buvid4'},
       });
     }
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/web-interface/nav')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/web-interface/nav',
+    )) {
       navRequests += 1;
-      return jsonEncode({
-        'code': -101,
-        'message': '账号未登录',
-      });
+      return jsonEncode({'code': -101, 'message': '账号未登录'});
     }
     if (uri.toString().startsWith(
-          'https://api.live.bilibili.com/room/v1/Area/getList',
-        )) {
+      'https://api.live.bilibili.com/room/v1/Area/getList',
+    )) {
       return jsonEncode({
         'code': 0,
         'data': [
@@ -1071,19 +1070,15 @@ class _FakeBilibiliRecommendFallbackTransport extends BilibiliTransport {
             'id': 1,
             'name': '热门',
             'list': [
-              {
-                'id': 101,
-                'parent_id': 1,
-                'name': '热门推荐',
-              },
+              {'id': 101, 'parent_id': 1, 'name': '热门推荐'},
             ],
           },
         ],
       });
     }
-    if (uri
-        .toString()
-        .startsWith('https://api.bilibili.com/x/web-interface/search/type')) {
+    if (uri.toString().startsWith(
+      'https://api.bilibili.com/x/web-interface/search/type',
+    )) {
       searchRequests += 1;
       return jsonEncode({
         'code': 0,

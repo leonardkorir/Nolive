@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:nolive_app/src/app/home/presentation/home_page.dart';
+import 'package:nolive_app/src/features/home/presentation/home_page.dart';
 import 'package:nolive_app/src/app/shell/app_shell_dependencies.dart';
 import 'package:nolive_app/src/features/browse/presentation/browse_page.dart';
 import 'package:nolive_app/src/features/library/presentation/library_page.dart';
@@ -176,8 +176,9 @@ class _AppShellPageState extends State<AppShellPage> {
                       body: SafeArea(child: content),
                       bottomNavigationBar: NavigationBar(
                         selectedIndex: selectedIndex,
-                        labelBehavior:
-                            NavigationDestinationLabelBehavior.alwaysHide,
+                        // Show selected tab label for discoverability / a11y.
+                        labelBehavior: NavigationDestinationLabelBehavior
+                            .onlyShowSelected,
                         onDestinationSelected: (index) {
                           _selectTab(destinations[index].id);
                         },

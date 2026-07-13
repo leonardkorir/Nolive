@@ -14,8 +14,10 @@ const Duration _mdkTextureRecoveryFirstRetryDelay = Duration(milliseconds: 180);
 const Duration _mdkTextureRecoveryBackendRefreshRetryDelay = Duration(
   milliseconds: 320,
 );
+// Keep short: logs showed ~230ms dead wait after loadRoom before setSource.
+// One frame + a brief settle is enough for MediaCodec surface attach.
 const Duration _initialEmbeddedBootstrapSurfaceWait = Duration(
-  milliseconds: 220,
+  milliseconds: 48,
 );
 const Duration _defaultPlaybackRebindIdleTimeout = Duration(seconds: 20);
 const int _maxPlaybackRebindInFlightCount = 1024;
@@ -90,7 +92,7 @@ class RoomPlaybackController extends ChangeNotifier {
            playbackRebindIdleTimeout ?? _defaultPlaybackRebindIdleTimeout;
 
   final PlayerRuntimeController playerRuntime;
-  final ProviderId providerId;
+  ProviderId providerId;
   final RoomPlaybackTrace trace;
   final RoomPlaybackMountCheck isMounted;
   final RoomPlaybackResolveCurrentSource resolveCurrentPlaybackSource;

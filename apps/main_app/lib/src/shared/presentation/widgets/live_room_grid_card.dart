@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
+import 'package:nolive_app/src/shared/presentation/theme/nolive_tokens.dart';
 
 import 'app_surface_card.dart';
 import 'persisted_network_image.dart';
@@ -52,6 +53,7 @@ class LiveRoomGridCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cardRadius = NoliveRadii.of(context).md;
     final accent = ProviderBadge.accentColorOf(descriptor.id);
     final coverUrl = room.keyframeUrl ?? room.coverUrl;
     final areaLabel = normalizeDisplayText(
@@ -64,16 +66,16 @@ class LiveRoomGridCard extends StatelessWidget {
 
     return AppSurfaceCard(
       padding: EdgeInsets.zero,
-      borderRadius: 12,
+      borderRadius: cardRadius,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(cardRadius),
         onTap: onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
               borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
+                  BorderRadius.vertical(top: Radius.circular(cardRadius)),
               child: AspectRatio(
                 aspectRatio: 16 / 9,
                 child: Stack(

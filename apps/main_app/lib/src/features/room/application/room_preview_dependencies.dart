@@ -1,9 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/app/bootstrap/llhls_proxy_lifecycle.dart';
 import 'package:nolive_app/src/features/library/application/list_follow_records_use_case.dart';
 import 'package:nolive_app/src/features/library/application/is_followed_room_use_case.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
+
 import 'package:nolive_app/src/features/library/application/toggle_follow_room_use_case.dart';
 import 'package:nolive_app/src/features/profile/application/manage_blocked_keywords_use_case.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
@@ -20,6 +23,7 @@ class RoomPreviewDependencies {
   const RoomPreviewDependencies({
     required this.followWatchlistSnapshot,
     required this.playerRuntime,
+    required this.llhlsProxyRegistry,
     required this.loadRoom,
     required this.openRoomDanmaku,
     required this.resolvePlaySource,
@@ -47,6 +51,7 @@ class RoomPreviewDependencies {
       playerRuntime: playerOverride == null
           ? bootstrap.playerRuntime
           : PlayerRuntimeController(playerOverride),
+      llhlsProxyRegistry: bootstrap.llhlsProxyRegistry,
       loadRoom: bootstrap.loadRoom,
       openRoomDanmaku: bootstrap.openRoomDanmaku,
       resolvePlaySource: bootstrap.resolvePlaySource,
@@ -68,6 +73,7 @@ class RoomPreviewDependencies {
 
   final ValueNotifier<FollowWatchlist?> followWatchlistSnapshot;
   final PlayerRuntimeController playerRuntime;
+  final LlhlsProxyRegistry llhlsProxyRegistry;
   final LoadRoomUseCase loadRoom;
   final OpenRoomDanmakuUseCase openRoomDanmaku;
   final ResolvePlaySourceUseCase resolvePlaySource;

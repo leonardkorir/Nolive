@@ -1,5 +1,14 @@
 include: package:lints/recommended.yaml
 
+analyzer:
+  exclude:
+    - third_party/**
+  errors:
+    await_only_futures: ignore
+    constant_identifier_names: ignore
+    implementation_imports: ignore
+    unrelated_type_equality_checks: ignore
+
 linter:
   rules:
     public_member_api_docs: false

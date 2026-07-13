@@ -9,9 +9,7 @@ class StripchatMapper {
   static const String _imageCdnBase = 'https://static-proxy.strpst.com';
   static const String _originHost = 'zh.stripchat.com';
 
-  static const Map<String, String> _categoryNames = {
-    'ethnicity': '种族',
-  };
+  static const Map<String, String> _categoryNames = {'ethnicity': '种族'};
 
   static const List<_CountryRegion> _countryRegions = [
     _CountryRegion('country-asia_pacific', '亚洲 & 太平洋', [
@@ -76,9 +74,7 @@ class StripchatMapper {
       'tagLanguageUgandan',
       'tagLanguageZimbabwean',
     ]),
-    _CountryRegion('country-middle_east', '中东', [
-      'tagLanguageTurkish',
-    ]),
+    _CountryRegion('country-middle_east', '中东', ['tagLanguageTurkish']),
     _CountryRegion('country-other', '其他', [
       'tagLanguageAssamese',
       'tagLanguageBangladeshi',
@@ -196,19 +192,19 @@ class StripchatMapper {
       final children = <LiveSubCategory>[];
       for (final tagId in region.tagIds) {
         if (tagDetails.containsKey(tagId)) {
-          children.add(LiveSubCategory(
-            id: tagId,
-            parentId: region.id,
-            name: _subCategoryName(tagId),
-          ));
+          children.add(
+            LiveSubCategory(
+              id: tagId,
+              parentId: region.id,
+              name: _subCategoryName(tagId),
+            ),
+          );
         }
       }
       if (children.isNotEmpty) {
-        categories.add(LiveCategory(
-          id: region.id,
-          name: region.name,
-          children: children,
-        ));
+        categories.add(
+          LiveCategory(id: region.id, name: region.name, children: children),
+        );
       }
     }
 
@@ -220,22 +216,25 @@ class StripchatMapper {
       final children = <LiveSubCategory>[];
       if (tags is List) {
         for (final tag in tags) {
-          final tagId =
-              tag is Map ? tag['tag']?.toString() : tag.toString();
+          final tagId = tag is Map ? tag['tag']?.toString() : tag.toString();
           if (tagId == null || tagId.isEmpty) continue;
-          children.add(LiveSubCategory(
-            id: tagId,
-            parentId: alias,
-            name: _subCategoryName(tagId),
-          ));
+          children.add(
+            LiveSubCategory(
+              id: tagId,
+              parentId: alias,
+              name: _subCategoryName(tagId),
+            ),
+          );
         }
       }
       if (children.isNotEmpty) {
-        categories.add(LiveCategory(
-          id: alias,
-          name: _categoryName(alias),
-          children: children,
-        ));
+        categories.add(
+          LiveCategory(
+            id: alias,
+            name: _categoryName(alias),
+            children: children,
+          ),
+        );
       }
     }
 
@@ -321,11 +320,7 @@ class StripchatMapper {
       }
     }
 
-    return PagedResponse(
-      items: items,
-      hasMore: false,
-      page: page,
-    );
+    return PagedResponse(items: items, hasMore: false, page: page);
   }
 
   static bool _parseIsLive(dynamic value) {
@@ -354,12 +349,13 @@ class StripchatMapper {
     }
 
     final effectiveLive = isLive && streamName.isNotEmpty;
-    final coverUrl = _normalizeUrl(item['previewUrlThumbBig']?.toString()) ??
+    final coverUrl =
+        _normalizeUrl(item['previewUrlThumbBig']?.toString()) ??
         _normalizeUrl(item['previewUrlThumbSmall']?.toString()) ??
         _normalizeUrl(item['previewUrl']?.toString());
 
     return LiveRoom(
-      providerId: ProviderId.stripchat.value,
+      providerId: ProviderId.stripchat,
       roomId: username,
       title: '',
       streamerName: username,
@@ -400,13 +396,14 @@ class StripchatMapper {
     final broadcastStreamName =
         broadcastItem['streamName']?.toString().trim() ?? '';
     final broadcastIsLive = _parseIsLive(broadcastItem['isLive']);
-    final effectiveStreamName =
-        broadcastStreamName.isNotEmpty ? broadcastStreamName : streamName;
+    final effectiveStreamName = broadcastStreamName.isNotEmpty
+        ? broadcastStreamName
+        : streamName;
     final effectiveIsLive = isLive || broadcastIsLive;
     final hasActivePublicBroadcast =
         broadcastStatus.toLowerCase() == 'public' &&
-            broadcastStreamName.isNotEmpty &&
-            broadcastIsLive;
+        broadcastStreamName.isNotEmpty &&
+        broadcastIsLive;
     final playbackUnavailableReason = _resolvePlaybackUnavailableReason(
       roomStatus: roomStatus,
       showMode: showMode,
@@ -419,7 +416,8 @@ class StripchatMapper {
     final wsUrl = _extractWsUrl(initialDynamicPayload);
     final configCdnDomains = _extractCdnDomains(initialDynamicPayload);
 
-    final danmakuToken = playbackUnavailableReason == null &&
+    final danmakuToken =
+        playbackUnavailableReason == null &&
             wsToken != null &&
             wsUrl != null &&
             modelIdStr.isNotEmpty
@@ -464,12 +462,12 @@ class StripchatMapper {
       final item = ProviderJson.asMap(broadcastPayload['item']);
       final settings = ProviderJson.asMap(item['settings']);
       broadcastSettings = settings;
-      broadcastPresets = ProviderJson.asList(settings['presets'])
-          .map((p) => p.toString())
-          .toList();
-      broadcastCdnDomains = ProviderJson.asList(item['cdnDomains'])
-          .map((d) => d.toString())
-          .toList();
+      broadcastPresets = ProviderJson.asList(
+        settings['presets'],
+      ).map((p) => p.toString()).toList();
+      broadcastCdnDomains = ProviderJson.asList(
+        item['cdnDomains'],
+      ).map((d) => d.toString()).toList();
     } else {
       broadcastSettings = const {};
       broadcastPresets = const [];
@@ -489,14 +487,15 @@ class StripchatMapper {
     final statusChangedAt = userData['statusChangedAt'];
     final int? membersViewerCount = membersPayload != null
         ? (ProviderJson.asInt(membersPayload['guests']) ?? 0) +
-            (ProviderJson.asInt(membersPayload['regulars']) ?? 0) +
-            (ProviderJson.asInt(membersPayload['greens']) ?? 0) +
-            (ProviderJson.asInt(membersPayload['golds']) ?? 0) +
-            (ProviderJson.asInt(membersPayload['invisibles']) ?? 0) +
-            (ProviderJson.asInt(membersPayload['spies']) ?? 0)
+              (ProviderJson.asInt(membersPayload['regulars']) ?? 0) +
+              (ProviderJson.asInt(membersPayload['greens']) ?? 0) +
+              (ProviderJson.asInt(membersPayload['golds']) ?? 0) +
+              (ProviderJson.asInt(membersPayload['invisibles']) ?? 0) +
+              (ProviderJson.asInt(membersPayload['spies']) ?? 0)
         : null;
 
-    final baseViewerCount = ProviderJson.asInt(userData['viewersCount']) ??
+    final baseViewerCount =
+        ProviderJson.asInt(userData['viewersCount']) ??
         ProviderJson.asInt(broadcastItem['viewersCount']) ??
         ProviderJson.asInt(cam['viewersCount']);
 
@@ -505,7 +504,7 @@ class StripchatMapper {
         : baseViewerCount;
 
     return LiveRoomDetail(
-      providerId: ProviderId.stripchat.value,
+      providerId: ProviderId.stripchat,
       roomId: roomId,
       title: cam['topic']?.toString() ?? '',
       streamerName: username,
@@ -540,20 +539,19 @@ class StripchatMapper {
       ..sort((a, b) => _qualitySortOrder(b).compareTo(_qualitySortOrder(a)));
     qualityIds.addAll(sortedIds);
 
-    return qualityIds.map((id) {
-      return LivePlayQuality(
-        id: id,
-        label: _qualityLabel(id),
-        isDefault: id == 'auto',
-        sortOrder: id == 'auto' ? 0 : _qualitySortOrder(id),
-      );
-    }).toList(growable: false);
+    return qualityIds
+        .map((id) {
+          return LivePlayQuality(
+            id: id,
+            label: _qualityLabel(id),
+            isDefault: id == 'auto',
+            sortOrder: id == 'auto' ? 0 : _qualitySortOrder(id),
+          );
+        })
+        .toList(growable: false);
   }
 
-  static void _collectPlayableQualityIds(
-    Set<String> qualityIds,
-    List? rawIds,
-  ) {
+  static void _collectPlayableQualityIds(Set<String> qualityIds, List? rawIds) {
     if (rawIds == null || rawIds.isEmpty) {
       return;
     }
@@ -591,8 +589,8 @@ class StripchatMapper {
     );
     final stripchatRoomUrl =
         detail.metadata?['stripchatRoomUrl']?.toString().trim() ??
-            detail.sourceUrl?.trim() ??
-            '';
+        detail.sourceUrl?.trim() ??
+        '';
     final metadata = <String, Object?>{
       if (quality.id != 'auto') 'preferredVariantId': quality.id,
       if (stripchatRoomUrl.isNotEmpty) 'stripchatRoomUrl': stripchatRoomUrl,
@@ -635,7 +633,8 @@ class StripchatMapper {
     required String requestCookie,
   }) {
     return {
-      'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 '
+      'user-agent':
+          'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 '
           '(KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
       'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
       'sec-ch-ua-mobile': '?1',
@@ -672,11 +671,7 @@ class StripchatMapper {
     return null;
   }
 
-  static const Set<String> _restrictedRoomStatuses = {
-    'private',
-    'p2p',
-    'spy',
-  };
+  static const Set<String> _restrictedRoomStatuses = {'private', 'p2p', 'spy'};
 
   static const Set<String> _restrictedShowModes = {
     'private',
@@ -751,10 +746,12 @@ class StripchatMapper {
   }
 
   static String _resolveCdnDomain(LiveRoomDetail detail) {
-    final cdnConfig =
-        List<String>.from(detail.metadata?['cdnConfig'] as List? ?? []);
-    final metaCdnDomains =
-        List<String>.from(detail.metadata?['cdnDomains'] as List? ?? []);
+    final cdnConfig = List<String>.from(
+      detail.metadata?['cdnConfig'] as List? ?? [],
+    );
+    final metaCdnDomains = List<String>.from(
+      detail.metadata?['cdnDomains'] as List? ?? [],
+    );
 
     // Use the first domain reported by CDN config; no TLD preference.
     if (cdnConfig.isNotEmpty) return cdnConfig.first;

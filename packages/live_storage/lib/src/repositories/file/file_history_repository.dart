@@ -1,3 +1,5 @@
+import 'package:live_core/live_core.dart';
+
 import '../../models/history_record.dart';
 import '../../persistence/local_storage_file_store.dart';
 import '../history_repository.dart';
@@ -35,9 +37,11 @@ class FileHistoryRepository implements HistoryRepository {
 
   @override
   Future<void> remove(String providerId, String roomId) {
+    final normalizedProviderId = ProviderId.from(providerId);
     return store.update((snapshot) {
       snapshot.history.removeWhere(
-        (item) => item.providerId == providerId && item.roomId == roomId,
+        (item) =>
+            item.providerId == normalizedProviderId && item.roomId == roomId,
       );
     });
   }

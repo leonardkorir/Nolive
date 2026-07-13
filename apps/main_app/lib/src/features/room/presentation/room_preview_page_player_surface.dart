@@ -3,6 +3,7 @@ import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/application/room_session_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_section_widgets.dart';
+import 'package:nolive_app/src/shared/presentation/theme/nolive_room_chrome.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
 
 typedef EmbeddedPlayerLifecycleViewFlags = ({
@@ -36,11 +37,67 @@ bool resolveRoomPlayerPosterBackdropVisibility({
   required bool hasPlayback,
   required bool embedPlayer,
   bool hasPlaybackError = false,
+  bool hasRenderedVideo = true,
 }) {
   if (hasPlaybackError) {
     return true;
   }
+  // Keep one continuous poster until the first decoded frame. Avoid a bare
+  // black phase before the cover appears — that reads as "loading twice".
+  if (!hasRenderedVideo) {
+    return true;
+  }
   return !(fullscreen && hasPlayback && embedPlayer);
+}
+
+@visibleForTesting
+bool resolveRoomPlayerWaitingForFirstFrame({
+  required bool hasPlayback,
+  required bool embedPlayer,
+  required bool hasRenderedVideo,
+  PlaybackStatus? playbackStatus,
+}) {
+  if (!hasPlayback || !embedPlayer || hasRenderedVideo) {
+    return false;
+  }
+  return playbackStatus != PlaybackStatus.error;
+}
+
+/// True only when the player has produced a real video signal (size and/or
+/// progress). Status [PlaybackStatus.ready]/[PlaybackStatus.playing] alone is
+/// not enough — media_kit reports those before the first painted frame.
+@visibleForTesting
+bool resolveRoomHasRenderedVideo({
+  required int? videoWidth,
+  required int? videoHeight,
+  required Duration position,
+  required Duration buffered,
+  PlaybackStatus? status,
+}) {
+  if (status == PlaybackStatus.error) {
+    return false;
+  }
+  final hasSize = (videoWidth ?? 0) > 0 && (videoHeight ?? 0) > 0;
+  final hasProgress =
+      position > Duration.zero || buffered > const Duration(milliseconds: 500);
+  return hasSize || hasProgress;
+}
+
+/// Keep the room loading shell until the first real frame, not only until
+/// loadRoom / setSource report ready.
+@visibleForTesting
+bool shouldKeepRoomLoadingShellUntilFirstFrame({
+  required bool hasPlayback,
+  required bool hasRenderedVideo,
+  PlaybackStatus? playbackStatus,
+}) {
+  if (!hasPlayback) {
+    return false;
+  }
+  if (playbackStatus == PlaybackStatus.error) {
+    return false;
+  }
+  return !hasRenderedVideo;
 }
 
 String resolveFriendlyPlayerErrorMessage(String? rawError) {
@@ -58,7 +115,21 @@ String resolveFriendlyPlayerErrorMessage(String? rawError) {
       lower.contains('mpv-vd-reinit')) {
     return '硬件解码器初始化失败，请尝试刷新或切换清晰度。';
   }
-  return '播放出错 ($rawError)，请尝试刷新。';
+  if (lower.contains('timeout') || lower.contains('timed out')) {
+    return '加载超时，请尝试刷新。';
+  }
+  if (lower.contains('network') ||
+      lower.contains('socket') ||
+      lower.contains('connection')) {
+    return '网络异常，请检查网络后刷新。';
+  }
+  // Never dump long technical strings onto the player chrome.
+  if (rawError.length > 48 ||
+      lower.contains('exception') ||
+      rawError.contains('\n')) {
+    return '播放出错，请尝试刷新。';
+  }
+  return '播放出错，请尝试刷新。';
 }
 
 @immutable
@@ -82,6 +153,7 @@ class RoomPlayerSurfaceViewData {
     this.inlineLineLabel,
     this.playbackStatus,
     this.playbackError,
+    this.hasRenderedVideo = true,
   });
 
   final LiveRoomDetail room;
@@ -102,6 +174,7 @@ class RoomPlayerSurfaceViewData {
   final String? inlineLineLabel;
   final PlaybackStatus? playbackStatus;
   final String? playbackError;
+  final bool hasRenderedVideo;
 
   String? get posterUrl => room.keyframeUrl ?? room.coverUrl;
 
@@ -124,6 +197,7 @@ class RoomPlayerSurfaceViewData {
     Object? inlineLineLabel = _roomPlayerSurfaceViewDataNoChange,
     PlaybackStatus? playbackStatus,
     String? playbackError,
+    bool? hasRenderedVideo,
   }) {
     return RoomPlayerSurfaceViewData(
       room: room ?? this.room,
@@ -144,17 +218,18 @@ class RoomPlayerSurfaceViewData {
       unavailableReason: unavailableReason ?? this.unavailableReason,
       statusPresentation:
           statusPresentation == _roomPlayerSurfaceViewDataNoChange
-              ? this.statusPresentation
-              : statusPresentation as RoomChaturbateStatusPresentation?,
+          ? this.statusPresentation
+          : statusPresentation as RoomChaturbateStatusPresentation?,
       inlineQualityLabel:
           inlineQualityLabel == _roomPlayerSurfaceViewDataNoChange
-              ? this.inlineQualityLabel
-              : inlineQualityLabel as String?,
+          ? this.inlineQualityLabel
+          : inlineQualityLabel as String?,
       inlineLineLabel: inlineLineLabel == _roomPlayerSurfaceViewDataNoChange
           ? this.inlineLineLabel
           : inlineLineLabel as String?,
       playbackStatus: playbackStatus ?? this.playbackStatus,
       playbackError: playbackError ?? this.playbackError,
+      hasRenderedVideo: hasRenderedVideo ?? this.hasRenderedVideo,
     );
   }
 }
@@ -187,8 +262,9 @@ class RoomPictureInPictureChild extends StatelessWidget {
         final room = state.snapshot.detail;
         final playbackSource =
             currentPlaybackSource ?? state.resolved?.playbackSource;
-        final playUrls =
-            currentPlayUrls.isEmpty ? state.snapshot.playUrls : currentPlayUrls;
+        final playUrls = currentPlayUrls.isEmpty
+            ? state.snapshot.playUrls
+            : currentPlayUrls;
         final hasPlayback = playbackSource != null && playUrls.isNotEmpty;
         final posterUrl = room.keyframeUrl ?? room.coverUrl;
 
@@ -263,10 +339,18 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
       hasPlayback: data.hasPlayback,
       embedPlayer: data.embedPlayer,
       hasPlaybackError: data.playbackStatus == PlaybackStatus.error,
+      hasRenderedVideo: data.hasRenderedVideo,
+    );
+    final waitingForFirstFrame = resolveRoomPlayerWaitingForFirstFrame(
+      hasPlayback: data.hasPlayback,
+      embedPlayer: data.embedPlayer,
+      hasRenderedVideo: data.hasRenderedVideo,
+      playbackStatus: data.playbackStatus,
     );
 
     final orientation = MediaQuery.orientationOf(context);
-    final useAspectRatio = !data.fullscreen && orientation == Orientation.portrait;
+    final useAspectRatio =
+        !data.fullscreen && orientation == Orientation.portrait;
 
     final content = LayoutBuilder(
       builder: (context, constraints) {
@@ -278,6 +362,7 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
         return Stack(
           fit: StackFit.expand,
           children: [
+            // Single continuous poster base — never flash bare black first.
             DecoratedBox(
               decoration: const BoxDecoration(color: Colors.black),
               child: !showPosterBackdrop || data.posterUrl == null
@@ -289,28 +374,31 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
                       fallback: const SizedBox.shrink(),
                     ),
             ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0x66000000),
-                    Color(0x22000000),
-                    Color(0x88000000),
-                  ],
+            if (showPosterBackdrop)
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: NoliveRoomChrome.posterGradient,
+                  ),
                 ),
               ),
-            ),
             if (data.embedPlayer &&
                 data.hasPlayback &&
                 !data.suspendEmbeddedPlayer)
               Positioned.fill(
-                child: data.supportsEmbeddedView
-                    ? buildEmbeddedPlayerView(
-                        data.fullscreen || orientation == Orientation.landscape
-                            ? null
-                            : 16 / 9)
+                // Keep the surface attached for MediaCodec warmup, but hide
+                // it until the first real frame so users only see poster→video.
+                child: Opacity(
+                  opacity: data.hasRenderedVideo ? 1 : 0,
+                  child: data.supportsEmbeddedView
+                      ? buildEmbeddedPlayerView(
+                          data.fullscreen ||
+                                  orientation == Orientation.landscape
+                              ? null
+                              : 16 / 9,
+                        )
                       : LayoutBuilder(
                           builder: (context, constraints) {
                             final compact = constraints.maxHeight < 140;
@@ -320,10 +408,12 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
                                 child: compact
                                     ? DecoratedBox(
                                         decoration: BoxDecoration(
-                                          color: Colors.black
-                                              .withValues(alpha: 0.42),
-                                          borderRadius:
-                                              BorderRadius.circular(18),
+                                          color: Colors.black.withValues(
+                                            alpha: 0.42,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
                                         ),
                                         child: Padding(
                                           padding: const EdgeInsets.symmetric(
@@ -335,8 +425,9 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
                                             children: [
                                               Icon(
                                                 Icons.ondemand_video_rounded,
-                                                color: Colors.white
-                                                    .withValues(alpha: 0.8),
+                                                color: Colors.white.withValues(
+                                                  alpha: 0.8,
+                                                ),
                                                 size: 24,
                                               ),
                                               const SizedBox(width: 8),
@@ -366,8 +457,9 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
                                         children: [
                                           Icon(
                                             Icons.ondemand_video_rounded,
-                                            color: Colors.white
-                                                .withValues(alpha: 0.8),
+                                            color: Colors.white.withValues(
+                                              alpha: 0.8,
+                                            ),
                                             size: 44,
                                           ),
                                           const SizedBox(height: 12),
@@ -399,144 +491,288 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
                             );
                           },
                         ),
-                )
-              else if (!data.hasPlayback)
-                Center(
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 300),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.62),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.lock_clock_outlined,
-                          color: Colors.white,
-                          size: 30,
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          data.statusPresentation?.label ?? '当前暂不可播放',
-                          textAlign: TextAlign.center,
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          data.unavailableReason,
-                          textAlign: TextAlign.center,
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.white.withValues(alpha: 0.88),
-                                    height: 1.35,
-                                  ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              else
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: const Text(
-                      '全屏中 · 轻触返回房间页',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
                 ),
-
-              if (data.fullscreen &&
-                  data.showDanmakuOverlay &&
-                  danmakuOverlay != null)
-                Positioned.fill(
-                  child: IgnorePointer(child: danmakuOverlay!),
-                ),
-              if (!data.fullscreen)
-                Positioned.fill(
-                  child: GestureDetector(
-                    key: const Key('room-inline-player-tap-target'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onToggleInlineChrome,
-                    onDoubleTap: data.hasPlayback ? onEnterFullscreen : null,
-                    onVerticalDragStart: orientation == Orientation.landscape ? onVerticalDragStart : null,
-                    onVerticalDragUpdate: orientation == Orientation.landscape ? onVerticalDragUpdate : null,
-                    onVerticalDragEnd: orientation == Orientation.landscape ? onVerticalDragEnd : null,
-                    child: const SizedBox.expand(),
+              )
+            else if (!data.hasPlayback)
+              Center(
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 300),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
                   ),
-                ),
-              if (!data.fullscreen && gestureTipText != null && gestureTipText!.isNotEmpty)
-                Center(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.72),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 12,
+                  decoration: NoliveRoomChrome.panelDecoration(
+                    context: context,
+                    alpha: 0.62,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.lock_clock_outlined,
+                        color: NoliveRoomChrome.onVideo,
+                        size: 30,
                       ),
-                      child: Text(
-                        gestureTipText!,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
+                      const SizedBox(height: 10),
+                      Text(
+                        data.statusPresentation?.label ?? '当前暂不可播放',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: NoliveRoomChrome.onVideo,
+                              fontWeight: FontWeight.w700,
                             ),
                       ),
+                      const SizedBox(height: 8),
+                      Text(
+                        data.unavailableReason,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: NoliveRoomChrome.onVideo.withValues(alpha: 0.88),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: NoliveRoomChrome.panelDecoration(
+                    context: context,
+                    alpha: 0.55,
+                  ),
+                  child: const Text(
+                    '全屏中 · 轻触返回房间页',
+                    style: TextStyle(color: NoliveRoomChrome.onVideo),
+                  ),
+                ),
+              ),
+
+            // Single spinner on the continuous poster — no second black phase.
+            if (waitingForFirstFrame)
+              const Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(
+                    child: SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white70,
+                      ),
                     ),
                   ),
                 ),
-              if (data.fullscreen &&
-                  data.showPlayerSuperChat &&
-                  playerSuperChatOverlay != null)
-                Positioned(
-                  left: data.fullscreen ? 18 : 12,
-                  bottom: data.fullscreen
-                      ? 18
-                      : (data.showInlinePlayerChrome ? 62 : 12),
-                  child: IgnorePointer(
-                    child: playerSuperChatOverlay!,
+              ),
+
+            if (data.fullscreen &&
+                data.showDanmakuOverlay &&
+                danmakuOverlay != null)
+              Positioned.fill(child: IgnorePointer(child: danmakuOverlay!)),
+            if (!data.fullscreen)
+              Positioned.fill(
+                child: GestureDetector(
+                  key: const Key('room-inline-player-tap-target'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onToggleInlineChrome,
+                  onDoubleTap: data.hasPlayback ? onEnterFullscreen : null,
+                  onVerticalDragStart: orientation == Orientation.landscape
+                      ? onVerticalDragStart
+                      : null,
+                  onVerticalDragUpdate: orientation == Orientation.landscape
+                      ? onVerticalDragUpdate
+                      : null,
+                  onVerticalDragEnd: orientation == Orientation.landscape
+                      ? onVerticalDragEnd
+                      : null,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            if (!data.fullscreen &&
+                gestureTipText != null &&
+                gestureTipText!.isNotEmpty)
+              Center(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                    child: Text(
+                      gestureTipText!,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ),
-              if (!data.fullscreen)
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 200),
-                  left: 0,
-                  right: 0,
-                  bottom: data.showInlinePlayerChrome ? 0 : -52,
-                  child: IgnorePointer(
-                    key: const Key('room-inline-controls-ignore-pointer'),
-                    ignoring: !data.showInlinePlayerChrome,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Colors.black87],
-                        ),
+              ),
+            if (data.fullscreen &&
+                data.showPlayerSuperChat &&
+                playerSuperChatOverlay != null)
+              Positioned(
+                left: data.fullscreen ? 18 : 12,
+                bottom: data.fullscreen
+                    ? 18
+                    : (data.showInlinePlayerChrome ? 62 : 12),
+                child: IgnorePointer(child: playerSuperChatOverlay!),
+              ),
+            if (!data.fullscreen)
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 200),
+                left: 0,
+                right: 0,
+                bottom: data.showInlinePlayerChrome ? 0 : -52,
+                child: IgnorePointer(
+                  key: const Key('room-inline-controls-ignore-pointer'),
+                  ignoring: !data.showInlinePlayerChrome,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black87],
                       ),
-                      child: Row(
-                        children: [
+                    ),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          key: const Key('room-inline-refresh-button'),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 32,
+                            height: 32,
+                          ),
+                          iconSize: 18,
+                          onPressed: data.playerBindingInFlight
+                              ? null
+                              : () {
+                                  onRefresh?.call();
+                                  onKeepInlinePlayerChromeVisible?.call();
+                                },
+                          color: Colors.white,
+                          icon: const Icon(Icons.refresh),
+                        ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 32,
+                            height: 32,
+                          ),
+                          iconSize: 18,
+                          onPressed: data.hasPlayback
+                              ? () {
+                                  onToggleDanmakuOverlay?.call();
+                                  onKeepInlinePlayerChromeVisible?.call();
+                                }
+                              : null,
+                          color: Colors.white,
+                          icon: Icon(
+                            data.showDanmakuOverlay
+                                ? Icons.subtitles_outlined
+                                : Icons.subtitles_off_outlined,
+                          ),
+                        ),
+                        if (data.hasPlayback && data.showDanmakuOverlay)
                           IconButton(
-                            key: const Key('room-inline-refresh-button'),
+                            key: const Key(
+                              'room-inline-danmaku-settings-button',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
+                            iconSize: 18,
+                            onPressed: () {
+                              onOpenDanmakuSettings?.call();
+                              onKeepInlinePlayerChromeVisible?.call();
+                            },
+                            color: Colors.white,
+                            icon: const Icon(Icons.tune_rounded),
+                          ),
+                        if (data.liveDurationLabel.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Text(
+                              data.liveDurationLabel,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Colors.white,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                            ),
+                          ),
+                        const Spacer(),
+                        if (data.hasPlayback &&
+                            onShowQuality != null &&
+                            (data.inlineQualityLabel?.isNotEmpty ?? false))
+                          TextButton(
+                            onPressed: () {
+                              onShowQuality?.call();
+                              onKeepInlinePlayerChromeVisible?.call();
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              minimumSize: const Size(0, 32),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              data.inlineQualityLabel!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        if (data.hasPlayback &&
+                            onShowLine != null &&
+                            (data.inlineLineLabel?.isNotEmpty ?? false))
+                          TextButton(
+                            onPressed: () {
+                              onShowLine?.call();
+                              onKeepInlinePlayerChromeVisible?.call();
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              minimumSize: const Size(0, 32),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              data.inlineLineLabel!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        if (data.hasPlayback)
+                          IconButton(
+                            key: const Key('room-inline-fullscreen-button'),
                             visualDensity: VisualDensity.compact,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints.tightFor(
@@ -546,223 +782,88 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
                             iconSize: 18,
                             onPressed: data.playerBindingInFlight
                                 ? null
-                                : () {
-                                    onRefresh?.call();
-                                    onKeepInlinePlayerChromeVisible?.call();
-                                  },
+                                : onEnterFullscreen,
                             color: Colors.white,
-                            icon: const Icon(Icons.refresh),
+                            icon: const Icon(Icons.fullscreen),
                           ),
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 32,
-                              height: 32,
-                            ),
-                            iconSize: 18,
-                            onPressed: data.hasPlayback
-                                ? () {
-                                    onToggleDanmakuOverlay?.call();
-                                    onKeepInlinePlayerChromeVisible?.call();
-                                  }
-                                : null,
-                            color: Colors.white,
-                            icon: Icon(
-                              data.showDanmakuOverlay
-                                  ? Icons.subtitles_outlined
-                                  : Icons.subtitles_off_outlined,
-                            ),
-                          ),
-                          if (data.hasPlayback && data.showDanmakuOverlay)
-                            IconButton(
-                              key: const Key(
-                                'room-inline-danmaku-settings-button',
-                              ),
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 32,
-                                height: 32,
-                              ),
-                              iconSize: 18,
-                              onPressed: () {
-                                onOpenDanmakuSettings?.call();
-                                onKeepInlinePlayerChromeVisible?.call();
-                              },
-                              color: Colors.white,
-                              icon: const Icon(Icons.tune_rounded),
-                            ),
-                          if (data.liveDurationLabel.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 4),
-                              child: Text(
-                                data.liveDurationLabel,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: Colors.white,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                              ),
-                            ),
-                          const Spacer(),
-                          if (data.hasPlayback &&
-                              onShowQuality != null &&
-                              (data.inlineQualityLabel?.isNotEmpty ?? false))
-                            TextButton(
-                              onPressed: () {
-                                onShowQuality?.call();
-                                onKeepInlinePlayerChromeVisible?.call();
-                              },
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
-                                minimumSize: const Size(0, 32),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: Text(
-                                data.inlineQualityLabel!,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          if (data.hasPlayback &&
-                              onShowLine != null &&
-                              (data.inlineLineLabel?.isNotEmpty ?? false))
-                            TextButton(
-                              onPressed: () {
-                                onShowLine?.call();
-                                onKeepInlinePlayerChromeVisible?.call();
-                              },
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
-                                minimumSize: const Size(0, 32),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: Text(
-                                data.inlineLineLabel!,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          if (data.hasPlayback)
-                            IconButton(
-                              key: const Key('room-inline-fullscreen-button'),
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 32,
-                                height: 32,
-                              ),
-                              iconSize: 18,
-                              onPressed: data.playerBindingInFlight
-                                  ? null
-                                  : onEnterFullscreen,
-                              color: Colors.white,
-                              icon: const Icon(Icons.fullscreen),
-                            ),
-                        ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
-              if (data.hasPlayback && data.playbackStatus == PlaybackStatus.error)
-                Positioned.fill(
-                  child: Center(
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 300),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.78),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: Colors.white24,
-                          width: 1,
+              ),
+            if (data.hasPlayback && data.playbackStatus == PlaybackStatus.error)
+              Positioned.fill(
+                child: Center(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 300),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.78),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Colors.white24, width: 1),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          color: Colors.redAccent,
+                          size: 36,
                         ),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.error_outline_rounded,
-                            color: Colors.redAccent,
-                            size: 36,
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            '播放失败',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            resolveFriendlyPlayerErrorMessage(
-                              data.playbackError,
-                            ),
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.88),
-                                  height: 1.35,
-                                ),
-                          ),
-                          if (onRefresh != null) ...[
-                            const SizedBox(height: 12),
-                            TextButton.icon(
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                backgroundColor: Colors.white12,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
+                        const SizedBox(height: 10),
+                        Text(
+                          '播放失败',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
                               ),
-                              icon: const Icon(Icons.refresh_rounded, size: 18),
-                              label: const Text('重试'),
-                              onPressed: onRefresh,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          resolveFriendlyPlayerErrorMessage(data.playbackError),
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.88),
+                                height: 1.35,
+                              ),
+                        ),
+                        if (onRefresh != null) ...[
+                          const SizedBox(height: 12),
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              backgroundColor: Colors.white12,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
                             ),
-                          ],
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: const Text('重试'),
+                            onPressed: onRefresh,
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
-            ],
-          );
-        },
-      );
+              ),
+          ],
+        );
+      },
+    );
 
     if (useAspectRatio) {
-      return AspectRatio(
-        aspectRatio: 16 / 9,
-        child: content,
-      );
+      return AspectRatio(aspectRatio: 16 / 9, child: content);
     }
     return content;
   }

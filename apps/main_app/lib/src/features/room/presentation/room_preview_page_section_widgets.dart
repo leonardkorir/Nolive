@@ -62,13 +62,14 @@ RoomStatusPresentation? resolveRoomChaturbateStatusPresentation(
   LiveRoomDetail room, {
   bool hasPdkeyHealthAlert = false,
 }) {
-  if (room.providerId == ProviderId.stripchat.value && hasPdkeyHealthAlert) {
+  if (room.providerId == ProviderId.stripchat && hasPdkeyHealthAlert) {
     return const RoomStatusPresentation(
       label: '解密密钥耗尽',
-      description: 'Stripchat 播放解密失败：pdkey 可能已失效或耗尽。请在"设置 -> 账户设置"中更新 Mouflon 密钥。',
+      description:
+          'Stripchat 播放解密失败：pdkey 可能已失效或耗尽。请在"设置 -> 账户设置"中更新 Mouflon 密钥。',
     );
   }
-  if (room.providerId != ProviderId.chaturbate.value) {
+  if (room.providerId != ProviderId.chaturbate) {
     return null;
   }
   final rawStatus = room.metadata?['roomStatus']?.toString().trim() ?? '';
@@ -137,10 +138,10 @@ class RoomPanelTab extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: selected ? colorScheme.primary : colorScheme.onSurface,
-                fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-                fontSize: 12.5,
-              ),
+            color: selected ? colorScheme.primary : colorScheme.onSurface,
+            fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+            fontSize: 12.5,
+          ),
         ),
       ),
     );
@@ -221,8 +222,9 @@ class RoomChatMessageTile extends StatelessWidget {
       child: bubbleStyle
           ? DecoratedBox(
               decoration: BoxDecoration(
-                color:
-                    colorScheme.surfaceContainerHighest.withValues(alpha: 0.72),
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.72,
+                ),
                 borderRadius: const BorderRadius.only(
                   topRight: Radius.circular(12),
                   bottomLeft: Radius.circular(12),
@@ -279,8 +281,8 @@ class DanmakuFeedTile extends StatelessWidget {
                   normalizedSubtitle,
                   style: applyZhTextStyleOrNull(
                     Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                      color: colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],

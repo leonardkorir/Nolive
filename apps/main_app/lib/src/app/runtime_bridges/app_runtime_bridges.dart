@@ -1,8 +1,7 @@
-import 'package:nolive_app/src/app/runtime_bridges/chaturbate/chaturbate_llhls_proxy.dart';
+import 'package:live_hls_proxy/live_hls_proxy.dart';
+import 'package:live_providers/live_providers.dart';
 import 'package:nolive_app/src/app/runtime_bridges/provider_room_detail_override.dart';
-import 'package:nolive_app/src/app/runtime_bridges/stripchat/stripchat_llhls_proxy.dart';
-import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_ad_guard_proxy.dart';
-import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_web_playback_bridge.dart';
+import 'package:nolive_app/src/app/runtime_bridges/youtube_nsig_webview_solver.dart';
 
 class AppRuntimeBridges {
   const AppRuntimeBridges({
@@ -11,7 +10,7 @@ class AppRuntimeBridges {
     required this.roomDetailOverride,
     required this.twitchWebPlaybackBridge,
     required this.twitchAdGuardProxy,
-    required this.requireChaturbateCookiePreflight,
+    required this.youtubeNSigSolver,
   });
 
   final ChaturbateLlHlsProxy? chaturbateLlHlsProxy;
@@ -19,18 +18,35 @@ class AppRuntimeBridges {
   final ProviderRoomDetailOverride? roomDetailOverride;
   final TwitchWebPlaybackBridge? twitchWebPlaybackBridge;
   final TwitchAdGuardProxy? twitchAdGuardProxy;
-  final bool requireChaturbateCookiePreflight;
+  final YouTubeNSigSolver? youtubeNSigSolver;
 
   Future<void> dispose() async {
     final futures = <Future<void>>[
       if (twitchWebPlaybackBridge != null)
-        twitchWebPlaybackBridge!.dispose().timeout(const Duration(seconds: 3)).catchError((_) {}),
+        twitchWebPlaybackBridge!
+            .dispose()
+            .timeout(const Duration(seconds: 3))
+            .catchError((_) {}),
       if (twitchAdGuardProxy != null)
-        twitchAdGuardProxy!.dispose().timeout(const Duration(seconds: 3)).catchError((_) {}),
+        twitchAdGuardProxy!
+            .dispose()
+            .timeout(const Duration(seconds: 3))
+            .catchError((_) {}),
+      if (youtubeNSigSolver is YouTubeWebViewNSigSolver)
+        (youtubeNSigSolver as YouTubeWebViewNSigSolver)
+            .dispose()
+            .timeout(const Duration(seconds: 3))
+            .catchError((_) {}),
       if (stripchatLlHlsProxy != null)
-        stripchatLlHlsProxy!.dispose().timeout(const Duration(seconds: 3)).catchError((_) {}),
+        stripchatLlHlsProxy!
+            .dispose()
+            .timeout(const Duration(seconds: 3))
+            .catchError((_) {}),
       if (chaturbateLlHlsProxy != null)
-        chaturbateLlHlsProxy!.dispose().timeout(const Duration(seconds: 3)).catchError((_) {}),
+        chaturbateLlHlsProxy!
+            .dispose()
+            .timeout(const Duration(seconds: 3))
+            .catchError((_) {}),
     ];
     if (futures.isNotEmpty) {
       await Future.wait(futures);

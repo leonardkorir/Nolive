@@ -24,10 +24,11 @@ void main() {
       }),
     );
     expect(
-        registry
-            .findDescriptor(ProviderId.bilibili)
-            ?.supports(ProviderCapability.playUrls),
-        isTrue);
+      registry
+          .findDescriptor(ProviderId.bilibili)
+          ?.supports(ProviderCapability.playUrls),
+      isTrue,
+    );
     expect(
       registry
           .findDescriptor(ProviderId.chaturbate)
@@ -225,88 +226,92 @@ void main() {
     expect(douyin.disposeCalls, 1);
   });
 
-  test('register replacing an existing descriptor disposes cached provider',
-      () {
-    final original = _DisposableTestProvider(BilibiliProvider.kDescriptor);
-    final replacement = _DisposableTestProvider(BilibiliProvider.kDescriptor);
-    final registry = ProviderRegistry()
-      ..register(
+  test(
+    'register replacing an existing descriptor disposes cached provider',
+    () {
+      final original = _DisposableTestProvider(BilibiliProvider.kDescriptor);
+      final replacement = _DisposableTestProvider(BilibiliProvider.kDescriptor);
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: BilibiliProvider.kDescriptor,
+            builder: () => original,
+          ),
+        );
+
+      registry.create(ProviderId.bilibili);
+      registry.register(
         ProviderRegistration(
           descriptor: BilibiliProvider.kDescriptor,
-          builder: () => original,
+          builder: () => replacement,
         ),
       );
 
-    registry.create(ProviderId.bilibili);
-    registry.register(
-      ProviderRegistration(
-        descriptor: BilibiliProvider.kDescriptor,
-        builder: () => replacement,
-      ),
-    );
+      expect(original.disposeCalls, 1);
+      expect(
+        identical(registry.create(ProviderId.bilibili), replacement),
+        isTrue,
+      );
+    },
+  );
 
-    expect(original.disposeCalls, 1);
-    expect(
-      identical(registry.create(ProviderId.bilibili), replacement),
-      isTrue,
-    );
-  });
-
-  test('invalidating a youtube provider does not close active danmaku client',
-      () async {
-    final createdClients = <_ClosableYouTubeApiClient>[];
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: YouTubeProvider.kDescriptor,
-          builder: () => YouTubeProvider.live(
-            apiClientBuilder: () {
-              final client = _ClosableYouTubeApiClient();
-              createdClients.add(client);
-              return client;
-            },
-            apiClientDisposer: (apiClient) {
-              (apiClient as _ClosableYouTubeApiClient).close();
-            },
+  test(
+    'invalidating a youtube provider does not close active danmaku client',
+    () async {
+      final createdClients = <_ClosableYouTubeApiClient>[];
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: YouTubeProvider.kDescriptor,
+            builder: () => YouTubeProvider.live(
+              apiClientBuilder: () {
+                final client = _ClosableYouTubeApiClient();
+                createdClients.add(client);
+                return client;
+              },
+              apiClientDisposer: (apiClient) {
+                (apiClient as _ClosableYouTubeApiClient).close();
+              },
+            ),
           ),
+        );
+
+      final provider = registry.create(ProviderId.youtube) as YouTubeProvider;
+      final detail = LiveRoomDetail(
+        providerId: ProviderId.youtube,
+        roomId: '@demo/live',
+        title: 'test',
+        streamerName: 'tester',
+        danmakuToken: const YouTubeDanmakuToken(
+          apiKey: 'AIzaTest',
+          clientVersion: YouTubeApiClient.defaultWebClientVersion,
+          continuation: 'test-continuation',
+          liveChatPageUrl: 'https://www.youtube.com/live_chat?continuation=1',
+          visitorData: 'visitor-data',
         ),
       );
 
-    final provider = registry.create(ProviderId.youtube) as YouTubeProvider;
-    final detail = LiveRoomDetail(
-      providerId: ProviderId.youtube.value,
-      roomId: '@demo/live',
-      title: 'test',
-      streamerName: 'tester',
-      danmakuToken: const YouTubeDanmakuToken(
-        apiKey: 'AIzaTest',
-        clientVersion: YouTubeApiClient.defaultWebClientVersion,
-        continuation: 'test-continuation',
-        liveChatPageUrl: 'https://www.youtube.com/live_chat?continuation=1',
-        visitorData: 'visitor-data',
-      ),
-    );
+      final session = await provider.createDanmakuSession(detail);
+      expect(createdClients, hasLength(2));
 
-    final session = await provider.createDanmakuSession(detail);
-    expect(createdClients, hasLength(2));
+      registry.clearCache();
+      expect(createdClients.where((client) => client.closed), hasLength(1));
 
-    registry.clearCache();
-    expect(createdClients.where((client) => client.closed), hasLength(1));
+      await session.connect();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await session.disconnect();
 
-    await session.connect();
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    await session.disconnect();
+      final sessionClient = createdClients.singleWhere(
+        (client) => client.postLiveChatCalls > 0,
+      );
+      final providerClient = createdClients.singleWhere(
+        (client) => !identical(client, sessionClient),
+      );
 
-    final sessionClient = createdClients.singleWhere(
-      (client) => client.postLiveChatCalls > 0,
-    );
-    final providerClient = createdClients.singleWhere(
-      (client) => !identical(client, sessionClient),
-    );
-
-    expect(sessionClient.closeCalls, 1);
-    expect(providerClient.closeCalls, 1);
-  });
+      expect(sessionClient.closeCalls, 1);
+      expect(providerClient.closeCalls, 1);
+    },
+  );
 }
 
 class _DisposableTestProvider extends LiveProvider {
@@ -388,7 +393,8 @@ class _ClosableYouTubeApiClient implements YouTubeApiClient {
     Map<String, dynamic> innertubeContext = const {},
     String rolloutToken = '',
     String poToken = '',
-    YouTubePlayerClientProfile clientProfile = YouTubePlayerClientProfile.web,
+    YouTubePlayerClientProfile clientProfile =
+        YouTubePlayerClientProfile.streamlinkAndroid,
   }) {
     throw UnimplementedError();
   }

@@ -4,8 +4,8 @@ class DanmakuActivityWatchdog {
   DanmakuActivityWatchdog({
     required Duration timeout,
     required FutureOr<void> Function() onTimeout,
-  })  : _timeout = timeout,
-        _onTimeout = onTimeout;
+  }) : _timeout = timeout,
+       _onTimeout = onTimeout;
 
   final Duration _timeout;
   final FutureOr<void> Function() _onTimeout;

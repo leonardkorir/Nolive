@@ -47,8 +47,7 @@ void main() {
       expect(categories[3].id, 'country-middle_east');
       expect(categories[3].children[0].id, 'tagLanguageTurkish');
 
-      final ethnicity =
-          categories.firstWhere((c) => c.id == 'ethnicity');
+      final ethnicity = categories.firstWhere((c) => c.id == 'ethnicity');
       expect(ethnicity.name, '种族');
       expect(ethnicity.children[0].name, '亚洲人');
     });
@@ -228,54 +227,56 @@ void main() {
       expect(response.items[1].roomId, 'bob');
     });
 
-    test('merge order follows username->topic->tipMenu->activity->interest',
-        () {
-      final payload = {
-        'groups': {
-          'interest': {
-            'models': [
-              {
-                'username': 'interest_user',
-                'id': 1,
-                'status': 'public',
-                'isLive': true,
-                'streamName': '001',
-              },
-            ],
+    test(
+      'merge order follows username->topic->tipMenu->activity->interest',
+      () {
+        final payload = {
+          'groups': {
+            'interest': {
+              'models': [
+                {
+                  'username': 'interest_user',
+                  'id': 1,
+                  'status': 'public',
+                  'isLive': true,
+                  'streamName': '001',
+                },
+              ],
+            },
+            'username': {
+              'models': [
+                {
+                  'username': 'username_user',
+                  'id': 2,
+                  'status': 'public',
+                  'isLive': true,
+                  'streamName': '002',
+                },
+              ],
+            },
+            'tipMenu': {'models': []},
+            'activity': {'models': []},
+            'topic': {'models': []},
           },
-          'username': {
-            'models': [
-              {
-                'username': 'username_user',
-                'id': 2,
-                'status': 'public',
-                'isLive': true,
-                'streamName': '002',
-              },
-            ],
-          },
-          'tipMenu': {'models': []},
-          'activity': {'models': []},
-          'topic': {'models': []},
-        },
-      };
+        };
 
-      final response = StripchatMapper.mapSearchResponse(
-        payload,
-        page: 1,
-        limit: 24,
-      );
+        final response = StripchatMapper.mapSearchResponse(
+          payload,
+          page: 1,
+          limit: 24,
+        );
 
-      expect(response.items, hasLength(2));
-      expect(response.items[0].roomId, 'username_user');
-      expect(response.items[1].roomId, 'interest_user');
-    });
+        expect(response.items, hasLength(2));
+        expect(response.items[0].roomId, 'username_user');
+        expect(response.items[1].roomId, 'interest_user');
+      },
+    );
   });
 
   group('mapPlayQualities', () {
     test('always returns auto as default', () {
       final detail = LiveRoomDetail(
-        providerId: ProviderId.stripchat.value,
+        providerId: ProviderId.stripchat,
         roomId: 'test',
         title: 'Test',
         streamerName: 'tester',
@@ -290,7 +291,7 @@ void main() {
 
     test('generates qualities from presets in metadata', () {
       final detail = LiveRoomDetail(
-        providerId: ProviderId.stripchat.value,
+        providerId: ProviderId.stripchat,
         roomId: 'test',
         title: 'Test',
         streamerName: 'tester',
@@ -309,7 +310,7 @@ void main() {
 
     test('keeps source above discovered fixed qualities', () {
       final detail = LiveRoomDetail(
-        providerId: ProviderId.stripchat.value,
+        providerId: ProviderId.stripchat,
         roomId: 'test',
         title: 'Test',
         streamerName: 'tester',
@@ -320,17 +321,19 @@ void main() {
         discoveredQualityIds: const ['480p', 'source', '240p'],
       );
 
-      expect(
-        qualities.map((quality) => quality.id),
-        ['auto', 'source', '480p', '240p'],
-      );
+      expect(qualities.map((quality) => quality.id), [
+        'auto',
+        'source',
+        '480p',
+        '240p',
+      ]);
       expect(qualities[1].label, 'Source');
       expect(qualities[1].sortOrder, greaterThan(qualities[2].sortOrder));
     });
 
     test('filters blurred and pixelate presets', () {
       final detail = LiveRoomDetail(
-        providerId: ProviderId.stripchat.value,
+        providerId: ProviderId.stripchat,
         roomId: 'test',
         title: 'Test',
         streamerName: 'tester',
@@ -351,7 +354,7 @@ void main() {
   group('mapPlayUrls', () {
     test('generates HLS URL from streamName and cdnDomain', () async {
       final detail = LiveRoomDetail(
-        providerId: ProviderId.stripchat.value,
+        providerId: ProviderId.stripchat,
         roomId: 'test',
         title: 'Test',
         streamerName: 'tester',
@@ -378,62 +381,67 @@ void main() {
       expect(urls[0].headers['accept-language'], contains('zh-CN'));
       expect(urls[0].headers['accept'], '*/*');
       expect(urls[0].metadata?['stripchatCdnDomains'], ['doppiocdn.net']);
-      expect(urls[0].metadata?['stripchatRoomUrl'],
-          'https://zh.stripchat.com/tester');
+      expect(
+        urls[0].metadata?['stripchatRoomUrl'],
+        'https://zh.stripchat.com/tester',
+      );
     });
 
     test(
-        'keeps auto master request even for fixed-quality selection and only adds preferred variant hint',
-        () async {
-      final detail = LiveRoomDetail(
-        providerId: ProviderId.stripchat.value,
-        roomId: 'test',
-        title: 'Test',
-        streamerName: 'tester',
-        metadata: const {
-          'streamName': '12345',
-          'cdnDomains': ['doppiocdn.net'],
-        },
-      );
-      final quality = LivePlayQuality(id: '1080p', label: '1080P');
+      'keeps auto master request even for fixed-quality selection and only adds preferred variant hint',
+      () async {
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.stripchat,
+          roomId: 'test',
+          title: 'Test',
+          streamerName: 'tester',
+          metadata: const {
+            'streamName': '12345',
+            'cdnDomains': ['doppiocdn.net'],
+          },
+        );
+        final quality = LivePlayQuality(id: '1080p', label: '1080P');
 
-      final urls = await StripchatMapper.mapPlayUrls(
-        detail: detail,
-        quality: quality,
-      );
+        final urls = await StripchatMapper.mapPlayUrls(
+          detail: detail,
+          quality: quality,
+        );
 
-      expect(urls, hasLength(1));
-      expect(urls[0].url, contains('/12345/master/12345_auto.m3u8'));
-      expect(urls[0].metadata?['preferredVariantId'], '1080p');
-    });
+        expect(urls, hasLength(1));
+        expect(urls[0].url, contains('/12345/master/12345_auto.m3u8'));
+        expect(urls[0].metadata?['preferredVariantId'], '1080p');
+      },
+    );
 
-    test('generates source request from auto master with source hint',
-        () async {
-      final detail = LiveRoomDetail(
-        providerId: ProviderId.stripchat.value,
-        roomId: 'test',
-        title: 'Test',
-        streamerName: 'tester',
-        metadata: const {
-          'streamName': '12345',
-          'cdnDomains': ['doppiocdn.net'],
-        },
-      );
-      final quality = LivePlayQuality(id: 'source', label: 'Source');
+    test(
+      'generates source request from auto master with source hint',
+      () async {
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.stripchat,
+          roomId: 'test',
+          title: 'Test',
+          streamerName: 'tester',
+          metadata: const {
+            'streamName': '12345',
+            'cdnDomains': ['doppiocdn.net'],
+          },
+        );
+        final quality = LivePlayQuality(id: 'source', label: 'Source');
 
-      final urls = await StripchatMapper.mapPlayUrls(
-        detail: detail,
-        quality: quality,
-      );
+        final urls = await StripchatMapper.mapPlayUrls(
+          detail: detail,
+          quality: quality,
+        );
 
-      expect(urls, hasLength(1));
-      expect(urls[0].url, contains('/12345/master/12345_auto.m3u8'));
-      expect(urls[0].metadata?['preferredVariantId'], 'source');
-    });
+        expect(urls, hasLength(1));
+        expect(urls[0].url, contains('/12345/master/12345_auto.m3u8'));
+        expect(urls[0].metadata?['preferredVariantId'], 'source');
+      },
+    );
 
     test('returns empty list when streamName is missing', () async {
       final detail = LiveRoomDetail(
-        providerId: ProviderId.stripchat.value,
+        providerId: ProviderId.stripchat,
         roomId: 'test',
         title: 'Test',
         streamerName: 'tester',
@@ -449,26 +457,27 @@ void main() {
     });
 
     test(
-        'returns empty list when room detail already marks playback unavailable',
-        () async {
-      final detail = LiveRoomDetail(
-        providerId: ProviderId.stripchat.value,
-        roomId: 'test',
-        title: 'Test',
-        streamerName: 'tester',
-        metadata: const {
-          'streamName': '12345',
-          'playbackUnavailableReason': 'blocked',
-        },
-      );
+      'returns empty list when room detail already marks playback unavailable',
+      () async {
+        final detail = LiveRoomDetail(
+          providerId: ProviderId.stripchat,
+          roomId: 'test',
+          title: 'Test',
+          streamerName: 'tester',
+          metadata: const {
+            'streamName': '12345',
+            'playbackUnavailableReason': 'blocked',
+          },
+        );
 
-      final urls = await StripchatMapper.mapPlayUrls(
-        detail: detail,
-        quality: LivePlayQuality(id: 'auto', label: 'Auto'),
-      );
+        final urls = await StripchatMapper.mapPlayUrls(
+          detail: detail,
+          quality: LivePlayQuality(id: 'auto', label: 'Auto'),
+        );
 
-      expect(urls, isEmpty);
-    });
+        expect(urls, isEmpty);
+      },
+    );
   });
 
   group('mapRoomDetail', () {
@@ -519,7 +528,7 @@ void main() {
         },
       };
 
-      final detail = await StripchatMapper.mapRoomDetail(
+      final detail = StripchatMapper.mapRoomDetail(
         roomId: 'test_user',
         camPayload: camPayload,
         broadcastPayload: broadcastPayload,
@@ -558,7 +567,9 @@ void main() {
       expect(detail.metadata?['presets'], ['720p', '480p']);
       expect(detail.metadata?['requiresLogin'], isFalse);
       expect(
-          detail.metadata?['requestCookie'], contains('stripchat_com_guestId'));
+        detail.metadata?['requestCookie'],
+        contains('stripchat_com_guestId'),
+      );
     });
 
     test('calculates viewerCount from membersPayload', () {
@@ -596,38 +607,11 @@ void main() {
       expect(detail.viewerCount, 665);
     });
 
-    test('uses unavailable danmaku token when websocket config is missing',
-        () async {
-      final camPayload = {
-        'cam': {'streamName': '12345'},
-        'user': {
-          'user': {
-            'id': 12345,
-            'username': 'test_user',
-            'status': 'public',
-            'isLive': true,
-          },
-        },
-      };
-
-      final detail = await StripchatMapper.mapRoomDetail(
-        roomId: 'test_user',
-        camPayload: camPayload,
-      );
-
-      expect(detail.danmakuToken, isA<UnavailableDanmakuToken>());
-    });
-
-    test('keeps groupShow rooms playable when stream name and websocket exist',
-        () async {
-      final detail = await StripchatMapper.mapRoomDetail(
-        roomId: 'test_user',
-        camPayload: {
-          'cam': {
-            'streamName': '12345',
-            'isCamAvailable': true,
-            'show': {'mode': 'groupShow'},
-          },
+    test(
+      'uses unavailable danmaku token when websocket config is missing',
+      () async {
+        final camPayload = {
+          'cam': {'streamName': '12345'},
           'user': {
             'user': {
               'id': 12345,
@@ -636,73 +620,103 @@ void main() {
               'isLive': true,
             },
           },
-        },
-        initialDynamicPayload: const {
-          'websocket': {
-            'url': 'wss://ws.stripchat.com/connection/websocket',
-            'token': 'mock-jwt',
-          },
-        },
-      );
+        };
 
-      expect(detail.metadata?['playbackUnavailableReason'], isNull);
-      expect(detail.danmakuToken, isA<StripchatDanmakuToken>());
-    });
+        final detail = StripchatMapper.mapRoomDetail(
+          roomId: 'test_user',
+          camPayload: camPayload,
+        );
 
-    test('does not block public broadcast because of stale virtualPrivate show',
-        () async {
-      final detail = await StripchatMapper.mapRoomDetail(
-        roomId: 'baeasian',
-        camPayload: {
-          'cam': {
-            'streamName': '',
-            'isCamAvailable': true,
-            'show': {
-              'mode': 'virtualPrivate',
-              'endedAt': '2026-03-26T06:53:34Z',
+        expect(detail.danmakuToken, isA<UnavailableDanmakuToken>());
+      },
+    );
+
+    test(
+      'keeps groupShow rooms playable when stream name and websocket exist',
+      () async {
+        final detail = StripchatMapper.mapRoomDetail(
+          roomId: 'test_user',
+          camPayload: {
+            'cam': {
+              'streamName': '12345',
+              'isCamAvailable': true,
+              'show': {'mode': 'groupShow'},
+            },
+            'user': {
+              'user': {
+                'id': 12345,
+                'username': 'test_user',
+                'status': 'public',
+                'isLive': true,
+              },
             },
           },
-          'user': {
+          initialDynamicPayload: const {
+            'websocket': {
+              'url': 'wss://ws.stripchat.com/connection/websocket',
+              'token': 'mock-jwt',
+            },
+          },
+        );
+
+        expect(detail.metadata?['playbackUnavailableReason'], isNull);
+        expect(detail.danmakuToken, isA<StripchatDanmakuToken>());
+      },
+    );
+
+    test(
+      'does not block public broadcast because of stale virtualPrivate show',
+      () async {
+        final detail = StripchatMapper.mapRoomDetail(
+          roomId: 'baeasian',
+          camPayload: {
+            'cam': {
+              'streamName': '',
+              'isCamAvailable': true,
+              'show': {
+                'mode': 'virtualPrivate',
+                'endedAt': '2026-03-26T06:53:34Z',
+              },
+            },
             'user': {
-              'id': 112319207,
-              'username': 'baeasian',
+              'user': {
+                'id': 112319207,
+                'username': 'baeasian',
+                'status': 'public',
+                'isLive': true,
+              },
+            },
+          },
+          broadcastPayload: const {
+            'item': {
               'status': 'public',
               'isLive': true,
+              'streamName': '112319207',
+              'settings': {
+                'presets': ['1080p60', '720p60'],
+              },
             },
           },
-        },
-        broadcastPayload: const {
-          'item': {
-            'status': 'public',
-            'isLive': true,
-            'streamName': '112319207',
-            'settings': {
-              'presets': ['1080p60', '720p60'],
+          initialDynamicPayload: const {
+            'websocket': {
+              'url': 'wss://websocket-sp-v6.stripchat.com/connection/websocket',
+              'token': 'mock-jwt',
             },
           },
-        },
-        initialDynamicPayload: const {
-          'websocket': {
-            'url': 'wss://websocket-sp-v6.stripchat.com/connection/websocket',
-            'token': 'mock-jwt',
-          },
-        },
-      );
+        );
 
-      expect(detail.metadata?['streamName'], '112319207');
-      expect(detail.metadata?['broadcastStatus'], 'public');
-      expect(detail.metadata?['playbackUnavailableReason'], isNull);
-      expect(detail.danmakuToken, isA<StripchatDanmakuToken>());
-    });
+        expect(detail.metadata?['streamName'], '112319207');
+        expect(detail.metadata?['broadcastStatus'], 'public');
+        expect(detail.metadata?['playbackUnavailableReason'], isNull);
+        expect(detail.danmakuToken, isA<StripchatDanmakuToken>());
+      },
+    );
 
     test('does not require cookie to create stripchat danmaku token', () async {
-      final detail = await StripchatMapper.mapRoomDetail(
+      final detail = StripchatMapper.mapRoomDetail(
         roomId: 'test_user',
         camPayload: {
-          'cam': {
-            'streamName': '12345',
-            'isCamAvailable': false,
-          },
+          'cam': {'streamName': '12345', 'isCamAvailable': false},
           'user': {
             'user': {
               'id': 12345,
@@ -726,13 +740,10 @@ void main() {
     });
 
     test('marks offline room with empty stream name as unavailable', () async {
-      final detail = await StripchatMapper.mapRoomDetail(
+      final detail = StripchatMapper.mapRoomDetail(
         roomId: 'offline_user',
         camPayload: {
-          'cam': {
-            'streamName': '',
-            'isCamAvailable': false,
-          },
+          'cam': {'streamName': '', 'isCamAvailable': false},
           'user': {
             'user': {
               'id': 54321,
@@ -744,36 +755,39 @@ void main() {
         },
       );
 
-      expect(
-        detail.metadata?['playbackUnavailableReason'],
-        contains('暂未开播'),
-      );
+      expect(detail.metadata?['playbackUnavailableReason'], contains('暂未开播'));
       expect(detail.danmakuToken, isA<UnavailableDanmakuToken>());
     });
 
-    test('handles case-insensitive offline status and dynamic isLive string/int parsing', () async {
-      final detail = await StripchatMapper.mapRoomDetail(
-        roomId: 'test_user',
-        camPayload: {
-          'cam': {
-            'streamName': '12345',
-            'isCamAvailable': true,
-            'viewersCount': 100,
-          },
-          'user': {
+    test(
+      'handles case-insensitive offline status and dynamic isLive string/int parsing',
+      () async {
+        final detail = StripchatMapper.mapRoomDetail(
+          roomId: 'test_user',
+          camPayload: {
+            'cam': {
+              'streamName': '12345',
+              'isCamAvailable': true,
+              'viewersCount': 100,
+            },
             'user': {
-              'id': 12345,
-              'username': 'test_user',
-              'status': 'Private', // case insensitive restricted status
-              'isLive': 'true', // string bool
+              'user': {
+                'id': 12345,
+                'username': 'test_user',
+                'status': 'Private', // case insensitive restricted status
+                'isLive': 'true', // string bool
+              },
             },
           },
-        },
-      );
+        );
 
-      expect(detail.isLive, true);
-      expect(detail.viewerCount, 100);
-      expect(detail.metadata?['playbackUnavailableReason'], contains('当前房间状态为 "Private"'));
-    });
+        expect(detail.isLive, true);
+        expect(detail.viewerCount, 100);
+        expect(
+          detail.metadata?['playbackUnavailableReason'],
+          contains('当前房间状态为 "Private"'),
+        );
+      },
+    );
   });
 }

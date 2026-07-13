@@ -235,7 +235,7 @@ class _FlakyChaturbateCategoryProvider extends LiveProvider
     return PagedResponse(
       items: const [
         LiveRoom(
-          providerId: 'chaturbate',
+          providerId: ProviderId.chaturbate,
           roomId: 'room-1',
           title: '第一页',
           streamerName: '主播一',
@@ -288,7 +288,7 @@ class _FakeDouyinCategoryProvider extends LiveProvider
       1 => PagedResponse(
         items: const [
           LiveRoom(
-            providerId: 'douyin',
+            providerId: ProviderId.douyin,
             roomId: 'room-1',
             title: '第一页',
             streamerName: '主播一',
@@ -303,7 +303,7 @@ class _FakeDouyinCategoryProvider extends LiveProvider
       2 => PagedResponse(
         items: const [
           LiveRoom(
-            providerId: 'douyin',
+            providerId: ProviderId.douyin,
             roomId: 'room-1',
             title: '第一页重复',
             streamerName: '主播一',
@@ -318,7 +318,7 @@ class _FakeDouyinCategoryProvider extends LiveProvider
       _ => PagedResponse(
         items: const [
           LiveRoom(
-            providerId: 'douyin',
+            providerId: ProviderId.douyin,
             roomId: 'room-2',
             title: '第三页新增',
             streamerName: '主播二',
@@ -381,7 +381,7 @@ class _FlakyDouyinCategoryProvider extends LiveProvider
     return PagedResponse(
       items: const [
         LiveRoom(
-          providerId: 'douyin',
+          providerId: ProviderId.douyin,
           roomId: 'room-1',
           title: '重试成功',
           streamerName: '主播一',
@@ -434,7 +434,7 @@ class _SparseDouyinCategoryProvider extends LiveProvider
       1 => PagedResponse(
         items: const [
           LiveRoom(
-            providerId: 'douyin',
+            providerId: ProviderId.douyin,
             roomId: 'room-1',
             title: '第一页',
             streamerName: '主播一',
@@ -449,7 +449,7 @@ class _SparseDouyinCategoryProvider extends LiveProvider
       2 => PagedResponse(
         items: const [
           LiveRoom(
-            providerId: 'douyin',
+            providerId: ProviderId.douyin,
             roomId: 'room-2',
             title: '跳过空页后的第三页',
             streamerName: '主播二',
@@ -464,7 +464,7 @@ class _SparseDouyinCategoryProvider extends LiveProvider
       4 => PagedResponse(
         items: const [
           LiveRoom(
-            providerId: 'douyin',
+            providerId: ProviderId.douyin,
             roomId: 'room-3',
             title: '第四页',
             streamerName: '主播三',
@@ -518,7 +518,7 @@ class _MalformedCategoryProvider extends LiveProvider
     return const PagedResponse(
       items: [
         LiveRoom(
-          providerId: 'douyu',
+          providerId: ProviderId.douyu,
           roomId: 'room-1',
           title: '第一页',
           streamerName: '主播一',

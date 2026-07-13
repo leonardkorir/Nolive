@@ -31,5 +31,5 @@ class TwitchPlaybackBootstrap {
       tokenValue.trim().isNotEmpty;
 }
 
-typedef TwitchPlaybackBootstrapResolver = Future<TwitchPlaybackBootstrap?>
-    Function(LiveRoomDetail detail);
+typedef TwitchPlaybackBootstrapResolver =
+    Future<TwitchPlaybackBootstrap?> Function(LiveRoomDetail detail);

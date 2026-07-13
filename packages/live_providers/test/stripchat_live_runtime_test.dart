@@ -92,10 +92,7 @@ class _MockStripchatApiClient implements StripchatApiClient {
   @override
   Future<Map<String, dynamic>> fetchLiveTags() async {
     return {
-      'liveTagDetails': {
-        'tagLanguageChinese': {},
-        'tagLanguageUSModels': {},
-      },
+      'liveTagDetails': {'tagLanguageChinese': {}, 'tagLanguageUSModels': {}},
       'liveTagGroups': [
         {
           'alias': 'ethnicity',
@@ -210,9 +207,7 @@ class _MockStripchatApiClient implements StripchatApiClient {
 
   @override
   Future<Map<String, dynamic>> fetchChatHistory(String modelId) async {
-    return {
-      'messages': [],
-    };
+    return {'messages': []};
   }
 
   @override
@@ -244,9 +239,7 @@ void main() {
   late StripchatDataSource dataSource;
 
   setUp(() {
-    dataSource = StripchatLiveDataSource(
-      apiClient: _MockStripchatApiClient(),
-    );
+    dataSource = StripchatLiveDataSource(apiClient: _MockStripchatApiClient());
   });
 
   test('fetchCategories returns mapped categories', () async {
@@ -274,7 +267,10 @@ void main() {
   test('fetchCategoryRooms returns paged rooms with filter', () async {
     final response = await dataSource.fetchCategoryRooms(
       const LiveSubCategory(
-          id: 'tagLanguageChinese', parentId: 'country', name: '中文'),
+        id: 'tagLanguageChinese',
+        parentId: 'country',
+        name: '中文',
+      ),
     );
     expect(response.items, isNotEmpty);
     expect(response.items.first.roomId, 'tag_user');
@@ -306,8 +302,7 @@ void main() {
     expect(detail.danmakuToken, isA<StripchatDanmakuToken>());
   });
 
-  test('fetchPlayUrls keeps master playlist url for auto quality',
-      () async {
+  test('fetchPlayUrls keeps master playlist url for auto quality', () async {
     final playbackDataSource = StripchatLiveDataSource(
       apiClient: _MockStripchatApiClient(
         probeFinalUrl:
@@ -317,11 +312,7 @@ void main() {
     final detail = await playbackDataSource.fetchRoomDetail('test_user');
     final urls = await playbackDataSource.fetchPlayUrls(
       detail: detail,
-      quality: LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-      ),
+      quality: LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
     );
 
     expect(urls, hasLength(1));
@@ -344,71 +335,79 @@ void main() {
     expect(qualities.any((q) => q.id == '720p'), isTrue);
   });
 
-  test('fetchPlayQualities adds source even when presets already exist',
-      () async {
-    final sourceAwareDataSource = StripchatLiveDataSource(
-      apiClient: _MockStripchatApiClient(
-        playbackVariants: <StripchatPlaybackVariant>[
-          StripchatPlaybackVariant(
-            qualityId: 'source',
-            url: Uri.parse(
-              'https://media-hls.doppiocdn.net/b-hls-09/99999/99999.m3u8',
+  test(
+    'fetchPlayQualities adds source even when presets already exist',
+    () async {
+      final sourceAwareDataSource = StripchatLiveDataSource(
+        apiClient: _MockStripchatApiClient(
+          playbackVariants: <StripchatPlaybackVariant>[
+            StripchatPlaybackVariant(
+              qualityId: 'source',
+              url: Uri.parse(
+                'https://media-hls.doppiocdn.net/b-hls-09/99999/99999.m3u8',
+              ),
+              bandwidth: 1500000,
             ),
-            bandwidth: 1500000,
-          ),
-        ],
-      ),
-    );
-    final detail = await sourceAwareDataSource.fetchRoomDetail('test_user');
+          ],
+        ),
+      );
+      final detail = await sourceAwareDataSource.fetchRoomDetail('test_user');
 
-    final qualities = await sourceAwareDataSource.fetchPlayQualities(detail);
+      final qualities = await sourceAwareDataSource.fetchPlayQualities(detail);
 
-    expect(
-      qualities.map((quality) => quality.id),
-      ['auto', 'source', '720p', '480p'],
-    );
-  });
+      expect(qualities.map((quality) => quality.id), [
+        'auto',
+        'source',
+        '720p',
+        '480p',
+      ]);
+    },
+  );
 
-  test('fetchPlayQualities derives fixed qualities from master variants',
-      () async {
-    final fallbackDataSource = StripchatLiveDataSource(
-      apiClient: _MockStripchatApiClient(
-        broadcastDelay: const Duration(milliseconds: 120),
-        playbackVariants: <StripchatPlaybackVariant>[
-          StripchatPlaybackVariant(
-            qualityId: 'source',
-            url: Uri.parse(
-              'https://media-hls.doppiocdn.net/b-hls-09/99999/99999.m3u8',
+  test(
+    'fetchPlayQualities derives fixed qualities from master variants',
+    () async {
+      final fallbackDataSource = StripchatLiveDataSource(
+        apiClient: _MockStripchatApiClient(
+          broadcastDelay: const Duration(milliseconds: 120),
+          playbackVariants: <StripchatPlaybackVariant>[
+            StripchatPlaybackVariant(
+              qualityId: 'source',
+              url: Uri.parse(
+                'https://media-hls.doppiocdn.net/b-hls-09/99999/99999.m3u8',
+              ),
+              bandwidth: 1200000,
             ),
-            bandwidth: 1200000,
-          ),
-          StripchatPlaybackVariant(
-            qualityId: '480p',
-            url: Uri.parse(
-              'https://media-hls.doppiocdn.net/b-hls-09/99999/99999_480p.m3u8',
+            StripchatPlaybackVariant(
+              qualityId: '480p',
+              url: Uri.parse(
+                'https://media-hls.doppiocdn.net/b-hls-09/99999/99999_480p.m3u8',
+              ),
+              bandwidth: 800000,
             ),
-            bandwidth: 800000,
-          ),
-          StripchatPlaybackVariant(
-            qualityId: '240p',
-            url: Uri.parse(
-              'https://media-hls.doppiocdn.net/b-hls-09/99999/99999_240p.m3u8',
+            StripchatPlaybackVariant(
+              qualityId: '240p',
+              url: Uri.parse(
+                'https://media-hls.doppiocdn.net/b-hls-09/99999/99999_240p.m3u8',
+              ),
+              bandwidth: 400000,
             ),
-            bandwidth: 400000,
-          ),
-        ],
-      ),
-      broadcastFetchTimeout: const Duration(milliseconds: 20),
-    );
-    final detail = await fallbackDataSource.fetchRoomDetail('test_user');
+          ],
+        ),
+        broadcastFetchTimeout: const Duration(milliseconds: 20),
+      );
+      final detail = await fallbackDataSource.fetchRoomDetail('test_user');
 
-    final qualities = await fallbackDataSource.fetchPlayQualities(detail);
+      final qualities = await fallbackDataSource.fetchPlayQualities(detail);
 
-    expect(
-      qualities.map((quality) => quality.id),
-      ['auto', 'source', '480p', '240p'],
-    );
-  });
+      expect(qualities.map((quality) => quality.id), [
+        'auto',
+        'source',
+        '480p',
+        '240p',
+      ]);
+    },
+  );
 
   test('fetchPlayUrls returns HLS URL', () async {
     final detail = await dataSource.fetchRoomDetail('test_user');
@@ -443,34 +442,42 @@ void main() {
     final skipReason = StripchatFixtureLoader.skipReason;
     final skip = skipReason != null;
 
-    test('initial-dynamic fixture parses guestHash and CDN config', () {
-      final initialDynamic = StripchatFixtureLoader.loadInitialDynamic();
-      if (initialDynamic == null) {
-        if (skip) return;
-        fail('initial-dynamic fixture should be available');
-      }
-      expect(initialDynamic['userHash']?.toString(), isNotEmpty);
-      final players = initialDynamic['players'] as Map<String, dynamic>?;
-      expect(players, isNotNull);
-      final cdnConfig = players!['cdnConfig'] as List?;
-      expect(cdnConfig, isNotEmpty);
-    }, skip: skip ? skipReason : false);
+    test(
+      'initial-dynamic fixture parses guestHash and CDN config',
+      () {
+        final initialDynamic = StripchatFixtureLoader.loadInitialDynamic();
+        if (initialDynamic == null) {
+          if (skip) return;
+          fail('initial-dynamic fixture should be available');
+        }
+        expect(initialDynamic['userHash']?.toString(), isNotEmpty);
+        final players = initialDynamic['players'] as Map<String, dynamic>?;
+        expect(players, isNotNull);
+        final cdnConfig = players!['cdnConfig'] as List?;
+        expect(cdnConfig, isNotEmpty);
+      },
+      skip: skip ? skipReason : false,
+    );
 
-    test('recommend response maps to rooms with expected fields', () {
-      final response = StripchatFixtureLoader.loadRecommendResponse();
-      if (response == null) {
-        if (skip) return;
-        fail('recommend fixture should be available');
-      }
-      final blocks = response['blocks'] as List?;
-      expect(blocks, isNotEmpty);
-      final firstBlock = (blocks!.first as Map<String, dynamic>);
-      final models = firstBlock['models'] as List?;
-      expect(models, isNotEmpty);
-      final model = models!.first as Map<String, dynamic>;
-      expect(model['username']?.toString(), isNotEmpty);
-      expect(model['status']?.toString(), isNotEmpty);
-    }, skip: skip ? skipReason : false);
+    test(
+      'recommend response maps to rooms with expected fields',
+      () {
+        final response = StripchatFixtureLoader.loadRecommendResponse();
+        if (response == null) {
+          if (skip) return;
+          fail('recommend fixture should be available');
+        }
+        final blocks = response['blocks'] as List?;
+        expect(blocks, isNotEmpty);
+        final firstBlock = (blocks!.first as Map<String, dynamic>);
+        final models = firstBlock['models'] as List?;
+        expect(models, isNotEmpty);
+        final model = models!.first as Map<String, dynamic>;
+        expect(model['username']?.toString(), isNotEmpty);
+        expect(model['status']?.toString(), isNotEmpty);
+      },
+      skip: skip ? skipReason : false,
+    );
 
     test('search response groups contain models', () {
       final response = StripchatFixtureLoader.loadSearchResponse();
@@ -498,8 +505,9 @@ void main() {
     }, skip: skip ? skipReason : false);
 
     test('broadcast response contains presets', () {
-      final response =
-          StripchatFixtureLoader.loadBroadcastResponse('Lucky-baby');
+      final response = StripchatFixtureLoader.loadBroadcastResponse(
+        'Lucky-baby',
+      );
       if (response == null) {
         if (skip) return;
         fail('broadcast fixture for Lucky-baby should be available');

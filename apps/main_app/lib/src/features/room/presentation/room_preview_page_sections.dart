@@ -4,6 +4,7 @@ import 'package:nolive_app/src/features/room/presentation/room_layout_constants.
 import 'package:nolive_app/src/features/room/presentation/room_panel_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_panels.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_section_widgets.dart';
+import 'package:nolive_app/src/shared/presentation/theme/nolive_room_chrome.dart';
 import 'package:nolive_app/src/shared/presentation/theme/zh_text.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
@@ -30,11 +31,16 @@ class RoomLoadingRoomShell extends StatelessWidget {
   const RoomLoadingRoomShell({
     required this.data,
     this.embeddedPlayerView,
+    this.immersive = false,
     super.key,
   });
 
   final RoomLoadingShellViewData data;
   final Widget? embeddedPlayerView;
+
+  /// Full-bleed black shell without the landscape side panel.
+  /// Used when entering/keeping fullscreen across room switches.
+  final bool immersive;
 
   @override
   Widget build(BuildContext context) {
@@ -74,16 +80,12 @@ class RoomLoadingRoomShell extends StatelessWidget {
           IgnorePointer(
             child: embeddedPlayerView!,
           ),
-        const DecoratedBox(
+        DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                Color(0x66000000),
-                Color(0x22000000),
-                Color(0xAA000000),
-              ],
+              colors: NoliveRoomChrome.posterGradient,
             ),
           ),
         ),
@@ -95,9 +97,9 @@ class RoomLoadingRoomShell extends StatelessWidget {
               horizontal: 18,
               vertical: 16,
             ),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.62),
-              borderRadius: BorderRadius.circular(20),
+            decoration: NoliveRoomChrome.panelDecoration(
+              context: context,
+              alpha: 0.62,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -105,19 +107,21 @@ class RoomLoadingRoomShell extends StatelessWidget {
                 const CircularProgressIndicator.adaptive(),
                 const SizedBox(height: 14),
                 Text(
-                  '正在进入 $providerLabel 房间',
+                  '正在加载画面',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
+                    color: NoliveRoomChrome.onVideo,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  roomTitle,
+                  roomTitle.isEmpty
+                      ? '进入 $providerLabel 房间'
+                      : '$providerLabel · $roomTitle',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.9),
+                    color: NoliveRoomChrome.onVideo.withValues(alpha: 0.9),
                     height: 1.35,
                   ),
                 ),
@@ -127,6 +131,14 @@ class RoomLoadingRoomShell extends StatelessWidget {
         ),
       ],
     );
+
+    if (immersive) {
+      return ColoredBox(
+        key: const Key('room-loading-shell-immersive'),
+        color: Colors.black,
+        child: loadingPlayer,
+      );
+    }
 
     final orientation = MediaQuery.orientationOf(context);
     if (orientation == Orientation.landscape) {

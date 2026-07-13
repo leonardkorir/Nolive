@@ -302,7 +302,7 @@ class CryptoUtility {
       61,
       249,
       14,
-      156
+      156,
     ];
     // fmt: on
   }
@@ -406,11 +406,13 @@ class CryptoUtility {
     for (var i = 0; i < abogusBytesStr.length; i += 3) {
       int n;
       if (i + 2 < abogusBytesStr.length) {
-        n = (abogusBytesStr.codeUnitAt(i) << 16) |
+        n =
+            (abogusBytesStr.codeUnitAt(i) << 16) |
             (abogusBytesStr.codeUnitAt(i + 1) << 8) |
             abogusBytesStr.codeUnitAt(i + 2);
       } else if (i + 1 < abogusBytesStr.length) {
-        n = (abogusBytesStr.codeUnitAt(i) << 16) |
+        n =
+            (abogusBytesStr.codeUnitAt(i) << 16) |
             (abogusBytesStr.codeUnitAt(i + 1) << 8);
       } else {
         n = abogusBytesStr.codeUnitAt(i) << 16;
@@ -570,7 +572,7 @@ class ABogus {
     65,
     66,
     70,
-    71
+    71,
   ];
   final List<int> sortIndex2 = [
     18,
@@ -616,19 +618,20 @@ class ABogus {
     65,
     66,
     70,
-    71
+    71,
   ];
   // fmt: on
 
   ABogus({String? fp, String? userAgent, List<int>? options})
-      : userAgent = userAgent != null && userAgent.isNotEmpty
-            ? userAgent
-            : DouyinRequestParams.kDefaultUserAgent,
-        browserFp = fp != null && fp.isNotEmpty
-            ? fp
-            : BrowserFingerprintGenerator.generateFingerprint(
-                browserType: "Edge"),
-        options = options ?? [0, 1, 14] {
+    : userAgent = userAgent != null && userAgent.isNotEmpty
+          ? userAgent
+          : DouyinRequestParams.kDefaultUserAgent,
+      browserFp = fp != null && fp.isNotEmpty
+          ? fp
+          : BrowserFingerprintGenerator.generateFingerprint(
+              browserType: "Edge",
+            ),
+      options = options ?? [0, 1, 14] {
     characterList = [character, character2];
     cryptoUtility = CryptoUtility(salt, characterList);
   }
@@ -660,15 +663,15 @@ class ABogus {
 
     final startEncryption = DateTime.now().millisecondsSinceEpoch;
 
-    final array1 =
-        cryptoUtility.paramsToArray(cryptoUtility.paramsToArray(params));
-    final array2 =
-        cryptoUtility.paramsToArray(cryptoUtility.paramsToArray(body));
+    final array1 = cryptoUtility.paramsToArray(
+      cryptoUtility.paramsToArray(params),
+    );
+    final array2 = cryptoUtility.paramsToArray(
+      cryptoUtility.paramsToArray(body),
+    );
     final array3 = cryptoUtility.paramsToArray(
       cryptoUtility.base64Encode(
-        StringProcessor.toCharStr(
-          CryptoUtility.rc4Encrypt(uaKey, userAgent),
-        ),
+        StringProcessor.toCharStr(CryptoUtility.rc4Encrypt(uaKey, userAgent)),
         selectedAlphabet: 1,
       ),
       addSalt: false,
@@ -727,8 +730,10 @@ class ABogus {
     abDir[64] = browserFp.length;
     abDir[65] = browserFp.length;
 
-    final sortedValues =
-        sortIndex.map((i) => abDir[i] ?? 0).toList().cast<int>();
+    final sortedValues = sortIndex
+        .map((i) => abDir[i] ?? 0)
+        .toList()
+        .cast<int>();
     final edgeFpArray = StringProcessor.toOrdArray(browserFp);
 
     var abXor = 0;
@@ -742,7 +747,8 @@ class ABogus {
     sortedValues.addAll(edgeFpArray);
     sortedValues.add(abXor);
 
-    final abogusBytesStr = StringProcessor.generateRandomBytes() +
+    final abogusBytesStr =
+        StringProcessor.generateRandomBytes() +
         cryptoUtility.transformBytes(sortedValues);
 
     final abogus = cryptoUtility.abogusEncode(abogusBytesStr, 0);

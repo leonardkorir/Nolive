@@ -15,8 +15,8 @@ class YouTubeDanmakuSession implements DanmakuSession {
     this.clientVersion = YouTubeApiClient.defaultWebClientVersion,
     FutureOr<void> Function()? disposeResources,
     Duration inactivityTimeout = const Duration(minutes: 1),
-  })  : _disposeResources = disposeResources,
-        _inactivityTimeout = inactivityTimeout;
+  }) : _disposeResources = disposeResources,
+       _inactivityTimeout = inactivityTimeout;
 
   final YouTubeApiClient apiClient;
   final String apiKey;
@@ -108,9 +108,7 @@ class YouTubeDanmakuSession implements DanmakuSession {
         for (final message in poll.messages) {
           _emit(message);
         }
-        final delay = Duration(
-          milliseconds: poll.timeoutMs.clamp(1000, 15000),
-        );
+        final delay = Duration(milliseconds: poll.timeoutMs.clamp(1000, 15000));
         if (_connected) {
           await _waitFor(delay);
         }
@@ -125,8 +123,9 @@ class YouTubeDanmakuSession implements DanmakuSession {
 
   _YouTubeLiveChatPoll _parsePoll(Map<String, dynamic> response) {
     final continuationContents = _asMap(response['continuationContents']);
-    final liveChatContinuation =
-        _asMap(continuationContents['liveChatContinuation']);
+    final liveChatContinuation = _asMap(
+      continuationContents['liveChatContinuation'],
+    );
     final actions = _asList(liveChatContinuation['actions']);
     final continuations = _asList(liveChatContinuation['continuations']);
     final messages = <LiveMessage>[];
@@ -163,9 +162,7 @@ class YouTubeDanmakuSession implements DanmakuSession {
       )['liveChatBannerRenderer'],
     );
     if (bannerRenderer.isNotEmpty) {
-      final message = _mapRendererEnvelope(
-        _asMap(bannerRenderer['contents']),
-      );
+      final message = _mapRendererEnvelope(_asMap(bannerRenderer['contents']));
       if (message != null) {
         yield message;
       }
@@ -190,8 +187,9 @@ class YouTubeDanmakuSession implements DanmakuSession {
           _buildGiftMessage(renderer),
         'liveChatSponsorshipsGiftRedemptionAnnouncementRenderer' =>
           _buildGiftMessage(renderer),
-        'liveChatViewerEngagementMessageRenderer' =>
-          _buildNoticeMessage(renderer),
+        'liveChatViewerEngagementMessageRenderer' => _buildNoticeMessage(
+          renderer,
+        ),
         'liveChatModeChangeMessageRenderer' => _buildNoticeMessage(renderer),
         'liveChatPlaceholderItemRenderer' => null,
         _ => _buildFallbackMessage(renderer),
@@ -231,8 +229,10 @@ class YouTubeDanmakuSession implements DanmakuSession {
   LiveMessage? _buildPaidMessage(Map<String, dynamic> renderer) {
     final amount = _readText(renderer['purchaseAmountText']);
     final message = _readText(renderer['message']);
-    final content =
-        [amount, message].where((item) => item.isNotEmpty).join(' · ');
+    final content = [
+      amount,
+      message,
+    ].where((item) => item.isNotEmpty).join(' · ');
     if (content.isEmpty) {
       return null;
     }
@@ -253,8 +253,10 @@ class YouTubeDanmakuSession implements DanmakuSession {
     final sticker = _readText(
       _asMap(_asMap(renderer['sticker'])['accessibility'])['accessibilityData'],
     );
-    final content =
-        [amount, sticker].where((item) => item.isNotEmpty).join(' · ');
+    final content = [
+      amount,
+      sticker,
+    ].where((item) => item.isNotEmpty).join(' · ');
     if (content.isEmpty) {
       return null;
     }
@@ -414,10 +416,10 @@ class YouTubeDanmakuSession implements DanmakuSession {
     }
     final accessibility = _asMap(map['accessibility']);
     final accessibilityText =
-        _asMap(accessibility['accessibilityData'])['label']
-                ?.toString()
-                .trim() ??
-            '';
+        _asMap(
+          accessibility['accessibilityData'],
+        )['label']?.toString().trim() ??
+        '';
     if (accessibilityText.isNotEmpty) {
       return accessibilityText;
     }
@@ -468,10 +470,7 @@ class YouTubeDanmakuSession implements DanmakuSession {
       await Future<void>.delayed(delay);
       return;
     }
-    await Future.any([
-      Future<void>.delayed(delay),
-      disconnectFuture,
-    ]);
+    await Future.any([Future<void>.delayed(delay), disconnectFuture]);
   }
 
   void _completeDisconnectSignal() {

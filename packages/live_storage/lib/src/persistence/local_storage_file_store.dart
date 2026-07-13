@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:live_core/live_core.dart';
+
 import '../models/follow_record.dart';
 import '../models/history_record.dart';
 
@@ -87,9 +89,7 @@ class LocalStorageFileStore {
         _snapshot = FileStorageSnapshot.fromJson(decoded);
       } else if (decoded is Map) {
         _snapshot = FileStorageSnapshot.fromJson(
-          decoded.map(
-            (key, value) => MapEntry(key.toString(), value),
-          ),
+          decoded.map((key, value) => MapEntry(key.toString(), value)),
         );
       } else {
         throw const FormatException(
@@ -232,7 +232,8 @@ class LocalStorageFileStore {
       );
     }
     throw const FormatException(
-        'Local storage snapshot JSON must be an object.');
+      'Local storage snapshot JSON must be an object.',
+    );
   }
 
   Future<bool> _canDecodeSnapshotFile(File candidate) async {
@@ -343,28 +344,32 @@ _RecoveredStorageSnapshot _recoverSnapshotSectionsFromRaw(String raw) {
   final recovered = <String>[];
   var snapshot = const FileStorageSnapshot();
 
-  final settingsJson = _extractJsonValueForKey(raw, 'settings');
-  if (settingsJson != null) {
+  final settingsSection = _decodeJsonValueForKey(
+    raw,
+    'settings',
+    (value) => value is Map,
+  );
+  if (settingsSection is Map) {
     try {
-      final decoded = jsonDecode(settingsJson);
-      if (decoded is Map) {
-        final settings = <String, Object?>{};
-        for (final entry in decoded.entries) {
-          settings[entry.key.toString()] = _normalizeJsonValue(entry.value);
-        }
-        snapshot = snapshot.clone()..settings.addAll(settings);
-        recovered.add('settings');
+      final settings = <String, Object?>{};
+      for (final entry in settingsSection.entries) {
+        settings[entry.key.toString()] = _normalizeJsonValue(entry.value);
       }
+      snapshot = snapshot.clone()..settings.addAll(settings);
+      recovered.add('settings');
     } on Object {
       // Keep scanning other sections; corruption recovery is best-effort.
     }
   }
 
-  final historyJson = _extractJsonValueForKey(raw, 'history');
-  if (historyJson != null) {
+  final historySection = _decodeJsonValueForKey(
+    raw,
+    'history',
+    (value) => value is List,
+  );
+  if (historySection is List) {
     try {
-      final history =
-          FileStorageSnapshot._decodeHistory(jsonDecode(historyJson));
+      final history = FileStorageSnapshot._decodeHistory(historySection);
       snapshot = FileStorageSnapshot(
         formatVersion: snapshot.formatVersion,
         settings: snapshot.settings,
@@ -378,11 +383,14 @@ _RecoveredStorageSnapshot _recoverSnapshotSectionsFromRaw(String raw) {
     }
   }
 
-  final followsJson = _extractJsonValueForKey(raw, 'follows');
-  if (followsJson != null) {
+  final followsSection = _decodeJsonValueForKey(
+    raw,
+    'follows',
+    (value) => value is List,
+  );
+  if (followsSection is List) {
     try {
-      final follows =
-          FileStorageSnapshot._decodeFollows(jsonDecode(followsJson));
+      final follows = FileStorageSnapshot._decodeFollows(followsSection);
       snapshot = FileStorageSnapshot(
         formatVersion: snapshot.formatVersion,
         settings: snapshot.settings,
@@ -396,10 +404,14 @@ _RecoveredStorageSnapshot _recoverSnapshotSectionsFromRaw(String raw) {
     }
   }
 
-  final tagsJson = _extractJsonValueForKey(raw, 'tags');
-  if (tagsJson != null) {
+  final tagsSection = _decodeJsonValueForKey(
+    raw,
+    'tags',
+    (value) => value is List,
+  );
+  if (tagsSection is List) {
     try {
-      final tags = FileStorageSnapshot._decodeTags(jsonDecode(tagsJson));
+      final tags = FileStorageSnapshot._decodeTags(tagsSection);
       snapshot = FileStorageSnapshot(
         formatVersion: snapshot.formatVersion,
         settings: snapshot.settings,
@@ -419,60 +431,77 @@ _RecoveredStorageSnapshot _recoverSnapshotSectionsFromRaw(String raw) {
   );
 }
 
-String? _extractJsonValueForKey(String raw, String key) {
-  final keyIndex = raw.indexOf('"$key"');
-  if (keyIndex < 0) {
-    return null;
-  }
-  var cursor = raw.indexOf(':', keyIndex + key.length + 2);
-  if (cursor < 0) {
-    return null;
-  }
-  cursor += 1;
-  while (cursor < raw.length && raw.codeUnitAt(cursor) <= 0x20) {
+Object? _decodeJsonValueForKey(
+  String raw,
+  String key,
+  bool Function(Object? value) accepts,
+) {
+  final encodedKey = jsonEncode(key);
+  var searchIndex = 0;
+  while (searchIndex < raw.length) {
+    final keyIndex = raw.indexOf(encodedKey, searchIndex);
+    if (keyIndex < 0) {
+      return null;
+    }
+    searchIndex = keyIndex + encodedKey.length;
+    if (!_looksLikeObjectMember(raw, keyIndex)) {
+      continue;
+    }
+
+    var cursor = raw.indexOf(':', keyIndex + encodedKey.length);
+    if (cursor < 0) {
+      continue;
+    }
     cursor += 1;
-  }
-  if (cursor >= raw.length) {
-    return null;
-  }
-  final opening = raw[cursor];
-  final closing = opening == '{'
-      ? '}'
-      : opening == '['
-          ? ']'
-          : null;
-  if (closing == null) {
-    return null;
-  }
-  var depth = 0;
-  var inString = false;
-  var escaped = false;
-  for (var index = cursor; index < raw.length; index += 1) {
-    final char = raw[index];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char == '\\') {
-        escaped = true;
-      } else if (char == '"') {
-        inString = false;
+    while (cursor < raw.length && raw.codeUnitAt(cursor) <= 0x20) {
+      cursor += 1;
+    }
+    if (cursor >= raw.length) {
+      continue;
+    }
+
+    for (var end = cursor + 1; end <= raw.length; end += 1) {
+      final previous = raw.codeUnitAt(end - 1);
+      if (previous != 0x5d && previous != 0x7d) {
+        continue;
       }
-      continue;
-    }
-    if (char == '"') {
-      inString = true;
-      continue;
-    }
-    if (char == opening) {
-      depth += 1;
-    } else if (char == closing) {
-      depth -= 1;
-      if (depth == 0) {
-        return raw.substring(cursor, index + 1);
+      try {
+        final decoded = jsonDecode(raw.substring(cursor, end));
+        if (accepts(decoded) && _prefixHasTopLevelKey(raw, end, key)) {
+          return decoded;
+        }
+      } on FormatException {
+        // Keep extending the candidate until dart:convert can parse a value.
       }
     }
   }
   return null;
+}
+
+bool _looksLikeObjectMember(String raw, int keyIndex) {
+  for (var index = keyIndex - 1; index >= 0; index -= 1) {
+    final codeUnit = raw.codeUnitAt(index);
+    if (codeUnit <= 0x20) {
+      continue;
+    }
+    return codeUnit == 0x7b || codeUnit == 0x2c;
+  }
+  return false;
+}
+
+bool _prefixHasTopLevelKey(String raw, int end, String key) {
+  final prefix = raw.substring(0, end).trimRight();
+  for (final suffix in const ['', '}', '}}', '}}}']) {
+    try {
+      final decoded = jsonDecode('$prefix$suffix');
+      if (decoded is Map && decoded.containsKey(key)) {
+        return true;
+      }
+    } on FormatException {
+      // Try the next suffix; corrupt snapshots may be missing closing braces.
+    }
+  }
+  return false;
 }
 
 class _RecoveredStorageSnapshot {
@@ -497,11 +526,7 @@ class LocalStorageFileSystem {
     return file.readAsString();
   }
 
-  Future<void> writeAsString(
-    File file,
-    String contents, {
-    bool flush = false,
-  }) {
+  Future<void> writeAsString(File file, String contents, {bool flush = false}) {
     return file.writeAsString(contents, flush: flush);
   }
 
@@ -592,17 +617,21 @@ class FileStorageSnapshot {
       'history': [
         for (final item in history)
           {
-            'provider_id': item.providerId,
+            'provider_id': item.providerId.value,
             'room_id': item.roomId,
             'title': item.title,
             'streamer_name': item.streamerName,
             'viewed_at': item.viewedAt.toIso8601String(),
+            'watch_duration_sec': item.watchDurationSec,
+            'sync_duration_sec': item.syncDurationSec,
+            if (item.updatedAt != null)
+              'updated_at': item.updatedAt!.toIso8601String(),
           },
       ],
       'follows': [
         for (final item in follows)
           {
-            'provider_id': item.providerId,
+            'provider_id': item.providerId.value,
             'room_id': item.roomId,
             'streamer_name': item.streamerName,
             'streamer_avatar_url': item.streamerAvatarUrl,
@@ -611,6 +640,17 @@ class FileStorageSnapshot {
             'last_cover_url': item.lastCoverUrl,
             'last_keyframe_url': item.lastKeyframeUrl,
             'tags': List<String>.from(item.tags),
+            if (item.remark != null) 'remark': item.remark,
+            'deleted': item.deleted,
+            if (item.addedAt != null)
+              'added_at': item.addedAt!.toIso8601String(),
+            if (item.updatedAt != null)
+              'updated_at': item.updatedAt!.toIso8601String(),
+            'watch_duration_sec': item.watchDurationSec,
+            'sync_duration_sec': item.syncDurationSec,
+            if (item.lastLiveStatus != null)
+              'last_live_status': item.lastLiveStatus,
+            if (item.lastOnline != null) 'last_online': item.lastOnline,
           },
       ],
       'tags': List<String>.from(tags),
@@ -639,41 +679,64 @@ class FileStorageSnapshot {
     if (raw is! List) {
       return const <HistoryRecord>[];
     }
-    return raw.whereType<Map>().map((item) {
-      final viewedAt = DateTime.tryParse(item['viewed_at']?.toString() ?? '');
-      return HistoryRecord(
-        providerId: item['provider_id']?.toString() ?? '',
-        roomId: item['room_id']?.toString() ?? '',
-        title: item['title']?.toString() ?? '',
-        streamerName: item['streamer_name']?.toString() ?? '',
-        viewedAt: viewedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
-      );
-    }).where((item) {
-      return item.providerId.isNotEmpty && item.roomId.isNotEmpty;
-    }).toList(growable: false);
+    return raw
+        .whereType<Map>()
+        .map((item) {
+          final viewedAt = DateTime.tryParse(
+            item['viewed_at']?.toString() ?? '',
+          );
+          return HistoryRecord(
+            providerId: ProviderId.from(item['provider_id']),
+            roomId: item['room_id']?.toString() ?? '',
+            title: item['title']?.toString() ?? '',
+            streamerName: item['streamer_name']?.toString() ?? '',
+            viewedAt: viewedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+            watchDurationSec: _decodeInt(item['watch_duration_sec']),
+            syncDurationSec: _decodeInt(item['sync_duration_sec']),
+            updatedAt: DateTime.tryParse(item['updated_at']?.toString() ?? ''),
+          );
+        })
+        .where((item) {
+          return item.providerId.isNotEmpty && item.roomId.isNotEmpty;
+        })
+        .toList(growable: false);
   }
 
   static List<FollowRecord> _decodeFollows(Object? raw) {
     if (raw is! List) {
       return const <FollowRecord>[];
     }
-    return raw.whereType<Map>().map((item) {
-      return FollowRecord(
-        providerId: item['provider_id']?.toString() ?? '',
-        roomId: item['room_id']?.toString() ?? '',
-        streamerName: item['streamer_name']?.toString() ?? '',
-        streamerAvatarUrl: _normalizeOptionalString(
-          item['streamer_avatar_url'],
-        ),
-        lastTitle: _normalizeOptionalString(item['last_title']),
-        lastAreaName: _normalizeOptionalString(item['last_area_name']),
-        lastCoverUrl: _normalizeOptionalString(item['last_cover_url']),
-        lastKeyframeUrl: _normalizeOptionalString(item['last_keyframe_url']),
-        tags: _decodeTags(item['tags']),
-      );
-    }).where((item) {
-      return item.providerId.isNotEmpty && item.roomId.isNotEmpty;
-    }).toList(growable: false);
+    return raw
+        .whereType<Map>()
+        .map((item) {
+          return FollowRecord(
+            providerId: ProviderId.from(item['provider_id']),
+            roomId: item['room_id']?.toString() ?? '',
+            streamerName: item['streamer_name']?.toString() ?? '',
+            streamerAvatarUrl: _normalizeOptionalString(
+              item['streamer_avatar_url'],
+            ),
+            lastTitle: _normalizeOptionalString(item['last_title']),
+            lastAreaName: _normalizeOptionalString(item['last_area_name']),
+            lastCoverUrl: _normalizeOptionalString(item['last_cover_url']),
+            lastKeyframeUrl: _normalizeOptionalString(
+              item['last_keyframe_url'],
+            ),
+            tags: _decodeTags(item['tags']),
+            remark: _normalizeOptionalString(item['remark']),
+            deleted: item['deleted'] == true,
+            addedAt: DateTime.tryParse(item['added_at']?.toString() ?? ''),
+            updatedAt: DateTime.tryParse(item['updated_at']?.toString() ?? ''),
+            watchDurationSec: _decodeInt(item['watch_duration_sec']),
+            syncDurationSec: _decodeInt(item['sync_duration_sec']),
+            lastLiveStatus: _decodeNullableInt(item['last_live_status']),
+            lastOnline: _decodeNullableInt(item['last_online']),
+          );
+        })
+        .where((item) {
+          return item.providerId.isNotEmpty && item.roomId.isNotEmpty;
+        })
+        .toList(growable: false);
   }
 
   static List<String> _decodeTags(Object? raw) {
@@ -697,6 +760,29 @@ class FileStorageSnapshot {
       return raw.toInt();
     }
     return int.tryParse(raw?.toString() ?? '') ?? 1;
+  }
+
+  static int _decodeInt(Object? raw, {int fallback = 0}) {
+    if (raw is int) {
+      return raw;
+    }
+    if (raw is num) {
+      return raw.toInt();
+    }
+    return int.tryParse(raw?.toString() ?? '') ?? fallback;
+  }
+
+  static int? _decodeNullableInt(Object? raw) {
+    if (raw == null) {
+      return null;
+    }
+    if (raw is int) {
+      return raw;
+    }
+    if (raw is num) {
+      return raw.toInt();
+    }
+    return int.tryParse(raw.toString());
   }
 }
 
@@ -729,10 +815,8 @@ Object? _normalizeJsonValue(Object? value) {
   if (value is Map) {
     return Map<String, Object?>.fromEntries(
       value.entries.map(
-        (entry) => MapEntry(
-          entry.key.toString(),
-          _normalizeJsonValue(entry.value),
-        ),
+        (entry) =>
+            MapEntry(entry.key.toString(), _normalizeJsonValue(entry.value)),
       ),
     );
   }

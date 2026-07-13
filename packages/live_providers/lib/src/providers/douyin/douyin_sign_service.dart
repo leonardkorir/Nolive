@@ -7,8 +7,10 @@ import 'douyin_request_params.dart';
 import 'douyin_utils.dart';
 
 abstract class DouyinSignService {
-  Future<Map<String, String>> buildHeaders(
-      {String? refererPath, bool forceRefreshCookie = false});
+  Future<Map<String, String>> buildHeaders({
+    String? refererPath,
+    bool forceRefreshCookie = false,
+  });
 
   String buildSignedUrl(String baseUrl, Map<String, dynamic> queryParameters);
 }
@@ -18,8 +20,8 @@ class HttpDouyinSignService implements DouyinSignService {
     this.cookie = '',
     http.Client? client,
     Duration cookieRequestTimeout = const Duration(seconds: 2),
-  })  : _client = client ?? http.Client(),
-        _cookieRequestTimeout = cookieRequestTimeout;
+  }) : _client = client ?? http.Client(),
+       _cookieRequestTimeout = cookieRequestTimeout;
 
   static String get defaultCookie {
     final seconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -33,13 +35,17 @@ class HttpDouyinSignService implements DouyinSignService {
   String _cookieCache = '';
 
   @override
-  Future<Map<String, String>> buildHeaders(
-      {String? refererPath, bool forceRefreshCookie = false}) async {
+  Future<Map<String, String>> buildHeaders({
+    String? refererPath,
+    bool forceRefreshCookie = false,
+  }) async {
     final referer = refererPath == null
         ? 'https://live.douyin.com'
         : 'https://live.douyin.com/$refererPath';
-    final resolvedCookie =
-        await _resolveCookie(referer, forceRefreshCookie: forceRefreshCookie);
+    final resolvedCookie = await _resolveCookie(
+      referer,
+      forceRefreshCookie: forceRefreshCookie,
+    );
     return {
       'referer': referer,
       'user-agent': DouyinRequestParams.kDefaultUserAgent,
@@ -54,8 +60,10 @@ class HttpDouyinSignService implements DouyinSignService {
     return DouyinUtils.buildRequestUrl(baseUrl, queryParameters);
   }
 
-  Future<String> _resolveCookie(String referer,
-      {bool forceRefreshCookie = false}) async {
+  Future<String> _resolveCookie(
+    String referer, {
+    bool forceRefreshCookie = false,
+  }) async {
     if (forceRefreshCookie) {
       _cookieCache = '';
     } else if (_cookieCache.contains('ttwid=')) {
@@ -67,15 +75,17 @@ class HttpDouyinSignService implements DouyinSignService {
     }
 
     try {
-      final response = await _client.head(
-        Uri.parse(referer),
-        headers: {
-          'user-agent': DouyinRequestParams.kDefaultUserAgent,
-          'accept':
-              'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-          'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        },
-      ).timeout(_cookieRequestTimeout);
+      final response = await _client
+          .head(
+            Uri.parse(referer),
+            headers: {
+              'user-agent': DouyinRequestParams.kDefaultUserAgent,
+              'accept':
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+              'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            },
+          )
+          .timeout(_cookieRequestTimeout);
       final setCookie = response.headers['set-cookie'] ?? '';
       final cookies = <String>[];
       for (final part in _splitSetCookieHeader(setCookie)) {

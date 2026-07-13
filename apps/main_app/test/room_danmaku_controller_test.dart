@@ -9,56 +9,59 @@ import 'package:nolive_app/src/features/room/application/room_preview_dependenci
 import 'package:nolive_app/src/features/room/presentation/room_danmaku_controller.dart';
 
 void main() {
-  test('danmaku connect error retry logic (stripchat timeout + chaturbate non-retryable)', () {
-    expect(
-      shouldRetryDanmakuConnectionError(
-        providerId: ProviderId.stripchat,
-        error: TimeoutException('stripchat connect stalled'),
-        reconnectAttempt: 0,
-      ),
-      isTrue,
-    );
-    expect(
-      shouldRetryDanmakuConnectionError(
-        providerId: ProviderId.stripchat,
-        error: TimeoutException('stripchat connect stalled'),
-        reconnectAttempt: 2,
-      ),
-      isFalse,
-    );
-    expect(
-      shouldRetryDanmakuConnectionError(
-        providerId: ProviderId.chaturbate,
-        error: ProviderParseException(
-          providerId: ProviderId.chaturbate,
-          message:
-              'Chaturbate /push_service/room_history/ request failed with status 403.',
+  test(
+    'danmaku connect error retry logic (stripchat timeout + chaturbate non-retryable)',
+    () {
+      expect(
+        shouldRetryDanmakuConnectionError(
+          providerId: ProviderId.stripchat,
+          error: TimeoutException('stripchat connect stalled'),
+          reconnectAttempt: 0,
         ),
-      ),
-      isFalse,
-    );
-    expect(
-      shouldRetryDanmakuConnectionError(
-        providerId: ProviderId.chaturbate,
-        error: ProviderParseException(
-          providerId: ProviderId.chaturbate,
-          message:
-              'Chaturbate /push_service/auth/ request was blocked by Cloudflare challenge.',
+        isTrue,
+      );
+      expect(
+        shouldRetryDanmakuConnectionError(
+          providerId: ProviderId.stripchat,
+          error: TimeoutException('stripchat connect stalled'),
+          reconnectAttempt: 2,
         ),
-      ),
-      isFalse,
-    );
-    expect(
-      shouldRetryDanmakuConnectionError(
-        providerId: ProviderId.chaturbate,
-        error: ProviderParseException(
+        isFalse,
+      );
+      expect(
+        shouldRetryDanmakuConnectionError(
           providerId: ProviderId.chaturbate,
-          message: 'Chaturbate realtime websocket connect failed.',
+          error: ProviderParseException(
+            providerId: ProviderId.chaturbate,
+            message:
+                'Chaturbate /push_service/room_history/ request failed with status 403.',
+          ),
         ),
-      ),
-      isTrue,
-    );
-  });
+        isFalse,
+      );
+      expect(
+        shouldRetryDanmakuConnectionError(
+          providerId: ProviderId.chaturbate,
+          error: ProviderParseException(
+            providerId: ProviderId.chaturbate,
+            message:
+                'Chaturbate /push_service/auth/ request was blocked by Cloudflare challenge.',
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        shouldRetryDanmakuConnectionError(
+          providerId: ProviderId.chaturbate,
+          error: ProviderParseException(
+            providerId: ProviderId.chaturbate,
+            message: 'Chaturbate realtime websocket connect failed.',
+          ),
+        ),
+        isTrue,
+      );
+    },
+  );
 
   test(
     'room danmaku controller uses extended default timeout for chaturbate',
@@ -178,7 +181,7 @@ void main() {
       final disconnectCompleter = Completer<void>();
       final session = _BlockingDisconnectDanmakuSession(disconnectCompleter);
       final detail = LiveRoomDetail(
-        providerId: _kRoomDanmakuTestProviderId.value,
+        providerId: _kRoomDanmakuTestProviderId,
         roomId: 'close-session-room',
         title: 'Close Session Room',
         streamerName: 'tester',
@@ -1033,7 +1036,7 @@ class _RoomDanmakuTestProvider extends LiveProvider
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     return LiveRoomDetail(
-      providerId: _kRoomDanmakuTestProviderId.value,
+      providerId: _kRoomDanmakuTestProviderId,
       roomId: roomId,
       title: '$roomId-title',
       streamerName: roomId,

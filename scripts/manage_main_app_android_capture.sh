@@ -287,7 +287,7 @@ stop_capture() {
     remote_pid_running "${perf_pid}" && adb_shell "kill -9 '${perf_pid}'" >/dev/null 2>&1 || true
   fi
 
-  adb_shell "rm -f '${REMOTE_DIR}/current-logcat.pid' '${REMOTE_DIR}/current-perf.pid' '${REMOTE_DIR}/current-session.txt' '${REMOTE_DIR}/supervisor.pid' '${REMOTE_LOGCAT_HEARTBEAT_FILE}' '${REMOTE_PERF_HEARTBEAT_FILE}' '${REMOTE_LOGCAT_STATE_FILE}' '${REMOTE_PERF_STATE_FILE}'" >/dev/null 2>&1 || true
+  adb_shell "rm -f '${REMOTE_DIR}/current-logcat.pid' '${REMOTE_DIR}/current-perf.pid' '${REMOTE_DIR}/supervisor.pid' '${REMOTE_LOGCAT_HEARTBEAT_FILE}' '${REMOTE_PERF_HEARTBEAT_FILE}' '${REMOTE_LOGCAT_STATE_FILE}' '${REMOTE_PERF_STATE_FILE}'" >/dev/null 2>&1 || true
 }
 
 start_capture() {

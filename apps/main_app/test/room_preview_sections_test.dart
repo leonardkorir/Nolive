@@ -23,8 +23,8 @@ void main() {
     );
 
     expect(find.byKey(const Key('room-loading-shell')), findsOneWidget);
-    expect(find.text('正在进入 Bilibili 房间'), findsOneWidget);
-    expect(find.text('房间号 1000'), findsOneWidget);
+    expect(find.text('正在加载画面'), findsOneWidget);
+    expect(find.text('Bilibili · 房间号 1000'), findsOneWidget);
     expect(find.text('测试主播'), findsOneWidget);
   });
 
@@ -50,8 +50,8 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('正在进入 平台 房间'), findsOneWidget);
-    expect(find.text('房间标题'), findsOneWidget);
+    expect(find.text('正在加载画面'), findsOneWidget);
+    expect(find.text('平台 · 房间标题'), findsOneWidget);
     expect(find.text('主播'), findsOneWidget);
   });
 
@@ -83,6 +83,40 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'immersive loading shell hides landscape side panel chrome',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: RoomLoadingRoomShell(
+              immersive: true,
+              data: RoomLoadingShellViewData(
+                providerLabel: 'Bilibili',
+                roomTitle: '房间号 3000',
+                streamerName: '测试主播',
+                avatarLabel: '测',
+                posterUrl: null,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byKey(const Key('room-loading-shell-immersive')), findsOneWidget);
+      expect(find.byKey(const Key('room-loading-shell')), findsOneWidget);
+      expect(find.byKey(const Key('room-panel-tab-chat')), findsNothing);
+      expect(find.text('房间已经进入，后台继续加载播放和聊天数据'), findsNothing);
+    },
+  );
 
   testWidgets(
     'room preview sections renders surface, pager and bottom actions',

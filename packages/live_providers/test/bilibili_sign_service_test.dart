@@ -76,39 +76,43 @@ void main() {
     expect(transport.lastHeaders['user-agent'], 'SimpleLive-Test-UA');
   });
 
-  test('bilibili buildHeaders tolerates spi bootstrap request failure',
-      () async {
-    final service = BilibiliSignService(
-      transport: _SpiFailureTransport(),
-      authContext: BilibiliAuthContext(cookie: '', userId: 0),
-    );
+  test(
+    'bilibili buildHeaders tolerates spi bootstrap request failure',
+    () async {
+      final service = BilibiliSignService(
+        transport: _SpiFailureTransport(),
+        authContext: BilibiliAuthContext(cookie: '', userId: 0),
+      );
 
-    final headers = await service.buildHeaders();
+      final headers = await service.buildHeaders();
 
-    expect(headers['user-agent'], BilibiliSignService.defaultUserAgent);
-    expect(headers.containsKey('cookie'), isFalse);
-  });
+      expect(headers['user-agent'], BilibiliSignService.defaultUserAgent);
+      expect(headers.containsKey('cookie'), isFalse);
+    },
+  );
 
-  test('bilibili sign service rewrites nav transport failures as WBI errors',
-      () async {
-    final service = BilibiliSignService(
-      transport: _NavFailureTransport(),
-      authContext: BilibiliAuthContext(cookie: '', userId: 0),
-    );
+  test(
+    'bilibili sign service rewrites nav transport failures as WBI errors',
+    () async {
+      final service = BilibiliSignService(
+        transport: _NavFailureTransport(),
+        authContext: BilibiliAuthContext(cookie: '', userId: 0),
+      );
 
-    await expectLater(
-      () => service.signUrl(
-        'https://api.bilibili.com/x/web-interface/search/type?keyword=test&page=1',
-      ),
-      throwsA(
-        isA<ProviderParseException>().having(
-          (error) => error.message,
-          'message',
-          contains('load WBI keys failed'),
+      await expectLater(
+        () => service.signUrl(
+          'https://api.bilibili.com/x/web-interface/search/type?keyword=test&page=1',
         ),
-      ),
-    );
-  });
+        throwsA(
+          isA<ProviderParseException>().having(
+            (error) => error.message,
+            'message',
+            contains('load WBI keys failed'),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 class _DelayedBuvidTransport implements BilibiliTransport {

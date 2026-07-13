@@ -2,13 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:nolive_app/src/features/settings/application/manage_follow_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/bootstrap/default_state.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/settings/application/manage_layout_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/secure_snapshot_import_coordinator.dart';
 import 'package:nolive_app/src/features/sync/application/manage_remote_sync_use_case.dart';
@@ -28,7 +29,7 @@ void main() {
     await bootstrap.addBlockedKeyword('广告');
     await bootstrap.createTag('夜班');
     await bootstrap.toggleFollowRoom(
-      providerId: 'bilibili',
+      providerId: ProviderId.bilibili.value,
       roomId: '1',
       streamerName: '主播A',
       title: '本地标题',
@@ -83,7 +84,7 @@ void main() {
 
     await bootstrap.addBlockedKeyword('旧屏蔽');
     await bootstrap.toggleFollowRoom(
-      providerId: 'bilibili',
+      providerId: ProviderId.bilibili.value,
       roomId: '1',
       streamerName: '旧关注',
     );
@@ -469,7 +470,7 @@ void main() {
         entries: const [
           FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '1',
               streamerName: '旧关注',
             ),
@@ -553,7 +554,7 @@ void main() {
     () async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
       await bootstrap.toggleFollowRoom(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili.value,
         roomId: '1',
         streamerName: '主播A',
       );
@@ -561,7 +562,7 @@ void main() {
         entries: const [
           FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '1',
               streamerName: '主播A',
             ),
@@ -593,7 +594,7 @@ void main() {
       await bootstrap.addBlockedKeyword('广告');
       await bootstrap.createTag('夜班');
       await bootstrap.toggleFollowRoom(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili.value,
         roomId: '6',
         streamerName: '系统演示主播',
         title: '系统演示标题',
@@ -603,7 +604,7 @@ void main() {
       );
       await bootstrap.historyRepository.add(
         HistoryRecord(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili,
           roomId: '6',
           title: '系统演示房间',
           streamerName: '系统演示主播',

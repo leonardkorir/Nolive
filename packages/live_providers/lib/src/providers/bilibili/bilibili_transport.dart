@@ -46,7 +46,8 @@ int bilibiliResponseCode(Map<String, dynamic> response) {
 }
 
 String bilibiliResponseMessage(Map<String, dynamic> response) {
-  final message = response['message']?.toString().trim() ??
+  final message =
+      response['message']?.toString().trim() ??
       response['msg']?.toString().trim() ??
       '';
   return message;
@@ -75,9 +76,9 @@ class HttpBilibiliTransport implements BilibiliTransport {
     http.Client? client,
     ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
     void Function(String message)? diagnostics,
-  })  : _client = client ?? http.Client(),
-        _retryPolicy = retryPolicy,
-        _diagnostics = diagnostics;
+  }) : _client = client ?? http.Client(),
+       _retryPolicy = retryPolicy,
+       _diagnostics = diagnostics;
 
   final http.Client _client;
   final ProviderRetryPolicy _retryPolicy;

@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:live_storage/live_storage.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
 class ClearFollowsUseCase {
   const ClearFollowsUseCase(

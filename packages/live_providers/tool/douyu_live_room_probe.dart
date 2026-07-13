@@ -10,11 +10,13 @@ Future<void> main() async {
   final categories = await provider
       .requireContract<SupportsCategories>(ProviderCapability.categories)
       .fetchCategories();
-  final sub =
-      categories.firstWhere((c) => c.children.isNotEmpty).children.firstWhere(
-            (s) => s.id != '0',
-            orElse: () => categories.first.children.first,
-          );
+  final sub = categories
+      .firstWhere((c) => c.children.isNotEmpty)
+      .children
+      .firstWhere(
+        (s) => s.id != '0',
+        orElse: () => categories.first.children.first,
+      );
   final rooms = await provider
       .requireContract<SupportsCategoryRooms>(ProviderCapability.categories)
       .fetchCategoryRooms(sub, page: 1);
@@ -30,7 +32,8 @@ Future<void> main() async {
       .requireContract<SupportsRoomDetail>(ProviderCapability.roomDetail)
       .fetchRoomDetail(room.roomId);
   print(
-      'detail live=${detail.isLive} room=${detail.roomId} title=${detail.title}');
+    'detail live=${detail.isLive} room=${detail.roomId} title=${detail.title}',
+  );
 
   final qualities = await provider
       .requireContract<SupportsPlayQualities>(ProviderCapability.playQualities)

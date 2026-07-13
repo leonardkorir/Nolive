@@ -32,9 +32,7 @@ void main() {
       isA<SupportsPlayQualities>(),
     );
     expect(
-      provider.requireContract<SupportsPlayUrls>(
-        ProviderCapability.playUrls,
-      ),
+      provider.requireContract<SupportsPlayUrls>(ProviderCapability.playUrls),
       isA<SupportsPlayUrls>(),
     );
   });

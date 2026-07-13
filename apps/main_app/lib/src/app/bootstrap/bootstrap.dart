@@ -14,11 +14,9 @@ import 'package:nolive_app/src/app/platform/android_playback_bridge.dart';
 import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/app/platform/douyin_danmaku_signature_service.dart';
 import 'package:nolive_app/src/app/runtime_bridges/app_runtime_bridges.dart';
-import 'package:nolive_app/src/app/runtime_bridges/chaturbate/chaturbate_llhls_proxy.dart';
-import 'package:nolive_app/src/app/runtime_bridges/chaturbate/chaturbate_web_room_detail_loader.dart';
-import 'package:nolive_app/src/app/runtime_bridges/stripchat/stripchat_llhls_proxy.dart';
-import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_ad_guard_proxy.dart';
-import 'package:nolive_app/src/app/runtime_bridges/twitch/twitch_web_playback_bridge.dart';
+import 'package:live_hls_proxy/live_hls_proxy.dart';
+import 'package:nolive_app/src/app/runtime_bridges/hls_proxy_platform_adapter_impl.dart';
+import 'package:nolive_app/src/app/runtime_bridges/youtube_nsig_webview_solver.dart';
 import 'package:nolive_app/src/features/browse/application/load_provider_highlights_use_case.dart';
 import 'package:nolive_app/src/features/category/application/manage_favorite_category_tags_use_case.dart';
 import 'package:nolive_app/src/features/category/application/load_category_rooms_use_case.dart';
@@ -35,6 +33,8 @@ import 'package:nolive_app/src/features/library/application/list_follow_records_
 import 'package:nolive_app/src/features/library/application/list_library_snapshot_use_case.dart';
 import 'package:nolive_app/src/features/library/application/list_tags_use_case.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
+
 import 'package:nolive_app/src/features/library/application/load_library_dashboard_use_case.dart';
 import 'package:nolive_app/src/features/library/application/manage_follow_transfer_use_case.dart';
 import 'package:nolive_app/src/features/library/application/remove_follow_room_use_case.dart';
@@ -70,6 +70,7 @@ import 'package:nolive_app/src/features/sync/application/sync_preferences_use_ca
 import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 import 'package:nolive_app/src/shared/application/provider_catalog_use_cases.dart';
+import 'package:nolive_app/src/app/bootstrap/llhls_proxy_lifecycle.dart';
 
 part 'bootstrap_internals.dart';
 
@@ -94,7 +95,7 @@ AppBootstrap createAppBootstrap({
     themeModeNotifier: state.themeMode,
   );
 
-  return _assembleAppBootstrap(
+  final bootstrap = _assembleAppBootstrap(
     _BootstrapAssemblyContext(
       mode: mode,
       platformCapabilities:
@@ -114,6 +115,8 @@ AppBootstrap createAppBootstrap({
       disposeResources: onDispose ?? () async {},
     ),
   );
+  unawaited(bootstrap.llhlsProxyRegistry.initialize().catchError((_) {}));
+  return bootstrap;
 }
 
 Future<AppBootstrap> createPersistentAppBootstrap({
@@ -182,18 +185,28 @@ Future<AppBootstrap> createPersistentAppBootstrap({
     AppLog.instance.info(
       'bootstrap',
       'secure store bootstrap ready mode='
-          '${secureCredentialStore == null ? 'deferred' : 'provided'} '
+          '${secureCredentialStore == null ? 'lazy' : 'provided'} '
           'separate=${resolvedSecureCredentialStore.storesSecureValuesSeparately} '
           'keys=${resolvedSecureCredentialStore.snapshot().length}',
     );
 
-    if (secureCredentialStore != null &&
-        resolvedSecureCredentialStore.storesSecureValuesSeparately) {
+    // Sequence secure credentials BEFORE first provider traffic (home CB list /
+    // follow stampede). Deferred post-frame warm left first request with
+    // keys=0 and empty account_chaturbate_cookie (no cf_clearance).
+    await resolvedSecureCredentialStore.ensureReady();
+    AppLog.instance.info(
+      'bootstrap',
+      'secure store ensureReady done '
+          'separate=${resolvedSecureCredentialStore.storesSecureValuesSeparately} '
+          'keys=${resolvedSecureCredentialStore.snapshot().length}',
+    );
+
+    if (resolvedSecureCredentialStore.storesSecureValuesSeparately) {
       await MigrateSensitiveSettingsToSecureStoreUseCase(
         settingsRepository: repositories.settingsRepository,
         secureCredentialStore: resolvedSecureCredentialStore,
       )();
-    } else if (secureCredentialStore != null) {
+    } else {
       AppLog.instance.info(
         'bootstrap',
         'secure settings migration skipped mode=legacy-settings-fallback',
@@ -231,6 +244,7 @@ Future<AppBootstrap> createPersistentAppBootstrap({
       ),
     );
     liveProviderRegistry = bootstrap.providerRegistry;
+    await bootstrap.llhlsProxyRegistry.initialize();
     return bootstrap;
   } catch (error, stackTrace) {
     AppLog.instance.error(
@@ -254,6 +268,7 @@ class AppBootstrap {
     required this.followWatchlistSnapshot,
     required this.providerRegistry,
     required this.playerRuntime,
+    required this.llhlsProxyRegistry,
     required this.settingsRepository,
     required this.historyRepository,
     required this.followRepository,
@@ -344,6 +359,7 @@ class AppBootstrap {
   final ValueNotifier<FollowWatchlist?> followWatchlistSnapshot;
   final ProviderRegistry providerRegistry;
   final PlayerRuntimeController playerRuntime;
+  final LlhlsProxyRegistry llhlsProxyRegistry;
   final SettingsRepository settingsRepository;
   final HistoryRepository historyRepository;
   final FollowRepository followRepository;

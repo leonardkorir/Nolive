@@ -1,8 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
 class FollowTransferSummary {
   const FollowTransferSummary({
@@ -139,9 +140,9 @@ class ImportFollowListJsonUseCase {
 
 Map<String, Object?> _encodeLegacyCompatibleFollowRecord(FollowRecord record) {
   return {
-    'id': '${record.providerId}_${record.roomId}',
+    'id': '${record.providerId.value}_${record.roomId}',
     'roomId': record.roomId,
-    'siteId': record.providerId,
+    'siteId': record.providerId.value,
     'userName': record.streamerName,
     'face': record.streamerAvatarUrl ?? '',
     'title': record.lastTitle ?? '',
@@ -163,9 +164,7 @@ List<FollowRecord> _decodeImportedFollowRecords(String rawJson) {
     List<dynamic> values => values,
     Map<String, dynamic> values when values['follows'] is List<dynamic> =>
       values['follows'] as List<dynamic>,
-    _ => throw const FormatException(
-        '关注导入 JSON 必须是数组，或包含 follows 字段的对象。',
-      ),
+    _ => throw const FormatException('关注导入 JSON 必须是数组，或包含 follows 字段的对象。'),
   };
 
   return entries.map(_decodeImportedFollowRecord).toList(growable: false);
@@ -184,62 +183,51 @@ FollowRecord _decodeImportedFollowRecord(Object? raw) {
     item['roomId'] ?? item['room_id'],
     fieldName: 'roomId/room_id',
   );
-  final streamerName = _firstNonEmptyString(
-        [
-          item['streamerName'],
-          item['streamer_name'],
-          item['userName'],
-          item['remark'],
-        ],
-      ) ??
+  final streamerName =
+      _firstNonEmptyString([
+        item['streamerName'],
+        item['streamer_name'],
+        item['userName'],
+        item['remark'],
+      ]) ??
       roomId;
 
   return FollowRecord(
-    providerId: providerId,
+    providerId: ProviderId.from(providerId),
     roomId: roomId,
     streamerName: streamerName,
-    streamerAvatarUrl: _firstNonEmptyString(
-      [
-        item['streamerAvatarUrl'],
-        item['streamer_avatar_url'],
-        item['face'],
-      ],
-    ),
-    lastTitle: _firstNonEmptyString(
-      [
-        item['lastTitle'],
-        item['last_title'],
-        item['title'],
-        item['liveTitle'],
-      ],
-    ),
-    lastAreaName: _firstNonEmptyString(
-      [
-        item['lastAreaName'],
-        item['last_area_name'],
-        item['areaName'],
-        item['area_name'],
-        item['liveAreaName'],
-      ],
-    ),
-    lastCoverUrl: _firstNonEmptyString(
-      [
-        item['lastCoverUrl'],
-        item['last_cover_url'],
-        item['coverUrl'],
-        item['cover_url'],
-        item['cover'],
-      ],
-    ),
-    lastKeyframeUrl: _firstNonEmptyString(
-      [
-        item['lastKeyframeUrl'],
-        item['last_keyframe_url'],
-        item['keyframeUrl'],
-        item['keyframe_url'],
-        item['keyframe'],
-      ],
-    ),
+    streamerAvatarUrl: _firstNonEmptyString([
+      item['streamerAvatarUrl'],
+      item['streamer_avatar_url'],
+      item['face'],
+    ]),
+    lastTitle: _firstNonEmptyString([
+      item['lastTitle'],
+      item['last_title'],
+      item['title'],
+      item['liveTitle'],
+    ]),
+    lastAreaName: _firstNonEmptyString([
+      item['lastAreaName'],
+      item['last_area_name'],
+      item['areaName'],
+      item['area_name'],
+      item['liveAreaName'],
+    ]),
+    lastCoverUrl: _firstNonEmptyString([
+      item['lastCoverUrl'],
+      item['last_cover_url'],
+      item['coverUrl'],
+      item['cover_url'],
+      item['cover'],
+    ]),
+    lastKeyframeUrl: _firstNonEmptyString([
+      item['lastKeyframeUrl'],
+      item['last_keyframe_url'],
+      item['keyframeUrl'],
+      item['keyframe_url'],
+      item['keyframe'],
+    ]),
     tags: _decodeTags(item),
   );
 }

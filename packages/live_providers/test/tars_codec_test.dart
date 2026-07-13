@@ -12,19 +12,13 @@ void main() {
   test('binary reader throws decode exception on truncated reads', () {
     final reader = BinaryReader(Uint8List.fromList([1, 2]));
 
-    expect(
-      () => reader.readInt(4),
-      throwsA(isA<TarsDecodeException>()),
-    );
+    expect(() => reader.readInt(4), throwsA(isA<TarsDecodeException>()));
   });
 
   test('skipToTag propagates decode exceptions for malformed payloads', () {
     final input = TarsInputStream(Uint8List.fromList([6]));
 
-    expect(
-      () => input.skipToTag(1),
-      throwsA(isA<TarsDecodeException>()),
-    );
+    expect(() => input.skipToTag(1), throwsA(isA<TarsDecodeException>()));
   });
 
   test('tars decode exception is a recoverable exception', () {
@@ -48,19 +42,13 @@ void main() {
     final output = TarsOutputStream();
     output.bw = _ThrowingBinaryWriter([]);
 
-    expect(
-      () => output.writeHead(1, 1),
-      throwsA(isA<StateError>()),
-    );
+    expect(() => output.writeHead(1, 1), throwsA(isA<StateError>()));
   });
 
   test('tars output stream still rejects oversized tags', () {
     final output = TarsOutputStream();
 
-    expect(
-      () => output.writeHead(1, 300),
-      throwsA(isA<TarsEncodeException>()),
-    );
+    expect(() => output.writeHead(1, 300), throwsA(isA<TarsEncodeException>()));
   });
 
   test('huya sender reads lMid from its dedicated tag', () {

@@ -34,8 +34,9 @@ void main() {
 
   test('memory player stop clears current source', () async {
     final player = MemoryPlayer();
-    final source =
-        PlaybackSource(url: Uri.parse('https://example.com/live.m3u8'));
+    final source = PlaybackSource(
+      url: Uri.parse('https://example.com/live.m3u8'),
+    );
 
     await player.initialize();
     await player.setSource(source);
@@ -54,8 +55,9 @@ void main() {
       startupDelay: Duration.zero,
       bufferDelay: Duration.zero,
     );
-    final source =
-        PlaybackSource(url: Uri.parse('https://example.com/live.m3u8'));
+    final source = PlaybackSource(
+      url: Uri.parse('https://example.com/live.m3u8'),
+    );
 
     await player.initialize();
     await player.setSource(source);
@@ -84,9 +86,10 @@ void main() {
   });
 
   test('switchable player keeps source when backend changes', () async {
-    final player = SwitchablePlayer();
-    final source =
-        PlaybackSource(url: Uri.parse('https://example.com/live.flv'));
+    final player = SwitchablePlayer.simulated();
+    final source = PlaybackSource(
+      url: Uri.parse('https://example.com/live.flv'),
+    );
 
     await player.initialize();
     await player.setSource(source);
@@ -106,9 +109,12 @@ void main() {
   });
 
   test('switchable player can refresh same backend and keep source', () async {
-    final player = SwitchablePlayer(initialBackend: PlayerBackend.mpv);
-    final source =
-        PlaybackSource(url: Uri.parse('https://example.com/live.m3u8'));
+    final player = SwitchablePlayer.simulated(
+      initialBackend: PlayerBackend.mpv,
+    );
+    final source = PlaybackSource(
+      url: Uri.parse('https://example.com/live.m3u8'),
+    );
 
     await player.initialize();
     await player.setSource(source);

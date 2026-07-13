@@ -314,6 +314,7 @@ class AppLog {
       return true;
     }
     return tag == 'room' ||
+        tag.startsWith('nfr/') ||
         tag == 'player' ||
         tag.startsWith('player/') ||
         tag.startsWith('chaturbate/');

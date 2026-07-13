@@ -1,4 +1,5 @@
 import '../text/well_formed_string_extension.dart';
+import '../provider/provider_id.dart';
 
 class LiveRoom {
   const LiveRoom({
@@ -16,7 +17,7 @@ class LiveRoom {
        _streamerName = streamerName,
        _areaName = areaName;
 
-  final String providerId;
+  final ProviderId providerId;
   final String roomId;
   final String _title;
   final String _streamerName;
@@ -49,15 +50,15 @@ class LiveRoom {
 
   @override
   int get hashCode => Object.hash(
-        providerId,
-        roomId,
-        title,
-        streamerName,
-        coverUrl,
-        keyframeUrl,
-        areaName,
-        streamerAvatarUrl,
-        viewerCount,
-        isLive,
-      );
+    providerId,
+    roomId,
+    title,
+    streamerName,
+    coverUrl,
+    keyframeUrl,
+    areaName,
+    streamerAvatarUrl,
+    viewerCount,
+    isLive,
+  );
 }

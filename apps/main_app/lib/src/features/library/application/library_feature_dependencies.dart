@@ -6,6 +6,8 @@ import 'create_tag_use_case.dart';
 import 'list_follow_records_use_case.dart';
 import 'list_tags_use_case.dart';
 import 'load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
+
 import 'remove_follow_room_use_case.dart';
 import 'update_follow_tags_use_case.dart';
 

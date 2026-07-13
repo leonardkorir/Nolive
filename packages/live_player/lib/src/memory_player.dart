@@ -18,7 +18,7 @@ class MemoryPlayer implements BasePlayer {
 
   PlaybackSource? _currentSource;
   PlayerState _currentState = const PlayerState(backend: PlayerBackend.memory);
-  final PlayerDiagnostics _currentDiagnostics = const PlayerDiagnostics(
+  PlayerDiagnostics _currentDiagnostics = const PlayerDiagnostics(
     backend: PlayerBackend.memory,
   );
   bool _initialized = false;
@@ -80,7 +80,22 @@ class MemoryPlayer implements BasePlayer {
       );
       return;
     }
-    _emit(_currentState.copyWith(status: PlaybackStatus.playing));
+    // Preview/memory backends have no decoder; report a synthetic first frame
+    // so room loading shell can dismiss the same way as a real player.
+    // Keep any diagnostics the test/host already seeded.
+    if ((_currentDiagnostics.width ?? 0) <= 0 ||
+        (_currentDiagnostics.height ?? 0) <= 0) {
+      _emitDiagnostics(
+        _currentDiagnostics.copyWith(width: 1280, height: 720),
+      );
+    }
+    _emit(
+      _currentState.copyWith(
+        status: PlaybackStatus.playing,
+        position: const Duration(milliseconds: 40),
+        buffered: const Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
@@ -91,6 +106,9 @@ class MemoryPlayer implements BasePlayer {
   @override
   Future<void> stop() async {
     _currentSource = null;
+    _emitDiagnostics(
+      _currentDiagnostics.copyWith(clearWidth: true, clearHeight: true),
+    );
     _emit(_currentState.copyWith(
         status: PlaybackStatus.ready, clearSource: true));
   }
@@ -128,6 +146,13 @@ class MemoryPlayer implements BasePlayer {
     _currentState = state.copyWith(backend: backend);
     if (!_stateController.isClosed) {
       _stateController.add(_currentState);
+    }
+  }
+
+  void _emitDiagnostics(PlayerDiagnostics diagnostics) {
+    _currentDiagnostics = diagnostics;
+    if (!_diagnosticsController.isClosed) {
+      _diagnosticsController.add(_currentDiagnostics);
     }
   }
 }

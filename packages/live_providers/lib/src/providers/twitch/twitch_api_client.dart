@@ -31,14 +31,14 @@ class HttpTwitchApiClient implements TwitchApiClient {
         ProviderBrowserProfile.chromiumDesktop,
     ProviderRetryPolicy retryPolicy = const ProviderRetryPolicy(),
     void Function(String message)? diagnostics,
-  })  : _client = client ?? http.Client(),
-        _cookie = cookie.trim(),
-        _browserProfile = browserProfile,
-        _retryPolicy = retryPolicy,
-        _diagnostics = diagnostics,
-        _clientId = clientId.trim().isEmpty
-            ? TwitchApiClient.defaultClientId
-            : clientId.trim();
+  }) : _client = client ?? http.Client(),
+       _cookie = cookie.trim(),
+       _browserProfile = browserProfile,
+       _retryPolicy = retryPolicy,
+       _diagnostics = diagnostics,
+       _clientId = clientId.trim().isEmpty
+           ? TwitchApiClient.defaultClientId
+           : clientId.trim();
 
   final http.Client _client;
   final String _cookie;

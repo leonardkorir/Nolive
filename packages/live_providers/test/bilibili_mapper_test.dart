@@ -10,11 +10,7 @@ void main() {
         },
         'result': {
           'live_room': [
-            {
-              'roomid': null,
-              'title': 'invalid room',
-              'uname': 'nobody',
-            },
+            {'roomid': null, 'title': 'invalid room', 'uname': 'nobody'},
             {
               'roomid': 32558935,
               'title': 'valid room',

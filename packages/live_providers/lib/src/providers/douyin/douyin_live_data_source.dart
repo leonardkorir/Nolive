@@ -19,10 +19,10 @@ class DouyinLiveDataSource implements DouyinDataSource {
     required DouyinSignService signService,
     Duration roomDetailApiTimeout = const Duration(seconds: 4),
     Duration roomDetailHtmlTimeout = const Duration(seconds: 4),
-  })  : _transport = transport,
-        _signService = signService,
-        _roomDetailApiTimeout = roomDetailApiTimeout,
-        _roomDetailHtmlTimeout = roomDetailHtmlTimeout;
+  }) : _transport = transport,
+       _signService = signService,
+       _roomDetailApiTimeout = roomDetailApiTimeout,
+       _roomDetailHtmlTimeout = roomDetailHtmlTimeout;
 
   final DouyinTransport _transport;
   final DouyinSignService _signService;
@@ -74,10 +74,8 @@ class DouyinLiveDataSource implements DouyinDataSource {
   @override
   Future<List<LiveCategory>> fetchCategories() async {
     final htmlResult = await _requestWithRetry(
-      request: (headers) => _transport.getText(
-        'https://live.douyin.com/',
-        headers: headers,
-      ),
+      request: (headers) =>
+          _transport.getText('https://live.douyin.com/', headers: headers),
     );
     final html = htmlResult.data;
     final renderData =
@@ -88,43 +86,48 @@ class DouyinLiveDataSource implements DouyinDataSource {
         message: 'Unable to parse Douyin categories from homepage payload.',
       );
     }
-    final decoded = jsonDecode(
-      renderData
-          .trim()
-          .replaceAll('\\"', '"')
-          .replaceAll(r'\\', r'\')
-          .replaceAll('],', ''),
-    ) as Map<String, dynamic>;
+    final decoded =
+        jsonDecode(
+              renderData
+                  .trim()
+                  .replaceAll('\\"', '"')
+                  .replaceAll(r'\\', r'\')
+                  .replaceAll('],', ''),
+            )
+            as Map<String, dynamic>;
 
-    return _asList(decoded['categoryData']).map((item) {
-      final category = _asMap(item);
-      final partition = _asMap(category['partition']);
-      final categoryId =
-          '${partition['id_str']?.toString() ?? ''},${partition['type']?.toString() ?? ''}';
-      final children = _extractLeafSubCategories(
-        _asList(category['sub_partition']),
-        parentId: categoryId,
-      ).toList(growable: true);
-      final resolvedName = partition['title']?.toString() ?? '';
-      if (categoryId.isNotEmpty && resolvedName.isNotEmpty) {
-        children.insert(
-          0,
-          LiveSubCategory(
-            id: categoryId,
+    return _asList(decoded['categoryData'])
+        .map((item) {
+          final category = _asMap(item);
+          final partition = _asMap(category['partition']);
+          final categoryId =
+              '${partition['id_str']?.toString() ?? ''},${partition['type']?.toString() ?? ''}';
+          final children = _extractLeafSubCategories(
+            _asList(category['sub_partition']),
             parentId: categoryId,
+          ).toList(growable: true);
+          final resolvedName = partition['title']?.toString() ?? '';
+          if (categoryId.isNotEmpty && resolvedName.isNotEmpty) {
+            children.insert(
+              0,
+              LiveSubCategory(
+                id: categoryId,
+                parentId: categoryId,
+                name: resolvedName,
+                pic: _partitionIconUrl(partition),
+              ),
+            );
+          }
+          return LiveCategory(
+            id: categoryId,
             name: resolvedName,
-            pic: _partitionIconUrl(partition),
-          ),
-        );
-      }
-      return LiveCategory(
-        id: categoryId,
-        name: resolvedName,
-        children: children.toList(growable: false),
-      );
-    }).where((item) {
-      return item.id.isNotEmpty && item.name.isNotEmpty;
-    }).toList(growable: false);
+            children: children.toList(growable: false),
+          );
+        })
+        .where((item) {
+          return item.id.isNotEmpty && item.name.isNotEmpty;
+        })
+        .toList(growable: false);
   }
 
   @override
@@ -145,11 +148,13 @@ class DouyinLiveDataSource implements DouyinDataSource {
       category,
       requestOffset: (normalizedPage - 1) * _kCategoryPageSize,
     );
-    for (var attempt = 0;
-        attempt < _kCategorySparsePageLookahead &&
-            resolvedPage.items.isEmpty &&
-            resolvedPage.nextOffset > resolvedPage.requestOffset;
-        attempt += 1) {
+    for (
+      var attempt = 0;
+      attempt < _kCategorySparsePageLookahead &&
+          resolvedPage.items.isEmpty &&
+          resolvedPage.nextOffset > resolvedPage.requestOffset;
+      attempt += 1
+    ) {
       resolvedPage = await _fetchCategoryRoomsPage(
         category,
         requestOffset: resolvedPage.nextOffset,
@@ -194,10 +199,7 @@ class DouyinLiveDataSource implements DouyinDataSource {
       },
     );
     final responseResult = await _requestWithRetry(
-      request: (headers) => _transport.getJson(
-        requestUrl,
-        headers: headers,
-      ),
+      request: (headers) => _transport.getJson(requestUrl, headers: headers),
     );
     final response = responseResult.data;
     final data = _asMap(response['data']);
@@ -215,61 +217,59 @@ class DouyinLiveDataSource implements DouyinDataSource {
   }
 
   @override
-  Future<PagedResponse<LiveRoom>> searchRooms(String query,
-      {int page = 1}) async {
-    final requestUrl = _signService.buildSignedUrl(
-      'https://www.douyin.com/aweme/v1/web/live/search/',
-      {
-        'device_platform': 'webapp',
-        'aid': '6383',
-        'channel': 'channel_pc_web',
-        'search_channel': 'aweme_live',
-        'keyword': query,
-        'search_source': 'switch_tab',
-        'query_correct_type': '1',
-        'is_filter_search': '0',
-        'from_group_id': '',
-        'offset': '${(page - 1) * 10}',
-        'count': '10',
-        'pc_client_type': '1',
-        'version_code': '170400',
-        'version_name': '17.4.0',
-        'cookie_enabled': 'true',
-        'screen_width': '1980',
-        'screen_height': '1080',
-        'browser_language': 'zh-CN',
-        'browser_platform': DouyinRequestParams.browserPlatformValue,
-        'browser_name': DouyinRequestParams.browserNameValue,
-        'browser_version': DouyinRequestParams.browserVersionValue,
-        'browser_online': 'true',
-        'engine_name': 'Blink',
-        'engine_version': DouyinRequestParams.browserVersionValue,
-        'os_name': DouyinRequestParams.osNameValue,
-        'os_version': '10',
-        'cpu_core_num': '12',
-        'device_memory': '8',
-        'platform': 'PC',
-        'downlink': '10',
-        'effective_type': '4g',
-        'round_trip_time': '100',
-        'webid': '7382872326016435738',
-      },
-    );
+  Future<PagedResponse<LiveRoom>> searchRooms(
+    String query, {
+    int page = 1,
+  }) async {
+    final requestUrl = _signService
+        .buildSignedUrl('https://www.douyin.com/aweme/v1/web/live/search/', {
+          'device_platform': 'webapp',
+          'aid': '6383',
+          'channel': 'channel_pc_web',
+          'search_channel': 'aweme_live',
+          'keyword': query,
+          'search_source': 'switch_tab',
+          'query_correct_type': '1',
+          'is_filter_search': '0',
+          'from_group_id': '',
+          'offset': '${(page - 1) * 10}',
+          'count': '10',
+          'pc_client_type': '1',
+          'version_code': '170400',
+          'version_name': '17.4.0',
+          'cookie_enabled': 'true',
+          'screen_width': '1980',
+          'screen_height': '1080',
+          'browser_language': 'zh-CN',
+          'browser_platform': DouyinRequestParams.browserPlatformValue,
+          'browser_name': DouyinRequestParams.browserNameValue,
+          'browser_version': DouyinRequestParams.browserVersionValue,
+          'browser_online': 'true',
+          'engine_name': 'Blink',
+          'engine_version': DouyinRequestParams.browserVersionValue,
+          'os_name': DouyinRequestParams.osNameValue,
+          'os_version': '10',
+          'cpu_core_num': '12',
+          'device_memory': '8',
+          'platform': 'PC',
+          'downlink': '10',
+          'effective_type': '4g',
+          'round_trip_time': '100',
+          'webid': '7382872326016435738',
+        });
     final responseResult = await _requestWithRetry(
       headerOverrides: {
         'referer':
             'https://www.douyin.com/search/${Uri.encodeComponent(query)}?type=live',
       },
-      request: (headers) => _transport.getJson(
-        requestUrl,
-        headers: headers,
-      ),
+      request: (headers) => _transport.getJson(requestUrl, headers: headers),
     );
     final response = responseResult.data;
     if (_asInt(response['status_code']) != 0) {
       throw ProviderParseException(
         providerId: ProviderId.douyin,
-        message: response['status_msg']?.toString() ??
+        message:
+            response['status_msg']?.toString() ??
             'Douyin search request failed.',
       );
     }
@@ -311,7 +311,7 @@ class DouyinLiveDataSource implements DouyinDataSource {
           final owner = _asMap(data['owner']);
           final cover = _asMap(data['cover']);
           return LiveRoom(
-            providerId: ProviderId.douyin.value,
+            providerId: ProviderId.douyin,
             roomId: owner['web_rid']?.toString() ?? '',
             title: normalizeDisplayText(data['title']?.toString()),
             streamerName: normalizeDisplayText(owner['nickname']?.toString()),
@@ -319,8 +319,9 @@ class DouyinLiveDataSource implements DouyinDataSource {
             keyframeUrl: _firstUrl(cover),
             areaName: '',
             streamerAvatarUrl: _firstUrl(_asMap(owner['avatar_thumb'])),
-            viewerCount:
-                _asInt(_asMap(data['room_view_stats'])['display_value']),
+            viewerCount: _asInt(
+              _asMap(data['room_view_stats'])['display_value'],
+            ),
             isLive: true,
           );
         })
@@ -330,17 +331,21 @@ class DouyinLiveDataSource implements DouyinDataSource {
     final normalized = query.trim().toLowerCase();
     final filtered = normalized.isEmpty
         ? rooms
-        : rooms.where((room) {
-            return room.title.toLowerCase().contains(normalized) ||
-                room.streamerName.toLowerCase().contains(normalized);
-          }).toList(growable: false);
+        : rooms
+              .where((room) {
+                return room.title.toLowerCase().contains(normalized) ||
+                    room.streamerName.toLowerCase().contains(normalized);
+              })
+              .toList(growable: false);
 
     final start = (page - 1) * pageSize;
     final end = start + pageSize;
     final resolved = start >= filtered.length
         ? const <LiveRoom>[]
         : filtered.sublist(
-            start, end > filtered.length ? filtered.length : end);
+            start,
+            end > filtered.length ? filtered.length : end,
+          );
     return PagedResponse(
       items: resolved,
       hasMore: filtered.length > end,
@@ -391,8 +396,9 @@ class DouyinLiveDataSource implements DouyinDataSource {
     LiveRoomDetail? apiDetail;
     Object? apiError;
     try {
-      apiDetail = await _fetchRoomDetailByWebRidViaApi(webRid)
-          .timeout(_roomDetailApiTimeout);
+      apiDetail = await _fetchRoomDetailByWebRidViaApi(
+        webRid,
+      ).timeout(_roomDetailApiTimeout);
       if (_hasUsablePlaybackMetadata(apiDetail)) {
         return apiDetail;
       }
@@ -401,8 +407,9 @@ class DouyinLiveDataSource implements DouyinDataSource {
     }
 
     try {
-      final htmlDetail = await _fetchRoomDetailByWebRidViaHtml(webRid)
-          .timeout(_roomDetailHtmlTimeout);
+      final htmlDetail = await _fetchRoomDetailByWebRidViaHtml(
+        webRid,
+      ).timeout(_roomDetailHtmlTimeout);
       if (_hasUsablePlaybackMetadata(htmlDetail)) {
         return htmlDetail;
       }
@@ -425,22 +432,17 @@ class DouyinLiveDataSource implements DouyinDataSource {
   }
 
   Future<LiveRoomDetail> _fetchRoomDetailByWebRidViaApi(String webRid) async {
-    final requestUrl = _signService.buildSignedUrl(
-      'https://live.douyin.com/webcast/room/web/enter/',
-      {
-        'app_name': 'douyin_web',
-        'enter_from': 'web_live',
-        'live_id': '1',
-        'web_rid': webRid,
-        'is_need_double_stream': 'false',
-      },
-    );
+    final requestUrl = _signService
+        .buildSignedUrl('https://live.douyin.com/webcast/room/web/enter/', {
+          'app_name': 'douyin_web',
+          'enter_from': 'web_live',
+          'live_id': '1',
+          'web_rid': webRid,
+          'is_need_double_stream': 'false',
+        });
     final responseResult = await _requestWithRetry(
       refererPath: webRid,
-      request: (headers) => _transport.getJson(
-        requestUrl,
-        headers: headers,
-      ),
+      request: (headers) => _transport.getJson(requestUrl, headers: headers),
     );
     return DouyinMapper.mapRoomDetailFromApi(
       _asMap(responseResult.data['data']),
@@ -496,7 +498,8 @@ class DouyinLiveDataSource implements DouyinDataSource {
 
   @override
   Future<List<LivePlayQuality>> fetchPlayQualities(
-      LiveRoomDetail detail) async {
+    LiveRoomDetail detail,
+  ) async {
     return DouyinMapper.mapPlayQualities(detail);
   }
 
@@ -512,7 +515,7 @@ class DouyinLiveDataSource implements DouyinDataSource {
     final room = _asMap(item['room']);
     final owner = _asMap(room['owner']);
     return LiveRoom(
-      providerId: ProviderId.douyin.value,
+      providerId: ProviderId.douyin,
       roomId: item['web_rid']?.toString() ?? owner['web_rid']?.toString() ?? '',
       title: normalizeDisplayText(room['title']?.toString()),
       streamerName: normalizeDisplayText(owner['nickname']?.toString()),

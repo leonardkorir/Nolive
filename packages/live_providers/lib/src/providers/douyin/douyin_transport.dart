@@ -57,7 +57,7 @@ abstract class DouyinTransport {
 
 class HttpDouyinTransport extends DouyinTransport {
   HttpDouyinTransport({http.Client? client})
-      : _client = client ?? http.Client();
+    : _client = client ?? http.Client();
 
   final http.Client _client;
 

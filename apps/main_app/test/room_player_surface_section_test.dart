@@ -14,7 +14,7 @@ void main() {
   }) {
     return RoomPlayerSurfaceViewData(
       room: const LiveRoomDetail(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '1000',
         title: '测试直播间',
         streamerName: '测试主播',

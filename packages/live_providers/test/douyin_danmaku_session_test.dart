@@ -6,8 +6,10 @@ import 'package:test/test.dart';
 
 void main() {
   test('douyin ack frame keeps ack payload type and stores internalExt', () {
-    final frame =
-        buildDouyinAckFrame($fixnum.Int64(42), 'internal-ext-payload');
+    final frame = buildDouyinAckFrame(
+      $fixnum.Int64(42),
+      'internal-ext-payload',
+    );
 
     expect(frame.payloadType, 'ack');
     expect(frame.logId, $fixnum.Int64(42));

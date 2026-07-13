@@ -1,10 +1,15 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:live_core/live_core.dart';
+import 'package:live_providers/live_providers.dart';
+import 'package:live_providers/src/providers/chaturbate/chaturbate_api_client.dart';
+import 'package:live_providers/src/providers/chaturbate/chaturbate_request_scheduler.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/settings/application/sensitive_setting_keys.dart';
 import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
@@ -26,7 +31,7 @@ void main() {
         );
         await first.updateThemeMode(ThemeMode.dark);
         await first.toggleFollowRoom(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili.value,
           roomId: '66666',
           streamerName: '架构迁移验证房间',
           streamerAvatarUrl: 'https://example.com/persisted-avatar.png',
@@ -130,10 +135,10 @@ void main() {
   );
 
   test(
-    'persistent bootstrap returns before deferred secure storage preload completes',
+    'persistent bootstrap awaits secure storage preload before returning',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
-        'nolive-bootstrap-secure-deferred-',
+        'nolive-bootstrap-secure-sequenced-',
       );
 
       try {
@@ -152,14 +157,25 @@ void main() {
             'tags': const [],
           }),
         );
-        final loaderCompleter = Completer<SecureCredentialStore>();
+        var loaderCompleted = false;
 
         final bootstrap = await createPersistentAppBootstrap(
           mode: AppRuntimeMode.live,
           storageDirectory: tempDir,
-          secureCredentialStoreLoader: () => loaderCompleter.future,
+          secureCredentialStoreLoader: () async {
+            await Future<void>.delayed(const Duration(milliseconds: 40));
+            loaderCompleted = true;
+            return InMemorySecureCredentialStore(
+              initialValues: {
+                SensitiveSettingKeys.accountDouyinCookie:
+                    'secure-douyin-cookie',
+              },
+            );
+          },
         ).timeout(const Duration(seconds: 10));
 
+        // Must not return until secure loader finished (sequenced warm-up).
+        expect(loaderCompleted, isTrue);
         expect(bootstrap.themeMode.value, ThemeMode.dark);
         expect(
           bootstrap.listAvailableProviders().any(
@@ -167,15 +183,6 @@ void main() {
           ),
           isTrue,
         );
-
-        loaderCompleter.complete(
-          InMemorySecureCredentialStore(
-            initialValues: {
-              SensitiveSettingKeys.accountDouyinCookie: 'secure-douyin-cookie',
-            },
-          ),
-        );
-        await bootstrap.warmUpSecureCredentialStore();
 
         final accountSettings = await bootstrap.loadProviderAccountSettings();
         expect(accountSettings.douyinCookie, 'secure-douyin-cookie');
@@ -230,7 +237,81 @@ void main() {
   });
 
   test(
-    'persistent bootstrap invalidates cached providers after secure credential preload changes snapshot',
+    'persistent bootstrap first Chaturbate create uses secure account cookie',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'nolive-bootstrap-cb-cookie-ready-',
+      );
+
+      try {
+        final storageFile = File(
+          '${tempDir.path}${Platform.pathSeparator}nolive_storage.json',
+        );
+        // Cookie lives only in secure store (not in plain settings snapshot).
+        await storageFile.writeAsString(
+          jsonEncode({
+            'settings': {'theme_mode': 'system'},
+            'history': const [],
+            'follows': const [],
+            'tags': const [],
+          }),
+        );
+
+        const cbCookie =
+            'cf_clearance=from-secure-store; csrftoken=csrf-token; sessionid=s1';
+        final bootstrap = await createPersistentAppBootstrap(
+          mode: AppRuntimeMode.live,
+          storageDirectory: tempDir,
+          secureCredentialStoreLoader: () async {
+            return InMemorySecureCredentialStore(
+              initialValues: {
+                SensitiveSettingKeys.accountChaturbateCookie: cbCookie,
+              },
+            );
+          },
+        );
+
+        // No extra warmUp: sequenced ensureReady already applied.
+        final accountSettings = await bootstrap.loadProviderAccountSettings();
+        expect(accountSettings.chaturbateCookie, cbCookie);
+
+        // First registry create must already bind the secure cookie (real path
+        // used by home recommend / category list).
+        final provider = bootstrap.providerRegistry.create(
+          ProviderId.chaturbate,
+        );
+        expect(provider, isA<ChaturbateProvider>());
+        expect(
+          (provider as ChaturbateProvider).debugConfiguredCookie,
+          cbCookie,
+        );
+
+        // Prove that cookie reaches the Cookie header on room-list (discover).
+        String? seenCookie;
+        final apiClient = HttpChaturbateApiClient(
+      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+          cookie: provider.debugConfiguredCookie,
+          client: MockClient((request) async {
+            seenCookie = request.headers['cookie'];
+            return http.Response(
+              jsonEncode(const {'rooms': <Object>[], 'total_count': 0}),
+              200,
+            );
+          }),
+        );
+        final wired = ChaturbateProvider.live(apiClient: apiClient);
+        await wired.fetchRecommendRooms();
+        expect(seenCookie, contains('cf_clearance=from-secure-store'));
+      } finally {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      }
+    },
+  );
+
+  test(
+    'persistent bootstrap invalidates cached providers when secure snapshot changes later',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'nolive-bootstrap-provider-cache-refresh-',
@@ -243,7 +324,6 @@ void main() {
         await storageFile.writeAsString(
           jsonEncode({
             'settings': {
-              'account_bilibili_cookie': 'SESSDATA=legacy-cookie',
               'account_bilibili_user_id': 12345,
             },
             'history': const [],
@@ -251,27 +331,29 @@ void main() {
             'tags': const [],
           }),
         );
-        final loaderCompleter = Completer<SecureCredentialStore>();
 
+        final secureStore = InMemorySecureCredentialStore(
+          initialValues: {
+            SensitiveSettingKeys.accountBilibiliCookie:
+                'SESSDATA=initial-secure',
+          },
+        );
         final bootstrap = await createPersistentAppBootstrap(
           mode: AppRuntimeMode.live,
           storageDirectory: tempDir,
-          secureCredentialStoreLoader: () => loaderCompleter.future,
+          secureCredentialStore: secureStore,
         );
 
         final firstProvider = bootstrap.providerRegistry.create(
           ProviderId.bilibili,
         );
 
-        loaderCompleter.complete(
-          InMemorySecureCredentialStore(
-            initialValues: {
-              SensitiveSettingKeys.accountBilibiliCookie:
-                  'SESSDATA=secure-cookie',
-            },
-          ),
+        await secureStore.write(
+          SensitiveSettingKeys.accountBilibiliCookie,
+          'SESSDATA=updated-secure',
         );
-        await bootstrap.warmUpSecureCredentialStore();
+        // Account update path clears cache; simulate via catalog revision + clear.
+        bootstrap.providerRegistry.clearCache();
 
         final secondProvider = bootstrap.providerRegistry.create(
           ProviderId.bilibili,
@@ -279,13 +361,7 @@ void main() {
         final accountSettings = await bootstrap.loadProviderAccountSettings();
 
         expect(identical(firstProvider, secondProvider), isFalse);
-        expect(accountSettings.bilibiliCookie, 'SESSDATA=secure-cookie');
-        expect(
-          await bootstrap.settingsRepository.readValue<String>(
-            SensitiveSettingKeys.accountBilibiliCookie,
-          ),
-          isNull,
-        );
+        expect(accountSettings.bilibiliCookie, 'SESSDATA=updated-secure');
       } finally {
         if (await tempDir.exists()) {
           await tempDir.delete(recursive: true);

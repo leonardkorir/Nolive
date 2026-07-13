@@ -265,12 +265,8 @@ class UpdateProviderAccountSettingsUseCase {
         SensitiveSettingKeys.accountYouTubeCookie,
       );
     }
-    providerRegistry?.invalidate(ProviderId.bilibili);
-    providerRegistry?.invalidate(ProviderId.chaturbate);
-    providerRegistry?.invalidate(ProviderId.douyin);
-    providerRegistry?.invalidate(ProviderId.stripchat);
-    providerRegistry?.invalidate(ProviderId.twitch);
-    providerRegistry?.invalidate(ProviderId.youtube);
+    // Drop all cached provider instances so subsequent fetches re-read cookies.
+    providerRegistry?.clearCache();
     if (providerCatalogRevision != null) {
       providerCatalogRevision!.value += 1;
     }

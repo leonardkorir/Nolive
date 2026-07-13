@@ -1,5 +1,5 @@
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
-import 'package:nolive_app/src/app/home/application/home_feature_dependencies.dart';
+import 'package:nolive_app/src/features/home/application/home_feature_dependencies.dart';
 import 'package:nolive_app/src/app/shell/app_shell_dependencies.dart';
 import 'package:nolive_app/src/features/browse/application/browse_feature_dependencies.dart';
 import 'package:nolive_app/src/features/category/application/category_feature_dependencies.dart';

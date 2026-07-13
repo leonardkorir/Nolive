@@ -7,7 +7,7 @@ import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/library/presentation/library_page.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
 import 'test_feature_dependencies.dart';
@@ -18,7 +18,7 @@ void main() {
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     await bootstrap.toggleFollowRoom(
-      providerId: 'bilibili',
+      providerId: ProviderId.bilibili.value,
       roomId: '6',
       streamerName: '系统演示主播',
     );
@@ -63,7 +63,7 @@ void main() {
 
       await bootstrap.followRepository.upsert(
         const FollowRecord(
-          providerId: 'fixture',
+          providerId: ProviderId('fixture'),
           roomId: 'offline-room',
           streamerName: '离线主播',
           lastTitle: '上次标题',
@@ -107,7 +107,7 @@ void main() {
 
       provider.complete(
         LiveRoomDetail(
-          providerId: 'fixture',
+          providerId: const ProviderId('fixture'),
           roomId: 'offline-room',
           title: '远程标题',
           streamerName: '离线主播',
@@ -127,7 +127,7 @@ void main() {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'legacy-provider',
+        providerId: ProviderId('legacy-provider'),
         roomId: 'legacy-room',
         streamerName: '旧平台主播',
         lastTitle: '旧平台房间',
@@ -178,7 +178,7 @@ void main() {
       expect(find.text('暂无关注'), findsOneWidget);
 
       await bootstrap.toggleFollowRoom(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili.value,
         roomId: '6',
         streamerName: '系统演示主播',
         title: '系统演示直播间',
@@ -198,7 +198,7 @@ void main() {
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     const record = FollowRecord(
-      providerId: 'bilibili',
+      providerId: ProviderId.bilibili,
       roomId: '6',
       streamerName: '系统演示主播',
       lastTitle: '系统演示直播间',
@@ -209,7 +209,7 @@ void main() {
         FollowWatchEntry(
           record: record,
           detail: LiveRoomDetail(
-            providerId: 'bilibili',
+            providerId: ProviderId.bilibili,
             roomId: '6',
             title: '系统演示直播间',
             streamerName: '系统演示主播',
@@ -284,7 +284,7 @@ void main() {
 
     await bootstrap.followRepository.upsert(
       const FollowRecord(
-        providerId: 'failing',
+        providerId: ProviderId('failing'),
         roomId: 'error-room',
         streamerName: '异常主播',
         lastTitle: '上次标题',
@@ -321,7 +321,7 @@ void main() {
       var detailCalls = 0;
 
       const record = FollowRecord(
-        providerId: 'cached-follow',
+        providerId: ProviderId('cached-follow'),
         roomId: 'room-1',
         streamerName: '缓存主播',
         lastTitle: '缓存标题',
@@ -335,7 +335,7 @@ void main() {
             onRoomDetail: (roomId) async {
               detailCalls += 1;
               return LiveRoomDetail(
-                providerId: _kCachedFollowProviderId.value,
+                providerId: _kCachedFollowProviderId,
                 roomId: roomId,
                 title: '远程标题',
                 streamerName: '缓存主播',
@@ -350,7 +350,7 @@ void main() {
           FollowWatchEntry(
             record: record,
             detail: const LiveRoomDetail(
-              providerId: 'cached-follow',
+              providerId: ProviderId('cached-follow'),
               roomId: 'room-1',
               title: '缓存标题',
               streamerName: '缓存主播',
@@ -402,7 +402,7 @@ void main() {
     for (var index = 0; index < 20; index += 1) {
       await bootstrap.followRepository.upsert(
         FollowRecord(
-          providerId: 'scroll-provider',
+          providerId: const ProviderId('scroll-provider'),
           roomId: 'room-$index',
           streamerName: '主播$index',
           lastTitle: '标题$index',

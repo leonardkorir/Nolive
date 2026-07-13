@@ -4,9 +4,11 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap_host_app.dart';
 import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/shared/application/app_log.dart';
+import 'package:nolive_app/src/shared/application/nfr_frame_timing_telemetry.dart';
 import 'package:window_manager/window_manager.dart';
 
 typedef ImageCacheBudget = ({int maximumSize, int maximumSizeBytes});
@@ -43,7 +45,10 @@ void configureImageCacheBudgetForPlatform(
 Future<void> main() async {
   await runZonedGuarded(
     () async {
-      WidgetsFlutterBinding.ensureInitialized();
+      final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+      // Keep the native splash painted until bootstrap finishes — same single
+      // avoid a second pure-black Flutter loading page.
+      FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
       final platform = AppPlatformCapabilities.current();
       configureImageCacheBudgetForPlatform(
         PaintingBinding.instance.imageCache,
@@ -80,6 +85,7 @@ Future<void> main() async {
             'version=${platform.operatingSystemVersion} '
             'debug=$kDebugMode',
       );
+      NfrFrameTimingTelemetry.instance.start();
       if (!platform.isWeb && platform.isDesktop) {
         await windowManager.ensureInitialized();
         const options = WindowOptions(

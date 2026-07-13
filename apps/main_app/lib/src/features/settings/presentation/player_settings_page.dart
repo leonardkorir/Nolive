@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
@@ -16,6 +17,11 @@ class PlayerSettingsPage extends StatefulWidget {
 
 class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
   late Future<PlayerPreferences> _future;
+  /// Optimistic UI copy so toggles (especially custom output) feel instant
+  /// and do not snap back to [_fallbackPreferences] while Future reloads.
+  PlayerPreferences? _preferences;
+  bool _saving = false;
+  int _updateGeneration = 0;
 
   @override
   void initState() {
@@ -39,14 +45,39 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
     required PlayerPreferences current,
     required PlayerPreferences next,
   }) async {
-    await widget.dependencies.updatePlayerPreferences(next);
-    await widget.dependencies.applyPlayerPreferencesToRuntime(
-      current: current,
-      next: next,
-    );
+    final generation = ++_updateGeneration;
     setState(() {
-      _future = _loadPreferencesForDisplay();
+      _saving = true;
+      _preferences = next;
     });
+    try {
+      await widget.dependencies.updatePlayerPreferences(next);
+      await widget.dependencies.applyPlayerPreferencesToRuntime(
+        current: current,
+        next: next,
+      );
+      if (!mounted || generation != _updateGeneration) {
+        return;
+      }
+      final reloaded = await _loadPreferencesForDisplay();
+      if (!mounted || generation != _updateGeneration) {
+        return;
+      }
+      setState(() {
+        _preferences = reloaded;
+        _future = Future<PlayerPreferences>.value(reloaded);
+        _saving = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _updateGeneration) {
+        return;
+      }
+      setState(() {
+        _preferences = current;
+        _saving = false;
+      });
+      rethrow;
+    }
   }
 
   @override
@@ -56,7 +87,18 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
       body: FutureBuilder<PlayerPreferences>(
         future: _future,
         builder: (context, snapshot) {
-          final preferences = snapshot.data ?? _fallbackPreferences;
+          final preferences =
+              _preferences ?? snapshot.data ?? _fallbackPreferences;
+          if (_preferences == null && snapshot.hasData) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || _preferences != null) {
+                return;
+              }
+              setState(() {
+                _preferences = snapshot.data;
+              });
+            });
+          }
           final rawBackends =
               widget.dependencies.playerRuntime.supportedBackends;
           final supportedBackends = widget.dependencies.isLiveMode
@@ -64,9 +106,10 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                     .where((backend) => backend != PlayerBackend.memory)
                     .toList(growable: false)
               : rawBackends;
+          final qualityPreferenceEnabled = !preferences.preferHighestQuality;
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+            padding: kSettingsPagePadding,
             children: [
               const SectionHeader(
                 title: '观看与播放',
@@ -75,6 +118,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
               const SizedBox(height: 12),
               AppSurfaceCard(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
@@ -91,9 +135,14 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                     const Divider(height: 1),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
+                      key: const Key('player-prefer-highest-quality-switch'),
                       value: preferences.preferHighestQuality,
                       title: const Text('优先高画质'),
-                      subtitle: const Text('进入房间时优先尝试更高的清晰度'),
+                      subtitle: Text(
+                        preferences.preferHighestQuality
+                            ? '开启后始终选最高清晰度，下方默认清晰度不生效'
+                            : '关闭后按下方 Wi‑Fi / 数据网络默认清晰度进入房间',
+                      ),
                       onChanged: (value) {
                         _update(
                           current: preferences,
@@ -104,6 +153,80 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                       },
                     ),
                     const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Text(
+                        '默认清晰度（Wi‑Fi）',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      qualityPreferenceEnabled
+                          ? '进入房间时在可用清晰度中按偏好挑选'
+                          : '已开启「优先高画质」，此项暂不生效',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final preference
+                            in NetworkQualityPreference.values)
+                          ChoiceChip(
+                            key: Key('player-wifi-quality-${preference.name}'),
+                            label: Text(_labelOfQuality(preference)),
+                            selected:
+                                preferences.wifiQualityPreference ==
+                                preference,
+                            onSelected: !qualityPreferenceEnabled
+                                ? null
+                                : (_) {
+                                    _update(
+                                      current: preferences,
+                                      next: preferences.copyWith(
+                                        wifiQualityPreference: preference,
+                                      ),
+                                    );
+                                  },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '默认清晰度（数据网络）',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final preference
+                            in NetworkQualityPreference.values)
+                          ChoiceChip(
+                            key: Key(
+                              'player-cellular-quality-${preference.name}',
+                            ),
+                            label: Text(_labelOfQuality(preference)),
+                            selected:
+                                preferences.cellularQualityPreference ==
+                                preference,
+                            onSelected: !qualityPreferenceEnabled
+                                ? null
+                                : (_) {
+                                    _update(
+                                      current: preferences,
+                                      next: preferences.copyWith(
+                                        cellularQualityPreference: preference,
+                                      ),
+                                    );
+                                  },
+                          ),
+                      ],
+                    ),
+                    const Divider(height: 20),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       key: const Key('player-force-https-switch'),
@@ -345,7 +468,11 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
             key: const Key('player-mpv-custom-output-switch'),
             value: preferences.mpvCustomOutputEnabled,
             title: const Text('自定义输出驱动'),
-            subtitle: const Text('手动指定 MPV 输出驱动，优先级高于兼容模式'),
+            subtitle: Text(
+              preferences.mpvCustomOutputEnabled
+                  ? '已开启：下方 vo/ao/hwdec 立即生效（需重建播放器）'
+                  : '开启后可手动指定 MPV vo/ao/hwdec，优先级高于兼容模式',
+            ),
             onChanged: (value) {
               _update(
                 current: preferences,
@@ -367,17 +494,19 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
               );
             },
           ),
-          const Divider(height: 1),
+          const Divider(height: 20),
           Padding(
-            padding: const EdgeInsets.only(top: 14),
+            padding: const EdgeInsets.only(top: 4),
             child: Text(
-              '视频输出驱动',
+              '视频输出驱动 (--vo)',
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            key: const Key('player-mpv-video-output-dropdown'),
+            key: ValueKey(
+              'player-mpv-video-output-${preferences.mpvCustomOutputEnabled}-${preferences.mpvVideoOutputDriver}',
+            ),
             initialValue: preferences.mpvVideoOutputDriver,
             items: kMpvVideoOutputDrivers.entries
                 .map(
@@ -387,25 +516,70 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                   ),
                 )
                 .toList(growable: false),
-            onChanged: (value) {
-              if (value == null) {
-                return;
-              }
-              _update(
-                current: preferences,
-                next: preferences.copyWith(mpvVideoOutputDriver: value),
-              );
-            },
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
+            onChanged: preferences.mpvCustomOutputEnabled && !_saving
+                ? (value) {
+                    if (value == null) {
+                      return;
+                    }
+                    _update(
+                      current: preferences,
+                      next: preferences.copyWith(mpvVideoOutputDriver: value),
+                    );
+                  }
+                : null,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
               isDense: true,
+              helperText: preferences.mpvCustomOutputEnabled
+                  ? '当前已启用自定义输出'
+                  : '需开启「自定义输出驱动」后生效',
             ),
           ),
           const SizedBox(height: 12),
-          Text('硬件解码器', style: Theme.of(context).textTheme.titleSmall),
+          Text(
+            '音频输出驱动 (--ao)',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            key: const Key('player-mpv-hardware-decoder-dropdown'),
+            key: ValueKey(
+              'player-mpv-audio-output-${preferences.mpvCustomOutputEnabled}-${preferences.mpvAudioOutputDriver}',
+            ),
+            initialValue: preferences.mpvAudioOutputDriver,
+            items: kMpvAudioOutputDrivers.entries
+                .map(
+                  (entry) => DropdownMenuItem<String>(
+                    value: entry.key,
+                    child: Text(entry.value),
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: preferences.mpvCustomOutputEnabled && !_saving
+                ? (value) {
+                    if (value == null) {
+                      return;
+                    }
+                    _update(
+                      current: preferences,
+                      next: preferences.copyWith(mpvAudioOutputDriver: value),
+                    );
+                  }
+                : null,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
+              isDense: true,
+              helperText: preferences.mpvCustomOutputEnabled
+                  ? '当前已启用自定义输出'
+                  : '需开启「自定义输出驱动」后生效',
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text('硬件解码器 (--hwdec)', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            key: ValueKey(
+              'player-mpv-hardware-decoder-${preferences.mpvCustomOutputEnabled}-${preferences.mpvHardwareDecoder}',
+            ),
             initialValue: preferences.mpvHardwareDecoder,
             items: kMpvHardwareDecoders.entries
                 .map(
@@ -415,18 +589,23 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                   ),
                 )
                 .toList(growable: false),
-            onChanged: (value) {
-              if (value == null) {
-                return;
-              }
-              _update(
-                current: preferences,
-                next: preferences.copyWith(mpvHardwareDecoder: value),
-              );
-            },
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
+            onChanged: preferences.mpvCustomOutputEnabled && !_saving
+                ? (value) {
+                    if (value == null) {
+                      return;
+                    }
+                    _update(
+                      current: preferences,
+                      next: preferences.copyWith(mpvHardwareDecoder: value),
+                    );
+                  }
+                : null,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
               isDense: true,
+              helperText: preferences.mpvCustomOutputEnabled
+                  ? '当前已启用自定义输出'
+                  : '需开启「自定义输出驱动」后生效',
             ),
           ),
         ],
@@ -506,6 +685,14 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
       PlayerScaleMode.fitHeight => '按高适配',
     };
   }
+
+  String _labelOfQuality(NetworkQualityPreference preference) {
+    return switch (preference) {
+      NetworkQualityPreference.highest => '最高',
+      NetworkQualityPreference.middle => '中等',
+      NetworkQualityPreference.lowest => '最低',
+    };
+  }
 }
 
 const PlayerPreferences _fallbackPreferences = PlayerPreferences(
@@ -518,8 +705,11 @@ const PlayerPreferences _fallbackPreferences = PlayerPreferences(
   mpvDoubleBufferingEnabled: false,
   mpvCustomOutputEnabled: false,
   mpvVideoOutputDriver: kDefaultMpvVideoOutputDriver,
+  mpvAudioOutputDriver: kDefaultMpvAudioOutputDriver,
   mpvHardwareDecoder: kDefaultMpvHardwareDecoder,
   mpvLogEnabled: false,
+  wifiQualityPreference: NetworkQualityPreference.middle,
+  cellularQualityPreference: NetworkQualityPreference.lowest,
   mdkLowLatencyEnabled: true,
   mdkAndroidTunnelEnabled: false,
   mdkAndroidHardwareVideoDecoderEnabled: true,
@@ -529,3 +719,4 @@ const PlayerPreferences _fallbackPreferences = PlayerPreferences(
   androidPipHideDanmakuEnabled: true,
   scaleMode: PlayerScaleMode.contain,
 );
+

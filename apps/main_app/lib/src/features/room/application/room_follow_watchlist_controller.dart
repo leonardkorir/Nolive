@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
-import '../../library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
+
 import 'room_preview_dependencies.dart';
 
 @immutable
@@ -86,7 +88,10 @@ class RoomFollowWatchlistController {
     );
     _trace('follow watchlist load start force=$force');
     try {
-      final watchlist = await dependencies.loadFollowWatchlist();
+      // Full refresh; CB HTTP is paced + priority-queued so list can interleave.
+      final watchlist = await dependencies.loadFollowWatchlist(
+        scope: FollowWatchlistRefreshScope.allProviders,
+      );
       if (requestId != _requestId) {
         return;
       }

@@ -86,7 +86,7 @@ typedef RoomPersistScreenshot = Future<String?> Function({
 typedef RoomCaptureRenderedPlayerSurface = Future<Uint8List?> Function();
 
 class RoomControlsActionContext {
-  const RoomControlsActionContext({
+  RoomControlsActionContext({
     required this.providerId,
     required this.roomId,
     required this.targetPlatform,
@@ -127,8 +127,8 @@ class RoomControlsActionContext {
     this.captureRenderedPlayerSurface,
   });
 
-  final ProviderId providerId;
-  final String roomId;
+  ProviderId providerId;
+  String roomId;
   final TargetPlatform targetPlatform;
   final bool isWeb;
   final RoomRuntimeControlContext runtime;

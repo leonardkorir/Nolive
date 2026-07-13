@@ -1,15 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
-import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/features/parse/application/inspect_parsed_room_use_case.dart';
 import 'package:nolive_app/src/features/parse/application/parse_room_input_use_case.dart';
-import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
-import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
 
 void main() {
   test(
-    'inspect parsed room fails fast for chaturbate without browser cookie',
+    'inspect parsed room allows chaturbate without browser cookie',
     () async {
       var created = 0;
       final registry = ProviderRegistry()
@@ -22,74 +19,20 @@ void main() {
             },
           ),
         );
-      final settingsRepository = InMemorySettingsRepository();
-      final secureCredentialStore = InMemorySecureCredentialStore();
-      final useCase = InspectParsedRoomUseCase(
-        registry,
-        loadProviderAccountSettings: LoadProviderAccountSettingsUseCase(
-          settingsRepository,
-          secureCredentialStore,
-        ),
-        requireChaturbateCookiePreflight: true,
-      );
-
-      await expectLater(
-        () => useCase(
-          const ParsedRoomInput(
-            providerId: ProviderId.chaturbate,
-            providerName: 'Chaturbate',
-            roomId: 'kittengirlxo',
-            normalizedInput: 'https://chaturbate.com/kittengirlxo/',
-          ),
-        ),
-        throwsA(
-          isA<ProviderParseException>().having(
-            (error) => error.message,
-            'message',
-            allOf(contains('浏览器 Cookie'), contains('账号管理')),
-          ),
-        ),
-      );
-      expect(created, 0);
-    },
-  );
-
-  test(
-    'inspect parsed room allows chaturbate after cookie preflight',
-    () async {
-      final registry = ProviderRegistry()
-        ..register(
-          ProviderRegistration(
-            descriptor: ChaturbateProvider.kDescriptor,
-            builder: _FakeChaturbateRoomDetailProvider.new,
-          ),
-        );
-      final settingsRepository = InMemorySettingsRepository();
-      final secureCredentialStore = InMemorySecureCredentialStore(
-        initialValues: const {
-          'account_chaturbate_cookie': 'csrftoken=demo; __cf_bm=demo-bm',
-        },
-      );
-      final useCase = InspectParsedRoomUseCase(
-        registry,
-        loadProviderAccountSettings: LoadProviderAccountSettingsUseCase(
-          settingsRepository,
-          secureCredentialStore,
-        ),
-        requireChaturbateCookiePreflight: true,
-      );
+      final useCase = InspectParsedRoomUseCase(registry);
 
       final inspection = await useCase(
         const ParsedRoomInput(
           providerId: ProviderId.chaturbate,
           providerName: 'Chaturbate',
           roomId: 'kittengirlxo',
-          normalizedInput: 'chaturbate:kittengirlxo',
+          normalizedInput: 'https://chaturbate.com/kittengirlxo/',
         ),
       );
 
       expect(inspection.detail.roomId, 'kittengirlxo');
       expect(inspection.detail.streamerName, 'kittengirlxo');
+      expect(created, 1);
     },
   );
 
@@ -106,25 +49,14 @@ void main() {
           ),
         ),
       );
-    final settingsRepository = InMemorySettingsRepository();
-    final secureCredentialStore = InMemorySecureCredentialStore(
-      initialValues: const {
-        'account_chaturbate_cookie': 'cf_clearance=demo; csrftoken=demo',
-      },
-    );
     final useCase = InspectParsedRoomUseCase(
       registry,
-      loadProviderAccountSettings: LoadProviderAccountSettingsUseCase(
-        settingsRepository,
-        secureCredentialStore,
-      ),
-      requireChaturbateCookiePreflight: true,
       roomDetailOverride: ({required providerId, required roomId}) async {
         if (providerId != ProviderId.chaturbate) {
           return null;
         }
         return LiveRoomDetail(
-          providerId: providerId.value,
+          providerId: providerId,
           roomId: roomId,
           title: 'override room',
           streamerName: roomId,
@@ -161,7 +93,7 @@ class _FakeChaturbateRoomDetailProvider extends LiveProvider
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
     onFetchRoomDetail?.call();
     return LiveRoomDetail(
-      providerId: ProviderId.chaturbate.value,
+      providerId: ProviderId.chaturbate,
       roomId: roomId,
       title: '$roomId room',
       streamerName: roomId,

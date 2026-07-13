@@ -72,10 +72,12 @@ class ChaturbateHlsMasterPlaylistParser {
       final bandwidth = int.tryParse(attributes['BANDWIDTH'] ?? '') ?? 0;
       final resolution = attributes['RESOLUTION'] ?? '';
       final dimensions = resolution.split('x');
-      final width =
-          dimensions.length == 2 ? int.tryParse(dimensions.first) : null;
-      final height =
-          dimensions.length == 2 ? int.tryParse(dimensions.last) : null;
+      final width = dimensions.length == 2
+          ? int.tryParse(dimensions.first)
+          : null;
+      final height = dimensions.length == 2
+          ? int.tryParse(dimensions.last)
+          : null;
       final audioGroupId = attributes['AUDIO']?.trim();
       variants.add(
         ChaturbateHlsVariant(
@@ -120,8 +122,10 @@ class ChaturbateHlsMasterPlaylistParser {
         continue;
       }
       final resolvedUrl = baseUri.resolve(uri).toString();
-      final score =
-          _audioGroupScore(attributes['DEFAULT'], attributes['AUTOSELECT']);
+      final score = _audioGroupScore(
+        attributes['DEFAULT'],
+        attributes['AUTOSELECT'],
+      );
       final existing = groups[groupId];
       if (existing == null || score >= existing.score) {
         groups[groupId] = (url: resolvedUrl, score: score);

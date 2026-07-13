@@ -18,15 +18,13 @@ class DouyinPreviewDataSource implements DouyinDataSource {
     LiveCategory(
       id: '730,1',
       name: '知识',
-      children: [
-        LiveSubCategory(id: '730,1', parentId: '730,1', name: '知识'),
-      ],
+      children: [LiveSubCategory(id: '730,1', parentId: '730,1', name: '知识')],
     ),
   ];
 
   static const List<LiveRoom> _rooms = [
     LiveRoom(
-      providerId: 'douyin',
+      providerId: ProviderId.douyin,
       roomId: '416144012050',
       title: '抖音架构演示房间',
       streamerName: '抖音样例主播',
@@ -37,7 +35,7 @@ class DouyinPreviewDataSource implements DouyinDataSource {
       viewerCount: 32100,
     ),
     LiveRoom(
-      providerId: 'douyin',
+      providerId: ProviderId.douyin,
       roomId: '512300998877',
       title: '抖音迁移验证房间',
       streamerName: '迁移样例主播',
@@ -51,7 +49,7 @@ class DouyinPreviewDataSource implements DouyinDataSource {
 
   static const Map<String, LiveRoomDetail> _details = {
     '416144012050': LiveRoomDetail(
-      providerId: 'douyin',
+      providerId: ProviderId.douyin,
       roomId: '416144012050',
       title: '抖音架构演示房间',
       streamerName: '抖音样例主播',
@@ -67,16 +65,16 @@ class DouyinPreviewDataSource implements DouyinDataSource {
       metadata: {
         'streamUrl': {
           'flv_pull_url': {
-            'FULL_HD1': 'https://mock.douyin.local/live/416144012050/flv'
+            'FULL_HD1': 'https://mock.douyin.local/live/416144012050/flv',
           },
           'hls_pull_url_map': {
-            'FULL_HD1': 'https://mock.douyin.local/live/416144012050/hls.m3u8'
+            'FULL_HD1': 'https://mock.douyin.local/live/416144012050/hls.m3u8',
           },
         },
       },
     ),
     '512300998877': LiveRoomDetail(
-      providerId: 'douyin',
+      providerId: ProviderId.douyin,
       roomId: '512300998877',
       title: '抖音迁移验证房间',
       streamerName: '迁移样例主播',
@@ -92,10 +90,10 @@ class DouyinPreviewDataSource implements DouyinDataSource {
       metadata: {
         'streamUrl': {
           'flv_pull_url': {
-            'FULL_HD1': 'https://mock.douyin.local/live/512300998877/flv'
+            'FULL_HD1': 'https://mock.douyin.local/live/512300998877/flv',
           },
           'hls_pull_url_map': {
-            'FULL_HD1': 'https://mock.douyin.local/live/512300998877/hls.m3u8'
+            'FULL_HD1': 'https://mock.douyin.local/live/512300998877/hls.m3u8',
           },
         },
       },
@@ -142,16 +140,19 @@ class DouyinPreviewDataSource implements DouyinDataSource {
   }) async {
     final items = _rooms
         .where(
-            (room) => room.areaName == category.name || category.name == '热门')
+          (room) => room.areaName == category.name || category.name == '热门',
+        )
         .toList(growable: false);
     return PagedResponse(items: items, hasMore: false, page: page);
   }
 
   @override
   Future<PagedResponse<LiveRoom>> fetchRecommendRooms({int page = 1}) async {
-    final items = [..._rooms]..sort((left, right) {
-        final compare =
-            (right.viewerCount ?? -1).compareTo(left.viewerCount ?? -1);
+    final items = [..._rooms]
+      ..sort((left, right) {
+        final compare = (right.viewerCount ?? -1).compareTo(
+          left.viewerCount ?? -1,
+        );
         if (compare != 0) {
           return compare;
         }
@@ -166,13 +167,15 @@ class DouyinPreviewDataSource implements DouyinDataSource {
     int page = 1,
   }) async {
     final normalizedQuery = query.trim().toLowerCase();
-    final filtered = _rooms.where((room) {
-      if (normalizedQuery.isEmpty) {
-        return true;
-      }
-      return room.title.toLowerCase().contains(normalizedQuery) ||
-          room.streamerName.toLowerCase().contains(normalizedQuery);
-    }).toList(growable: false);
+    final filtered = _rooms
+        .where((room) {
+          if (normalizedQuery.isEmpty) {
+            return true;
+          }
+          return room.title.toLowerCase().contains(normalizedQuery) ||
+              room.streamerName.toLowerCase().contains(normalizedQuery);
+        })
+        .toList(growable: false);
 
     return PagedResponse(items: filtered, hasMore: false, page: page);
   }
@@ -191,7 +194,8 @@ class DouyinPreviewDataSource implements DouyinDataSource {
 
   @override
   Future<List<LivePlayQuality>> fetchPlayQualities(
-      LiveRoomDetail detail) async {
+    LiveRoomDetail detail,
+  ) async {
     return _qualities;
   }
 

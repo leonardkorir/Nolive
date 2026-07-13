@@ -107,26 +107,14 @@ class _SearchPageState extends State<SearchPage> {
                 decoration: InputDecoration(
                   hintText: '搜索直播间',
                   prefixIcon: const Icon(Icons.search),
-                  suffixIcon: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_queryController.text.isNotEmpty)
-                        IconButton(
-                          tooltip: '清空',
-                          onPressed: _clearSearch,
-                          icon: const Icon(Icons.close_rounded),
-                        ),
-                      IconButton(
-                        key: const Key('search-submit-button'),
-                        tooltip: '开始搜索',
-                        onPressed: _submitSearch,
-                        icon: const Icon(Icons.arrow_forward_rounded),
-                      ),
-                    ],
+                  // Local rebuild of suffix only — avoid full-page setState.
+                  suffixIcon: _SearchFieldSuffix(
+                    controller: _queryController,
+                    onClear: _clearSearch,
+                    onSubmit: _submitSearch,
                   ),
                 ),
                 textInputAction: TextInputAction.search,
-                onChanged: (_) => setState(() {}),
                 onSubmitted: (_) => _submitSearch(),
               ),
               bottom: TabBar(
@@ -162,7 +150,7 @@ class _SearchPageState extends State<SearchPage> {
                       Navigator.of(context).pushNamed(
                         AppRoutes.room,
                         arguments: RoomRouteArguments(
-                          providerId: ProviderId(room.providerId),
+                          providerId: room.providerId,
                           roomId: room.roomId,
                         ),
                       );
@@ -171,6 +159,45 @@ class _SearchPageState extends State<SearchPage> {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+}
+
+/// Rebuilds only the clear/submit icons when the query text changes.
+class _SearchFieldSuffix extends StatelessWidget {
+  const _SearchFieldSuffix({
+    required this.controller,
+    required this.onClear,
+    required this.onSubmit,
+  });
+
+  final TextEditingController controller;
+  final VoidCallback onClear;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (controller.text.isNotEmpty)
+              IconButton(
+                tooltip: '清空',
+                onPressed: onClear,
+                icon: const Icon(Icons.close_rounded),
+              ),
+            IconButton(
+              key: const Key('search-submit-button'),
+              tooltip: '开始搜索',
+              onPressed: onSubmit,
+              icon: const Icon(Icons.arrow_forward_rounded),
+            ),
+          ],
         );
       },
     );
@@ -209,6 +236,8 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
   int _requestGeneration = 0;
   Object? _error;
 
+  /// Search tabs stay alive: result cache is small vs home grids; avoids
+  /// re-fetch races when DefaultTabController is recreated on submit.
   @override
   bool get wantKeepAlive => true;
 
@@ -216,6 +245,13 @@ class _SearchResultsTabState extends State<_SearchResultsTab>
   void initState() {
     super.initState();
     _scrollController.addListener(_handleScroll);
+    if (widget.query.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.query.trim().isNotEmpty && _rooms.isEmpty) {
+          _runSearch();
+        }
+      });
+    }
   }
 
   @override

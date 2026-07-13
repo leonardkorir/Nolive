@@ -12,6 +12,7 @@ import '../providers/migration_placeholder_provider.dart';
 import '../providers/twitch/twitch_playback_bootstrap.dart';
 import '../providers/twitch/twitch_provider.dart';
 import '../providers/stripchat/stripchat_provider.dart';
+import '../providers/youtube/youtube_decipher_service.dart';
 import '../providers/youtube/youtube_provider.dart';
 
 class ReferenceProviderCatalog {
@@ -26,6 +27,8 @@ class ReferenceProviderCatalog {
     int Function(String key)? intSetting,
     DouyinWebsocketSignatureBuilder? douyinDanmakuSignatureBuilder,
     TwitchPlaybackBootstrapResolver? twitchPlaybackBootstrapResolver,
+    YouTubeNSigSolver? youtubeNSigSolver,
+    void Function(String message)? chaturbateDiagnostics,
   }) {
     return _buildRegistry(
       liveRegistrations(
@@ -33,6 +36,8 @@ class ReferenceProviderCatalog {
         intSetting: intSetting,
         douyinDanmakuSignatureBuilder: douyinDanmakuSignatureBuilder,
         twitchPlaybackBootstrapResolver: twitchPlaybackBootstrapResolver,
+        youtubeNSigSolver: youtubeNSigSolver,
+        chaturbateDiagnostics: chaturbateDiagnostics,
       ),
     );
   }
@@ -87,54 +92,56 @@ class ReferenceProviderCatalog {
     int Function(String key)? intSetting,
     DouyinWebsocketSignatureBuilder? douyinDanmakuSignatureBuilder,
     TwitchPlaybackBootstrapResolver? twitchPlaybackBootstrapResolver,
-  }) =>
-      [
-        ProviderRegistration(
-          descriptor: BilibiliProvider.kDescriptor,
-          builder: () => BilibiliProvider.live(
-            cookie: stringSetting?.call('account_bilibili_cookie') ?? '',
-            userId: intSetting?.call('account_bilibili_user_id') ?? 0,
-          ),
-        ),
-        ProviderRegistration(
-          descriptor: ChaturbateProvider.kDescriptor,
-          builder: () => ChaturbateProvider.live(
-            cookie: stringSetting?.call('account_chaturbate_cookie') ?? '',
-          ),
-        ),
-        ProviderRegistration(
-          descriptor: DouyuProvider.kDescriptor,
-          builder: DouyuProvider.live,
-        ),
-        ProviderRegistration(
-          descriptor: HuyaProvider.kDescriptor,
-          builder: HuyaProvider.live,
-        ),
-        ProviderRegistration(
-          descriptor: DouyinProvider.kDescriptor,
-          builder: () => DouyinProvider.live(
-            cookie: stringSetting?.call('account_douyin_cookie') ?? '',
-            websocketSignatureBuilder: douyinDanmakuSignatureBuilder,
-          ),
-        ),
-        ProviderRegistration(
-          descriptor: TwitchProvider.kDescriptor,
-          builder: () => TwitchProvider.live(
-            cookie: stringSetting?.call('account_twitch_cookie') ?? '',
-            playbackBootstrapResolver: twitchPlaybackBootstrapResolver,
-          ),
-        ),
-        ProviderRegistration(
-          descriptor: YouTubeProvider.kDescriptor,
-          builder: YouTubeProvider.live,
-        ),
-        ProviderRegistration(
-          descriptor: StripchatProvider.kDescriptor,
-          builder: () => StripchatProvider.live(
-            cookie: stringSetting?.call('account_stripchat_cookie') ?? '',
-          ),
-        ),
-      ];
+    YouTubeNSigSolver? youtubeNSigSolver,
+    void Function(String message)? chaturbateDiagnostics,
+  }) => [
+    ProviderRegistration(
+      descriptor: BilibiliProvider.kDescriptor,
+      builder: () => BilibiliProvider.live(
+        cookie: stringSetting?.call('account_bilibili_cookie') ?? '',
+        userId: intSetting?.call('account_bilibili_user_id') ?? 0,
+      ),
+    ),
+    ProviderRegistration(
+      descriptor: ChaturbateProvider.kDescriptor,
+      builder: () => ChaturbateProvider.live(
+        cookie: stringSetting?.call('account_chaturbate_cookie') ?? '',
+        diagnostics: chaturbateDiagnostics,
+      ),
+    ),
+    ProviderRegistration(
+      descriptor: DouyuProvider.kDescriptor,
+      builder: DouyuProvider.live,
+    ),
+    ProviderRegistration(
+      descriptor: HuyaProvider.kDescriptor,
+      builder: HuyaProvider.live,
+    ),
+    ProviderRegistration(
+      descriptor: DouyinProvider.kDescriptor,
+      builder: () => DouyinProvider.live(
+        cookie: stringSetting?.call('account_douyin_cookie') ?? '',
+        websocketSignatureBuilder: douyinDanmakuSignatureBuilder,
+      ),
+    ),
+    ProviderRegistration(
+      descriptor: TwitchProvider.kDescriptor,
+      builder: () => TwitchProvider.live(
+        cookie: stringSetting?.call('account_twitch_cookie') ?? '',
+        playbackBootstrapResolver: twitchPlaybackBootstrapResolver,
+      ),
+    ),
+    ProviderRegistration(
+      descriptor: YouTubeProvider.kDescriptor,
+      builder: () => YouTubeProvider.live(nSigSolver: youtubeNSigSolver),
+    ),
+    ProviderRegistration(
+      descriptor: StripchatProvider.kDescriptor,
+      builder: () => StripchatProvider.live(
+        cookie: stringSetting?.call('account_stripchat_cookie') ?? '',
+      ),
+    ),
+  ];
 
   static LiveProvider createPlaceholder(ProviderId providerId) {
     final registration = previewRegistrations.firstWhere(

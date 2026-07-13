@@ -6,11 +6,15 @@ import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/library/application/library_feature_dependencies.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/features/library/presentation/follow_progressive_ui_controller.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/settings/application/manage_follow_preferences_use_case.dart';
 import 'package:nolive_app/src/shared/presentation/theme/zh_text.dart';
+import 'package:nolive_app/src/shared/presentation/user_facing_error.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/follow_watch_row.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/live_room_grid_card.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({required this.dependencies, super.key});
@@ -25,7 +29,7 @@ enum _FollowFilter { all, live, offline }
 
 enum _FollowDisplayMode { list, grid }
 
-enum _FollowSortMode { liveFirst, alphabetical }
+enum _FollowSortMode { liveFirst, alphabetical, watchDuration, recency }
 
 enum _LibraryMenuAction { subscribe, toggleMode, sort, settings }
 
@@ -40,14 +44,33 @@ class _LibraryPageState extends State<LibraryPage> {
   Object? _loadError;
   int _refreshGeneration = 0;
   int _localLoadGeneration = 0;
+  /// Rotates which Chaturbate follows get detail this cycle (slow crawl).
+  int _chaturbateRefreshCycle = 0;
   _LibraryPageData? _data;
   FollowPreferences _preferences = FollowPreferences.defaults;
+  late final FollowProgressiveUiController _progressiveUi =
+      FollowProgressiveUiController(
+    isMounted: () => mounted,
+    currentGeneration: () => _refreshGeneration,
+    writeSnapshot: (watchlist) {
+      widget.dependencies.followWatchlistSnapshot.value = watchlist;
+    },
+    applyWatchlistToPage: (watchlist) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _replaceWatchlist(watchlist);
+      });
+    },
+  );
 
   @override
   void initState() {
     super.initState();
-    widget.dependencies.followDataRevision
-        .addListener(_handleFollowDataRevision);
+    widget.dependencies.followDataRevision.addListener(
+      _handleFollowDataRevision,
+    );
     unawaited(_bootstrapPage());
   }
 
@@ -56,18 +79,22 @@ class _LibraryPageState extends State<LibraryPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.dependencies.followDataRevision !=
         widget.dependencies.followDataRevision) {
-      oldWidget.dependencies.followDataRevision
-          .removeListener(_handleFollowDataRevision);
-      widget.dependencies.followDataRevision
-          .addListener(_handleFollowDataRevision);
+      oldWidget.dependencies.followDataRevision.removeListener(
+        _handleFollowDataRevision,
+      );
+      widget.dependencies.followDataRevision.addListener(
+        _handleFollowDataRevision,
+      );
     }
   }
 
   @override
   void dispose() {
-    widget.dependencies.followDataRevision
-        .removeListener(_handleFollowDataRevision);
+    widget.dependencies.followDataRevision.removeListener(
+      _handleFollowDataRevision,
+    );
     _autoRefreshTimer?.cancel();
+    _progressiveUi.dispose();
     super.dispose();
   }
 
@@ -77,8 +104,16 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     final snapshot = widget.dependencies.followWatchlistSnapshot.value;
+    // Default tab is 关注: refresh non-CB fully; CB only crawls a small slow
+    // batch so we never stampede CF into 429.
     if (snapshot == null && localData.watchlist.entries.isNotEmpty) {
-      unawaited(_refresh(showErrorSnackBar: false));
+      unawaited(
+        _refresh(
+          showErrorSnackBar: false,
+          scope: FollowWatchlistRefreshScope.allProviders,
+          fullRefresh: true,
+        ),
+      );
     }
   }
 
@@ -92,11 +127,17 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     if (localData.watchlist.entries.isEmpty) {
-      widget.dependencies.followWatchlistSnapshot.value =
-          const FollowWatchlist(entries: <FollowWatchEntry>[]);
+      widget.dependencies.followWatchlistSnapshot.value = const FollowWatchlist(
+        entries: <FollowWatchEntry>[],
+      );
       return;
     }
-    unawaited(_refresh(showErrorSnackBar: false));
+    unawaited(
+      _refresh(
+        showErrorSnackBar: false,
+        scope: FollowWatchlistRefreshScope.allProviders,
+      ),
+    );
   }
 
   Future<_LibraryPageData?> _reloadLocalState({
@@ -123,8 +164,11 @@ class _LibraryPageState extends State<LibraryPage> {
         });
       }
       if (showErrorSnackBar) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('关注列表读取失败：$error')),
+        showAppErrorSnackBar(
+          context,
+          error,
+          prefix: '关注列表读取失败：',
+          fallback: '请稍后重试',
         );
       }
       return null;
@@ -147,15 +191,17 @@ class _LibraryPageState extends State<LibraryPage> {
         '${entry.record.providerId}:${entry.record.roomId}': entry,
     };
     final watchlist = FollowWatchlist(
-      entries: follows.map((record) {
-        final key = '${record.providerId}:${record.roomId}';
-        final cached = snapshotEntries[key] ?? previousEntries[key];
-        return FollowWatchEntry(
-          record: record,
-          detail: cached?.detail,
-          error: cached?.error,
-        );
-      }).toList(growable: false),
+      entries: follows
+          .map((record) {
+            final key = '${record.providerId}:${record.roomId}';
+            final cached = snapshotEntries[key] ?? previousEntries[key];
+            return FollowWatchEntry(
+              record: record,
+              detail: cached?.detail,
+              error: cached?.error,
+            );
+          })
+          .toList(growable: false),
     );
     return _LibraryPageData(
       watchlist: watchlist,
@@ -164,20 +210,42 @@ class _LibraryPageState extends State<LibraryPage> {
     );
   }
 
-  Future<_LibraryPageData> _loadRemoteData({required int generation}) async {
+  Future<_LibraryPageData> _loadRemoteData({
+    required int generation,
+    required FollowWatchlistRefreshScope scope,
+    bool fullRefresh = true,
+  }) async {
     final localData = _data;
     if (localData == null) {
       return _loadLocalData();
     }
     if (localData.watchlist.entries.isEmpty) {
-      widget.dependencies.followWatchlistSnapshot.value =
-          const FollowWatchlist(entries: []);
+      widget.dependencies.followWatchlistSnapshot.value = const FollowWatchlist(
+        entries: [],
+      );
       return localData;
     }
     final progressiveEntries = List<FollowWatchEntry>.from(
       localData.watchlist.entries,
     );
+    final cbCycle = _chaturbateRefreshCycle;
     final watchlist = await widget.dependencies.loadFollowWatchlist(
+      scope: scope,
+      // Non-CB: full when user pulls. CB: always a small rotating crawl.
+      fullRefresh: fullRefresh,
+      refreshCycle: cbCycle,
+      onNonChaturbateComplete: () {
+        // Domestic platforms are done — stop the refresh spinner without
+        // waiting for CF-paced Chaturbate detail work.
+        if (!mounted || generation != _refreshGeneration) {
+          return;
+        }
+        if (_refreshing) {
+          setState(() {
+            _refreshing = false;
+          });
+        }
+      },
       onEntryResolved: (index, entry) {
         if (!mounted ||
             generation != _refreshGeneration ||
@@ -192,13 +260,16 @@ class _LibraryPageState extends State<LibraryPage> {
             growable: false,
           ),
         );
-        widget.dependencies.followWatchlistSnapshot.value = partialWatchlist;
-        setState(() {
-          _replaceWatchlist(partialWatchlist);
-        });
+        // Throttle full-page setState; do not call setState per entry.
+        _progressiveUi.onEntryResolved(generation, partialWatchlist);
       },
     );
-    widget.dependencies.followWatchlistSnapshot.value = watchlist;
+    if (generation == _refreshGeneration &&
+        scope == FollowWatchlistRefreshScope.allProviders) {
+      _chaturbateRefreshCycle = cbCycle + 1;
+    }
+    // Only current generation may write snapshot / flush progressive UI.
+    _progressiveUi.commitFinal(generation, watchlist);
     return localData.copyWith(watchlist: watchlist);
   }
 
@@ -239,7 +310,14 @@ class _LibraryPageState extends State<LibraryPage> {
       Duration(minutes: _preferences.autoRefreshIntervalMinutes),
       (_) {
         if (mounted && !_refreshing) {
-          _refresh();
+          // Background sweep may be partial for huge lists; user pull is full.
+          unawaited(
+            _refresh(
+              showErrorSnackBar: false,
+              scope: FollowWatchlistRefreshScope.allProviders,
+              fullRefresh: false,
+            ),
+          );
         }
       },
     );
@@ -269,8 +347,15 @@ class _LibraryPageState extends State<LibraryPage> {
     );
   }
 
-  Future<void> _refresh({bool showErrorSnackBar = true}) async {
+  Future<void> _refresh({
+    bool showErrorSnackBar = true,
+    FollowWatchlistRefreshScope scope =
+        FollowWatchlistRefreshScope.allProviders,
+    bool fullRefresh = true,
+  }) async {
     final generation = ++_refreshGeneration;
+    // Invalidate any pending progressive UI from the previous generation.
+    _progressiveUi.beginGeneration(generation);
     if (mounted) {
       setState(() {
         _refreshing = true;
@@ -286,7 +371,11 @@ class _LibraryPageState extends State<LibraryPage> {
           _replaceData(localData);
         });
       }
-      final data = await _loadRemoteData(generation: generation);
+      final data = await _loadRemoteData(
+        generation: generation,
+        scope: scope,
+        fullRefresh: fullRefresh,
+      );
       if (!mounted || generation != _refreshGeneration) {
         return;
       }
@@ -304,8 +393,11 @@ class _LibraryPageState extends State<LibraryPage> {
         });
       }
       if (showErrorSnackBar) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('关注状态刷新失败：$error')),
+        showAppErrorSnackBar(
+          context,
+          error,
+          prefix: '关注状态刷新失败：',
+          fallback: '请稍后重试',
         );
       }
     } finally {
@@ -319,7 +411,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _removeFollow(FollowRecord record) async {
     await widget.dependencies.removeFollowRoom(
-      providerId: record.providerId,
+      providerId: record.providerId.value,
       roomId: record.roomId,
     );
     final snapshot = widget.dependencies.followWatchlistSnapshot.value;
@@ -415,8 +507,9 @@ class _LibraryPageState extends State<LibraryPage> {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title:
-                  Text('编辑标签 · ${normalizeDisplayText(record.streamerName)}'),
+              title: Text(
+                '编辑标签 · ${normalizeDisplayText(record.streamerName)}',
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -477,7 +570,7 @@ class _LibraryPageState extends State<LibraryPage> {
     );
     if (updated == true) {
       await widget.dependencies.updateFollowTags(
-        providerId: record.providerId,
+        providerId: record.providerId.value,
         roomId: record.roomId,
         tags: selected.toList(growable: false),
       );
@@ -562,6 +655,14 @@ class _LibraryPageState extends State<LibraryPage> {
                   value: _FollowSortMode.alphabetical,
                   title: Text('按名称排序'),
                 ),
+                RadioListTile<_FollowSortMode>(
+                  value: _FollowSortMode.watchDuration,
+                  title: Text('按观看时长'),
+                ),
+                RadioListTile<_FollowSortMode>(
+                  value: _FollowSortMode.recency,
+                  title: Text('最近更新'),
+                ),
               ],
             ),
           ),
@@ -574,9 +675,7 @@ class _LibraryPageState extends State<LibraryPage> {
     switch (action) {
       case _LibraryMenuAction.subscribe:
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('赛事订阅暂未开放')),
-        );
+            showAppSnackBar(context, '赛事订阅暂未开放');
         return;
       case _LibraryMenuAction.toggleMode:
         await _persistDisplayMode(
@@ -599,52 +698,44 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
-  void _openRoom(String providerId, String roomId) {
+  void _openRoom(ProviderId providerId, String roomId) {
     Navigator.of(context).pushNamed(
       AppRoutes.room,
-      arguments: RoomRouteArguments(
-        providerId: ProviderId(providerId),
-        roomId: roomId,
-      ),
+      arguments: RoomRouteArguments(providerId: providerId, roomId: roomId),
     );
   }
 
-  ProviderDescriptor _descriptorForProvider(String providerId) {
-    return widget.dependencies.findProviderDescriptorById(providerId) ??
+  ProviderDescriptor _descriptorForProvider(ProviderId providerId) {
+    return widget.dependencies.findProviderDescriptorById(providerId.value) ??
         ProviderDescriptor(
-          id: ProviderId(providerId),
-          displayName: providerId,
+          id: providerId,
+          displayName: providerId.value,
           capabilities: const <ProviderCapability>{},
           supportedPlatforms: const {ProviderPlatform.android},
         );
   }
 
   List<FollowWatchEntry> _filteredEntries(FollowWatchlist watchlist) {
-    final entries = watchlist.entries.where((entry) {
-      final matchesFilter = switch (_followFilter) {
-        _FollowFilter.all => true,
-        _FollowFilter.live => entry.isLive,
-        _FollowFilter.offline => entry.isOffline,
-      };
-      final matchesTag =
-          _selectedTag == null || entry.record.tags.contains(_selectedTag);
-      return matchesFilter && matchesTag;
-    }).toList(growable: false);
+    final entries = watchlist.entries
+        .where((entry) {
+          final matchesFilter = switch (_followFilter) {
+            _FollowFilter.all => true,
+            _FollowFilter.live => entry.isLive,
+            _FollowFilter.offline => entry.isOffline,
+          };
+          final matchesTag =
+              _selectedTag == null || entry.record.tags.contains(_selectedTag);
+          return matchesFilter && matchesTag;
+        })
+        .toList(growable: false);
 
-    entries.sort((left, right) {
-      if (_sortMode == _FollowSortMode.liveFirst) {
-        final leftLive = left.isLive ? 1 : 0;
-        final rightLive = right.isLive ? 1 : 0;
-        final status = rightLive.compareTo(leftLive);
-        if (status != 0) {
-          return status;
-        }
-      }
-      return left.displayStreamerName.toLowerCase().compareTo(
-            right.displayStreamerName.toLowerCase(),
-          );
-    });
-    return entries;
+    final mode = switch (_sortMode) {
+      _FollowSortMode.liveFirst => FollowWatchSortMode.liveFirst,
+      _FollowSortMode.alphabetical => FollowWatchSortMode.alphabetical,
+      _FollowSortMode.watchDuration => FollowWatchSortMode.watchDuration,
+      _FollowSortMode.recency => FollowWatchSortMode.recency,
+    };
+    return sortFollowWatchEntries(entries, mode: mode);
   }
 
   Widget _buildFilters(List<String> tags) {
@@ -711,7 +802,10 @@ class _LibraryPageState extends State<LibraryPage> {
         children: [
           EmptyStateCard(
             title: '关注页加载失败',
-            message: '${_loadError ?? '未知错误'}',
+            message: formatUserFacingError(
+              _loadError,
+              fallback: '无法读取关注列表，请稍后重试',
+            ),
             icon: Icons.error_outline,
           ),
           const SizedBox(height: 12),
@@ -771,38 +865,40 @@ class _LibraryPageState extends State<LibraryPage> {
                         final crossAxisCount = width >= 900
                             ? 4
                             : width >= 640
-                                ? 3
-                                : 2;
+                            ? 3
+                            : 2;
                         return SliverGrid(
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: crossAxisCount,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                            mainAxisExtent: liveRoomGridMainAxisExtentForWidth(
-                              width,
-                              crossAxisCount,
-                            ),
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final entry = entries[index];
-                              final descriptor = _descriptorForProvider(
-                                  entry.record.providerId);
-                              return LiveRoomGridCard(
-                                key: Key(
-                                  'library-follow-card-${entry.record.providerId}-${entry.roomId}',
-                                ),
-                                room: entry.toLiveRoom(),
-                                descriptor: descriptor,
-                                onTap: () => _openRoom(
-                                  entry.record.providerId,
-                                  entry.roomId,
-                                ),
-                              );
-                            },
-                            childCount: entries.length,
-                          ),
+                                crossAxisCount: crossAxisCount,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                                mainAxisExtent:
+                                    liveRoomGridMainAxisExtentForWidth(
+                                      width,
+                                      crossAxisCount,
+                                    ),
+                              ),
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final entry = entries[index];
+                            final descriptor = _descriptorForProvider(
+                              entry.record.providerId,
+                            );
+                            return LiveRoomGridCard(
+                              key: Key(
+                                'library-follow-card-${entry.record.providerId}-${entry.roomId}',
+                              ),
+                              room: entry.toLiveRoom(),
+                              descriptor: descriptor,
+                              onTap: () => _openRoom(
+                                entry.record.providerId,
+                                entry.roomId,
+                              ),
+                            );
+                          }, childCount: entries.length),
                         );
                       },
                     ),
@@ -811,26 +907,27 @@ class _LibraryPageState extends State<LibraryPage> {
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(0, 0, 0, 96),
                     sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final entry = entries[index];
-                          return FollowWatchRow(
-                            key: Key(
-                              'library-follow-card-${entry.record.providerId}-${entry.roomId}',
-                            ),
-                            entry: entry,
-                            providerDescriptor:
-                                _descriptorForProvider(entry.record.providerId),
-                            showSurface: false,
-                            onTap: () => _openRoom(
-                                entry.record.providerId, entry.roomId),
-                            onRemove: () => _confirmRemoveFollow(entry.record),
-                            onLongPress: () =>
-                                _showFollowActions(entry, data.tags),
-                          );
-                        },
-                        childCount: entries.length,
-                      ),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final entry = entries[index];
+                        // Original flat list presentation (no forced row Divider).
+                        return FollowWatchRow(
+                          key: Key(
+                            'library-follow-card-${entry.record.providerId}-${entry.roomId}',
+                          ),
+                          entry: entry,
+                          providerDescriptor: _descriptorForProvider(
+                            entry.record.providerId,
+                          ),
+                          showSurface: false,
+                          onTap: () => _openRoom(
+                            entry.record.providerId,
+                            entry.roomId,
+                          ),
+                          onRemove: () => _confirmRemoveFollow(entry.record),
+                          onLongPress: () =>
+                              _showFollowActions(entry, data.tags),
+                        );
+                      }, childCount: entries.length),
                     ),
                   ),
               ],
@@ -867,13 +964,17 @@ class _LibraryPageState extends State<LibraryPage> {
             itemBuilder: (context) => const [
               PopupMenuItem(
                 value: _LibraryMenuAction.subscribe,
-                child:
-                    _PopupRow(icon: Icons.emoji_events_outlined, label: '赛事订阅'),
+                child: _PopupRow(
+                  icon: Icons.emoji_events_outlined,
+                  label: '赛事订阅',
+                ),
               ),
               PopupMenuItem(
                 value: _LibraryMenuAction.toggleMode,
-                child:
-                    _PopupRow(icon: Icons.visibility_outlined, label: '模式切换'),
+                child: _PopupRow(
+                  icon: Icons.visibility_outlined,
+                  label: '模式切换',
+                ),
               ),
               PopupMenuItem(
                 value: _LibraryMenuAction.sort,
@@ -882,7 +983,9 @@ class _LibraryPageState extends State<LibraryPage> {
               PopupMenuItem(
                 value: _LibraryMenuAction.settings,
                 child: _PopupRow(
-                    icon: Icons.favorite_border_rounded, label: '关注设置'),
+                  icon: Icons.favorite_border_rounded,
+                  label: '关注设置',
+                ),
               ),
             ],
           ),
@@ -962,8 +1065,9 @@ class _FilterChip extends StatelessWidget {
             : colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
         shape: StadiumBorder(
           side: BorderSide(
-            color:
-                selected ? const Color(0xFFD7DEE8) : colorScheme.outlineVariant,
+            color: selected
+                ? colorScheme.outline
+                : colorScheme.outlineVariant,
           ),
         ),
         child: InkWell(

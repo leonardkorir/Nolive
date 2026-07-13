@@ -3,7 +3,7 @@ import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/library/application/list_follow_records_use_case.dart';
-import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 import 'package:nolive_app/src/features/room/presentation/room_follow_action_coordinator.dart';
 
@@ -32,7 +32,7 @@ void main() {
       expect(
         coordinator.replacedWatchlist!.entries.any(
           (entry) =>
-              entry.record.providerId == ProviderId.bilibili.value &&
+              entry.record.providerId == ProviderId.bilibili &&
               entry.roomId == '66666',
         ),
         isTrue,
@@ -46,7 +46,7 @@ void main() {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
       await bootstrap.followRepository.upsert(
         const FollowRecord(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili,
           roomId: '66666',
           streamerName: '系统演示主播',
         ),
@@ -55,12 +55,12 @@ void main() {
         entries: [
           const FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '66666',
               streamerName: '系统演示主播',
             ),
             detail: LiveRoomDetail(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '66666',
               title: '演示房间',
               streamerName: '系统演示主播',
@@ -97,7 +97,7 @@ void main() {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
       await bootstrap.followRepository.upsert(
         const FollowRecord(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili,
           roomId: '66666',
           streamerName: '系统演示主播',
         ),
@@ -106,12 +106,12 @@ void main() {
         entries: [
           const FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '66666',
               streamerName: '系统演示主播',
             ),
             detail: LiveRoomDetail(
-              providerId: 'bilibili',
+              providerId: ProviderId.bilibili,
               roomId: '66666',
               title: '演示房间',
               streamerName: '系统演示主播',
@@ -149,12 +149,12 @@ void main() {
       final harness = _createCoordinator(bootstrap);
       final entry = const FollowWatchEntry(
         record: FollowRecord(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili,
           roomId: '66666',
           streamerName: '系统演示主播',
         ),
         detail: LiveRoomDetail(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili,
           roomId: '66666',
           title: '演示房间',
           streamerName: '系统演示主播',
@@ -178,12 +178,12 @@ void main() {
         entries: [
           const FollowWatchEntry(
             record: FollowRecord(
-              providerId: 'missing_provider',
+              providerId: ProviderId('missing_provider'),
               roomId: 'room-1',
               streamerName: '未知主播',
             ),
             detail: LiveRoomDetail(
-              providerId: 'missing_provider',
+              providerId: ProviderId('missing_provider'),
               roomId: 'room-1',
               title: '未知房间',
               streamerName: '未知主播',
@@ -207,12 +207,12 @@ void main() {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
       const existingEntry = FollowWatchEntry(
         record: FollowRecord(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili,
           roomId: '12345',
           streamerName: '已存在主播',
         ),
         detail: LiveRoomDetail(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili,
           roomId: '12345',
           title: '已存在房间',
           streamerName: '已存在主播',
@@ -303,8 +303,8 @@ _FollowCoordinatorHarness _createCoordinator(
   final coordinator = RoomFollowActionCoordinator(
     dependencies: dependencies,
     context: RoomFollowActionContext(
-      currentProviderId: ProviderId.bilibili,
-      currentRoomId: '66666',
+      resolveCurrentProviderId: () => ProviderId.bilibili,
+      resolveCurrentRoomId: () => '66666',
       showMessage: messages.add,
       isMounted: () => true,
       confirmUnfollow: confirmUnfollow ?? (_) async => true,

@@ -17,15 +17,13 @@ class DouyuPreviewDataSource implements DouyuDataSource {
     LiveCategory(
       id: '2',
       name: '游戏',
-      children: [
-        LiveSubCategory(id: '21', parentId: '2', name: '王者荣耀'),
-      ],
+      children: [LiveSubCategory(id: '21', parentId: '2', name: '王者荣耀')],
     ),
   ];
 
   static const List<LiveRoom> _rooms = [
     LiveRoom(
-      providerId: 'douyu',
+      providerId: ProviderId.douyu,
       roomId: '3125893',
       title: '斗鱼架构演示房间',
       streamerName: '斗鱼样例主播',
@@ -36,7 +34,7 @@ class DouyuPreviewDataSource implements DouyuDataSource {
       viewerCount: 12345,
     ),
     LiveRoom(
-      providerId: 'douyu',
+      providerId: ProviderId.douyu,
       roomId: '9123456',
       title: '斗鱼迁移验证房间',
       streamerName: '迁移样例主播',
@@ -50,7 +48,7 @@ class DouyuPreviewDataSource implements DouyuDataSource {
 
   static const Map<String, LiveRoomDetail> _details = {
     '3125893': LiveRoomDetail(
-      providerId: 'douyu',
+      providerId: ProviderId.douyu,
       roomId: '3125893',
       title: '斗鱼架构演示房间',
       streamerName: '斗鱼样例主播',
@@ -66,7 +64,7 @@ class DouyuPreviewDataSource implements DouyuDataSource {
       metadata: {'playContext': 'preview'},
     ),
     '9123456': LiveRoomDetail(
-      providerId: 'douyu',
+      providerId: ProviderId.douyu,
       roomId: '9123456',
       title: '斗鱼迁移验证房间',
       streamerName: '迁移样例主播',
@@ -91,12 +89,7 @@ class DouyuPreviewDataSource implements DouyuDataSource {
       sortOrder: 0,
       metadata: {'rate': 0},
     ),
-    LivePlayQuality(
-      id: '4',
-      label: '蓝光',
-      sortOrder: 4,
-      metadata: {'rate': 4},
-    ),
+    LivePlayQuality(id: '4', label: '蓝光', sortOrder: 4, metadata: {'rate': 4}),
   ]);
 
   @override
@@ -117,9 +110,11 @@ class DouyuPreviewDataSource implements DouyuDataSource {
 
   @override
   Future<PagedResponse<LiveRoom>> fetchRecommendRooms({int page = 1}) async {
-    final items = [..._rooms]..sort((left, right) {
-        final compare =
-            (right.viewerCount ?? -1).compareTo(left.viewerCount ?? -1);
+    final items = [..._rooms]
+      ..sort((left, right) {
+        final compare = (right.viewerCount ?? -1).compareTo(
+          left.viewerCount ?? -1,
+        );
         if (compare != 0) {
           return compare;
         }
@@ -134,13 +129,15 @@ class DouyuPreviewDataSource implements DouyuDataSource {
     int page = 1,
   }) async {
     final normalizedQuery = query.trim().toLowerCase();
-    final filtered = _rooms.where((room) {
-      if (normalizedQuery.isEmpty) {
-        return true;
-      }
-      return room.title.toLowerCase().contains(normalizedQuery) ||
-          room.streamerName.toLowerCase().contains(normalizedQuery);
-    }).toList(growable: false);
+    final filtered = _rooms
+        .where((room) {
+          if (normalizedQuery.isEmpty) {
+            return true;
+          }
+          return room.title.toLowerCase().contains(normalizedQuery) ||
+              room.streamerName.toLowerCase().contains(normalizedQuery);
+        })
+        .toList(growable: false);
 
     return PagedResponse(items: filtered, hasMore: false, page: page);
   }

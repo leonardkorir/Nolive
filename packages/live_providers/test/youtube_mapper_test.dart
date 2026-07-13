@@ -17,9 +17,7 @@ void main() {
           'author': 'LiveNOW from FOX',
         },
         'microformat': {
-          'playerMicroformatRenderer': {
-            'ownerProfileUrl': '/@livenowfox',
-          },
+          'playerMicroformatRenderer': {'ownerProfileUrl': '/@livenowfox'},
         },
       },
       sourcePageUrl: 'https://www.youtube.com/watch?v=C96oohpWBGw',
@@ -72,41 +70,48 @@ void main() {
     );
 
     expect(detail.metadata?['playerClientProfile'], 'web_safari');
-    expect((detail.metadata?['playbackSources'] as List).single['lineLabel'],
-        'Safari HLS');
+    expect(
+      (detail.metadata?['playbackSources'] as List).single['lineLabel'],
+      'Safari HLS',
+    );
   });
 
-  test('youtube mapper prefers live page candidate viewer count and avatar',
-      () {
-    final detail = YouTubeMapper.mapRoomDetail(
-      requestedRoomId: '@Wenzel_TCG/live',
-      resolvedVideoId: 'Z3eFGbFcaXs',
-      playerResponse: const {
-        'playabilityStatus': {'status': 'OK'},
-        'videoDetails': {
-          'title': 'WENZ VAULT!',
-          'author': 'Wenzel TCG',
-          'viewCount': '168632',
-        },
-        'microformat': {
-          'playerMicroformatRenderer': {
-            'ownerProfileUrl': '/@Wenzel_TCG',
-            'liveBroadcastDetails': {'isLiveNow': true},
+  test(
+    'youtube mapper prefers live page candidate viewer count and avatar',
+    () {
+      final detail = YouTubeMapper.mapRoomDetail(
+        requestedRoomId: '@Wenzel_TCG/live',
+        resolvedVideoId: 'Z3eFGbFcaXs',
+        playerResponse: const {
+          'playabilityStatus': {'status': 'OK'},
+          'videoDetails': {
+            'title': 'WENZ VAULT!',
+            'author': 'Wenzel TCG',
+            'viewCount': '168632',
+          },
+          'microformat': {
+            'playerMicroformatRenderer': {
+              'ownerProfileUrl': '/@Wenzel_TCG',
+              'liveBroadcastDetails': {'isLiveNow': true},
+            },
           },
         },
-      },
-      sourcePageUrl: 'https://www.youtube.com/watch?v=Z3eFGbFcaXs',
-      apiKey: 'AIzaTest',
-      pageCandidate: const YouTubeSearchCandidate(
-        videoId: 'Z3eFGbFcaXs',
-        title: 'WENZ VAULT!',
-        streamerName: 'Wenzel TCG',
-        streamerAvatarUrl: 'https://yt3.ggpht.com/demo-avatar=s176',
-        viewerCount: 1279,
-      ),
-    );
+        sourcePageUrl: 'https://www.youtube.com/watch?v=Z3eFGbFcaXs',
+        apiKey: 'AIzaTest',
+        pageCandidate: const YouTubeSearchCandidate(
+          videoId: 'Z3eFGbFcaXs',
+          title: 'WENZ VAULT!',
+          streamerName: 'Wenzel TCG',
+          streamerAvatarUrl: 'https://yt3.ggpht.com/demo-avatar=s176',
+          viewerCount: 1279,
+        ),
+      );
 
-    expect(detail.viewerCount, 1279);
-    expect(detail.streamerAvatarUrl, 'https://yt3.ggpht.com/demo-avatar=s176');
-  });
+      expect(detail.viewerCount, 1279);
+      expect(
+        detail.streamerAvatarUrl,
+        'https://yt3.ggpht.com/demo-avatar=s176',
+      );
+    },
+  );
 }

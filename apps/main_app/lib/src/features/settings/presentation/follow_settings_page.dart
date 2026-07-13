@@ -9,10 +9,11 @@ import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/features/library/application/load_library_dashboard_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_follow_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/settings_page_dependencies.dart';
+import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
-import 'package:nolive_app/src/shared/presentation/widgets/empty_state_card.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/section_header.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/settings_action_buttons.dart';
+import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
 class FollowSettingsPage extends StatefulWidget {
   const FollowSettingsPage({required this.dependencies, super.key});
@@ -61,9 +62,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+        showAppSnackBar(context, message);
     await _refresh();
   }
 
@@ -296,9 +295,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+        showAppSnackBar(context, message);
   }
 
   Future<void> _removeTag(String tag) async {
@@ -357,10 +354,10 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(20),
                 children: [
-                  EmptyStateCard(
+                  SettingsErrorState(
                     title: '关注设置加载失败',
-                    message: '${snapshot.error}',
-                    icon: Icons.error_outline,
+                    error: snapshot.error,
+                    fallback: '无法加载关注设置，请稍后重试',
                   ),
                 ],
               );
@@ -372,7 +369,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
 
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+              padding: kSettingsPagePadding,
               children: [
                 const SectionHeader(title: '关注设置'),
                 const SizedBox(height: 12),

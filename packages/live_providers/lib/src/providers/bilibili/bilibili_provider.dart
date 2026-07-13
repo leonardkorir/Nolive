@@ -23,8 +23,8 @@ class BilibiliProvider extends LiveProvider
   BilibiliProvider({
     BilibiliDataSource? dataSource,
     void Function()? disposeOwnedResources,
-  })  : _dataSource = dataSource ?? const BilibiliPreviewDataSource(),
-        _disposeOwnedResources = disposeOwnedResources;
+  }) : _dataSource = dataSource ?? const BilibiliPreviewDataSource(),
+       _disposeOwnedResources = disposeOwnedResources;
 
   factory BilibiliProvider.preview() => BilibiliProvider();
 
@@ -66,7 +66,7 @@ class BilibiliProvider extends LiveProvider
       ProviderPlatform.androidTv,
     },
     roomIdPatterns: [r'^\d+$'],
-    maturity: ProviderMaturity.inMigration,
+    maturity: ProviderMaturity.ready,
   );
 
   final BilibiliDataSource _dataSource;
@@ -134,7 +134,7 @@ class BilibiliProvider extends LiveProvider
     final token = detail.danmakuToken;
     if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
-        providerId: descriptor.id.value,
+        providerId: descriptor.id,
         detail: detail,
       );
     }
@@ -147,9 +147,7 @@ class BilibiliProvider extends LiveProvider
     if (token is BilibiliDanmakuToken &&
         token.roomId > 0 &&
         token.token.trim().isNotEmpty) {
-      return BilibiliDanmakuSession(
-        danmakuToken: token,
-      );
+      return BilibiliDanmakuSession(danmakuToken: token);
     }
     return ProviderUnavailableDanmakuSession(
       reason: '哔哩哔哩当前房间暂未拿到可用弹幕连接参数，请稍后刷新重试。',

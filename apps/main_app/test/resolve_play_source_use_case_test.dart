@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:live_providers/live_providers.dart';
+import 'package:live_providers/src/providers/twitch/twitch_playback_manifest.dart';
 import 'package:nolive_app/src/features/room/application/resolve_play_source_use_case.dart';
 
 void main() {
@@ -20,7 +21,7 @@ void main() {
         ),
       );
     const detail = LiveRoomDetail(
-      providerId: 'test',
+      providerId: ProviderId('test'),
       roomId: '1',
       title: 'Test Room',
       streamerName: 'Tester',
@@ -69,7 +70,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '1',
         title: 'Test Room',
         streamerName: 'Tester',
@@ -115,7 +116,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '1',
         title: 'Test Room',
         streamerName: 'Tester',
@@ -164,7 +165,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'youtube',
+        providerId: ProviderId.youtube,
         roomId: '@NBCNews/live',
         title: 'NBC News',
         streamerName: 'NBC News',
@@ -239,7 +240,7 @@ void main() {
         ),
       );
     const detail = LiveRoomDetail(
-      providerId: 'heavy-resolution',
+      providerId: ProviderId('heavy-resolution'),
       roomId: '1',
       title: 'Test Room',
       streamerName: 'Tester',
@@ -278,7 +279,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'heavy-bandwidth',
+        providerId: ProviderId('heavy-bandwidth'),
         roomId: '1',
         title: 'Test Room',
         streamerName: 'Tester',
@@ -322,7 +323,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'heavy-label',
+        providerId: ProviderId('heavy-label'),
         roomId: '1',
         title: 'Test Room',
         streamerName: 'Tester',
@@ -436,7 +437,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'plain-profile',
+        providerId: ProviderId('plain-profile'),
         roomId: '1',
         title: 'Test Room',
         streamerName: 'Tester',
@@ -480,7 +481,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'douyu',
+        providerId: ProviderId.douyu,
         roomId: '5526219',
         title: 'Test Room',
         streamerName: 'Tester',
@@ -526,7 +527,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'douyu',
+        providerId: ProviderId.douyu,
         roomId: '5526219',
         title: 'Test Room',
         streamerName: 'Tester',
@@ -555,99 +556,98 @@ void main() {
     },
   );
 
-  test(
-    'resolve play source proxies twitch playlists through ad guard',
-    () async {
-      final registry = ProviderRegistry()
-        ..register(
-          ProviderRegistration(
-            descriptor: const ProviderDescriptor(
-              id: ProviderId.twitch,
-              displayName: 'Twitch',
-              capabilities: {ProviderCapability.playUrls},
-              supportedPlatforms: {ProviderPlatform.android},
-              maturity: ProviderMaturity.ready,
-            ),
-            builder: _FakeTwitchPlayUrlProvider.new,
+  test('resolve play source proxies twitch playlists through ad guard', () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: const ProviderDescriptor(
+            id: ProviderId.twitch,
+            displayName: 'Twitch',
+            capabilities: {ProviderCapability.playUrls},
+            supportedPlatforms: {ProviderPlatform.android},
+            maturity: ProviderMaturity.ready,
           ),
-        );
-      const detail = LiveRoomDetail(
-        providerId: 'twitch',
-        roomId: 'xqc',
-        title: 'Twitch Room',
-        streamerName: 'Tester',
-        isLive: true,
-        sourceUrl: 'https://www.twitch.tv/xqc',
+          builder: _FakeTwitchPlayUrlProvider.new,
+        ),
       );
-      final quality = LivePlayQuality(
-        id: 'auto',
-        label: 'Auto',
-        isDefault: true,
-        metadata: {
-          'twitchPlaybackGroups': [
-            TwitchPlaybackQualityGroup(
-              id: '720p',
-              label: '720p',
-              sortOrder: 720,
-              bandwidth: 3200000,
-              width: 1280,
-              height: 720,
-              frameRate: 60,
-              codecs: 'avc1.640020,mp4a.40.2',
-              candidates: [
-                TwitchPlaybackCandidate(
-                  playlistUrl: 'https://usher.ttvnw.net/720p.m3u8',
-                  headers: {},
-                  playerType: 'embed',
-                  platform: 'web',
-                  lineLabel: '优选 Embed',
-                ),
-              ],
-            ).toJson(),
-          ],
-          'twitchPlaybackCandidates': [
-            TwitchPlaybackCandidate(
-              playlistUrl: 'https://usher.ttvnw.net/master.m3u8',
-              headers: {},
-              playerType: 'embed',
-              platform: 'web',
-              lineLabel: '优选 Embed',
-            ).toJson(),
-          ],
-        },
-      );
-      var wrapCalls = 0;
-      final useCase = ResolvePlaySourceUseCase(
-        registry,
-        wrapTwitchPlayUrls: ({required quality, required playUrls}) async {
-          wrapCalls += 1;
-          return [
-            LivePlayUrl(
-              url: 'http://127.0.0.1:9999/twitch-ad-guard/session/stream.m3u8',
-              headers: const {},
-              lineLabel: playUrls.first.lineLabel,
-              metadata: {
-                ...?playUrls.first.metadata,
-                'proxied': true,
-                'upstreamUrl': playUrls.first.url,
-              },
-            ),
-          ];
-        },
-      );
+    const detail = LiveRoomDetail(
+      providerId: ProviderId.twitch,
+      roomId: 'xqc',
+      title: 'Twitch Room',
+      streamerName: 'Tester',
+      isLive: true,
+      sourceUrl: 'https://www.twitch.tv/xqc',
+    );
+    final quality = LivePlayQuality(
+      id: 'auto',
+      label: 'Auto',
+      isDefault: true,
+      metadata: {
+        'twitchPlaybackGroups': [
+          TwitchPlaybackQualityGroup(
+            id: '720p',
+            label: '720p',
+            sortOrder: 720,
+            bandwidth: 3200000,
+            width: 1280,
+            height: 720,
+            frameRate: 60,
+            codecs: 'avc1.640020,mp4a.40.2',
+            candidates: [
+              TwitchPlaybackCandidate(
+                playlistUrl: 'https://usher.ttvnw.net/720p.m3u8',
+                headers: {},
+                playerType: 'embed',
+                platform: 'web',
+                lineLabel: '优选 Embed',
+              ),
+            ],
+          ).toJson(),
+        ],
+        'twitchPlaybackCandidates': [
+          TwitchPlaybackCandidate(
+            playlistUrl: 'https://usher.ttvnw.net/master.m3u8',
+            headers: {},
+            playerType: 'embed',
+            platform: 'web',
+            lineLabel: '优选 Embed',
+          ).toJson(),
+        ],
+      },
+    );
+    var wrapCalls = 0;
+    final useCase = ResolvePlaySourceUseCase(
+      registry,
+      wrapTwitchPlayUrls:
+          ({required roomId, required quality, required playUrls}) async {
+            wrapCalls += 1;
+            return [
+              LivePlayUrl(
+                url:
+                    'http://127.0.0.1:9999/twitch-ad-guard/session/stream.m3u8',
+                headers: const {},
+                lineLabel: playUrls.first.lineLabel,
+                metadata: {
+                  ...?playUrls.first.metadata,
+                  'proxied': true,
+                  'upstreamUrl': playUrls.first.url,
+                },
+              ),
+            ];
+          },
+    );
 
-      final resolved = await useCase(
-        providerId: ProviderId.twitch,
-        detail: detail,
-        quality: quality,
-      );
+    final resolved = await useCase(
+      providerId: ProviderId.twitch,
+      detail: detail,
+      quality: quality,
+    );
 
-      expect(resolved.playbackSource.url.toString(), contains('127.0.0.1'));
-      expect(resolved.playbackSource.url.path, contains('twitch-ad-guard'));
-      expect(resolved.playUrls.first.metadata?['proxied'], isTrue);
-      expect(wrapCalls, 1);
-    },
-  );
+    expect(resolved.playbackSource.url.toString(), contains('127.0.0.1'));
+    expect(resolved.playbackSource.url.path, contains('twitch-ad-guard'));
+    expect(resolved.playUrls.first.metadata?['proxied'], isTrue);
+    expect(wrapCalls, 1);
+  });
 
   test(
     'resolve play source keeps chaturbate mmcdn fallback on stable profile',
@@ -666,7 +666,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'chaturbate',
+        providerId: ProviderId.chaturbate,
         roomId: 'xdreamangel',
         title: 'Chaturbate Room',
         streamerName: 'Tester',
@@ -680,8 +680,9 @@ void main() {
       );
       final useCase = ResolvePlaySourceUseCase(
         registry,
-        wrapChaturbatePlayUrls: ({required quality, required playUrls}) async =>
-            playUrls,
+        wrapChaturbatePlayUrls:
+            ({required roomId, required quality, required playUrls}) async =>
+                playUrls,
       );
 
       final resolved = await useCase(
@@ -722,7 +723,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'chaturbate',
+        providerId: ProviderId.chaturbate,
         roomId: 'demo',
         title: 'Chaturbate Room',
         streamerName: 'Tester',
@@ -737,21 +738,23 @@ void main() {
       var wrapCalls = 0;
       final useCase = ResolvePlaySourceUseCase(
         registry,
-        wrapChaturbatePlayUrls: ({required quality, required playUrls}) async {
-          wrapCalls += 1;
-          return [
-            LivePlayUrl(
-              url: 'http://127.0.0.1:9999/chaturbate-llhls/session/stream.m3u8',
-              headers: const {},
-              lineLabel: playUrls.first.lineLabel,
-              metadata: {
-                'proxied': true,
-                'proxyKind': 'chaturbate-llhls',
-                'upstreamUrl': playUrls.first.url,
-              },
-            ),
-          ];
-        },
+        wrapChaturbatePlayUrls:
+            ({required roomId, required quality, required playUrls}) async {
+              wrapCalls += 1;
+              return [
+                LivePlayUrl(
+                  url:
+                      'http://127.0.0.1:9999/chaturbate-llhls/session/stream.m3u8',
+                  headers: const {},
+                  lineLabel: playUrls.first.lineLabel,
+                  metadata: {
+                    'proxied': true,
+                    'proxyKind': 'chaturbate-llhls',
+                    'upstreamUrl': playUrls.first.url,
+                  },
+                ),
+              ];
+            },
       );
 
       final resolved = await useCase(
@@ -789,7 +792,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'stripchat',
+        providerId: ProviderId.stripchat,
         roomId: 'fit_vic',
         title: 'Stripchat Room',
         streamerName: 'Tester',
@@ -804,25 +807,26 @@ void main() {
       var wrapCalls = 0;
       final useCase = ResolvePlaySourceUseCase(
         registry,
-        wrapStripchatPlayUrls: ({required quality, required playUrls}) async {
-          wrapCalls += 1;
-          return [
-            LivePlayUrl(
-              url:
-                  'http://127.0.0.1:9999/stripchat-llhls/session/playlist.m3u8',
-              headers: playUrls.first.headers,
-              lineLabel: playUrls.first.lineLabel,
-              metadata: {
-                'proxied': true,
-                'proxyKind': 'stripchat-llhls',
-                'upstreamUrl': playUrls.first.url,
-                'masterPlaylistUrl':
-                    'https://edge-hls.doppiocdn.com/hls/222064808/master/222064808_auto.m3u8?minHeight=240&playlistType=lowLatency',
-                'masterPlaylistContent': '#EXTM3U',
-              },
-            ),
-          ];
-        },
+        wrapStripchatPlayUrls:
+            ({required roomId, required quality, required playUrls}) async {
+              wrapCalls += 1;
+              return [
+                LivePlayUrl(
+                  url:
+                      'http://127.0.0.1:9999/stripchat-llhls/session/playlist.m3u8',
+                  headers: playUrls.first.headers,
+                  lineLabel: playUrls.first.lineLabel,
+                  metadata: {
+                    'proxied': true,
+                    'proxyKind': 'stripchat-llhls',
+                    'upstreamUrl': playUrls.first.url,
+                    'masterPlaylistUrl':
+                        'https://edge-hls.doppiocdn.com/hls/222064808/master/222064808_auto.m3u8?minHeight=240&playlistType=lowLatency',
+                    'masterPlaylistContent': '#EXTM3U',
+                  },
+                ),
+              ];
+            },
       );
 
       final resolved = await useCase(
@@ -838,10 +842,7 @@ void main() {
         PlaybackBufferProfile.loopbackStableHls,
       );
       expect(resolved.playUrls.first.metadata?['proxied'], isTrue);
-      expect(
-        resolved.playbackSource.masterPlaylistUrl?.toString(),
-        isNull,
-      );
+      expect(resolved.playbackSource.masterPlaylistUrl?.toString(), isNull);
       expect(resolved.playbackSource.masterPlaylistContent, isNull);
       expect(wrapCalls, 1);
     },
@@ -864,7 +865,7 @@ void main() {
           ),
         );
       const detail = LiveRoomDetail(
-        providerId: 'stripchat',
+        providerId: ProviderId.stripchat,
         roomId: 'fit_vic',
         title: 'Stripchat Room',
         streamerName: 'Tester',
@@ -888,7 +889,10 @@ void main() {
         quality: quality,
       );
 
-      expect(resolved.playUrls.first.metadata?['stripchatStableFallback'], isTrue);
+      expect(
+        resolved.playUrls.first.metadata?['stripchatStableFallback'],
+        isTrue,
+      );
       expect(
         resolved.playbackSource.bufferProfile,
         PlaybackBufferProfile.loopbackStableHls,
@@ -911,7 +915,7 @@ void main() {
         ),
       );
     const detail = LiveRoomDetail(
-      providerId: 'twitch',
+      providerId: ProviderId.twitch,
       roomId: 'xqc',
       title: 'Twitch Room',
       streamerName: 'Tester',

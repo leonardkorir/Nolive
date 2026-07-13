@@ -49,7 +49,8 @@ class HttpLocalSyncServer implements LocalSyncServer {
     Future<LocalSyncPeerInfo> Function()? readInfo,
     this.host = '0.0.0.0',
     this.port = 23234,
-    this.maxRequestBytes = 1024 * 1024,
+    // 全量快照（含历史/关注）可能超过 1MB；预留更大上限。
+    this.maxRequestBytes = 32 * 1024 * 1024,
     String? accessToken,
     Future<String?> Function()? accessTokenResolver,
     void Function(Object error, StackTrace stackTrace)? onUnexpectedError,

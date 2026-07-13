@@ -41,10 +41,11 @@ void main() {
           return http.Response('busy', 503);
         }
         return http.Response(
-            jsonEncode(const {
-              'data': {'ok': true}
-            }),
-            200);
+          jsonEncode(const {
+            'data': {'ok': true},
+          }),
+          200,
+        );
       }),
     );
 

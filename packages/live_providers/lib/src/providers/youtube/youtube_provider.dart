@@ -5,6 +5,7 @@ import '../../danmaku/provider_unavailable_danmaku_session.dart';
 import '../../danmaku/youtube_danmaku_session.dart';
 import 'youtube_api_client.dart';
 import 'youtube_data_source.dart';
+import 'youtube_decipher_service.dart';
 import 'youtube_live_data_source.dart';
 import 'youtube_preview_data_source.dart';
 
@@ -27,11 +28,11 @@ class YouTubeProvider extends LiveProvider
     YouTubeApiClientBuilder? createOwnedDanmakuApiClient,
     YouTubeApiClientDisposer? disposeOwnedDanmakuApiClient,
     void Function()? disposeOwnedResources,
-  })  : _dataSource = dataSource ?? const YouTubePreviewDataSource(),
-        _danmakuApiClient = danmakuApiClient,
-        _createOwnedDanmakuApiClient = createOwnedDanmakuApiClient,
-        _disposeOwnedDanmakuApiClient = disposeOwnedDanmakuApiClient,
-        _disposeOwnedResources = disposeOwnedResources;
+  }) : _dataSource = dataSource ?? const YouTubePreviewDataSource(),
+       _danmakuApiClient = danmakuApiClient,
+       _createOwnedDanmakuApiClient = createOwnedDanmakuApiClient,
+       _disposeOwnedDanmakuApiClient = disposeOwnedDanmakuApiClient,
+       _disposeOwnedResources = disposeOwnedResources;
 
   factory YouTubeProvider.preview() => YouTubeProvider();
 
@@ -40,17 +41,20 @@ class YouTubeProvider extends LiveProvider
     YouTubeApiClientBuilder apiClientBuilder = _defaultYouTubeApiClientBuilder,
     YouTubeApiClientDisposer apiClientDisposer =
         _defaultYouTubeApiClientDisposer,
+    YouTubeNSigSolver? nSigSolver,
   }) {
     final ownedApiClient = apiClient == null ? apiClientBuilder() : null;
     final resolvedApiClient = apiClient ?? ownedApiClient!;
     return YouTubeProvider(
       dataSource: YouTubeLiveDataSource(
         apiClient: resolvedApiClient,
+        nSigSolver: nSigSolver,
       ),
       danmakuApiClient: apiClient,
       createOwnedDanmakuApiClient: apiClient == null ? apiClientBuilder : null,
-      disposeOwnedDanmakuApiClient:
-          apiClient == null ? apiClientDisposer : null,
+      disposeOwnedDanmakuApiClient: apiClient == null
+          ? apiClientDisposer
+          : null,
       disposeOwnedResources: ownedApiClient == null
           ? null
           : () => apiClientDisposer(ownedApiClient),
@@ -153,7 +157,7 @@ class YouTubeProvider extends LiveProvider
     final token = detail.danmakuToken;
     if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
-        providerId: descriptor.id.value,
+        providerId: descriptor.id,
         detail: detail,
       );
     }
@@ -175,8 +179,9 @@ class YouTubeProvider extends LiveProvider
             ? token.clientVersion
             : YouTubeApiClient.defaultWebClientVersion,
         disposeResources: _danmakuApiClient == null
-            ? () => (_disposeOwnedDanmakuApiClient ??
-                _defaultYouTubeApiClientDisposer)(sessionApiClient)
+            ? () =>
+                  (_disposeOwnedDanmakuApiClient ??
+                  _defaultYouTubeApiClientDisposer)(sessionApiClient)
             : null,
       );
     }

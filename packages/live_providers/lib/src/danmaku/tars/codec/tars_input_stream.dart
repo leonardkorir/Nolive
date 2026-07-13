@@ -44,8 +44,9 @@ class BinaryReader {
     //   position += len;
     //   return result;
     // }
-    var bytes =
-        Uint8List.fromList(buffer.getRange(position, position + len).toList());
+    var bytes = Uint8List.fromList(
+      buffer.getRange(position, position + len).toList(),
+    );
     var byteBuffer = bytes.buffer;
     var data = ByteData.view(byteBuffer);
     if (len == 1) {
@@ -69,8 +70,9 @@ class BinaryReader {
   /// 返回字节数组
   Uint8List readBytes(int len) {
     _ensureRemaining(len);
-    var bytes =
-        Uint8List.fromList(buffer.getRange(position, position + len).toList());
+    var bytes = Uint8List.fromList(
+      buffer.getRange(position, position + len).toList(),
+    );
     position += len;
     return bytes;
   }
@@ -82,8 +84,9 @@ class BinaryReader {
   double readFloat(int len) {
     _ensureRemaining(len);
     var result = 0.0;
-    var bytes =
-        Uint8List.fromList(buffer.getRange(position, position + len).toList());
+    var bytes = Uint8List.fromList(
+      buffer.getRange(position, position + len).toList(),
+    );
     var byteBuffer = bytes.buffer;
     var data = ByteData.view(byteBuffer);
     if (len == 4) {
@@ -246,7 +249,8 @@ class TarsInputStream {
           readHead(hd);
           if (hd.type != TarsStructType.BYTE.index) {
             throw TarsDecodeException(
-                'skipField with invalid type, type value: $type,${hd.type}');
+              'skipField with invalid type, type value: $type,${hd.type}',
+            );
           }
           var size = readInt(0, true);
           if (size < 0) {
@@ -428,12 +432,14 @@ class TarsInputStream {
             readHead(hh);
             if (hh.type != TarsStructType.BYTE.index) {
               throw TarsDecodeException(
-                  'type mismatch, tag: $tag,type:${hd.type},${hh.type}');
+                'type mismatch, tag: $tag,type:${hd.type},${hh.type}',
+              );
             }
             var size = readInt(0, true);
             if (size < 0) {
               throw TarsDecodeException(
-                  'invalid size, tag: $tag, type: ${hd.type}, ${hh.type}  size:$size');
+                'invalid size, tag: $tag, type: ${hd.type}, ${hh.type}  size:$size',
+              );
             }
 
             try {
@@ -515,7 +521,10 @@ class TarsInputStream {
   /// 需要指定键、list值的类型
   /// 对应Tars类型：Map
   Map<K, List<V>> readMapList<K, V>(
-      Map<K, List<V>> source, int tag, bool isRequire) {
+    Map<K, List<V>> source,
+    int tag,
+    bool isRequire,
+  ) {
     var map = <K, List<V>>{};
     Iterable<MapEntry<K, List<V>>> it = source.entries;
     MapEntry<K, List<V>> en = it.first;
@@ -554,7 +563,10 @@ class TarsInputStream {
   /// 需要指定键、子Map键值的类型
   /// 对应Tars类型：Map
   Map<K, Map<K2, V2>> readMapMap<K, K2, V2>(
-      Map<K, Map<K2, V2>> source, int tag, bool isRequire) {
+    Map<K, Map<K2, V2>> source,
+    int tag,
+    bool isRequire,
+  ) {
     var map = <K, Map<K2, V2>>{};
     Iterable<MapEntry<K, Map<K2, V2>>> it = source.entries;
     MapEntry<K, Map<K2, V2>> en = it.first;

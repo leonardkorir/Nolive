@@ -12,7 +12,7 @@ void main() {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
       await bootstrap.followRepository.upsert(
         const FollowRecord(
-          providerId: 'bilibili',
+          providerId: ProviderId.bilibili,
           roomId: '66666',
           streamerName: '系统演示主播',
         ),

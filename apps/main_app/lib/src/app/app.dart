@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/routing/app_router.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
+import 'package:nolive_app/src/shared/presentation/theme/app_text_scale.dart';
 import 'package:nolive_app/src/shared/presentation/theme/nolive_theme.dart';
 import 'package:nolive_app/src/shared/presentation/theme/zh_text.dart';
 
@@ -46,7 +47,7 @@ class NoliveApp extends StatelessWidget {
             return AnnotatedRegion<SystemUiOverlayStyle>(
               value: overlayStyle,
               child: MediaQuery(
-                data: mediaQuery.copyWith(textScaler: TextScaler.noScaling),
+                data: applyAppTextScaler(mediaQuery),
                 child: DefaultTextStyle.merge(
                   style: applyZhTextStyle(),
                   child: child ?? const SizedBox.shrink(),

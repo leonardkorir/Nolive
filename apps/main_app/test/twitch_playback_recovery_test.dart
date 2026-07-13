@@ -43,6 +43,33 @@ void main() {
   });
 
   test(
+    'twitch startup can promote requested auto to highest fixed quality',
+    () {
+      final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+      final q720 = LivePlayQuality(
+        id: '720p60',
+        label: '720p60',
+        sortOrder: 720,
+      );
+      final q1080 = LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 1080,
+      );
+
+      final plan = resolveTwitchStartupPlan(
+        qualities: [auto, q720, q1080],
+        requestedQuality: auto,
+        promoteAutoStartup: true,
+      );
+
+      expect(plan.startupQuality.id, 'auto');
+      expect(plan.startupQuality.metadata?['twitchStartupAuto'], isTrue);
+      expect(plan.promotionQuality?.id, '1080p60');
+    },
+  );
+
+  test(
     'twitch quality recovery avoids bouncing back to auto after startup',
     () {
       final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
@@ -71,6 +98,23 @@ void main() {
 
     expect(shouldPromoteTwitchPlaybackQuality(state), isTrue);
   });
+
+  test(
+    'twitch auto warm-up in progress when already playing with zero position',
+    () {
+      final state = PlayerState(
+        status: PlaybackStatus.playing,
+        position: Duration.zero,
+        buffered: Duration.zero,
+        source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
+      );
+
+      expect(isTwitchAutoWarmupInProgress(state), isTrue);
+      // Still below promotion thresholds — wait, do not re-open auto.
+      expect(shouldPromoteTwitchPlaybackQuality(state), isFalse);
+      expect(shouldAttemptTwitchPlaybackRecovery(state), isTrue);
+    },
+  );
 
   test('twitch recovery delay is aggressive for auto startup retries', () {
     final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);

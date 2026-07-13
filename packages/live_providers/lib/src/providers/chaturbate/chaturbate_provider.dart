@@ -23,9 +23,21 @@ class ChaturbateProvider extends LiveProvider
     ChaturbateDataSource? dataSource,
     ChaturbateApiClient? danmakuApiClient,
     void Function()? disposeOwnedResources,
-  })  : _dataSource = dataSource ?? const ChaturbatePreviewDataSource(),
-        _danmakuApiClient = danmakuApiClient,
-        _disposeOwnedResources = disposeOwnedResources;
+    void Function(String message)? diagnostics,
+  }) : _dataSource = dataSource ?? const ChaturbatePreviewDataSource(),
+       _danmakuApiClient = danmakuApiClient,
+       _disposeOwnedResources = disposeOwnedResources,
+       _diagnostics = diagnostics;
+
+  /// Account cookie bound at provider create time (from secure settings).
+  /// Test/diagnostic access only — not part of the public product API surface.
+  String get debugConfiguredCookie {
+    final client = _danmakuApiClient;
+    if (client is HttpChaturbateApiClient) {
+      return client.cookie;
+    }
+    return '';
+  }
 
   factory ChaturbateProvider.preview() => ChaturbateProvider();
 
@@ -34,18 +46,22 @@ class ChaturbateProvider extends LiveProvider
     ChaturbateApiClient? apiClient,
     ChaturbateRoomPageParser roomPageParser = const ChaturbateRoomPageParser(),
     List<String>? recommendCarouselIds,
+    void Function(String message)? diagnostics,
   }) {
-    final ownedApiClient =
-        apiClient == null ? HttpChaturbateApiClient(cookie: cookie) : null;
+    final ownedApiClient = apiClient == null
+        ? HttpChaturbateApiClient(cookie: cookie, diagnostics: diagnostics)
+        : null;
     final resolvedApiClient = apiClient ?? ownedApiClient!;
     return ChaturbateProvider(
       dataSource: ChaturbateLiveDataSource(
         apiClient: resolvedApiClient,
         roomPageParser: roomPageParser,
         recommendCarouselIds: recommendCarouselIds,
+        diagnostics: diagnostics,
       ),
       danmakuApiClient: resolvedApiClient,
       disposeOwnedResources: ownedApiClient?.close,
+      diagnostics: diagnostics,
     );
   }
 
@@ -79,6 +95,7 @@ class ChaturbateProvider extends LiveProvider
   final ChaturbateDataSource _dataSource;
   final ChaturbateApiClient? _danmakuApiClient;
   final void Function()? _disposeOwnedResources;
+  final void Function(String message)? _diagnostics;
 
   @override
   ProviderDescriptor get descriptor => kDescriptor;
@@ -142,7 +159,7 @@ class ChaturbateProvider extends LiveProvider
     final token = detail.danmakuToken;
     if (token is PreviewDanmakuToken) {
       return ProviderTickerDanmakuSession(
-        providerId: descriptor.id.value,
+        providerId: descriptor.id,
         detail: detail,
       );
     }
@@ -152,7 +169,10 @@ class ChaturbateProvider extends LiveProvider
         token.broadcasterUid.isNotEmpty &&
         token.csrfToken.isNotEmpty) {
       final apiClient = requestCookie.isNotEmpty
-          ? HttpChaturbateApiClient(cookie: requestCookie)
+          ? HttpChaturbateApiClient(
+              cookie: requestCookie,
+              diagnostics: _diagnostics,
+            )
           : _danmakuApiClient ?? HttpChaturbateApiClient();
       return ChaturbateDanmakuSession(
         roomId: detail.roomId,
@@ -160,8 +180,15 @@ class ChaturbateProvider extends LiveProvider
         csrfToken: token.csrfToken,
         backend: token.backend,
         apiClient: apiClient,
-        disposeOwnedApiClient:
-            requestCookie.isNotEmpty ? apiClient.close : null,
+        realtimeHosts: [
+          if (token.host != null) token.host!,
+          if (token.restHost != null) token.restHost!,
+          ...token.fallbackHosts,
+        ],
+        disposeOwnedApiClient: requestCookie.isNotEmpty
+            ? apiClient.close
+            : null,
+        diagnostics: _diagnostics,
       );
     }
     return ProviderUnavailableDanmakuSession(

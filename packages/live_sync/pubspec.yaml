@@ -8,6 +8,8 @@ environment:
 
 dependencies:
   crypto: ^3.0.6
+  live_core:
+    path: ../live_core
   live_storage:
     path: ../live_storage
 

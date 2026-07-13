@@ -4,15 +4,10 @@ import 'package:live_providers/live_providers.dart';
 import 'package:nolive_app/src/features/settings/application/manage_layout_preferences_use_case.dart';
 
 class ListAvailableProvidersUseCase {
-  const ListAvailableProvidersUseCase(
-    this.registry,
-    this.layoutPreferences, {
-    this.stringSetting,
-  });
+  const ListAvailableProvidersUseCase(this.registry, this.layoutPreferences);
 
   final ProviderRegistry registry;
   final ValueListenable<LayoutPreferences> layoutPreferences;
-  final String Function(String key)? stringSetting;
 
   List<ProviderDescriptor> call() {
     final descriptors = registry.descriptors
@@ -35,13 +30,20 @@ class ListAvailableProvidersUseCase {
     if (!preferences.isProviderEnabled(descriptor.id.value)) {
       return true;
     }
-    if (descriptor.id != ProviderId.chaturbate) {
-      return false;
+    // Planned providers stay out of the shipping catalog until ready.
+    if (descriptor.maturity == ProviderMaturity.planned) {
+      return true;
     }
-    if (stringSetting == null) {
-      return false;
-    }
-    final cookie = stringSetting!.call('account_chaturbate_cookie').trim();
-    return cookie.isEmpty;
+    return false;
   }
+}
+
+/// Relative rank for catalog badges / sort (higher = more production-ready).
+int providerMaturityRank(ProviderMaturity maturity) {
+  return switch (maturity) {
+    ProviderMaturity.ready => 3,
+    ProviderMaturity.experimental => 2,
+    ProviderMaturity.inMigration => 1,
+    ProviderMaturity.planned => 0,
+  };
 }

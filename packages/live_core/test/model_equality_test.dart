@@ -7,79 +7,67 @@ void main() {
       const LiveCategory(
         id: 'games',
         name: 'Games',
-        children: [
-          LiveSubCategory(id: 'fps', parentId: 'games', name: 'FPS'),
-        ],
+        children: [LiveSubCategory(id: 'fps', parentId: 'games', name: 'FPS')],
       ),
       const LiveCategory(
         id: 'games',
         name: 'Games',
-        children: [
-          LiveSubCategory(id: 'fps', parentId: 'games', name: 'FPS'),
-        ],
+        children: [LiveSubCategory(id: 'fps', parentId: 'games', name: 'FPS')],
       ),
     );
     expect(
       const LiveRoom(
-        providerId: 'douyu',
+        providerId: ProviderId.douyu,
         roomId: '1000',
         title: 'Title',
         streamerName: 'Streamer',
       ),
       const LiveRoom(
-        providerId: 'douyu',
+        providerId: ProviderId.douyu,
         roomId: '1000',
         title: 'Title',
         streamerName: 'Streamer',
       ),
     );
     expect(
-      LivePlayQuality(
-        id: 'hd',
-        label: 'HD',
-        metadata: {'height': 720},
-      ),
-      LivePlayQuality(
-        id: 'hd',
-        label: 'HD',
-        metadata: {'height': 720},
-      ),
+      LivePlayQuality(id: 'hd', label: 'HD', metadata: {'height': 720}),
+      LivePlayQuality(id: 'hd', label: 'HD', metadata: {'height': 720}),
     );
     expect(
       const LivePlayUrl(
         url: 'https://example.test/live.m3u8',
         headers: {'cookie': 'demo'},
         metadata: {
-          'lines': ['main', 'backup']
+          'lines': ['main', 'backup'],
         },
       ),
       const LivePlayUrl(
         url: 'https://example.test/live.m3u8',
         headers: {'cookie': 'demo'},
         metadata: {
-          'lines': ['main', 'backup']
+          'lines': ['main', 'backup'],
         },
       ),
     );
     expect(
       LiveRoomDetail(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '2000',
         title: 'Room',
         streamerName: 'Anchor',
         startedAt: DateTime(2026, 5, 1),
         metadata: const {
-          'nested': {'key': 'value'}
+          'nested': {'key': 'value'},
         },
       ),
       LiveRoomDetail(
-        providerId: 'bilibili',
+        providerId: ProviderId.bilibili,
         roomId: '2000',
         title: 'Room',
         streamerName: 'Anchor',
         startedAt: DateTime(2026, 5, 1),
         metadata: const {
-          'nested': {'key': 'value'}
+          'nested': {'key': 'value'},
         },
       ),
     );
@@ -87,7 +75,7 @@ void main() {
       const PagedResponse<LiveRoom>(
         items: [
           LiveRoom(
-            providerId: 'douyu',
+            providerId: ProviderId.douyu,
             roomId: '1000',
             title: 'Title',
             streamerName: 'Streamer',
@@ -98,7 +86,7 @@ void main() {
       const PagedResponse<LiveRoom>(
         items: [
           LiveRoom(
-            providerId: 'douyu',
+            providerId: ProviderId.douyu,
             roomId: '1000',
             title: 'Title',
             streamerName: 'Streamer',
@@ -132,7 +120,7 @@ void main() {
 
   test('LiveRoomDetail compares typed danmaku tokens by value', () {
     final first = LiveRoomDetail(
-      providerId: 'douyin',
+      providerId: ProviderId.douyin,
       roomId: '2000',
       title: 'Room',
       streamerName: 'Anchor',
@@ -147,7 +135,7 @@ void main() {
       ),
     );
     final second = LiveRoomDetail(
-      providerId: 'douyin',
+      providerId: ProviderId.douyin,
       roomId: '2000',
       title: 'Room',
       streamerName: 'Anchor',
@@ -188,28 +176,24 @@ void main() {
     expect(first, isNot(different));
   });
 
-  test('map payload hashes are stable for equal maps with ambiguous key text',
-      () {
-    const first = LiveMessage<Object?>(
-      type: LiveMessageType.notice,
-      content: 'payload',
-      payload: <Object?, Object?>{
-        1: 'int-key',
-        '1': 'string-key',
-      },
-    );
-    const second = LiveMessage<Object?>(
-      type: LiveMessageType.notice,
-      content: 'payload',
-      payload: <Object?, Object?>{
-        '1': 'string-key',
-        1: 'int-key',
-      },
-    );
+  test(
+    'map payload hashes are stable for equal maps with ambiguous key text',
+    () {
+      const first = LiveMessage<Object?>(
+        type: LiveMessageType.notice,
+        content: 'payload',
+        payload: <Object?, Object?>{1: 'int-key', '1': 'string-key'},
+      );
+      const second = LiveMessage<Object?>(
+        type: LiveMessageType.notice,
+        content: 'payload',
+        payload: <Object?, Object?>{'1': 'string-key', 1: 'int-key'},
+      );
 
-    expect(first, second);
-    expect(first.hashCode, second.hashCode);
-  });
+      expect(first, second);
+      expect(first.hashCode, second.hashCode);
+    },
+  );
 
   test('LivePlayQuality defensively copies metadata deeply', () {
     final urls = <String>['https://example.test/720.m3u8'];
@@ -219,11 +203,7 @@ void main() {
       'urls': urls,
       'headers': headers,
     };
-    final quality = LivePlayQuality(
-      id: 'hd',
-      label: 'HD',
-      metadata: source,
-    );
+    final quality = LivePlayQuality(id: 'hd', label: 'HD', metadata: source);
 
     source['height'] = 1080;
     urls.add('https://example.test/1080.m3u8');
@@ -245,41 +225,42 @@ void main() {
   });
 
   test(
-      'core data models sanitize malformed UTF-16 surrogates to well-formed strings',
-      () {
-    const malformed = 'Hello \uD83D World';
-    final expected = malformed.toWellFormed();
+    'core data models sanitize malformed UTF-16 surrogates to well-formed strings',
+    () {
+      const malformed = 'Hello \uD83D World';
+      final expected = malformed.toWellFormed();
 
-    const room = LiveRoom(
-      providerId: 'douyu',
-      roomId: '1000',
-      title: malformed,
-      streamerName: malformed,
-      areaName: malformed,
-    );
-    expect(room.title, expected);
-    expect(room.streamerName, expected);
-    expect(room.areaName, expected);
+      const room = LiveRoom(
+        providerId: ProviderId.douyu,
+        roomId: '1000',
+        title: malformed,
+        streamerName: malformed,
+        areaName: malformed,
+      );
+      expect(room.title, expected);
+      expect(room.streamerName, expected);
+      expect(room.areaName, expected);
 
-    const roomDetail = LiveRoomDetail(
-      providerId: 'douyu',
-      roomId: '1000',
-      title: malformed,
-      streamerName: malformed,
-      areaName: malformed,
-      description: malformed,
-    );
-    expect(roomDetail.title, expected);
-    expect(roomDetail.streamerName, expected);
-    expect(roomDetail.areaName, expected);
-    expect(roomDetail.description, expected);
+      const roomDetail = LiveRoomDetail(
+        providerId: ProviderId.douyu,
+        roomId: '1000',
+        title: malformed,
+        streamerName: malformed,
+        areaName: malformed,
+        description: malformed,
+      );
+      expect(roomDetail.title, expected);
+      expect(roomDetail.streamerName, expected);
+      expect(roomDetail.areaName, expected);
+      expect(roomDetail.description, expected);
 
-    const message = LiveMessage(
-      type: LiveMessageType.chat,
-      content: malformed,
-      userName: malformed,
-    );
-    expect(message.content, expected);
-    expect(message.userName, expected);
-  });
+      const message = LiveMessage(
+        type: LiveMessageType.chat,
+        content: malformed,
+        userName: malformed,
+      );
+      expect(message.content, expected);
+      expect(message.userName, expected);
+    },
+  );
 }
