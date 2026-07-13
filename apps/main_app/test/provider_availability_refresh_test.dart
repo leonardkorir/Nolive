@@ -55,7 +55,7 @@ void main() {
   });
 
   testWidgets(
-    'browse page updates chaturbate availability after account save',
+    'browse page keeps chaturbate tab when account cookie is saved',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
@@ -68,9 +68,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // Chaturbate is layout-enabled by default; cookie is not a catalog gate.
       expect(
         find.byKey(const Key('browse-provider-tab-chaturbate')),
-        findsNothing,
+        findsOneWidget,
       );
 
       await bootstrap.updateProviderAccountSettings(

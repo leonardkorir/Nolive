@@ -170,7 +170,6 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       if (!mounted) {
         return;
       }
-      final preferences = await widget.dependencies.loadSyncPreferences();
       final addresses = await _readLocalAddresses();
       if (!mounted) {
         return;

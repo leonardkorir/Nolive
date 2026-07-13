@@ -3,6 +3,13 @@ import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/features/room/application/room_play_selection_policy.dart';
 
 void main() {
+  test('adaptive auto quality is disabled for youtube', () {
+    expect(supportsAdaptiveAutoQuality(ProviderId.youtube), isFalse);
+    expect(supportsAdaptiveAutoQuality(ProviderId.twitch), isTrue);
+    expect(supportsAdaptiveAutoQuality(ProviderId.chaturbate), isTrue);
+    expect(supportsAdaptiveAutoQuality(ProviderId.stripchat), isTrue);
+  });
+
   test('chaturbate startup quality prefers highest fixed tier', () {
     final selected = selectRoomStartupQuality(
       providerId: ProviderId.chaturbate,

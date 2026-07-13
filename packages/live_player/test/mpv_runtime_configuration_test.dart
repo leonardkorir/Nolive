@@ -980,7 +980,7 @@ void main() {
           isAndroid: true,
           hasPreviousSource: false,
         ),
-        const Duration(milliseconds: 150),
+        const Duration(milliseconds: 48),
       );
       expect(
         resolveAndroidMpvOpenBarrierDuration(

@@ -42,6 +42,8 @@ TwitchStartupPlan resolveTwitchStartupPlan({
   if (autoQuality == null) {
     return TwitchStartupPlan(startupQuality: requestedQuality);
   }
+  // Auto adaptive: either stay on auto, or (when promote is on) warm on
+  // auto then jump to the highest fixed tier.
   if (requestedQuality.id == 'auto') {
     if (!promoteAutoStartup) {
       return TwitchStartupPlan(startupQuality: requestedQuality);
@@ -54,6 +56,11 @@ TwitchStartupPlan resolveTwitchStartupPlan({
       startupQuality: _twitchStartupAutoQuality(autoQuality),
       promotionQuality: promotionQuality,
     );
+  }
+  // Fixed tier: only warm on auto when promotion is requested (Auto-off +
+  // high quality). Otherwise open the requested fixed quality directly.
+  if (!promoteAutoStartup) {
+    return TwitchStartupPlan(startupQuality: requestedQuality);
   }
   return TwitchStartupPlan(
     startupQuality: _twitchStartupAutoQuality(autoQuality),

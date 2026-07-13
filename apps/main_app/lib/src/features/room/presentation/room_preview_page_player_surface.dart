@@ -66,7 +66,6 @@ bool resolveRoomPlayerWaitingForFirstFrame({
 /// True only when the player has produced a real video signal (size and/or
 /// progress). Status [PlaybackStatus.ready]/[PlaybackStatus.playing] alone is
 /// not enough — media_kit reports those before the first painted frame.
-@visibleForTesting
 bool resolveRoomHasRenderedVideo({
   required int? videoWidth,
   required int? videoHeight,
@@ -85,7 +84,6 @@ bool resolveRoomHasRenderedVideo({
 
 /// Keep the room loading shell until the first real frame, not only until
 /// loadRoom / setSource report ready.
-@visibleForTesting
 bool shouldKeepRoomLoadingShellUntilFirstFrame({
   required bool hasPlayback,
   required bool hasRenderedVideo,

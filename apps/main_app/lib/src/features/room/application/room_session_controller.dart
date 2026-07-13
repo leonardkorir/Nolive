@@ -195,6 +195,7 @@ class RoomSessionController {
       providerId: providerId,
       roomId: roomId,
       preferHighestQuality: playerPreferences.preferHighestQuality,
+      preferAdaptiveAutoQuality: playerPreferences.autoQualityEnabled,
       qualityPreference: playerPreferences.wifiQualityPreference,
       cellularQualityPreference: playerPreferences.cellularQualityPreference,
       recordHistory: recordHistory,
@@ -222,6 +223,8 @@ class RoomSessionController {
       snapshot: snapshot,
       requestedQuality: startupRequestedQuality,
       explicitSelection: preferredQualityId != null,
+      autoQualityEnabled: playerPreferences.autoQualityEnabled,
+      preferHighestQuality: playerPreferences.preferHighestQuality,
     );
     final playbackQuality = startupPlan.startupQuality;
     if (snapshot.selectedQuality.id != requestedQuality.id ||
@@ -238,6 +241,15 @@ class RoomSessionController {
         'startup quality adjusted '
         '${requestedQuality.id}/${requestedQuality.label} -> '
         '${playbackQuality.id}/${playbackQuality.label}',
+      );
+    }
+    if (snapshot.providerId == ProviderId.twitch) {
+      final promotion = startupPlan.promotionQuality;
+      _trace(
+        'twitch startup plan autoQuality=${playerPreferences.autoQualityEnabled} '
+        'preferHighest=${playerPreferences.preferHighestQuality} '
+        'startup=${playbackQuality.id}/${playbackQuality.label} '
+        'promotion=${promotion == null ? '-' : '${promotion.id}/${promotion.label}'}',
       );
     }
 
@@ -299,11 +311,19 @@ class RoomSessionController {
     required LoadedRoomSnapshot snapshot,
     required LivePlayQuality requestedQuality,
     required bool explicitSelection,
+    required bool autoQualityEnabled,
+    required bool preferHighestQuality,
   }) {
+    // Auto-on: stay on adaptive auto forever (no second load / no warmup).
+    // Auto-off + high: warm on auto, then promote to the requested fixed tier
+    // (typically 1080 / site highest). Any other combo plays the selected tier
+    // directly without a Twitch startup promotion.
+    final promoteTwitchAutoStartup =
+        !explicitSelection && !autoQualityEnabled && preferHighestQuality;
     return resolveRoomStartupPlan(
       snapshot: snapshot,
       requestedQuality: requestedQuality,
-      promoteTwitchAutoStartup: !explicitSelection,
+      promoteTwitchAutoStartup: promoteTwitchAutoStartup,
     );
   }
 

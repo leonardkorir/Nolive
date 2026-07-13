@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
-import 'package:meta/meta.dart';
+import 'package:flutter/foundation.dart';
 import 'package:nolive_app/src/features/room/application/room_detail_override_policy.dart';
 import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
@@ -378,39 +378,4 @@ class _ResolvedFollowEntry {
 
   final FollowWatchEntry entry;
   final FollowRecord? updatedRecord;
-}
-
-class _AsyncSemaphore {
-  _AsyncSemaphore(int permits) : _available = permits < 1 ? 1 : permits;
-
-  int _available;
-  final List<void Function()> _waiters = <void Function()>[];
-
-  Future<T> withPermit<T>(Future<T> Function() action) async {
-    await _acquire();
-    try {
-      return await action();
-    } finally {
-      _release();
-    }
-  }
-
-  Future<void> _acquire() {
-    if (_available > 0) {
-      _available -= 1;
-      return Future<void>.value();
-    }
-    final completer = Completer<void>();
-    _waiters.add(completer.complete);
-    return completer.future;
-  }
-
-  void _release() {
-    if (_waiters.isNotEmpty) {
-      final next = _waiters.removeAt(0);
-      next();
-      return;
-    }
-    _available += 1;
-  }
 }

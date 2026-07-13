@@ -64,6 +64,7 @@ void main() {
           displayName: 'Twitch',
           capabilities: {ProviderCapability.recommendRooms},
           supportedPlatforms: {ProviderPlatform.android},
+          maturity: ProviderMaturity.ready,
         ),
         builder: () => _PagedTwitchHomeProvider(),
       ),
@@ -100,6 +101,7 @@ void main() {
           displayName: 'YouTube',
           capabilities: {ProviderCapability.recommendRooms},
           supportedPlatforms: {ProviderPlatform.android},
+          maturity: ProviderMaturity.ready,
         ),
         builder: () => _AutoPrefetchLimitedHomeProvider(),
       ),
@@ -137,6 +139,7 @@ void main() {
             displayName: 'Twitch',
             capabilities: {ProviderCapability.recommendRooms},
             supportedPlatforms: {ProviderPlatform.android},
+            maturity: ProviderMaturity.ready,
           ),
           builder: () => _ReloadingHomeProvider(),
         ),
@@ -175,6 +178,7 @@ class _PagedTwitchHomeProvider extends LiveProvider
     displayName: 'Twitch',
     capabilities: {ProviderCapability.recommendRooms},
     supportedPlatforms: {ProviderPlatform.android},
+    maturity: ProviderMaturity.ready,
   );
 
   @override
@@ -228,6 +232,7 @@ class _AutoPrefetchLimitedHomeProvider extends LiveProvider
     displayName: 'YouTube',
     capabilities: {ProviderCapability.recommendRooms},
     supportedPlatforms: {ProviderPlatform.android},
+    maturity: ProviderMaturity.ready,
   );
 
   @override
@@ -270,6 +275,7 @@ class _ReloadingHomeProvider extends LiveProvider
     displayName: 'Twitch',
     capabilities: {ProviderCapability.recommendRooms},
     supportedPlatforms: {ProviderPlatform.android},
+    maturity: ProviderMaturity.ready,
   );
 
   final int _instanceId;

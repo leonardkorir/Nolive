@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
-
 /// Coalesces high-frequency UI update signals into short-interval flushes.
 ///
 /// Used by the follow list progressive refresh path so each remote entry
@@ -20,7 +18,6 @@ class ProgressiveUiCoalescer {
   bool _disposed = false;
 
   /// True when a flush is scheduled and has not run yet.
-  @visibleForTesting
   bool get hasPendingFlush => _pending || (_timer?.isActive ?? false);
 
   /// Schedules a coalesced flush; multiple calls within [interval] merge.

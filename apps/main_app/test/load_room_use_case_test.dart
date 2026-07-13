@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
+import 'package:live_player/live_player.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
@@ -130,6 +131,7 @@ void main() {
       providerId: ProviderId.chaturbate,
       roomId: 'dewdropdoll',
       preferHighestQuality: true,
+      preferAdaptiveAutoQuality: false,
     );
 
     expect(snapshot.detail.title, isNot('override room'));
@@ -219,29 +221,119 @@ void main() {
     },
   );
 
-  test('load room keeps auto quality as default for twitch startup', () async {
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: _kTwitchDescriptor,
-          builder: _TwitchDefaultQualityProvider.new,
-        ),
+  test(
+    'load room prefers adaptive auto when auto quality is enabled',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kTwitchDescriptor,
+            builder: _TwitchDefaultQualityProvider.new,
+          ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
       );
-    final useCase = LoadRoomUseCase(
-      registry,
-      historyRepository: InMemoryHistoryRepository(),
-    );
 
-    final snapshot = await useCase(
-      providerId: ProviderId.twitch,
-      roomId: 'ow_esports_jp',
-    );
+      final snapshot = await useCase(
+        providerId: ProviderId.twitch,
+        roomId: 'ow_esports_jp',
+        preferHighestQuality: true,
+        preferAdaptiveAutoQuality: true,
+      );
 
-    expect(snapshot.hasPlayback, isTrue);
-    expect(snapshot.selectedQuality.id, 'auto');
-    expect(snapshot.selectedQuality.label, 'Auto');
-    expect(snapshot.playUrls.single.url, contains('auto.m3u8'));
-  });
+      expect(snapshot.hasPlayback, isTrue);
+      expect(snapshot.selectedQuality.id, 'auto');
+      expect(snapshot.playUrls.single.url, contains('auto.m3u8'));
+    },
+  );
+
+  test(
+    'load room skips youtube adaptive auto even when auto quality is enabled',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kYoutubeDescriptor,
+            builder: _YoutubeDefaultQualityProvider.new,
+          ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
+      );
+
+      final snapshot = await useCase(
+        providerId: ProviderId.youtube,
+        roomId: '@channel/live',
+        preferHighestQuality: true,
+        preferAdaptiveAutoQuality: true,
+      );
+
+      expect(snapshot.hasPlayback, isTrue);
+      expect(snapshot.selectedQuality.id, '1080p');
+      expect(snapshot.playUrls.single.url, contains('1080p.m3u8'));
+    },
+  );
+
+  test(
+    'load room uses middle network preference when auto quality is disabled',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kTwitchDescriptor,
+            builder: _TwitchDefaultQualityProvider.new,
+          ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
+      );
+
+      final snapshot = await useCase(
+        providerId: ProviderId.twitch,
+        roomId: 'ow_esports_jp',
+        preferAdaptiveAutoQuality: false,
+      );
+
+      // Fixed ladder [1080p60, 720p60] -> middle index 1 (720p60).
+      expect(snapshot.hasPlayback, isTrue);
+      expect(snapshot.selectedQuality.id, '720p60');
+      expect(snapshot.selectedQuality.label, '720p60');
+      expect(snapshot.playUrls.single.url, contains('720p60'));
+    },
+  );
+
+  test(
+    'load room network highest skips chaturbate auto when auto quality disabled',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kStableChaturbateDescriptor,
+            builder: _StableChaturbateProvider.new,
+          ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
+      );
+
+      final snapshot = await useCase(
+        providerId: ProviderId.chaturbate,
+        roomId: 'dewdropdoll',
+        preferAdaptiveAutoQuality: false,
+        qualityPreference: NetworkQualityPreference.highest,
+      );
+
+      expect(snapshot.hasPlayback, isTrue);
+      expect(snapshot.selectedQuality.id, '5200000');
+      expect(snapshot.selectedQuality.label, '1080p');
+      expect(snapshot.playUrls.single.url, contains('/1080p.m3u8'));
+    },
+  );
 
   test('load room still honors prefer highest quality for twitch', () async {
     final registry = ProviderRegistry()
@@ -260,6 +352,7 @@ void main() {
       providerId: ProviderId.twitch,
       roomId: 'ow_esports_jp',
       preferHighestQuality: true,
+      preferAdaptiveAutoQuality: false,
     );
 
     expect(snapshot.hasPlayback, isTrue);
@@ -268,7 +361,7 @@ void main() {
   });
 
   test(
-    'load room defaults chaturbate startup quality to highest fixed tier',
+    'load room uses middle network preference for chaturbate without auto',
     () async {
       final registry = ProviderRegistry()
         ..register(
@@ -285,12 +378,14 @@ void main() {
       final snapshot = await useCase(
         providerId: ProviderId.chaturbate,
         roomId: 'dewdropdoll',
+        preferAdaptiveAutoQuality: false,
       );
 
+      // Fixed ladder sorted desc [1080p, 720p, 480p] -> middle index 1 (720p).
       expect(snapshot.hasPlayback, isTrue);
-      expect(snapshot.selectedQuality.id, '5200000');
-      expect(snapshot.selectedQuality.label, '1080p');
-      expect(snapshot.playUrls.single.url, contains('/1080p.m3u8'));
+      expect(snapshot.selectedQuality.id, '3600000');
+      expect(snapshot.selectedQuality.label, '720p');
+      expect(snapshot.playUrls.single.url, contains('/720p.m3u8'));
     },
   );
 
@@ -311,6 +406,7 @@ void main() {
       providerId: ProviderId.chaturbate,
       roomId: 'dewdropdoll',
       preferHighestQuality: true,
+      preferAdaptiveAutoQuality: false,
     );
 
     expect(snapshot.hasPlayback, isTrue);
@@ -338,6 +434,7 @@ void main() {
         providerId: ProviderId.stripchat,
         roomId: 'ranran_ch',
         preferHighestQuality: true,
+        preferAdaptiveAutoQuality: false,
       );
 
       expect(snapshot.hasPlayback, isTrue);
@@ -371,6 +468,7 @@ void main() {
         providerId: ProviderId.twitch,
         roomId: 'test_channel',
         preferHighestQuality: true,
+        preferAdaptiveAutoQuality: false,
       );
 
       expect(snapshot.selectedQuality.id, '1080p');
@@ -728,6 +826,55 @@ class _TwitchDefaultQualityProvider extends LiveProvider
       LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
       LivePlayQuality(id: '1080p60', label: '1080p60', sortOrder: 1080),
       LivePlayQuality(id: '720p60', label: '720p60', sortOrder: 720),
+    ];
+  }
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return [LivePlayUrl(url: 'https://example.com/${quality.id}.m3u8')];
+  }
+}
+
+const _kYoutubeDescriptor = ProviderDescriptor(
+  id: ProviderId.youtube,
+  displayName: 'YouTube',
+  capabilities: {
+    ProviderCapability.roomDetail,
+    ProviderCapability.playQualities,
+    ProviderCapability.playUrls,
+  },
+  supportedPlatforms: {ProviderPlatform.android},
+  maturity: ProviderMaturity.ready,
+);
+
+class _YoutubeDefaultQualityProvider extends LiveProvider
+    implements SupportsRoomDetail, SupportsPlayQualities, SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => _kYoutubeDescriptor;
+
+  @override
+  Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
+    return LiveRoomDetail(
+      providerId: ProviderId.youtube,
+      roomId: roomId,
+      title: roomId,
+      streamerName: roomId,
+      isLive: true,
+      sourceUrl: 'https://www.youtube.com/$roomId',
+    );
+  }
+
+  @override
+  Future<List<LivePlayQuality>> fetchPlayQualities(
+    LiveRoomDetail detail,
+  ) async {
+    return [
+      LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
+      LivePlayQuality(id: '1080p', label: '1080p', sortOrder: 1080),
+      LivePlayQuality(id: '720p', label: '720p', sortOrder: 720),
     ];
   }
 

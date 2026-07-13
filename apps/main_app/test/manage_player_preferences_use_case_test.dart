@@ -113,6 +113,7 @@ PlayerPreferences _preferences({
   return PlayerPreferences(
     autoPlayEnabled: true,
     preferHighestQuality: false,
+    autoQualityEnabled: true,
     backend: backend,
     volume: volume,
     mpvHardwareAccelerationEnabled: true,

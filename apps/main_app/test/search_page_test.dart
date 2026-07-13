@@ -260,6 +260,7 @@ class _ScriptedSearchProvider extends LiveProvider
     displayName: 'Twitch',
     capabilities: {ProviderCapability.searchRooms},
     supportedPlatforms: {ProviderPlatform.android},
+    maturity: ProviderMaturity.ready,
   );
 
   int searchCallCount = 0;
@@ -317,6 +318,7 @@ class _BlockingSearchProvider extends LiveProvider
     displayName: 'Twitch',
     capabilities: {ProviderCapability.searchRooms},
     supportedPlatforms: {ProviderPlatform.android},
+    maturity: ProviderMaturity.ready,
   );
 
   final List<_PendingSearchRequest> _requests = [];

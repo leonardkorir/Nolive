@@ -13,6 +13,9 @@ bool shouldRefreshRoomAfterPlayerSettingsReturn({
   required PlayerPreferences next,
 }) {
   return previous.preferHighestQuality != next.preferHighestQuality ||
+      previous.autoQualityEnabled != next.autoQualityEnabled ||
+      previous.wifiQualityPreference != next.wifiQualityPreference ||
+      previous.cellularQualityPreference != next.cellularQualityPreference ||
       previous.forceHttpsEnabled != next.forceHttpsEnabled;
 }
 

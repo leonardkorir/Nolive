@@ -1,5 +1,24 @@
 import 'package:live_core/live_core.dart';
 
+/// Whether the player "自动画质（Auto）" switch should force adaptive auto on
+/// room entry for this provider.
+///
+/// YouTube exposes an `auto` ladder entry, but that multi-variant master path
+/// is unreliable under MPV; treat YouTube as fixed-tier only.
+bool supportsAdaptiveAutoQuality(ProviderId providerId) {
+  return providerId != ProviderId.youtube;
+}
+
+/// Adaptive "auto" tier used by Twitch / Chaturbate / Stripchat-style ladders.
+LivePlayQuality? findAdaptiveAutoQuality(List<LivePlayQuality> qualities) {
+  for (final quality in qualities) {
+    if (quality.id.trim().toLowerCase() == 'auto') {
+      return quality;
+    }
+  }
+  return null;
+}
+
 /// Provider-aware startup quality selection used by [LoadRoomUseCase].
 LivePlayQuality selectRoomStartupQuality({
   required ProviderId providerId,

@@ -376,6 +376,23 @@ class RoomTwitchRecoveryController {
       return;
     }
 
+    // Adaptive auto without a planned promotion must not thrash lines during
+    // ABR/master startup. Twitch often reports pos=0/buffer=0 for several
+    // seconds while variants load; switching lines (popout→embed) causes the
+    // visible "second refresh" and often lands on a worse ad-bearing line.
+    // Only hard errors should recover (handled elsewhere / next schedule).
+    if (currentQuality.id == 'auto' &&
+        promotionQuality == null &&
+        currentState.status != PlaybackStatus.error) {
+      _trace(
+        '$providerTraceName startup recovery skip adaptive-auto '
+        'status=${currentState.status.name} '
+        'pos=${currentState.position.inMilliseconds}ms '
+        'buffer=${currentState.buffered.inMilliseconds}ms',
+      );
+      return;
+    }
+
     final fixedRecovery = resolveTwitchFixedRecoveryDecision(
       state: currentState,
       recoveryAttempts: _current.recoveryAttempts,

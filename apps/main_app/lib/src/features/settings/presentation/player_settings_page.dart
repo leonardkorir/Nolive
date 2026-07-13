@@ -153,6 +153,26 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                       },
                     ),
                     const Divider(height: 1),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      key: const Key('player-auto-quality-switch'),
+                      value: preferences.autoQualityEnabled,
+                      title: const Text('自动画质（Auto）'),
+                      subtitle: Text(
+                        preferences.autoQualityEnabled
+                            ? '含 Auto 的平台（Twitch / SC / CB 等）进房只用 Auto；YouTube 不含 Auto，按固定档/高画质处理'
+                            : '关闭后：优先高画质/默认「最高」会先 Auto 热身再切最高档（二次加载；YouTube 仍走固定档）',
+                      ),
+                      onChanged: (value) {
+                        _update(
+                          current: preferences,
+                          next: preferences.copyWith(
+                            autoQualityEnabled: value,
+                          ),
+                        );
+                      },
+                    ),
+                    const Divider(height: 1),
                     Padding(
                       padding: const EdgeInsets.only(top: 14),
                       child: Text(
@@ -698,6 +718,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
 const PlayerPreferences _fallbackPreferences = PlayerPreferences(
   autoPlayEnabled: true,
   preferHighestQuality: false,
+  autoQualityEnabled: true,
   backend: PlayerBackend.mpv,
   volume: 1,
   mpvHardwareAccelerationEnabled: true,

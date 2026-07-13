@@ -17,11 +17,32 @@ void main() {
       final plan = resolveTwitchStartupPlan(
         qualities: [auto, q1080],
         requestedQuality: q1080,
+        promoteAutoStartup: true,
       );
 
       expect(plan.startupQuality.id, 'auto');
       expect(plan.promotionQuality?.id, '1080p60');
       expect(plan.startupQuality.metadata?['twitchStartupAuto'], isTrue);
+    },
+  );
+
+  test(
+    'twitch startup opens fixed quality directly when promotion is disabled',
+    () {
+      final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+      final q1080 = LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 4,
+      );
+
+      final plan = resolveTwitchStartupPlan(
+        qualities: [auto, q1080],
+        requestedQuality: q1080,
+      );
+
+      expect(plan.startupQuality.id, '1080p60');
+      expect(plan.promotionQuality, isNull);
     },
   );
 

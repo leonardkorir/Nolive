@@ -191,6 +191,7 @@ class _MalformedBrowseCategoryProvider extends LiveProvider
     displayName: 'Twitch',
     capabilities: {ProviderCapability.categories},
     supportedPlatforms: {ProviderPlatform.android},
+    maturity: ProviderMaturity.ready,
   );
 
   @override

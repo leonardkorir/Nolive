@@ -731,11 +731,9 @@ class _ManifestOnlyYouTubeApiClient implements YouTubeApiClient {
 class _PlaybackBundleYouTubeApiClient implements YouTubeApiClient {
   _PlaybackBundleYouTubeApiClient({
     this.playerResponses = const {},
-    this.manifest = '',
   });
 
   final Map<YouTubePlayerClientProfile, Map<String, dynamic>> playerResponses;
-  final String manifest;
   final List<YouTubePlayerClientProfile> playerProfiles =
       <YouTubePlayerClientProfile>[];
 
@@ -745,7 +743,7 @@ class _PlaybackBundleYouTubeApiClient implements YouTubeApiClient {
     Map<String, String> headers = const {},
   }) async {
     if (url == _manifestUrl || url.contains('manifest.googlevideo.com')) {
-      return manifest;
+      return '';
     }
     throw StateError('Unexpected fetchText url: $url');
   }

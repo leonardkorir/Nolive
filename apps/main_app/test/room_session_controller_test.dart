@@ -236,4 +236,39 @@ void main() {
     expect(plan.startupQuality.metadata?['twitchStartupAuto'], isTrue);
     expect(plan.promotionQuality?.id, '1080p60');
   });
+
+  test(
+    'twitch keeps adaptive auto when auto-quality switch leaves promote off',
+    () {
+      final auto = LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true);
+      final q1080 = LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 1080,
+      );
+      final snapshot = LoadedRoomSnapshot(
+        providerId: ProviderId.twitch,
+        detail: const LiveRoomDetail(
+          providerId: ProviderId.twitch,
+          roomId: 'xqc',
+          title: 'title',
+          streamerName: 'streamer',
+          sourceUrl: 'https://www.twitch.tv/xqc',
+          isLive: true,
+        ),
+        qualities: [auto, q1080],
+        selectedQuality: auto,
+        playUrls: const [],
+      );
+
+      final plan = resolveRoomStartupPlan(
+        snapshot: snapshot,
+        requestedQuality: auto,
+        promoteTwitchAutoStartup: false,
+      );
+
+      expect(plan.startupQuality.id, 'auto');
+      expect(plan.promotionQuality, isNull);
+    },
+  );
 }

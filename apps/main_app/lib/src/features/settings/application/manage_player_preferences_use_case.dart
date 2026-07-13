@@ -110,6 +110,7 @@ class PlayerPreferences {
   const PlayerPreferences({
     required this.autoPlayEnabled,
     required this.preferHighestQuality,
+    required this.autoQualityEnabled,
     required this.backend,
     required this.volume,
     required this.mpvHardwareAccelerationEnabled,
@@ -134,6 +135,10 @@ class PlayerPreferences {
 
   final bool autoPlayEnabled;
   final bool preferHighestQuality;
+
+  /// When true, providers that expose an adaptive "auto" tier start on auto
+  /// (warmup-friendly). When false, network / prefer-highest picks fixed tiers.
+  final bool autoQualityEnabled;
   final PlayerBackend backend;
   final double volume;
   final bool mpvHardwareAccelerationEnabled;
@@ -158,6 +163,7 @@ class PlayerPreferences {
   PlayerPreferences copyWith({
     bool? autoPlayEnabled,
     bool? preferHighestQuality,
+    bool? autoQualityEnabled,
     PlayerBackend? backend,
     double? volume,
     bool? mpvHardwareAccelerationEnabled,
@@ -182,6 +188,7 @@ class PlayerPreferences {
     return PlayerPreferences(
       autoPlayEnabled: autoPlayEnabled ?? this.autoPlayEnabled,
       preferHighestQuality: preferHighestQuality ?? this.preferHighestQuality,
+      autoQualityEnabled: autoQualityEnabled ?? this.autoQualityEnabled,
       backend: backend ?? this.backend,
       volume: volume ?? this.volume,
       mpvHardwareAccelerationEnabled:
@@ -231,6 +238,11 @@ class LoadPlayerPreferencesUseCase {
           'player_prefer_highest_quality',
         ) ??
         false;
+    final autoQualityEnabled =
+        await settingsRepository.readValue<bool>(
+          'player_auto_quality_enabled',
+        ) ??
+        true;
     final backendRaw = await settingsRepository.readValue<String>(
       'player_backend',
     );
@@ -314,6 +326,7 @@ class LoadPlayerPreferencesUseCase {
     return PlayerPreferences(
       autoPlayEnabled: autoPlay,
       preferHighestQuality: preferHighestQuality,
+      autoQualityEnabled: autoQualityEnabled,
       backend: _decodeBackend(backendRaw),
       volume: volume.clamp(0.0, 1.0),
       mpvHardwareAccelerationEnabled: mpvHardwareAccelerationEnabled,
@@ -400,6 +413,10 @@ class UpdatePlayerPreferencesUseCase {
     await settingsRepository.writeValue(
       'player_prefer_highest_quality',
       preferences.preferHighestQuality,
+    );
+    await settingsRepository.writeValue(
+      'player_auto_quality_enabled',
+      preferences.autoQualityEnabled,
     );
     await settingsRepository.writeValue(
       'player_backend',

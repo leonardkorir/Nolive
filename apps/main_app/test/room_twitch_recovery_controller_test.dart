@@ -13,6 +13,97 @@ import 'package:nolive_app/src/shared/application/player_runtime_controller.dart
 
 void main() {
   test(
+    'adaptive auto without promotion does not switch lines on zero progress',
+    () async {
+      final player = _TwitchRecoveryTestPlayer();
+      final runtime = PlayerRuntimeController(player);
+      final controller = RoomTwitchRecoveryController(
+        runtime: RoomRuntimeInspectionContext.fromPlayerRuntime(runtime),
+        delay: (_) async {},
+      );
+      addTearDown(controller.dispose);
+      addTearDown(player.dispose);
+
+      final auto = LivePlayQuality(id: 'auto', label: 'Auto', sortOrder: 0);
+      final q1080 = LivePlayQuality(
+        id: '1080p60',
+        label: '1080p60',
+        sortOrder: 4,
+      );
+      final popoutSource = PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:33101/twitch-ad-guard/popout/stream.m3u8',
+        ),
+      );
+      const playUrls = [
+        LivePlayUrl(
+          url: 'http://127.0.0.1:33101/twitch-ad-guard/popout/stream.m3u8',
+          lineLabel: '默认 Popout',
+          metadata: {'playerType': 'popout'},
+        ),
+        LivePlayUrl(
+          url: 'http://127.0.0.1:33101/twitch-ad-guard/embed/stream.m3u8',
+          lineLabel: '备用 Embed',
+          metadata: {'playerType': 'embed'},
+        ),
+      ];
+      // No promotionQuality: Auto switch ON path.
+      controller.applyStartupPlan(TwitchStartupPlan(startupQuality: auto));
+      player.emit(
+        PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.buffering,
+          position: Duration.zero,
+          buffered: Duration.zero,
+          source: popoutSource,
+        ),
+      );
+
+      var switchLineCount = 0;
+      var refreshCount = 0;
+      await controller.scheduleRecovery(
+        providerId: ProviderId.twitch,
+        snapshot: _buildSnapshot(
+          selectedQuality: auto,
+          qualities: [auto, q1080],
+          playUrls: playUrls,
+        ),
+        playbackSource: popoutSource,
+        playUrls: playUrls,
+        selectedQuality: auto,
+        resolveCurrentQuality: () => auto,
+        isMounted: () => true,
+        switchQuality:
+            (
+              snapshot,
+              quality, {
+              bool resetTwitchRecoveryAttempts = true,
+              LivePlayQuality? twitchStartupPromotionQuality,
+            }) async {
+              fail('should not change quality when adaptive auto has no promotion');
+            },
+        refreshPlaybackSource:
+            (
+              snapshot,
+              quality, {
+              LivePlayQuality? twitchStartupPromotionQuality,
+              bool resetTwitchRecoveryAttempts = false,
+              PlaybackSource? preferredPlaybackSource,
+              List<LivePlayUrl>? currentPlayUrls,
+            }) async {
+              refreshCount += 1;
+            },
+        switchLine: (playUrl, {bool resetTwitchRecoveryAttempts = true}) async {
+          switchLineCount += 1;
+        },
+      );
+
+      expect(switchLineCount, 0);
+      expect(refreshCount, 0);
+    },
+  );
+
+  test(
     'room twitch recovery waits on playing auto without refreshing source',
     () async {
       final player = _TwitchRecoveryTestPlayer();

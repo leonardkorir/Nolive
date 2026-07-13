@@ -376,6 +376,7 @@ PlayerPreferences _playerPreferences() {
   return const PlayerPreferences(
     autoPlayEnabled: true,
     preferHighestQuality: false,
+    autoQualityEnabled: true,
     backend: PlayerBackend.mpv,
     volume: 1,
     mpvHardwareAccelerationEnabled: true,

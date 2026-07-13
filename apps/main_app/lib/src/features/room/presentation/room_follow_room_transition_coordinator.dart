@@ -96,6 +96,8 @@ class RoomFollowRoomTransitionCoordinator extends ChangeNotifier {
     }
   }
 
+  // Reserved for a fuller MDK fullscreen transition path; keep for now.
+  // ignore: unused_element
   Future<void> _prepareMdkFullscreenFollowRoomTransition({
     required int generation,
     required PlayerState stateBeforeCleanup,
@@ -127,6 +129,8 @@ class RoomFollowRoomTransitionCoordinator extends ChangeNotifier {
     );
   }
 
+  // Reserved for restore-after-failed switch; keep for now.
+  // ignore: unused_element
   Future<void> _restorePlaybackAfterFailedFollowRoomTransition({
     required int generation,
     required PlayerState stateBeforeTransition,

@@ -755,6 +755,7 @@ class _RoomPageSessionHarness {
       playerPreferences: PlayerPreferences(
         autoPlayEnabled: true,
         preferHighestQuality: false,
+        autoQualityEnabled: true,
         backend: PlayerBackend.mpv,
         volume: 0.8,
         mpvHardwareAccelerationEnabled: true,
@@ -941,6 +942,8 @@ class _TestRoomDanmakuController extends RoomDanmakuController {
     required List<String> blockedKeywords,
     required bool preferNativeBatchMask,
     required int playerSuperChatDisplaySeconds,
+    int frequencyWindowSeconds = 8,
+    int maxFrequency = 2,
   }) {
     configureCalls.add((
       blockedKeywords: blockedKeywords,

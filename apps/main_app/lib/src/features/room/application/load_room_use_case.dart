@@ -32,6 +32,7 @@ class LoadRoomUseCase {
     required ProviderId providerId,
     required String roomId,
     bool preferHighestQuality = false,
+    bool preferAdaptiveAutoQuality = true,
     NetworkQualityPreference? qualityPreference,
     bool isCellular = false,
     NetworkQualityPreference? cellularQualityPreference,
@@ -72,6 +73,7 @@ class LoadRoomUseCase {
         providerId: providerId,
         qualities: qualities,
         preferHighestQuality: preferHighestQuality,
+        preferAdaptiveAutoQuality: preferAdaptiveAutoQuality,
         qualityPreference: qualityPreference,
         isCellular: isCellular,
         cellularQualityPreference: cellularQualityPreference,
@@ -149,11 +151,24 @@ class LoadRoomUseCase {
     required ProviderId providerId,
     required List<LivePlayQuality> qualities,
     required bool preferHighestQuality,
+    required bool preferAdaptiveAutoQuality,
     NetworkQualityPreference? qualityPreference,
     required bool isCellular,
     NetworkQualityPreference? cellularQualityPreference,
   }) {
-    // Site-specific preferHighest (e.g. Chaturbate) still wins when requested.
+    // Platforms that expose adaptive "auto" (Twitch / Chaturbate / Stripchat…)
+    // can warm up on auto when the user leaves the auto-quality switch on.
+    // YouTube is excluded: its adaptive master is not a reliable MPV source.
+    if (preferAdaptiveAutoQuality &&
+        supportsAdaptiveAutoQuality(providerId)) {
+      final autoQuality = findAdaptiveAutoQuality(qualities);
+      if (autoQuality != null) {
+        return autoQuality;
+      }
+    }
+
+    // Prefer-highest switch and network "最高" share site-aware startup
+    // selection so adaptive "auto" is never treated as the top fixed tier.
     if (preferHighestQuality) {
       return selectRoomStartupQuality(
         providerId: providerId,
@@ -168,17 +183,31 @@ class LoadRoomUseCase {
       wifiPreference: wifi,
       cellularPreference: cellular,
     );
+    if (preference == NetworkQualityPreference.highest) {
+      return selectRoomStartupQuality(
+        providerId: providerId,
+        qualities: qualities,
+      );
+    }
+
+    // Ladder index assumes descending quality (index 0 = best). Drop adaptive
+    // "auto" entries and sort by sortOrder so middle/lowest are meaningful.
+    final fixedLadder = qualities
+        .where((item) => item.id.trim().toLowerCase() != 'auto')
+        .toList(growable: true);
+    final ladder = (fixedLadder.isNotEmpty ? fixedLadder : [...qualities])
+      ..sort((left, right) => right.sortOrder.compareTo(left.sortOrder));
     final index = selectQualityIndex(
-      qualityCount: qualities.length,
+      qualityCount: ladder.length,
       preference: preference,
     );
-    if (index < 0 || index >= qualities.length) {
+    if (index < 0 || index >= ladder.length) {
       return selectRoomDefaultQuality(
         providerId: providerId,
         qualities: qualities,
       );
     }
-    return qualities[index];
+    return ladder[index];
   }
 
   String? _playbackUnavailableReason({

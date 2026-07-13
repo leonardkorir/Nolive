@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,7 +8,6 @@ import 'package:http/testing.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_api_client.dart';
-import 'package:live_providers/src/providers/chaturbate/chaturbate_request_scheduler.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/settings/application/sensitive_setting_keys.dart';
 import 'package:nolive_app/src/shared/application/secure_credential_store.dart';
@@ -286,15 +284,34 @@ void main() {
           cbCookie,
         );
 
-        // Prove that cookie reaches the Cookie header on room-list (discover).
+        // Prove cookie is attached on discover carousel traffic. Empty carousel
+        // responses may fall back to anonymous room-list (cookie stripped by
+        // design); capture the first non-empty cookie header instead of the last.
         String? seenCookie;
         final apiClient = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+          requestScheduler: ChaturbateRequestScheduler(
+            minSpacing: Duration.zero,
+            maxConcurrent: 8,
+          ),
           cookie: provider.debugConfiguredCookie,
           client: MockClient((request) async {
-            seenCookie = request.headers['cookie'];
+            final cookieHeader = request.headers['cookie'];
+            if (cookieHeader != null && cookieHeader.isNotEmpty) {
+              seenCookie ??= cookieHeader;
+            }
+            // Non-empty carousel payload avoids anonymous room-list fallback.
             return http.Response(
-              jsonEncode(const {'rooms': <Object>[], 'total_count': 0}),
+              jsonEncode(const {
+                'rooms': [
+                  {
+                    'username': 'demo_room',
+                    'display_name': 'Demo Room',
+                    'current_show': 'public',
+                    'num_users': 12,
+                    'img': 'https://example.com/demo.jpg',
+                  },
+                ],
+              }),
               200,
             );
           }),

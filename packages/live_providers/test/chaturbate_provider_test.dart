@@ -2,7 +2,6 @@ import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_providers/src/danmaku/chaturbate_danmaku_session.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_api_client.dart';
-import 'package:live_providers/src/providers/chaturbate/chaturbate_request_scheduler.dart';
 import 'package:test/test.dart';
 
 void main() {

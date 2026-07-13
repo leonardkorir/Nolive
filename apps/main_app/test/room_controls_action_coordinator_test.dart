@@ -78,6 +78,7 @@ void main() {
     return PlayerPreferences(
       autoPlayEnabled: autoPlayEnabled,
       preferHighestQuality: preferHighestQuality,
+      autoQualityEnabled: true,
       backend: backend,
       volume: 1,
       mpvHardwareAccelerationEnabled: true,
@@ -796,6 +797,7 @@ class _CoordinatorHarness {
     return PlayerPreferences(
       autoPlayEnabled: autoPlayEnabled,
       preferHighestQuality: preferHighestQuality,
+      autoQualityEnabled: true,
       backend: backend,
       volume: 1,
       mpvHardwareAccelerationEnabled: true,

@@ -5,7 +5,6 @@ import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
-import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
 const _kTestDescriptor = ProviderDescriptor(
   id: ProviderId.bilibili,

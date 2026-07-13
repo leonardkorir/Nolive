@@ -8,7 +8,6 @@ import 'package:live_providers/live_providers.dart';
 import 'package:live_providers/src/danmaku/chaturbate_danmaku_session.dart';
 import 'package:live_providers/src/danmaku/provider_unavailable_danmaku_session.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_api_client.dart';
-import 'package:live_providers/src/providers/chaturbate/chaturbate_request_scheduler.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_discover_policy.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_live_data_source.dart';
 import 'package:live_providers/src/providers/chaturbate/chaturbate_mapper.dart';

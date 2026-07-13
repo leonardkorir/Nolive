@@ -483,8 +483,10 @@ void main() {
         resetEmbeddedPlayerViewAfterBackendRefresh: (_) async {},
         schedulePostFrame: scheduler.schedule,
         delay: (duration) async {
+          // Initial embedded surface wait is 48ms; inject a fresher target
+          // before the stale bootstrap proceeds to setSource.
           if (!initialWaitConsumed &&
-              duration == const Duration(milliseconds: 220)) {
+              duration == const Duration(milliseconds: 48)) {
             initialWaitConsumed = true;
             controller.schedulePlaybackBootstrap(
               playbackSource: source('fresh'),
@@ -548,7 +550,7 @@ void main() {
       );
       await scheduler.flush();
 
-      expect(waitDurations, contains(const Duration(milliseconds: 220)));
+      expect(waitDurations, contains(const Duration(milliseconds: 48)));
       expect(player.events, containsAllInOrder(<String>['setSource', 'play']));
     },
   );
@@ -577,7 +579,7 @@ void main() {
         schedulePostFrame: scheduler.schedule,
         delay: (duration) async {
           if (!duplicateScheduled &&
-              duration == const Duration(milliseconds: 220)) {
+              duration == const Duration(milliseconds: 48)) {
             duplicateScheduled = true;
             controller.schedulePlaybackBootstrap(
               playbackSource: source('initial'),

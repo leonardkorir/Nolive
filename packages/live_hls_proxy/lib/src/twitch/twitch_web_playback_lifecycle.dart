@@ -30,7 +30,6 @@ class TwitchWebPlaybackLifecycle {
     return Timer(duration, callback);
   }
 
-  @visibleForTesting
   int get activeUseCount => _activeUseCount;
 
   @visibleForTesting

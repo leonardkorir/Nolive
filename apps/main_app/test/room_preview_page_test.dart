@@ -1255,8 +1255,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(find.text('切换清晰度'));
       await tester.pumpAndSettle();
-      // Room already at 高清 when preference picks highest — switch to 流畅.
-      await tester.tap(find.text('流畅'));
+      // Preview fixtures load 流畅 (80) by default — switch to a different tier
+      // so setSource runs. Prefer the sheet row (app bar may show the label).
+      final targetQuality = find.text('高清');
+      expect(targetQuality, findsWidgets);
+      await tester.tap(targetQuality.last);
       await tester.pumpAndSettle();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -1277,7 +1280,7 @@ void main() {
       expect(runtime.currentState.status, PlaybackStatus.playing);
       expect(
         runtime.currentState.source?.url.toString(),
-        contains('/80.m3u8'),
+        contains('/150.m3u8'),
       );
     },
   );
