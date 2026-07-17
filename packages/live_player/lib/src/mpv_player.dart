@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path_provider/path_provider.dart';
@@ -45,6 +45,13 @@ bool hasMpvStartupMediaSignal({
 
 @visibleForTesting
 Duration resolveMpvStartupMediaSignalTimeout(PlaybackSource source) {
+  // Twitch ad-guard Auto: multi-variant probe + first segment can exceed 10s
+  // on phone nets (logs: 160→360→480 climb without tracks).
+  final path = source.url.path.toLowerCase();
+  if (path.contains('twitch-ad-guard') ||
+      source.bufferProfile == PlaybackBufferProfile.desktopStableLive) {
+    return MpvPlayer._androidStartupForeignLiveMediaSignalTimeout;
+  }
   if (source.externalAudio != null ||
       source.masterPlaylistContent?.trim().isNotEmpty == true ||
       source.masterPlaylistUrl != null ||
@@ -56,6 +63,35 @@ Duration resolveMpvStartupMediaSignalTimeout(PlaybackSource source) {
     return MpvPlayer._androidStartupBufferedMediaSignalTimeout;
   }
   return MpvPlayer._androidStartupMediaSignalTimeout;
+}
+
+/// Delays after `player.open` for sampling `hwdec-current` / logging
+/// `hwdec-active`. Immediate open often still shows `current=-`.
+@visibleForTesting
+List<Duration> resolveMpvHwdecActiveSampleDelays() {
+  return List<Duration>.unmodifiable(MpvPlayer._hwdecActiveSampleDelays);
+}
+
+/// First sample delay (compat for single-delay callers/tests).
+@visibleForTesting
+Duration resolveMpvHwdecActiveSampleDelay() {
+  return MpvPlayer._hwdecActiveSampleDelays.first;
+}
+
+@visibleForTesting
+bool looksLikeActiveHwdecCurrent(String hwdecCurrent) {
+  return _looksLikeActiveHwdecCurrent(hwdecCurrent);
+}
+
+bool _looksLikeActiveHwdecCurrent(String hwdecCurrent) {
+  final normalized = hwdecCurrent.trim().toLowerCase();
+  if (normalized.isEmpty ||
+      normalized == '-' ||
+      normalized == 'no' ||
+      normalized == 'none') {
+    return false;
+  }
+  return true;
 }
 
 @visibleForTesting
@@ -98,6 +134,7 @@ class MpvPlayer implements BasePlayer {
     this.audioOutputDriver = 'auto',
     this.hardwareDecoder = 'auto-safe',
     this.logEnabled = false,
+    this.allowExternalNativeWindow = false,
     this.eventLogger,
     bool? isAndroid,
   }) : isAndroid = isAndroid ?? defaultTargetPlatform == TargetPlatform.android;
@@ -154,6 +191,17 @@ class MpvPlayer implements BasePlayer {
   static const Duration _androidStartupBufferedMediaSignalTimeout = Duration(
     seconds: 10,
   );
+  /// Phone Twitch/YouTube (desktopStableLive / ad-guard): allow proxy probe climb.
+  static const Duration _androidStartupForeignLiveMediaSignalTimeout = Duration(
+    seconds: 22,
+  );
+  /// Post-open delays before reading `hwdec-current`. Immediate open often
+  /// still reports `current=-`; HLS/proxy rooms need multi-second samples.
+  static const List<Duration> _hwdecActiveSampleDelays = <Duration>[
+    Duration(milliseconds: 800),
+    Duration(milliseconds: 2500),
+    Duration(milliseconds: 6000),
+  ];
   static const Duration _androidStartupMediaSignalPollInterval = Duration(
     milliseconds: 100,
   );
@@ -161,6 +209,8 @@ class MpvPlayer implements BasePlayer {
       Duration(milliseconds: 50);
   static const String _fallbackVideoOutputDriver = 'gpu-next';
   static const String _fallbackHardwareDecoder = 'auto-safe';
+  /// Desktop/libmpv embed default when caller leaves decoder empty.
+  static const String _fallbackHardwareDecoderDesktop = 'auto-copy';
 
   static bool _mediaKitInitialized = false;
 
@@ -172,6 +222,10 @@ class MpvPlayer implements BasePlayer {
   final String audioOutputDriver;
   final String hardwareDecoder;
   final bool logEnabled;
+
+  /// Desktop opt-in: open a real mpv VO window (gpu-next/gpu/...) instead of
+  /// Flutter texture embed. Used to validate native playback smoothness.
+  final bool allowExternalNativeWindow;
   final void Function(String message)? eventLogger;
   final bool isAndroid;
   final StreamController<PlayerState> _stateController =
@@ -287,6 +341,9 @@ class MpvPlayer implements BasePlayer {
       );
       _lastBroadcastPosition = Duration.zero;
       _lastBroadcastBuffered = Duration.zero;
+      // Re-arm gpu-next/gpu only when actually opening media (window stays
+      // closed while idle / during headless webview bootstrap).
+      await _armExternalNativeWindowForPlayback(player);
       final preloadedExternalAudioConfigured = await _configureSourceOptions(
         player,
         source,
@@ -318,6 +375,9 @@ class MpvPlayer implements BasePlayer {
         ),
         play: false,
       );
+      // Delay hwdec-active until decode can engage; immediate open often logs
+      // current=- which is a false inactive signal.
+      unawaited(_scheduleActiveHardwareDecodeLog(player));
       if (openPlan.loadsAudioInsideMedia || preloadedExternalAudioConfigured) {
         await player.setAudioTrack(mk.AudioTrack.auto());
       } else if (source.externalAudio != null) {
@@ -471,7 +531,17 @@ class MpvPlayer implements BasePlayer {
       _pendingAndroidEmbeddedPlayGate = null;
       _lastMediaCodecHardwareDecoderReadyAt = null;
       _pendingMediaCodecHardwareDecoderReadyCompleter = null;
+      final externalNativeWindow =
+          _runtimeConfiguration?.usesExternalNativeWindow == true;
       await player.stop();
+      // External gpu-next shares the process X11 Display with WebKitGTK. Parking
+      // vo=null is not enough — residual GLX state still races when Twitch /
+      // YouTube create a headless webview. Fully destroy the libmpv instance
+      // after stop; next setSource re-initializes a clean player.
+      if (externalNativeWindow) {
+        await _parkExternalNativeWindow(player);
+        await _teardownExternalNativeMediaKitPlayer();
+      }
       _lastBroadcastPosition = Duration.zero;
       _lastBroadcastBuffered = Duration.zero;
       _emitDiagnostics(_freshDiagnostics(clearRecentLogs: true));
@@ -557,6 +627,17 @@ class MpvPlayer implements BasePlayer {
     if (_disposing || _disposed) {
       return SizedBox.expand(key: key);
     }
+    final externalVo =
+        _runtimeConfiguration?.externalNativeVideoOutputDriver ??
+        (_runtimeConfiguration?.usesExternalNativeWindow == true
+            ? kDefaultExternalNativeVideoOutputDriver
+            : null);
+    if (_runtimeConfiguration?.usesExternalNativeWindow == true) {
+      return _MpvExternalNativeWindowPlaceholder(
+        key: key,
+        videoOutputDriver: externalVo ?? kDefaultExternalNativeVideoOutputDriver,
+      );
+    }
     return ValueListenableBuilder<VideoController?>(
       key: key,
       valueListenable: _controllerNotifier,
@@ -622,12 +703,19 @@ class MpvPlayer implements BasePlayer {
           PlaybackStatus.error => true,
           _ => false,
         };
-    if (!shouldStop) {
+    final externalNativeWindow =
+        _runtimeConfiguration?.usesExternalNativeWindow == true;
+    if (!shouldStop && !externalNativeWindow) {
       return;
     }
     try {
       _logEvent('dispose graceful stop start');
-      await player.stop();
+      if (shouldStop) {
+        await player.stop();
+      }
+      if (externalNativeWindow) {
+        await _parkExternalNativeWindow(player);
+      }
       _lastBroadcastPosition = Duration.zero;
       _lastBroadcastBuffered = Duration.zero;
       _logEvent('dispose graceful stop settle');
@@ -658,6 +746,8 @@ class MpvPlayer implements BasePlayer {
       audioOutputDriver: audioOutputDriver,
       hardwareDecoder: hardwareDecoder,
       logEnabled: logEnabled,
+      isAndroid: isAndroid,
+      allowExternalNativeWindow: allowExternalNativeWindow,
     );
     _runtimeConfiguration = runtimeConfiguration;
     final player = mk.Player(
@@ -667,15 +757,32 @@ class MpvPlayer implements BasePlayer {
       ),
     );
     _player = player;
-    _controller = VideoController(
-      player,
-      configuration: runtimeConfiguration.controllerConfiguration,
-    );
-    _controllerNotifier.value = _controller;
-    await _configurePlayerProperties(
-      player,
-      properties: runtimeConfiguration.platformProperties,
-    );
+    // External native VO must not create media_kit VideoController: its native
+    // render path requires vo=libmpv and would clobber gpu-next / gpu windows.
+    if (runtimeConfiguration.usesExternalNativeWindow) {
+      _controller = null;
+      _controllerNotifier.value = null;
+      // Start parked (vo=null): do not open an idle gpu-next window at init —
+      // that window races WebKit headless views when the first room needs a
+      // Twitch/YouTube bridge before any playback.
+      final parkedProperties = Map<String, String>.from(
+        runtimeConfiguration.platformProperties,
+      )..['vo'] = 'null';
+      await _configurePlayerProperties(
+        player,
+        properties: parkedProperties,
+      );
+    } else {
+      _controller = VideoController(
+        player,
+        configuration: runtimeConfiguration.controllerConfiguration,
+      );
+      _controllerNotifier.value = _controller;
+      await _configurePlayerProperties(
+        player,
+        properties: runtimeConfiguration.platformProperties,
+      );
+    }
     _bindPlayer(player);
     _initialized = true;
     _emitDiagnostics(_freshDiagnostics());
@@ -685,6 +792,8 @@ class MpvPlayer implements BasePlayer {
     _logEvent(
       'initialized vo=${controllerConfiguration.vo ?? 'platform-default'} '
       'hwdec=${controllerConfiguration.hwdec ?? 'platform-default'} '
+      'externalNativeWindow=${runtimeConfiguration.usesExternalNativeWindow} '
+      'externalVo=${runtimeConfiguration.externalNativeVideoOutputDriver ?? '-'} '
       'attachAfterVideoParams='
       '${controllerConfiguration.androidAttachSurfaceAfterVideoParameters ?? 'platform-default'} '
       'doubleBuffering=$doubleBufferingEnabled logEnabled=$logEnabled '
@@ -826,6 +935,61 @@ class MpvPlayer implements BasePlayer {
     eventLogger?.call(message);
   }
 
+  /// Observe active decode backend after open. Preference strings like
+  /// `auto-safe` are not proof of hardware decode — `hwdec-current` is.
+  /// Samples multiple times until a non-empty active current is seen (or delays
+  /// exhaust) so HLS first-segment lag is not logged as permanent inactive.
+  Future<void> _scheduleActiveHardwareDecodeLog(mk.Player player) async {
+    final delays = resolveMpvHwdecActiveSampleDelays();
+    var elapsed = Duration.zero;
+    for (var i = 0; i < delays.length; i++) {
+      final target = delays[i];
+      final wait = target - elapsed;
+      if (wait > Duration.zero) {
+        await Future<void>.delayed(wait);
+      }
+      elapsed = target;
+      if (_isClosedForOperations || !identical(_player, player)) {
+        return;
+      }
+      final active = await _logActiveHardwareDecodeState(
+        player,
+        sampleIndex: i + 1,
+        sampleCount: delays.length,
+      );
+      if (active) {
+        return;
+      }
+    }
+  }
+
+  /// Returns true when `hwdec-current` looks like an engaged backend.
+  Future<bool> _logActiveHardwareDecodeState(
+    mk.Player player, {
+    int sampleIndex = 1,
+    int sampleCount = 1,
+  }) async {
+    final platform = player.platform;
+    if (platform is! mk.NativePlayer) {
+      return false;
+    }
+    try {
+      final hwdecCurrent = (await platform.getProperty('hwdec-current')).trim();
+      final hwdec = (await platform.getProperty('hwdec')).trim();
+      final vo = (await platform.getProperty('current-vo')).trim();
+      _logEvent(
+        'hwdec-active sample=$sampleIndex/$sampleCount '
+        'requested=${hwdec.isEmpty ? '-' : hwdec} '
+        'current=${hwdecCurrent.isEmpty ? '-' : hwdecCurrent} '
+        'vo=${vo.isEmpty ? '-' : vo}',
+      );
+      return _looksLikeActiveHwdecCurrent(hwdecCurrent);
+    } catch (error) {
+      _logEvent('hwdec-active probe failed error=$error');
+      return false;
+    }
+  }
+
   Future<void> _sanitizeAndroidDebugMediaKitReferenceHolderFiles() async {
     if (!kDebugMode || !isAndroid) {
       return;
@@ -916,5 +1080,56 @@ class MpvPlayer implements BasePlayer {
       );
     }
     return parts.join(' ');
+  }
+}
+
+/// In-app stand-in while video is shown in an independent mpv VO window.
+class _MpvExternalNativeWindowPlaceholder extends StatelessWidget {
+  const _MpvExternalNativeWindowPlaceholder({
+    super.key,
+    required this.videoOutputDriver,
+  });
+
+  final String videoOutputDriver;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.open_in_new,
+                size: 40,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '独立原生 MPV 窗口播放中',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'vo=$videoOutputDriver\n'
+                '画面在系统独立窗口，不走 Flutter Texture。\n'
+                '用于验证原生播放流畅度；关闭设置项后恢复内嵌。',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white70,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -1,7 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:nolive_app/src/shared/presentation/settings_page_chrome.dart';
 import 'package:live_core/live_core.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/settings_feature_dependencies.dart';
@@ -295,9 +295,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   }
 
   bool get _supportsEmbeddedWebLogin =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+      AppPlatformCapabilities.current().supportsEmbeddedWebLogin;
 
   Future<_CookieDialogResult?> _showCookieEditor({
     required String title,

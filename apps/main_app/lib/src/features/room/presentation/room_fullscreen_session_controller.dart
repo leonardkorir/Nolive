@@ -11,6 +11,7 @@ import 'room_fullscreen_chrome_controller.dart';
 import 'room_fullscreen_runtime_context.dart';
 import 'room_fullscreen_session_platforms.dart';
 import 'room_gesture_ui_state.dart';
+import 'room_page_rebuild_scope.dart';
 import 'room_picture_in_picture_coordinator.dart';
 import 'room_playback_leave_cleanup_coordinator.dart';
 import 'room_view_ui_state.dart';
@@ -668,15 +669,33 @@ class RoomFullscreenSessionController extends ChangeNotifier {
     if (_disposed) {
       return;
     }
+    final previousView = _viewUiState;
+    final previousGesture = _gestureUiState;
     _viewUiState = next;
-    notifyListeners();
+    if (shouldNotifyFullscreenSessionListeners(
+      previousView: previousView,
+      nextView: next,
+      previousGesture: previousGesture,
+      nextGesture: previousGesture,
+    )) {
+      notifyListeners();
+    }
   }
 
   void _replaceGestureUiState(RoomGestureUiState next) {
     if (_disposed) {
       return;
     }
+    final previousView = _viewUiState;
+    final previousGesture = _gestureUiState;
     _gestureUiState = next;
-    notifyListeners();
+    if (shouldNotifyFullscreenSessionListeners(
+      previousView: previousView,
+      nextView: previousView,
+      previousGesture: previousGesture,
+      nextGesture: next,
+    )) {
+      notifyListeners();
+    }
   }
 }

@@ -52,7 +52,7 @@ void main() {
   );
 
   test(
-    'douyin sign service falls back to default cookie on refresh failure',
+    'no user cookie and HEAD failure uses pure_live-style legal default ttwid',
     () async {
       final service = HttpDouyinSignService(
         client: _FakeHttpClient((request) async {
@@ -60,11 +60,65 @@ void main() {
         }),
       );
 
+      final headers = await service.buildHeaders();
+
+      final cookie = headers['cookie']!;
+      expect(cookie, isNot(contains('local-fallback')));
+      expect(cookie, HttpDouyinSignService.defaultCookie);
+      expect(cookie, startsWith('ttwid=1%7C'));
+      // Morphologically valid pure_live-style shape: multi-segment ttwid.
+      expect(cookie.split('%7C').length, greaterThanOrEqualTo(3));
+    },
+  );
+
+  test(
+    'forceRefresh on HEAD failure also uses static legal default, never local-fallback',
+    () async {
+      final service = HttpDouyinSignService(
+        cookie: 'ttwid=injected-cookie',
+        client: _FakeHttpClient((request) async {
+          throw http.ClientException('network down');
+        }),
+      );
+
       final headers = await service.buildHeaders(forceRefreshCookie: true);
 
+      expect(headers['cookie'], isNot(contains('local-fallback')));
       expect(headers['cookie'], HttpDouyinSignService.defaultCookie);
     },
   );
+
+  test(
+    'injected account cookie with ttwid is preferred without HEAD',
+    () async {
+      var headRequests = 0;
+      final service = HttpDouyinSignService(
+        cookie: 'ttwid=account-guest-ttwid; msToken=abc',
+        client: _FakeHttpClient((request) async {
+          headRequests += 1;
+          return http.Response('', 500);
+        }),
+      );
+
+      final headers = await service.buildHeaders();
+
+      expect(headers['cookie'], 'ttwid=account-guest-ttwid; msToken=abc');
+      expect(headRequests, 0);
+    },
+  );
+
+  test('defaultCookie is a fixed legal constant, not timestamped fake', () {
+    expect(HttpDouyinSignService.defaultCookie, isNot(contains('local-fallback')));
+    expect(
+      HttpDouyinSignService.defaultCookie,
+      'ttwid=1%7CB1qls3GdnZhUov9o2NxOMxxYS2ff6OSvEWbv0ytbES4%7C1680522049%7C280d802d6d478e3e78d0c807f7c487e7ffec0ae4e5fdd6a0fe74c3c6af149511',
+    );
+    // Two reads must be identical (no DateTime.now in default).
+    expect(
+      HttpDouyinSignService.defaultCookie,
+      HttpDouyinSignService.defaultCookie,
+    );
+  });
 }
 
 class _FakeHttpClient extends http.BaseClient {

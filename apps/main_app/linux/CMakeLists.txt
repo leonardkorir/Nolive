@@ -41,7 +41,16 @@ endif()
 # of modifying this function.
 function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_14)
+  # Keep -Werror for app code, but third-party plugins (media_kit_video, etc.)
+  # still ship with conversion-null / sign-compare noise on newer GCC.
   target_compile_options(${TARGET} PRIVATE -Wall -Werror)
+  target_compile_options(
+    ${TARGET}
+    PRIVATE
+      -Wno-error=conversion-null
+      -Wno-error=sign-compare
+      -Wno-error=deprecated-declarations
+  )
   target_compile_options(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-O3>")
   target_compile_definitions(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:NDEBUG>")
 endfunction()

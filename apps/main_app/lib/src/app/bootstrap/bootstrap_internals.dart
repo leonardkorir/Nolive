@@ -185,6 +185,21 @@ class _BootstrapAssemblyContext {
 }
 
 AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
+  // Delivery-only platform fork: mobile → last-release thin knobs;
+  // desktop (Linux/Win/macOS) → current thick Linux pipeline. One proxy product.
+  final deliveryProfile = DeliveryPlatformProfile.resolve(
+    isAndroid: context.platformCapabilities.isAndroid,
+    isIOS: context.platformCapabilities.isIOS,
+    isLinux: context.platformCapabilities.isLinux,
+    isWindows: context.platformCapabilities.isWindows,
+    isMacOS: context.platformCapabilities.isMacOS,
+  );
+  DeliveryPlatformProfile.bind(deliveryProfile);
+  AppLog.instance.info(
+    'bootstrap',
+    'delivery profile family=${deliveryProfile.family.name} '
+        'os=${context.platformCapabilities.operatingSystem}',
+  );
   final loadProviderAccountSettings = LoadProviderAccountSettingsUseCase(
     context.repositories.settingsRepository,
     context.secureCredentialStore,
@@ -722,6 +737,23 @@ ProviderRegistry _buildProviderRegistry(
   };
 }
 
+/// Testable bridge assembly entry (same path as live bootstrap).
+@visibleForTesting
+AppRuntimeBridges buildAppRuntimeBridgesForTesting({
+  required AppRuntimeMode mode,
+  required AppPlatformCapabilities platformCapabilities,
+  required LoadProviderAccountSettingsUseCase loadProviderAccountSettings,
+  SecureCredentialStore? secureCredentialStore,
+}) {
+  return _buildAppRuntimeBridges(
+    mode: mode,
+    platformCapabilities: platformCapabilities,
+    loadProviderAccountSettings: loadProviderAccountSettings,
+    secureCredentialStore:
+        secureCredentialStore ?? InMemorySecureCredentialStore(),
+  );
+}
+
 AppRuntimeBridges _buildAppRuntimeBridges({
   required AppRuntimeMode mode,
   required AppPlatformCapabilities platformCapabilities,
@@ -777,8 +809,19 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
             _decodeBoolSetting(
               context.settings.stringSetting('player_mpv_log_enable'),
             );
+        final caps = context.platformCapabilities;
+        final isApple = caps.isIOS || caps.isMacOS;
+        final allowExternalNativeWindow = caps.isDesktop &&
+            resolveAllowExternalNativeMpvWindow(
+              preferenceEnabled: _decodeBoolSetting(
+                context.settings.stringSetting(
+                  'player_mpv_allow_external_native_window',
+                ),
+              ),
+            );
+        final envVoOverride = resolveExternalMpvVoFromEnvironment();
         return MpvPlayer(
-          isAndroid: context.platformCapabilities.isAndroid,
+          isAndroid: caps.isAndroid,
           enableHardwareAcceleration: _decodeBoolSetting(
             context.settings.stringSetting('player_mpv_hardware_acceleration'),
             fallback: true,
@@ -792,14 +835,33 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
           customOutputEnabled: _decodeBoolSetting(
             context.settings.stringSetting('player_mpv_custom_output'),
           ),
-          videoOutputDriver: context.settings.stringSetting(
-            'player_mpv_video_output_driver',
+          allowExternalNativeWindow: allowExternalNativeWindow,
+          // Drop Android-only mediacodec_* left over from mobile sync imports.
+          // When external window is allowed, keep gpu-next (do not force libmpv).
+          videoOutputDriver: sanitizeMpvVideoOutputDriverForPlatform(
+            envVoOverride ??
+                context.settings.stringSetting(
+                  'player_mpv_video_output_driver',
+                ),
+            isAndroid: caps.isAndroid,
+            isLinux: caps.isLinux,
+            isWindows: caps.isWindows,
+            isApple: isApple,
+            allowExternalNativeWindow: allowExternalNativeWindow,
           ),
-          audioOutputDriver: context.settings.stringSetting(
-            'player_mpv_audio_output_driver',
+          audioOutputDriver: sanitizeMpvAudioOutputDriverForPlatform(
+            context.settings.stringSetting('player_mpv_audio_output_driver'),
+            isAndroid: caps.isAndroid,
+            isLinux: caps.isLinux,
+            isWindows: caps.isWindows,
+            isApple: isApple,
           ),
-          hardwareDecoder: context.settings.stringSetting(
-            'player_mpv_hardware_decoder',
+          hardwareDecoder: sanitizeMpvHardwareDecoderForPlatform(
+            context.settings.stringSetting('player_mpv_hardware_decoder'),
+            isAndroid: caps.isAndroid,
+            isLinux: caps.isLinux,
+            isWindows: caps.isWindows,
+            isApple: isApple,
           ),
           logEnabled: mpvNativeLogEnabled,
           eventLogger: (message) => AppLog.instance.info('player/mpv', message),
@@ -832,7 +894,8 @@ ChaturbateWebRoomDetailLoader? _buildChaturbateRoomDetailLoader({
   if (mode != AppRuntimeMode.live) {
     return null;
   }
-  if (!platformCapabilities.isMobile) {
+  if (!platformCapabilities.supportsHeadlessWebView) {
+    _logBridgeDisabled('chaturbate-web-room-detail', platformCapabilities);
     return null;
   }
   return ChaturbateWebRoomDetailLoader(
@@ -853,7 +916,8 @@ ChaturbateLlHlsProxy? _buildChaturbateLlHlsProxy({
   if (mode != AppRuntimeMode.live) {
     return null;
   }
-  if (!platformCapabilities.isMobile) {
+  if (!platformCapabilities.supportsHeadlessWebView) {
+    _logBridgeDisabled('chaturbate-llhls', platformCapabilities);
     return null;
   }
   return ChaturbateLlHlsProxy(
@@ -871,7 +935,8 @@ StripchatLlHlsProxy? _buildStripchatLlHlsProxy({
   if (mode != AppRuntimeMode.live) {
     return null;
   }
-  if (!platformCapabilities.isMobile) {
+  if (!platformCapabilities.supportsHeadlessWebView) {
+    _logBridgeDisabled('stripchat-llhls', platformCapabilities);
     return null;
   }
   return StripchatLlHlsProxy(
@@ -879,6 +944,7 @@ StripchatLlHlsProxy? _buildStripchatLlHlsProxy({
     platformAdapter: HlsProxyPlatformAdapterImpl(
       platformCapabilities: platformCapabilities,
     ),
+    deliveryKnobs: HlsProxyDeliveryKnobs.fromActiveProfile(),
     decodedUrlResolver: null,
     warmDecodedUrlBridge: null,
     pdkeyResolver: () async {
@@ -896,7 +962,8 @@ TwitchWebPlaybackBridge? _buildTwitchWebPlaybackBridge({
   if (mode != AppRuntimeMode.live) {
     return null;
   }
-  if (!platformCapabilities.isMobile) {
+  if (!platformCapabilities.supportsHeadlessWebView) {
+    _logBridgeDisabled('twitch-web-playback', platformCapabilities);
     return null;
   }
   final bridge = TwitchWebPlaybackBridge(
@@ -920,13 +987,15 @@ TwitchAdGuardProxy? _buildTwitchAdGuardProxy({
   if (mode != AppRuntimeMode.live) {
     return null;
   }
-  if (!platformCapabilities.isMobile) {
+  if (!platformCapabilities.supportsHeadlessWebView) {
+    _logBridgeDisabled('twitch-ad-guard', platformCapabilities);
     return null;
   }
   return TwitchAdGuardProxy(
     platformAdapter: HlsProxyPlatformAdapterImpl(
       platformCapabilities: platformCapabilities,
     ),
+    deliveryKnobs: HlsProxyDeliveryKnobs.fromActiveProfile(),
   );
 }
 
@@ -937,7 +1006,8 @@ YouTubeNSigSolver? _buildYouTubeNSigSolver({
   if (mode != AppRuntimeMode.live) {
     return null;
   }
-  if (!_supportsYouTubeNSigWebView(platformCapabilities)) {
+  if (!platformCapabilities.supportsHeadlessWebView) {
+    _logBridgeDisabled('youtube-nsig', platformCapabilities);
     return null;
   }
   return YouTubeWebViewNSigSolver(
@@ -947,8 +1017,23 @@ YouTubeNSigSolver? _buildYouTubeNSigSolver({
   );
 }
 
-bool _supportsYouTubeNSigWebView(AppPlatformCapabilities platformCapabilities) {
-  return platformCapabilities.isMobile ||
-      platformCapabilities.isMacOS ||
-      platformCapabilities.isWindows;
+/// Clear diagnostic when international bridges are skipped for lack of WebView.
+void _logBridgeDisabled(
+  String bridgeName,
+  AppPlatformCapabilities platformCapabilities,
+) {
+  final os = platformCapabilities.operatingSystem;
+  AppLog.instance.info(
+    'bootstrap',
+    'bridge disabled: no webview '
+    '(bridge=$bridgeName platform=$os '
+    'linuxWebViewAvailable=${platformCapabilities.linuxWebViewAvailable})',
+  );
+}
+
+@visibleForTesting
+bool supportsYouTubeNSigWebViewForTesting(
+  AppPlatformCapabilities platformCapabilities,
+) {
+  return platformCapabilities.supportsHeadlessWebView;
 }

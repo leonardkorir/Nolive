@@ -932,7 +932,7 @@ class _CoordinatorHarness {
         loadCurrentRoomDetailForDanmaku: () async =>
             currentRoomDetailForDanmaku,
         resolvePlaybackRefresh: (_, __) async => nextResolved,
-        playbackSourceFromLine: (playUrl, {quality}) => source(
+        playbackSourceFromLine: (playUrl, {quality, providerId}) => source(
           Uri.parse(playUrl.url).pathSegments.last.replaceAll('.m3u8', ''),
         ),
         bindPlaybackSourceWithRecovery:

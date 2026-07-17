@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/src/providers/twitch/twitch_playback_manifest.dart';
+import '../hls_proxy_delivery_knobs.dart';
 import '../hls_proxy_platform_adapter.dart';
 
 class TwitchAdGuardProxy {
@@ -13,12 +15,20 @@ class TwitchAdGuardProxy {
     HttpClient? client,
     Duration sessionTtl = const Duration(minutes: 12),
     bool? enabledOverride,
+    HlsProxyDeliveryKnobs? deliveryKnobs,
   }) : _platformAdapter = platformAdapter,
        _client = client ?? HttpClient(),
        _sessionTtl = sessionTtl,
-       _enabledOverride = enabledOverride {
+       _enabledOverride = enabledOverride,
+       _d = deliveryKnobs ?? HlsProxyDeliveryKnobs.fromActiveProfile() {
     _client.connectionTimeout = const Duration(seconds: 8);
     _client.idleTimeout = const Duration(seconds: 8);
+    // Desktop: concurrent asset prefetch + mpv multi-segment demand.
+    // Mobile release left maxConnectionsPerHost unset.
+    final maxHost = _d.twitchMaxConnectionsPerHost;
+    if (maxHost != null) {
+      _client.maxConnectionsPerHost = maxHost;
+    }
   }
 
   static const String _routePrefix = 'twitch-ad-guard';
@@ -33,6 +43,7 @@ class TwitchAdGuardProxy {
   final HttpClient _client;
   final Duration _sessionTtl;
   final bool? _enabledOverride;
+  final HlsProxyDeliveryKnobs _d;
   final Map<String, _TwitchAdGuardSession> _sessions =
       <String, _TwitchAdGuardSession>{};
 
@@ -97,12 +108,26 @@ class TwitchAdGuardProxy {
     return wrapped;
   }
 
+  Future<void>? _startFuture;
+  bool _disposed = false;
+
   Future<void> dispose() async {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
+    final startFuture = _startFuture;
+    if (startFuture != null) {
+      try {
+        await startFuture;
+      } catch (_) {}
+    }
     await _server?.close(force: true);
     _server = null;
     _endpoint = null;
     _sessions.clear();
     _client.close(force: true);
+    _startFuture = null;
   }
 
   void unregisterSession(String roomId) {
@@ -110,10 +135,52 @@ class TwitchAdGuardProxy {
   }
 
   Future<void> ensureStarted() async {
+    if (_disposed) {
+      throw StateError('TwitchAdGuardProxy is disposed.');
+    }
+    if (_server != null && _endpoint != null) {
+      return;
+    }
+    final existing = _startFuture;
+    if (existing != null) {
+      await existing;
+      // Concurrent joiners must fail closed after dispose aborts bind.
+      _ensureRunningAfterStart();
+      return;
+    }
+    final started = _startServer();
+    _startFuture = started;
+    try {
+      await started;
+      _ensureRunningAfterStart();
+    } finally {
+      if (identical(_startFuture, started)) {
+        _startFuture = null;
+      }
+    }
+  }
+
+  /// Fail closed: dispose-aborted bind and post-await dispose must not
+  /// look like a successful start to callers (wrapPlayUrls etc.).
+  void _ensureRunningAfterStart() {
+    if (_disposed) {
+      throw StateError('TwitchAdGuardProxy is disposed.');
+    }
+    if (_server == null || _endpoint == null) {
+      throw StateError('TwitchAdGuardProxy failed to start.');
+    }
+  }
+
+  Future<void> _startServer() async {
     if (_server != null && _endpoint != null) {
       return;
     }
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    if (_disposed) {
+      await server.close(force: true);
+      // Propagate so ensureStarted / concurrent waiters fail closed.
+      throw StateError('TwitchAdGuardProxy is disposed.');
+    }
     _server = server;
     _endpoint = Uri.parse(
       'http://${InternetAddress.loopbackIPv4.address}:${server.port}/$_routePrefix',
@@ -142,6 +209,8 @@ class TwitchAdGuardProxy {
     );
     if (quality.id == 'auto' && autoGroups.isNotEmpty) {
       final startupAuto = quality.metadata?['twitchStartupAuto'] == true;
+      final preferStartupLadder =
+          startupAuto || _d.twitchPreferStartupAutoLadder;
       final preferredPlayerType =
           preferredUrl.metadata?['playerType']?.toString().trim() ?? '';
       final groups = autoGroups
@@ -170,13 +239,18 @@ class TwitchAdGuardProxy {
           })
           .where((group) => group.candidates.isNotEmpty)
           .toList(growable: false);
-      return _TwitchAdGuardSession.auto(
+      final ordered = _orderAutoGroups(groups);
+      final sessionGroups = preferStartupLadder
+          ? _selectStartupAutoGroups(ordered)
+          : ordered;
+      final session = _TwitchAdGuardSession.auto(
         roomId: roomId,
         id: sessionId,
-        groups: startupAuto
-            ? _selectStartupAutoGroups(_orderAutoGroups(groups))
-            : _orderAutoGroups(groups),
+        delivery: _d,
+        groups: sessionGroups,
       );
+      _prewarmAutoVariantGroups(session);
+      return session;
     }
 
     final fixedGroup = TwitchPlaybackQualityGroup.fromJson(
@@ -206,6 +280,7 @@ class TwitchAdGuardProxy {
     return _TwitchAdGuardSession.fixed(
       roomId: roomId,
       id: sessionId,
+      delivery: _d,
       candidates: _orderedCandidates(
         candidates: fixedCandidates,
         preferredUrl: preferredUrl.url,
@@ -325,18 +400,20 @@ class TwitchAdGuardProxy {
         await _writeVariantPlaylist(
           response,
           session: session,
+          groupId: group.id,
           candidates: group.candidates,
         );
         return;
       }
       if (action == 'asset' && segments.length >= 4) {
-        final asset = session.assets[segments[3]];
+        final assetId = segments[3];
+        final asset = session.assets[assetId];
         if (asset == null) {
           response.statusCode = HttpStatus.notFound;
           await response.close();
           return;
         }
-        await _pipeAsset(response, asset);
+        await _pipeAsset(response, session: session, assetId: assetId, asset: asset);
         return;
       }
       response.statusCode = HttpStatus.notFound;
@@ -387,9 +464,37 @@ class TwitchAdGuardProxy {
   Future<void> _writeVariantPlaylist(
     HttpResponse response, {
     required _TwitchAdGuardSession session,
+    String? groupId,
     required List<TwitchPlaybackCandidate> candidates,
   }) async {
-    final selected = await _selectPlayablePlaylist(candidates);
+    final stickyTtl = _d.twitchVariantPlaylistStickyTtl;
+    if (groupId != null && stickyTtl > Duration.zero) {
+      final cached = session.variantPlaylistByGroup[groupId];
+      final cachedUntil = session.variantPlaylistUntilByGroup[groupId];
+      if (cached != null &&
+          cachedUntil != null &&
+          DateTime.now().isBefore(cachedUntil) &&
+          cached.trim().isNotEmpty) {
+        if (_platformAdapter.kDebugMode) {
+          _platformAdapter.debugPrint(
+            '[TwitchAdGuardProxy] variant sticky hit group=$groupId',
+          );
+        }
+        response.headers.contentType = ContentType(
+          'application',
+          'vnd.apple.mpegurl',
+          charset: 'utf-8',
+        );
+        response.write(cached);
+        await response.close();
+        return;
+      }
+    }
+
+    final selected = await _selectPlayablePlaylist(
+      candidates,
+      session: session,
+    );
     if (selected == null) {
       response.statusCode = HttpStatus.badGateway;
       await response.close();
@@ -404,13 +509,24 @@ class TwitchAdGuardProxy {
         'url=${selected.candidate.playlistUrl}',
       );
     }
+    final warmAssetIds = <String>[];
     final playlist = _rewritePlaylist(
       session: session,
       sourceUrl: selected.candidate.playlistUrl,
       headers: selected.candidate.headers,
       text: selected.text,
       stripPrefetch: selected.hadAds,
+      warmAssetIds: warmAssetIds,
     );
+    if (groupId != null &&
+        stickyTtl > Duration.zero &&
+        !selected.hadAds &&
+        selected.segmentCount > 0) {
+      session.variantPlaylistByGroup[groupId] = playlist;
+      session.variantPlaylistUntilByGroup[groupId] = DateTime.now().add(
+        stickyTtl,
+      );
+    }
     response.headers.contentType = ContentType(
       'application',
       'vnd.apple.mpegurl',
@@ -418,11 +534,103 @@ class TwitchAdGuardProxy {
     );
     response.write(playlist);
     await response.close();
+    final warmLimit = _d.twitchAssetWarmPrefetchLimit;
+    if (warmLimit > 0) {
+      session.warmAssets(
+        warmAssetIds.take(warmLimit),
+        _prefetchAsset,
+      );
+    }
+  }
+
+  /// Best-effort: probe lowest Auto variants so first mpv ABR hop is warm.
+  void _prewarmAutoVariantGroups(_TwitchAdGuardSession session) {
+    final count = _d.twitchPrewarmStartupVariants;
+    if (count <= 0 || session.mode != _TwitchAdGuardMode.auto) {
+      return;
+    }
+    final groups = session.autoGroups.take(count).toList(growable: false);
+    for (final group in groups) {
+      unawaited(() async {
+        try {
+          final selected = await _selectPlayablePlaylist(
+            group.candidates,
+            session: session,
+          );
+          if (selected == null || selected.hadAds || selected.segmentCount <= 0) {
+            return;
+          }
+          final warmAssetIds = <String>[];
+          final playlist = _rewritePlaylist(
+            session: session,
+            sourceUrl: selected.candidate.playlistUrl,
+            headers: selected.candidate.headers,
+            text: selected.text,
+            stripPrefetch: selected.hadAds,
+            warmAssetIds: warmAssetIds,
+          );
+          final stickyTtl = _d.twitchVariantPlaylistStickyTtl;
+          if (stickyTtl > Duration.zero) {
+            session.variantPlaylistByGroup[group.id] = playlist;
+            session.variantPlaylistUntilByGroup[group.id] = DateTime.now().add(
+              stickyTtl,
+            );
+          }
+          final warmLimit = _d.twitchAssetWarmPrefetchLimit;
+          if (warmLimit > 0) {
+            session.warmAssets(warmAssetIds.take(warmLimit), _prefetchAsset);
+          }
+          if (_platformAdapter.kDebugMode) {
+            _platformAdapter.debugPrint(
+              '[TwitchAdGuardProxy] prewarm ok group=${group.id} '
+              'segs=${selected.segmentCount}',
+            );
+          }
+        } catch (_) {
+          // Best-effort only.
+        }
+      }());
+    }
   }
 
   Future<_TwitchLoadedPlaylist?> _selectPlayablePlaylist(
-    List<TwitchPlaybackCandidate> candidates,
-  ) async {
+    List<TwitchPlaybackCandidate> candidates, {
+    _TwitchAdGuardSession? session,
+  }) async {
+    // Sticky: reuse a known-good no-ad candidate without full multi-probe.
+    // Mobile release had no sticky candidate path.
+    if (_d.twitchEnableStickyCandidate) {
+      final sticky = session?.stickyCandidate;
+      final stickyUntil = session?.stickyCandidateUntil;
+      if (sticky != null &&
+          stickyUntil != null &&
+          DateTime.now().isBefore(stickyUntil)) {
+        final stickyIndex = candidates.indexWhere(
+          (candidate) =>
+              candidate.playlistUrl == sticky.playlistUrl &&
+              candidate.playerType == sticky.playerType &&
+              candidate.lineLabel == sticky.lineLabel,
+        );
+        if (stickyIndex >= 0) {
+          final loaded = await _loadCandidatePlaylist(
+            candidates[stickyIndex],
+            candidateIndex: stickyIndex,
+          );
+          if (loaded != null && !loaded.hadAds && loaded.segmentCount > 0) {
+            session?.rememberStickyCandidate(sticky, ttl: _d.twitchStickyCandidateTtl);
+            if (_platformAdapter.kDebugMode) {
+              _platformAdapter.debugPrint(
+                '[TwitchAdGuardProxy] sticky hit '
+                'playerType=${sticky.playerType} line=${sticky.lineLabel}',
+              );
+            }
+            return loaded;
+          }
+          session?.clearStickyCandidate();
+        }
+      }
+    }
+
     for (var attempt = 0; attempt < _maxPlaylistProbeAttempts; attempt += 1) {
       final pending = <int, Future<_TwitchPlaylistProbeEvent>>{
         for (var index = 0; index < candidates.length; index += 1)
@@ -468,10 +676,16 @@ class TwitchAdGuardProxy {
           (index) => index < bestPlayable.candidateIndex,
         );
         if (!hasHigherPriorityPending) {
+          if (!bestPlayable.hadAds) {
+            session?.rememberStickyCandidate(bestPlayable.candidate);
+          }
           return bestPlayable;
         }
         if (event.hedgeSequence == activeHedgeSequence &&
             hedgeTargetIndex == bestPlayable.candidateIndex) {
+          if (!bestPlayable.hadAds) {
+            session?.rememberStickyCandidate(bestPlayable.candidate);
+          }
           return bestPlayable;
         }
         if (hedgeTargetIndex != bestPlayable.candidateIndex) {
@@ -491,6 +705,7 @@ class TwitchAdGuardProxy {
       if (fallback != null) {
         if (fallback.segmentCount > 0 ||
             attempt >= _maxPlaylistProbeAttempts - 1) {
+          // Do not sticky ad-bearing fallbacks — keep probing next refresh.
           return fallback;
         }
       }
@@ -628,6 +843,7 @@ class TwitchAdGuardProxy {
     required Map<String, String> headers,
     required String text,
     required bool stripPrefetch,
+    List<String>? warmAssetIds,
   }) {
     final lines = text.split(RegExp(r'\r?\n'));
     final rewritten = <String>[];
@@ -647,6 +863,7 @@ class TwitchAdGuardProxy {
             baseUrl: sourceUrl,
             rawUrl: line,
             headers: headers,
+            warmAssetIds: warmAssetIds,
           ),
         );
         continue;
@@ -656,7 +873,7 @@ class TwitchAdGuardProxy {
           line.replaceAllMapped(
             RegExp(r'URI="([^"]+)"'),
             (match) =>
-                'URI="${_registerAssetUrl(session: session, baseUrl: sourceUrl, rawUrl: match.group(1) ?? '', headers: headers)}"',
+                'URI="${_registerAssetUrl(session: session, baseUrl: sourceUrl, rawUrl: match.group(1) ?? '', headers: headers, warmAssetIds: warmAssetIds)}"',
           ),
         );
         continue;
@@ -671,6 +888,7 @@ class TwitchAdGuardProxy {
     required String baseUrl,
     required String rawUrl,
     required Map<String, String> headers,
+    List<String>? warmAssetIds,
   }) {
     final endpoint = _endpoint;
     if (endpoint == null) {
@@ -678,22 +896,35 @@ class TwitchAdGuardProxy {
     }
     final absoluteUrl = Uri.parse(baseUrl).resolve(rawUrl).toString();
     final assetId = session.registerAsset(url: absoluteUrl, headers: headers);
+    warmAssetIds?.add(assetId);
     return endpoint
         .replace(path: '${endpoint.path}/${session.id}/asset/$assetId')
         .toString();
   }
 
   Future<void> _pipeAsset(
-    HttpResponse response,
-    _TwitchAdGuardAsset asset,
-  ) async {
+    HttpResponse response, {
+    required _TwitchAdGuardSession session,
+    required String assetId,
+    required _TwitchAdGuardAsset asset,
+  }) async {
+    final cached = session.cachedBytes[assetId];
+    if (cached != null) {
+      session.touchCachedBytes(assetId);
+      response.statusCode = HttpStatus.ok;
+      response.contentLength = cached.bytes.length;
+      if (cached.contentType != null) {
+        response.headers.contentType = cached.contentType;
+      }
+      response.add(cached.bytes);
+      await response.close();
+      return;
+    }
+
     final request = await _client.getUrl(Uri.parse(asset.url));
     asset.headers.forEach(request.headers.set);
     final upstream = await request.close();
     response.statusCode = upstream.statusCode;
-    if (upstream.contentLength >= 0) {
-      response.contentLength = upstream.contentLength;
-    }
     final contentType = upstream.headers.contentType;
     if (contentType != null) {
       response.headers.contentType = contentType;
@@ -702,7 +933,69 @@ class TwitchAdGuardProxy {
     if (cacheControl != null && cacheControl.isNotEmpty) {
       response.headers.set(HttpHeaders.cacheControlHeader, cacheControl);
     }
-    await upstream.pipe(response);
+    // Always stream to the player first (release-era pipe semantics).
+    // Optionally collect bytes for warm/reuse — never block the demuxer on a
+    // full-segment fold before the first chunk is written (phone underruns).
+    final canByteCache =
+        session.delivery.twitchEnableAssetByteCache &&
+        session.delivery.twitchAssetBytesCacheLimit > 0;
+    if (upstream.contentLength >= 0) {
+      response.contentLength = upstream.contentLength;
+    }
+    if (upstream.statusCode != HttpStatus.ok) {
+      await upstream.pipe(response);
+      return;
+    }
+    final collected = canByteCache ? <int>[] : null;
+    await for (final chunk in upstream) {
+      response.add(chunk);
+      collected?.addAll(chunk);
+    }
+    await response.close();
+    if (collected != null && collected.isNotEmpty) {
+      session.putCachedBytes(
+        assetId,
+        _TwitchCachedAssetBytes(
+          bytes: Uint8List.fromList(collected),
+          contentType: contentType,
+        ),
+      );
+    }
+  }
+
+  Future<void> _prefetchAsset(
+    _TwitchAdGuardSession session,
+    String assetId,
+  ) async {
+    if (session.cachedBytes.containsKey(assetId)) {
+      session.touchCachedBytes(assetId);
+      return;
+    }
+    final asset = session.assets[assetId];
+    if (asset == null) {
+      return;
+    }
+    try {
+      final request = await _client.getUrl(Uri.parse(asset.url));
+      asset.headers.forEach(request.headers.set);
+      final upstream = await request.close();
+      if (upstream.statusCode != HttpStatus.ok) {
+        await upstream.drain<void>();
+        return;
+      }
+      final contentType = upstream.headers.contentType;
+      final bytes = await upstream.fold<List<int>>(
+        <int>[],
+        (buffer, chunk) => buffer..addAll(chunk),
+      );
+      final payload = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+      session.putCachedBytes(
+        assetId,
+        _TwitchCachedAssetBytes(bytes: payload, contentType: contentType),
+      );
+    } catch (_) {
+      // Best-effort warm; mpv will fetch on demand.
+    }
   }
 
   _TwitchSanitizedPlaylist _sanitizePlaylist(String text) {
@@ -946,7 +1239,7 @@ class TwitchAdGuardProxy {
     if (override != null) {
       return override;
     }
-    return _platformAdapter.isMobile;
+    return _platformAdapter.supportsHeadlessWebView;
   }
 }
 
@@ -1010,6 +1303,7 @@ class _TwitchAdGuardSession {
   _TwitchAdGuardSession.fixed({
     required this.roomId,
     required this.id,
+    required this.delivery,
     required List<TwitchPlaybackCandidate> candidates,
   }) : mode = _TwitchAdGuardMode.fixed,
        fixedCandidates = candidates,
@@ -1019,6 +1313,7 @@ class _TwitchAdGuardSession {
   _TwitchAdGuardSession.auto({
     required this.roomId,
     required this.id,
+    required this.delivery,
     required List<_TwitchAdGuardVariantGroup> groups,
   }) : mode = _TwitchAdGuardMode.auto,
        fixedCandidates = const [],
@@ -1027,18 +1322,45 @@ class _TwitchAdGuardSession {
 
   final String roomId;
   final String id;
+  final HlsProxyDeliveryKnobs delivery;
   final _TwitchAdGuardMode mode;
   final List<TwitchPlaybackCandidate> fixedCandidates;
   final List<_TwitchAdGuardVariantGroup> autoGroups;
   final Map<String, _TwitchAdGuardVariantGroup> groupsById;
   final Map<String, _TwitchAdGuardAsset> assets =
       <String, _TwitchAdGuardAsset>{};
+  final Map<String, _TwitchCachedAssetBytes> cachedBytes =
+      <String, _TwitchCachedAssetBytes>{};
+  final Map<String, Future<void>> _pendingWarmAssets = <String, Future<void>>{};
+  /// Rewritten media playlist per Auto group (skip CDN multi-probe on ABR hop).
+  final Map<String, String> variantPlaylistByGroup = <String, String>{};
+  final Map<String, DateTime> variantPlaylistUntilByGroup = <String, DateTime>{};
 
   DateTime lastAccessAt = DateTime.now();
   int _assetCounter = 0;
+  TwitchPlaybackCandidate? stickyCandidate;
+  DateTime? stickyCandidateUntil;
 
   void touch() {
     lastAccessAt = DateTime.now();
+  }
+
+  void rememberStickyCandidate(
+    TwitchPlaybackCandidate candidate, {
+    Duration? ttl,
+  }) {
+    if (!delivery.twitchEnableStickyCandidate) {
+      return;
+    }
+    stickyCandidate = candidate;
+    stickyCandidateUntil = DateTime.now().add(
+      ttl ?? delivery.twitchStickyCandidateTtl,
+    );
+  }
+
+  void clearStickyCandidate() {
+    stickyCandidate = null;
+    stickyCandidateUntil = null;
   }
 
   String registerAsset({
@@ -1054,6 +1376,53 @@ class _TwitchAdGuardSession {
     assets[assetId] = _TwitchAdGuardAsset(url: url, headers: headers);
     return assetId;
   }
+
+  void putCachedBytes(String assetId, _TwitchCachedAssetBytes payload) {
+    if (!delivery.twitchEnableAssetByteCache ||
+        delivery.twitchAssetBytesCacheLimit <= 0) {
+      return;
+    }
+    cachedBytes.remove(assetId);
+    cachedBytes[assetId] = payload;
+    while (cachedBytes.length > delivery.twitchAssetBytesCacheLimit) {
+      cachedBytes.remove(cachedBytes.keys.first);
+    }
+  }
+
+  void touchCachedBytes(String assetId) {
+    final existing = cachedBytes.remove(assetId);
+    if (existing == null) {
+      return;
+    }
+    cachedBytes[assetId] = existing;
+  }
+
+  void warmAssets(
+    Iterable<String> assetIds,
+    Future<void> Function(_TwitchAdGuardSession session, String assetId) task,
+  ) {
+    for (final assetId in assetIds) {
+      if (cachedBytes.containsKey(assetId) ||
+          _pendingWarmAssets.containsKey(assetId)) {
+        continue;
+      }
+      final future = task(this, assetId).whenComplete(() {
+        _pendingWarmAssets.remove(assetId);
+      });
+      _pendingWarmAssets[assetId] = future;
+      unawaited(future);
+    }
+  }
+}
+
+class _TwitchCachedAssetBytes {
+  const _TwitchCachedAssetBytes({
+    required this.bytes,
+    required this.contentType,
+  });
+
+  final Uint8List bytes;
+  final ContentType? contentType;
 }
 
 class _TwitchAdGuardVariantGroup {

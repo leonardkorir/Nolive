@@ -1,3 +1,4 @@
+export 'src/delivery/delivery_platform_profile.dart';
 export 'src/error/nolive_exception.dart';
 export 'src/model/live_category.dart';
 export 'src/model/danmaku_token.dart';
@@ -19,3 +20,4 @@ export 'src/text/html_entity_decoder.dart';
 export 'src/text/well_formed_string_extension.dart';
 export 'src/result.dart';
 export 'src/telemetry/nfr_isolate_telemetry.dart';
+

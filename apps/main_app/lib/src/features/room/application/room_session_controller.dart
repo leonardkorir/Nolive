@@ -149,8 +149,13 @@ class RoomSessionController {
   PlaybackSource playbackSourceFromLine(
     LivePlayUrl playUrl, {
     LivePlayQuality? quality,
+    ProviderId? providerId,
   }) {
-    return playbackSourceFromLivePlayUrl(playUrl, quality: quality);
+    return playbackSourceFromLivePlayUrl(
+      playUrl,
+      quality: quality,
+      providerId: providerId,
+    );
   }
 
   Future<RoomSessionLoadResult> _loadCore({
@@ -162,10 +167,17 @@ class RoomSessionController {
       'load start preferredQuality=${preferredQualityId ?? '-'} generation=$myGeneration',
     );
     await _waitForPendingRoomTeardown(myGeneration);
-    final playerPreferences = await dependencies.loadPlayerPreferences();
-    final blockedKeywords = await dependencies.loadBlockedKeywords();
-    final danmakuPreferences = await dependencies.loadDanmakuPreferences();
-    final roomUiPreferences = await dependencies.loadRoomUiPreferences();
+    // Preference reads are independent — load in parallel before backend init.
+    final prefsBundle = await Future.wait<Object?>([
+      dependencies.loadPlayerPreferences(),
+      dependencies.loadBlockedKeywords(),
+      dependencies.loadDanmakuPreferences(),
+      dependencies.loadRoomUiPreferences(),
+    ]);
+    final playerPreferences = prefsBundle[0]! as PlayerPreferences;
+    final blockedKeywords = List<String>.from(prefsBundle[1]! as List<String>);
+    final danmakuPreferences = prefsBundle[2]! as DanmakuPreferences;
+    final roomUiPreferences = prefsBundle[3]! as RoomUiPreferences;
 
     final runtimeBackend = resolveRoomPlaybackBackend(
       providerId: providerId,
@@ -179,19 +191,22 @@ class RoomSessionController {
         '${playerPreferences.backend.name} -> ${runtimeBackend.name}',
       );
     }
-    await dependencies.playerRuntime.ensureBackendWithoutPlaybackState(
-      runtimeBackend,
-    );
-    await dependencies.playerRuntime.initialize();
-    await dependencies.playerRuntime.setVolume(
-      resolveRoomRuntimePlayerVolume(
-        playerPreferences: playerPreferences,
-        targetPlatform: targetPlatform,
-      ),
-    );
 
+    // Overlap backend prepare with room network load (same generation guard).
     final startedAt = DateTime.now();
-    final snapshot = await dependencies.loadRoom(
+    final backendReady = () async {
+      await dependencies.playerRuntime.ensureBackendWithoutPlaybackState(
+        runtimeBackend,
+      );
+      await dependencies.playerRuntime.initialize();
+      await dependencies.playerRuntime.setVolume(
+        resolveRoomRuntimePlayerVolume(
+          playerPreferences: playerPreferences,
+          targetPlatform: targetPlatform,
+        ),
+      );
+    }();
+    final snapshotFuture = dependencies.loadRoom(
       providerId: providerId,
       roomId: roomId,
       preferHighestQuality: playerPreferences.preferHighestQuality,
@@ -200,6 +215,8 @@ class RoomSessionController {
       cellularQualityPreference: playerPreferences.cellularQualityPreference,
       recordHistory: recordHistory,
     );
+    final snapshot = await snapshotFuture;
+    await backendReady;
     _trace(
       'loadRoom done in ${DateTime.now().difference(startedAt).inMilliseconds}ms '
       'qualities=${snapshot.qualities.length} '

@@ -4,6 +4,14 @@ typedef HlsWebViewResourceBlocker = bool Function(String url);
 
 abstract class HlsProxyPlatformAdapter {
   bool get isMobile;
+
+  /// Whether headless WebView can be created for bridges / solvers.
+  ///
+  /// Desktop platforms that ship a WebView adapter must return true.
+  /// Do **not** equate this with [isMobile] — Linux desktop parity requires
+  /// international bridges when WebView is available.
+  bool get supportsHeadlessWebView;
+
   bool get kDebugMode;
   void log(String tag, String message, [Object? error, StackTrace? stackTrace]);
   void debugPrint(String message);

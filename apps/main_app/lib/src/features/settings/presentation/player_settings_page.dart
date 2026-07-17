@@ -503,6 +503,37 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
           const Divider(height: 1),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
+            key: const Key('player-mpv-external-native-window-switch'),
+            value: preferences.mpvAllowExternalNativeWindow,
+            title: const Text('独立原生 MPV 窗口'),
+            subtitle: Text(
+              preferences.mpvAllowExternalNativeWindow
+                  ? '已开启：视频在系统独立窗口（默认 gpu-next），App 内为占位；用于验证原生流畅度'
+                  : '可选：用 mpv 原生 VO 开独立窗口，绕过 Flutter Texture（默认关闭）',
+            ),
+            onChanged: (value) {
+              final nextVo = value
+                  ? (kDesktopWindowOpeningMpvVideoOutputs.contains(
+                          preferences.mpvVideoOutputDriver,
+                        )
+                        ? preferences.mpvVideoOutputDriver
+                        : kDefaultMpvVideoOutputDriver)
+                  : kDesktopEmbedSafeMpvVideoOutputDriver;
+              _update(
+                current: preferences,
+                next: preferences.copyWith(
+                  mpvAllowExternalNativeWindow: value,
+                  // External path needs an explicit VO; keep embed-safe when off.
+                  mpvCustomOutputEnabled:
+                      value ? true : preferences.mpvCustomOutputEnabled,
+                  mpvVideoOutputDriver: nextVo,
+                ),
+              );
+            },
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
             key: const Key('player-mpv-log-enable-switch'),
             value: preferences.mpvLogEnabled,
             title: const Text('调试日志'),
@@ -525,18 +556,28 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             key: ValueKey(
-              'player-mpv-video-output-${preferences.mpvCustomOutputEnabled}-${preferences.mpvVideoOutputDriver}',
+              'player-mpv-video-output-'
+              '${preferences.mpvCustomOutputEnabled}-'
+              '${preferences.mpvAllowExternalNativeWindow}-'
+              '${preferences.mpvVideoOutputDriver}',
             ),
             initialValue: preferences.mpvVideoOutputDriver,
             items: kMpvVideoOutputDrivers.entries
                 .map(
                   (entry) => DropdownMenuItem<String>(
                     value: entry.key,
-                    child: Text(entry.value),
+                    child: Text(
+                      kDesktopWindowOpeningMpvVideoOutputs.contains(entry.key)
+                          ? '${entry.value}（独立窗口）'
+                          : entry.value,
+                    ),
                   ),
                 )
                 .toList(growable: false),
-            onChanged: preferences.mpvCustomOutputEnabled && !_saving
+            onChanged:
+                (preferences.mpvCustomOutputEnabled ||
+                        preferences.mpvAllowExternalNativeWindow) &&
+                    !_saving
                 ? (value) {
                     if (value == null) {
                       return;
@@ -550,9 +591,11 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
             decoration: InputDecoration(
               border: const OutlineInputBorder(),
               isDense: true,
-              helperText: preferences.mpvCustomOutputEnabled
-                  ? '当前已启用自定义输出'
-                  : '需开启「自定义输出驱动」后生效',
+              helperText: preferences.mpvAllowExternalNativeWindow
+                  ? '独立窗口模式：推荐 gpu-next / gpu / dmabuf-wayland'
+                  : preferences.mpvCustomOutputEnabled
+                  ? '当前已启用自定义输出（桌面默认仍会把独立窗口 VO 改回 libmpv，除非开启「独立原生 MPV 窗口」）'
+                  : '需开启「自定义输出驱动」或「独立原生 MPV 窗口」后生效',
             ),
           ),
           const SizedBox(height: 12),

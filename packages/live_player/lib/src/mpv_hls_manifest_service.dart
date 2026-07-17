@@ -144,6 +144,7 @@ bool _looksLikeLiveNonSeekableSource(PlaybackSource source) {
     return true;
   }
   return source.bufferProfile == PlaybackBufferProfile.heavyStreamStable ||
+      source.bufferProfile == PlaybackBufferProfile.desktopStableLive ||
       source.bufferProfile == PlaybackBufferProfile.edgeLowLatencyHls ||
       source.bufferProfile == PlaybackBufferProfile.loopbackStableHls ||
       source.bufferProfile == PlaybackBufferProfile.chaturbateLlHlsProxyStable;

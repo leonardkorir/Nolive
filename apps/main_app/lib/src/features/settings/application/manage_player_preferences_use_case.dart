@@ -1,11 +1,18 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:live_player/live_player.dart';
 import 'package:live_storage/live_storage.dart';
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 enum PlayerScaleMode { contain, cover, fill, fitWidth, fitHeight }
 
 const String kDefaultMpvVideoOutputDriver = 'gpu-next';
 const String kDefaultMpvHardwareDecoder = 'auto-safe';
+/// Linux embed (libmpv + Flutter texture): prefer copy-mode HW decode so
+/// VAAPI/NVDEC still count as hardware even when zero-copy interop is flaky.
+const String kDefaultMpvHardwareDecoderLinux = 'auto-copy';
 
 const String kDefaultMpvAudioOutputDriver = 'auto';
 
@@ -45,7 +52,9 @@ const Map<String, String> kMpvHardwareDecoders = <String, String>{
   'd3d11va-copy': 'd3d11va-copy',
   'videotoolbox': 'videotoolbox',
   'vaapi': 'vaapi',
+  'vaapi-copy': 'vaapi-copy',
   'nvdec': 'nvdec',
+  'nvdec-copy': 'nvdec-copy',
   'no': '关闭硬解',
 };
 
@@ -99,11 +108,163 @@ Map<String, String> mpvHardwareDecodersForPlatform({
       if (key.startsWith('mediacodec')) return isAndroid;
       if (key.startsWith('d3d11va')) return isWindows;
       if (key == 'videotoolbox') return isApple;
-      if (key == 'vaapi') return isLinux;
-      if (key == 'nvdec') return isLinux || isWindows;
+      if (key == 'vaapi' || key == 'vaapi-copy') return isLinux;
+      if (key == 'nvdec' || key == 'nvdec-copy') return isLinux || isWindows;
       return true;
     }),
   );
+}
+
+/// VO drivers that open an independent OS window instead of embedding into the
+/// app texture (media_kit). On desktop these leave an "external MPV" window
+/// that users cannot close without killing the whole process.
+const Set<String> kDesktopWindowOpeningMpvVideoOutputs = <String>{
+  'gpu',
+  'gpu-next',
+  'sdl',
+  'vaapi',
+  'dmabuf-wayland',
+  'direct3d',
+  'xv',
+  'x11',
+  'wayland',
+};
+
+/// Embed-safe default for desktop custom-output paths.
+const String kDesktopEmbedSafeMpvVideoOutputDriver = 'libmpv';
+
+/// Env flag for A/B: independent native mpv VO window (gpu-next etc.).
+const String kNoliveAllowExternalMpvWindowEnv =
+    'NOLIVE_ALLOW_EXTERNAL_MPV_WINDOW';
+
+/// Optional VO override when external window mode is enabled (default gpu-next).
+const String kNoliveExternalMpvVoEnv = 'NOLIVE_MPV_EXTERNAL_VO';
+
+bool _envFlagTruthy(String? raw) {
+  final value = raw?.trim().toLowerCase() ?? '';
+  return value == '1' ||
+      value == 'true' ||
+      value == 'yes' ||
+      value == 'on';
+}
+
+Map<String, String> _defaultProcessEnvironment() {
+  if (kIsWeb) {
+    return const <String, String>{};
+  }
+  try {
+    return Platform.environment;
+  } catch (_) {
+    return const <String, String>{};
+  }
+}
+
+/// True when settings and/or env opt into the external native mpv window path.
+bool resolveAllowExternalNativeMpvWindow({
+  required bool preferenceEnabled,
+  Map<String, String>? environment,
+}) {
+  final env = environment ?? _defaultProcessEnvironment();
+  if (_envFlagTruthy(env[kNoliveAllowExternalMpvWindowEnv])) {
+    return true;
+  }
+  return preferenceEnabled;
+}
+
+/// Optional VO from env; null when unset / empty.
+String? resolveExternalMpvVoFromEnvironment([
+  Map<String, String>? environment,
+]) {
+  final env = environment ?? _defaultProcessEnvironment();
+  final raw = env[kNoliveExternalMpvVoEnv]?.trim() ?? '';
+  if (raw.isEmpty) {
+    return null;
+  }
+  return raw;
+}
+
+/// Reject cross-platform leftovers after sync (e.g. Android mediacodec on Linux).
+/// On desktop, also rewrite window-opening VO drivers to [libmpv] so playback
+/// stays inside the app — unless [allowExternalNativeWindow] is true (opt-in A).
+String sanitizeMpvVideoOutputDriverForPlatform(
+  String? raw, {
+  required bool isAndroid,
+  required bool isLinux,
+  required bool isWindows,
+  required bool isApple,
+  bool allowExternalNativeWindow = false,
+}) {
+  final key = raw?.trim() ?? '';
+  final allowed = mpvVideoOutputDriversForPlatform(
+    isAndroid: isAndroid,
+    isLinux: isLinux,
+    isWindows: isWindows,
+    isApple: isApple,
+  );
+  final isDesktop = isLinux || isWindows || isApple;
+  if (key.isEmpty || !allowed.containsKey(key)) {
+    if (isAndroid) {
+      return kDefaultMpvVideoOutputDriver;
+    }
+    if (isDesktop && allowExternalNativeWindow) {
+      return kDefaultMpvVideoOutputDriver;
+    }
+    return kDesktopEmbedSafeMpvVideoOutputDriver;
+  }
+  if (isDesktop &&
+      !allowExternalNativeWindow &&
+      kDesktopWindowOpeningMpvVideoOutputs.contains(key)) {
+    return kDesktopEmbedSafeMpvVideoOutputDriver;
+  }
+  return key;
+}
+
+String sanitizeMpvHardwareDecoderForPlatform(
+  String? raw, {
+  required bool isAndroid,
+  required bool isLinux,
+  required bool isWindows,
+  required bool isApple,
+}) {
+  final key = raw?.trim() ?? '';
+  final allowed = mpvHardwareDecodersForPlatform(
+    isAndroid: isAndroid,
+    isLinux: isLinux,
+    isWindows: isWindows,
+    isApple: isApple,
+  );
+  if (key.isEmpty || !allowed.containsKey(key)) {
+    if (isLinux) {
+      return kDefaultMpvHardwareDecoderLinux;
+    }
+    return kDefaultMpvHardwareDecoder;
+  }
+  // Linux: auto-safe often never activates VAAPI under libmpv embed; promote
+  // the default preference to auto-copy when the user has not chosen a backend.
+  if (isLinux && (key == 'auto-safe' || key == 'auto')) {
+    return kDefaultMpvHardwareDecoderLinux;
+  }
+  return key;
+}
+
+String sanitizeMpvAudioOutputDriverForPlatform(
+  String? raw, {
+  required bool isAndroid,
+  required bool isLinux,
+  required bool isWindows,
+  required bool isApple,
+}) {
+  final key = raw?.trim() ?? '';
+  final allowed = mpvAudioOutputDriversForPlatform(
+    isAndroid: isAndroid,
+    isLinux: isLinux,
+    isWindows: isWindows,
+    isApple: isApple,
+  );
+  if (key.isEmpty || !allowed.containsKey(key)) {
+    return kDefaultMpvAudioOutputDriver;
+  }
+  return key;
 }
 
 class PlayerPreferences {
@@ -131,6 +292,7 @@ class PlayerPreferences {
     required this.androidBackgroundAutoPauseEnabled,
     required this.androidPipHideDanmakuEnabled,
     required this.scaleMode,
+    this.mpvAllowExternalNativeWindow = false,
   });
 
   final bool autoPlayEnabled;
@@ -149,6 +311,10 @@ class PlayerPreferences {
   final String mpvAudioOutputDriver;
   final String mpvHardwareDecoder;
   final bool mpvLogEnabled;
+
+  /// Desktop opt-in: play via independent mpv VO window (gpu-next) instead of
+  /// Flutter texture embed. Used to validate native smoothness (plan A).
+  final bool mpvAllowExternalNativeWindow;
   final NetworkQualityPreference wifiQualityPreference;
   final NetworkQualityPreference cellularQualityPreference;
   final bool mdkLowLatencyEnabled;
@@ -174,6 +340,7 @@ class PlayerPreferences {
     String? mpvAudioOutputDriver,
     String? mpvHardwareDecoder,
     bool? mpvLogEnabled,
+    bool? mpvAllowExternalNativeWindow,
     NetworkQualityPreference? wifiQualityPreference,
     NetworkQualityPreference? cellularQualityPreference,
     bool? mdkLowLatencyEnabled,
@@ -202,6 +369,8 @@ class PlayerPreferences {
       mpvAudioOutputDriver: mpvAudioOutputDriver ?? this.mpvAudioOutputDriver,
       mpvHardwareDecoder: mpvHardwareDecoder ?? this.mpvHardwareDecoder,
       mpvLogEnabled: mpvLogEnabled ?? this.mpvLogEnabled,
+      mpvAllowExternalNativeWindow:
+          mpvAllowExternalNativeWindow ?? this.mpvAllowExternalNativeWindow,
       wifiQualityPreference:
           wifiQualityPreference ?? this.wifiQualityPreference,
       cellularQualityPreference:
@@ -226,9 +395,14 @@ class PlayerPreferences {
 }
 
 class LoadPlayerPreferencesUseCase {
-  const LoadPlayerPreferencesUseCase(this.settingsRepository);
+  LoadPlayerPreferencesUseCase(
+    this.settingsRepository, {
+    AppPlatformCapabilities? platformCapabilities,
+  }) : _platformCapabilities =
+           platformCapabilities ?? AppPlatformCapabilities.current();
 
   final SettingsRepository settingsRepository;
+  final AppPlatformCapabilities _platformCapabilities;
 
   Future<PlayerPreferences> call() async {
     final autoPlay =
@@ -264,21 +438,74 @@ class LoadPlayerPreferencesUseCase {
     final mpvCustomOutputEnabled =
         await settingsRepository.readValue<bool>('player_mpv_custom_output') ??
         false;
-    final mpvVideoOutputDriver =
+    final mpvAllowExternalNativeWindowPreference =
+        await settingsRepository.readValue<bool>(
+          'player_mpv_allow_external_native_window',
+        ) ??
+        false;
+    final rawVideoOutputDriver =
         await settingsRepository.readValue<String>(
           'player_mpv_video_output_driver',
-        ) ??
-        kDefaultMpvVideoOutputDriver;
-    final mpvHardwareDecoder =
+        );
+    final rawHardwareDecoder =
         await settingsRepository.readValue<String>(
           'player_mpv_hardware_decoder',
-        ) ??
-        kDefaultMpvHardwareDecoder;
-    final mpvAudioOutputDriver =
+        );
+    final rawAudioOutputDriver =
         await settingsRepository.readValue<String>(
           'player_mpv_audio_output_driver',
-        ) ??
-        kDefaultMpvAudioOutputDriver;
+        );
+    final platform = _platformCapabilities;
+    // Env can force the A/B path without touching settings persistence.
+    final mpvAllowExternalNativeWindow = platform.isDesktop &&
+        resolveAllowExternalNativeMpvWindow(
+          preferenceEnabled: mpvAllowExternalNativeWindowPreference,
+        );
+    final envVoOverride = resolveExternalMpvVoFromEnvironment();
+    final mpvVideoOutputDriver = sanitizeMpvVideoOutputDriverForPlatform(
+      envVoOverride ?? rawVideoOutputDriver,
+      isAndroid: platform.isAndroid,
+      isLinux: platform.isLinux,
+      isWindows: platform.isWindows,
+      isApple: platform.isIOS || platform.isMacOS,
+      allowExternalNativeWindow: mpvAllowExternalNativeWindow,
+    );
+    final mpvHardwareDecoder = sanitizeMpvHardwareDecoderForPlatform(
+      rawHardwareDecoder,
+      isAndroid: platform.isAndroid,
+      isLinux: platform.isLinux,
+      isWindows: platform.isWindows,
+      isApple: platform.isIOS || platform.isMacOS,
+    );
+    final mpvAudioOutputDriver = sanitizeMpvAudioOutputDriverForPlatform(
+      rawAudioOutputDriver,
+      isAndroid: platform.isAndroid,
+      isLinux: platform.isLinux,
+      isWindows: platform.isWindows,
+      isApple: platform.isIOS || platform.isMacOS,
+    );
+    // Persist platform-safe values so Android mediacodec leftovers from sync
+    // cannot keep poisoning cold starts / room enter on Linux desktop.
+    // Do not rewrite storage when only env forced an external VO override.
+    if (envVoOverride == null &&
+        rawVideoOutputDriver != mpvVideoOutputDriver) {
+      await settingsRepository.writeValue(
+        'player_mpv_video_output_driver',
+        mpvVideoOutputDriver,
+      );
+    }
+    if (rawHardwareDecoder != mpvHardwareDecoder) {
+      await settingsRepository.writeValue(
+        'player_mpv_hardware_decoder',
+        mpvHardwareDecoder,
+      );
+    }
+    if (rawAudioOutputDriver != mpvAudioOutputDriver) {
+      await settingsRepository.writeValue(
+        'player_mpv_audio_output_driver',
+        mpvAudioOutputDriver,
+      );
+    }
     final wifiQualityPreference = _decodeNetworkQualityPreference(
       await settingsRepository.readValue<String>('player_wifi_quality_level'),
       fallback: NetworkQualityPreference.middle,
@@ -333,10 +560,11 @@ class LoadPlayerPreferencesUseCase {
       mpvCompatModeEnabled: mpvCompatModeEnabled,
       mpvDoubleBufferingEnabled: mpvDoubleBufferingEnabled,
       mpvCustomOutputEnabled: mpvCustomOutputEnabled,
-      mpvVideoOutputDriver: _decodeMpvVideoOutputDriver(mpvVideoOutputDriver),
-      mpvAudioOutputDriver: _decodeMpvAudioOutputDriver(mpvAudioOutputDriver),
-      mpvHardwareDecoder: _decodeMpvHardwareDecoder(mpvHardwareDecoder),
+      mpvVideoOutputDriver: mpvVideoOutputDriver,
+      mpvAudioOutputDriver: mpvAudioOutputDriver,
+      mpvHardwareDecoder: mpvHardwareDecoder,
       mpvLogEnabled: mpvLogEnabled,
+      mpvAllowExternalNativeWindow: mpvAllowExternalNativeWindow,
       wifiQualityPreference: wifiQualityPreference,
       cellularQualityPreference: cellularQualityPreference,
       mdkLowLatencyEnabled: mdkLowLatencyEnabled,
@@ -363,27 +591,6 @@ class LoadPlayerPreferencesUseCase {
       (item) => item.name == raw,
       orElse: () => PlayerScaleMode.contain,
     );
-  }
-
-  static String _decodeMpvVideoOutputDriver(String? raw) {
-    if (raw != null && kMpvVideoOutputDrivers.containsKey(raw)) {
-      return raw;
-    }
-    return kDefaultMpvVideoOutputDriver;
-  }
-
-  static String _decodeMpvAudioOutputDriver(String? raw) {
-    if (raw != null && kMpvAudioOutputDrivers.containsKey(raw)) {
-      return raw;
-    }
-    return kDefaultMpvAudioOutputDriver;
-  }
-
-  static String _decodeMpvHardwareDecoder(String? raw) {
-    if (raw != null && kMpvHardwareDecoders.containsKey(raw)) {
-      return raw;
-    }
-    return kDefaultMpvHardwareDecoder;
   }
 
   static NetworkQualityPreference _decodeNetworkQualityPreference(
@@ -441,6 +648,10 @@ class UpdatePlayerPreferencesUseCase {
     await settingsRepository.writeValue(
       'player_mpv_custom_output',
       preferences.mpvCustomOutputEnabled,
+    );
+    await settingsRepository.writeValue(
+      'player_mpv_allow_external_native_window',
+      preferences.mpvAllowExternalNativeWindow,
     );
     await settingsRepository.writeValue(
       'player_mpv_video_output_driver',
@@ -544,6 +755,8 @@ bool _requiresPlayerRuntimeRefresh({
           current.mpvCompatModeEnabled != next.mpvCompatModeEnabled ||
           current.mpvDoubleBufferingEnabled != next.mpvDoubleBufferingEnabled ||
           current.mpvCustomOutputEnabled != next.mpvCustomOutputEnabled ||
+          current.mpvAllowExternalNativeWindow !=
+              next.mpvAllowExternalNativeWindow ||
           current.mpvVideoOutputDriver != next.mpvVideoOutputDriver ||
           current.mpvAudioOutputDriver != next.mpvAudioOutputDriver ||
           current.mpvHardwareDecoder != next.mpvHardwareDecoder ||

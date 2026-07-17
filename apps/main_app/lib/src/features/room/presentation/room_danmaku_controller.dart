@@ -56,6 +56,54 @@ class RoomDanmakuState {
   }
 }
 
+/// Whether a danmaku **connection/chrome** state change should schedule a full
+/// room page rebuild (not the message list — that uses separate listenables).
+bool shouldScheduleFullRoomPageRebuildForDanmakuState({
+  required RoomDanmakuState previous,
+  required RoomDanmakuState next,
+}) {
+  if (identical(previous, next)) {
+    return false;
+  }
+  if (!identical(previous.session, next.session)) {
+    return true;
+  }
+  if (previous.reconnectInFlight != next.reconnectInFlight) {
+    return true;
+  }
+  if (previous.reconnectScheduled != next.reconnectScheduled) {
+    return true;
+  }
+  if (previous.reconnectAttempt != next.reconnectAttempt) {
+    return true;
+  }
+  if (previous.usingNativeBatchMask != next.usingNativeBatchMask) {
+    return true;
+  }
+  if (!_danmakuKeywordListEqual(
+    previous.blockedKeywords,
+    next.blockedKeywords,
+  )) {
+    return true;
+  }
+  return false;
+}
+
+bool _danmakuKeywordListEqual(List<String> left, List<String> right) {
+  if (identical(left, right)) {
+    return true;
+  }
+  if (left.length != right.length) {
+    return false;
+  }
+  for (var i = 0; i < left.length; i += 1) {
+    if (left[i] != right[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 @visibleForTesting
 bool shouldRetryDanmakuConnectionError({
   required ProviderId providerId,

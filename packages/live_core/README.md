@@ -19,4 +19,5 @@
 ## 当前边界
 
 - 本包只承载契约、DTO 和极轻量领域基础能力。
-- 不放 provider 具体实现、不放 UI 逻辑、不放运行时桥接。
+- 不放 provider 具体实现、不放 UI 逻辑、不放运行时桥接 / LL-HLS proxy。
+- 平台实现 → `live_providers`；loopback / web playback 辅助 → `live_hls_proxy`；Flutter 装配 → `apps/main_app`。

@@ -16,13 +16,17 @@ add_library(${PLUGIN_NAME} SHARED
 apply_standard_settings(${PLUGIN_NAME})
 target_compile_features(${PLUGIN_NAME} PUBLIC cxx_std_17)
 set_target_properties(${PLUGIN_NAME} PROPERTIES
-  CXX_VISIBILITY_PRESET hidden)
+  CXX_VISIBILITY_PRESET hidden
+  C_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON)
 target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter)
 target_link_libraries(${PLUGIN_NAME} PRIVATE quickjs)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
+# Do not re-export static-lib symbols (JS_*) into the global namespace.
+target_link_options(${PLUGIN_NAME} PRIVATE "-Wl,--exclude-libs,ALL")
 
 # List of absolute paths to libraries that should be bundled with the plugin
 set(flutter_qjs_bundled_libraries

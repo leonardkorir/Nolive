@@ -58,8 +58,21 @@ PY
 preflight_linux() {
   require_cmd cmake
   require_cmd ninja
+  require_cmd pkg-config
   if ! command -v c++ >/dev/null 2>&1 && ! command -v g++ >/dev/null 2>&1 && ! command -v clang++ >/dev/null 2>&1; then
     echo "missing required C++ compiler: install c++, g++, or clang++" >&2
+    exit 1
+  fi
+  # Soft checks: document missing dev packages but keep going if headers are
+  # provided via PKG_CONFIG_PATH (user-prefix installs).
+  if ! pkg-config --exists libsecret-1; then
+    echo "warning: pkg-config cannot find libsecret-1 (need libsecret-1-dev for secure storage)" >&2
+  fi
+  if ! pkg-config --exists webkit2gtk-4.1 && ! pkg-config --exists webkit2gtk-4.0; then
+    echo "warning: pkg-config cannot find webkit2gtk-4.1 (need libwebkit2gtk-4.1-dev for WebView / international sites)" >&2
+  fi
+  if ! pkg-config --exists gtk+-3.0; then
+    echo "missing gtk+-3.0 (install libgtk-3-dev)" >&2
     exit 1
   fi
 }

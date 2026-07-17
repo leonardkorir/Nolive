@@ -5,7 +5,10 @@ import '../provider_json.dart';
 class StripchatMapper {
   const StripchatMapper._();
 
-  static const String defaultCdnDomain = 'doppiocdn.org';
+  // CDN defaults fork by [DeliveryPlatformProfile]:
+  // mobile → last-release doppiocdn.org; desktop → current .net preference.
+  static String get defaultCdnDomain =>
+      DeliveryPlatformProfile.active.stripchatDefaultCdnDomain;
   static const String _imageCdnBase = 'https://static-proxy.strpst.com';
   static const String _originHost = 'zh.stripchat.com';
 
@@ -624,9 +627,11 @@ class StripchatMapper {
     required String cdnDomain,
     required String qualityId,
   }) {
+    // Desktop: minHeight + playlistType=lowLatency (current Linux path).
+    // Mobile: release-era minHeight only.
     return 'https://edge-hls.$cdnDomain/hls/$streamName/master/'
         '${streamName}_auto.m3u8'
-        '?minHeight=240';
+        '${DeliveryPlatformProfile.active.stripchatMasterPlaylistQuery}';
   }
 
   static Map<String, String> _buildPlaybackHeaders({
@@ -753,9 +758,37 @@ class StripchatMapper {
       detail.metadata?['cdnDomains'] as List? ?? [],
     );
 
-    // Use the first domain reported by CDN config; no TLD preference.
-    if (cdnConfig.isNotEmpty) return cdnConfig.first;
-    if (metaCdnDomains.isNotEmpty) return metaCdnDomains.first;
+    // Mobile release: first domain from room config; no TLD preference.
+    if (!DeliveryPlatformProfile.active.stripchatPreferNetCdnFirst) {
+      if (cdnConfig.isNotEmpty) {
+        return cdnConfig.first;
+      }
+      if (metaCdnDomains.isNotEmpty) {
+        return metaCdnDomains.first;
+      }
+      return defaultCdnDomain;
+    }
+
+    // Desktop: prefer .net for HLS (current Linux path). Skip known-dead TLDs.
+    final candidates = <String>[
+      ...cdnConfig,
+      ...metaCdnDomains,
+    ].map((d) => d.trim().toLowerCase()).where((d) => d.isNotEmpty).toList();
+    const dead = {'doppiocdn1.com', 'doppiocdn.live'};
+    final live = candidates.where((d) => !dead.contains(d)).toList();
+    for (final preferred in const [
+      'doppiocdn.net',
+      'doppiocdn.org',
+      'doppiocdn.com',
+      'doppiocdn.media',
+    ]) {
+      if (live.contains(preferred)) {
+        return preferred;
+      }
+    }
+    if (live.isNotEmpty) {
+      return live.first;
+    }
     return defaultCdnDomain;
   }
 

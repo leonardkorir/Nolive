@@ -71,11 +71,20 @@ return await (async () => {
     return _runSerialized(() async {
       _activeOperations += 1;
       try {
-        return await _solveWithBounds(
+        _platformAdapter.log(
+          'youtube-nsig',
+          'solve start challenges=${normalizedChallenges.length}',
+        );
+        final solved = await _solveWithBounds(
           playerJsUrl: playerJsUrl,
           playerJs: playerJs,
           challenges: normalizedChallenges,
         ).timeout(operationTimeout);
+        _platformAdapter.log(
+          'youtube-nsig',
+          'solve ok results=${solved.length}',
+        );
+        return solved;
       } on TimeoutException catch (error, stackTrace) {
         _platformAdapter.log(
           'youtube-nsig',
@@ -83,7 +92,9 @@ return await (async () => {
           error,
           stackTrace,
         );
-        await _disposeWebView();
+        // Fire-and-forget dispose: awaiting GTK close can hang integration
+        // harness tearDown after the solve error has already been surfaced.
+        unawaited(_disposeWebView());
         rethrow;
       } catch (error, stackTrace) {
         _platformAdapter.log(
@@ -92,7 +103,7 @@ return await (async () => {
           error,
           stackTrace,
         );
-        await _disposeWebView();
+        unawaited(_disposeWebView());
         rethrow;
       } finally {
         _activeOperations -= 1;
@@ -268,7 +279,22 @@ return await (async () => {
     _webViewFuture = null;
     if (webView != null) {
       _platformAdapter.log('youtube-nsig', 'dispose headless webview');
-      await webView.dispose();
+      // Linux WebKitGTK close can stall the harness event loop; bound dispose.
+      try {
+        await webView.dispose().timeout(const Duration(seconds: 2));
+      } on TimeoutException {
+        _platformAdapter.log(
+          'youtube-nsig',
+          'dispose headless webview timed out (continuing)',
+        );
+      } catch (error, stackTrace) {
+        _platformAdapter.log(
+          'youtube-nsig',
+          'dispose headless webview failed',
+          error,
+          stackTrace,
+        );
+      }
       _lastDisposeAt = DateTime.now();
     }
   }

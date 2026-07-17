@@ -115,10 +115,19 @@ Future<PagedResponse<LiveRoom>> _loadSmokeRooms(
   LiveProvider provider,
   ProviderSmokeCase smokeCase,
 ) async {
+  final normalizedQuery = smokeCase.query.trim();
+  // Empty query matches the app home path: recommend rooms, not search.
+  // Search on some sites (e.g. Douyin) can demand login; recommend does not.
+  if (normalizedQuery.isEmpty) {
+    final recommend = provider.requireContract<SupportsRecommendRooms>(
+      ProviderCapability.recommendRooms,
+    );
+    return recommend.fetchRecommendRooms();
+  }
+
   final search = provider.requireContract<SupportsRoomSearch>(
     ProviderCapability.searchRooms,
   );
-  final normalizedQuery = smokeCase.query.trim();
   try {
     return await search.searchRooms(normalizedQuery);
   } on ProviderParseException catch (error) {

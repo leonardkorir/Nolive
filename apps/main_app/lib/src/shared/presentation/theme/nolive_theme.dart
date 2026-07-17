@@ -310,6 +310,25 @@ class NoliveTheme {
           )),
         ),
       ),
+      // Desktop rail: Chinese labels (首页/关注/…) need the same fallback font.
+      navigationRailTheme: NavigationRailThemeData(
+        backgroundColor: navigationBackgroundColor,
+        indicatorColor: navigationIndicatorColor,
+        selectedIconTheme: IconThemeData(color: colorScheme.onSecondaryContainer),
+        unselectedIconTheme: IconThemeData(color: colorScheme.onSurfaceVariant),
+        selectedLabelTextStyle: applyZhTextStyleOrNull(
+          textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        unselectedLabelTextStyle: applyZhTextStyleOrNull(
+          textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
       tabBarTheme: TabBarThemeData(
         dividerColor: Colors.transparent,
         labelStyle: applyZhTextStyleOrNull(

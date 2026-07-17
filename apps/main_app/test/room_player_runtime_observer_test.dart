@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
+import 'package:nolive_app/src/features/room/presentation/room_page_rebuild_scope.dart';
 import 'package:nolive_app/src/features/room/presentation/room_player_runtime_observer.dart';
 import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
@@ -27,7 +28,8 @@ void main() {
         runtime: RoomRuntimeObservationContext.fromPlayerRuntime(runtime),
         trace: traces.add,
         resolvePlaybackAvailable: () => true,
-        onPlayerStateChanged: (state, {required playbackAvailable}) {
+        onPlayerStateChanged:
+            (state, {required playbackAvailable, forceRebuild = false}) {
           forwarded.add((
             status: state.status,
             playbackAvailable: playbackAvailable,
@@ -67,7 +69,8 @@ void main() {
           runtime: RoomRuntimeObservationContext.fromPlayerRuntime(runtime),
           trace: traces.add,
           resolvePlaybackAvailable: () => true,
-          onPlayerStateChanged: (_, {required playbackAvailable}) {},
+          onPlayerStateChanged:
+              (_, {required playbackAvailable, forceRebuild = false}) {},
         ),
       );
       addTearDown(observer.dispose);
@@ -124,7 +127,8 @@ void main() {
           runtime: RoomRuntimeObservationContext.fromPlayerRuntime(runtime),
           trace: traces.add,
           resolvePlaybackAvailable: () => true,
-          onPlayerStateChanged: (_, {required playbackAvailable}) {},
+          onPlayerStateChanged:
+              (_, {required playbackAvailable, forceRebuild = false}) {},
           unexpectedStopRecoveryDelay: Duration.zero,
           onUnexpectedPlaybackStop: (_) async {
             recoveryCount += 1;
@@ -168,7 +172,8 @@ void main() {
           trace: (_) {},
           resolvePlaybackAvailable: () => true,
           resolveIsLeavingRoom: () => leavingRoom,
-          onPlayerStateChanged: (_, {required playbackAvailable}) {},
+          onPlayerStateChanged:
+              (_, {required playbackAvailable, forceRebuild = false}) {},
           unexpectedStopRecoveryDelay: const Duration(milliseconds: 1),
           onUnexpectedPlaybackStop: (_) async {
             recoveryCount += 1;
@@ -204,7 +209,8 @@ void main() {
           trace: traces.add,
           resolvePlaybackAvailable: () => true,
           shouldRecoverUnexpectedStop: (_) => false,
-          onPlayerStateChanged: (_, {required playbackAvailable}) {},
+          onPlayerStateChanged:
+              (_, {required playbackAvailable, forceRebuild = false}) {},
           unexpectedStopRecoveryDelay: Duration.zero,
           onUnexpectedPlaybackStop: (_) async {
             recoveryCount += 1;
@@ -229,6 +235,93 @@ void main() {
     },
   );
 
+  test(
+    'diagnostics first non-zero size forceRebuilds page even when PlayerState is unchanged',
+    () async {
+      final player = TestRecordingPlayer();
+      final runtime = PlayerRuntimeController(player);
+      final forces = <bool>[];
+      PlayerState? previousForwarded;
+      final observer = RoomPlayerRuntimeObserver(
+        context: RoomPlayerRuntimeObserverContext(
+          providerId: ProviderId.bilibili,
+          roomId: '6',
+          runtime: RoomRuntimeObservationContext.fromPlayerRuntime(runtime),
+          trace: (_) {},
+          resolvePlaybackAvailable: () => true,
+          onPlayerStateChanged:
+              (state, {required playbackAvailable, forceRebuild = false}) {
+            final shouldRebuild =
+                shouldScheduleFullRoomPageRebuildForPlayerState(
+                  previous: previousForwarded,
+                  next: state,
+                  forceRebuild: forceRebuild,
+                );
+            forces.add(shouldRebuild);
+            previousForwarded = state;
+          },
+        ),
+      );
+      addTearDown(observer.dispose);
+      addTearDown(player.dispose);
+
+      observer.attach();
+      final playing = PlayerState(
+        status: PlaybackStatus.playing,
+        source: source('room'),
+        position: Duration.zero,
+        buffered: Duration.zero,
+      );
+      player.emit(playing);
+      await flushEvents();
+      // Initial emit rebuilds (previous was null).
+      expect(forces, isNotEmpty);
+      expect(forces.last, isTrue);
+
+      // Same state again would not rebuild without force.
+      forces.clear();
+      player.emit(playing);
+      await flushEvents();
+      // May or may not re-forward identical state from stream; only check size path.
+
+      forces.clear();
+      player.emitDiagnostics(
+        PlayerDiagnostics(
+          backend: player.backend,
+          width: 1280,
+          height: 720,
+          videoParams: const {'codec': 'h264'},
+        ),
+      );
+      await flushEvents();
+
+      expect(
+        forces,
+        isNotEmpty,
+        reason: 'first video size must notify page via onPlayerStateChanged',
+      );
+      expect(
+        forces.last,
+        isTrue,
+        reason:
+            'shipped gate must schedule full rebuild when forceRebuild from size path',
+      );
+
+      // Repeat same size: no additional force rebuild.
+      forces.clear();
+      player.emitDiagnostics(
+        PlayerDiagnostics(
+          backend: player.backend,
+          width: 1280,
+          height: 720,
+          videoParams: const {'codec': 'h264'},
+        ),
+      );
+      await flushEvents();
+      expect(forces, isEmpty);
+    },
+  );
+
   test('room player runtime observer stops forwarding after dispose', () async {
     final player = TestRecordingPlayer();
     final runtime = PlayerRuntimeController(player);
@@ -241,7 +334,8 @@ void main() {
         runtime: RoomRuntimeObservationContext.fromPlayerRuntime(runtime),
         trace: traces.add,
         resolvePlaybackAvailable: () => true,
-        onPlayerStateChanged: (_, {required playbackAvailable}) {
+        onPlayerStateChanged:
+            (_, {required playbackAvailable, forceRebuild = false}) {
           forwardCount += 1;
         },
       ),

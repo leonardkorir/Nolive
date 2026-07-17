@@ -24,7 +24,7 @@
 - `packages/live_danmaku`：弹幕相关能力
 - `packages/live_storage`：本地存储
 - `packages/live_sync`：同步相关模型与协议
-- `packages/live_shared`：共享基础设施
+- `packages/live_hls_proxy`：LL-HLS / runtime-assisted 纯 Dart 辅助
 
 ## 开始开发
 

@@ -29,6 +29,7 @@ import 'package:nolive_app/src/features/room/presentation/room_follow_room_trans
 import 'package:nolive_app/src/features/room/presentation/room_page_interaction_coordinator.dart';
 import 'package:nolive_app/src/features/room/application/room_follow_watchlist_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_panel_controller.dart';
+import 'package:nolive_app/src/features/room/presentation/room_page_rebuild_scope.dart';
 import 'package:nolive_app/src/features/room/presentation/room_page_ui_effects.dart';
 import 'package:nolive_app/src/features/room/presentation/room_runtime_view_adapter.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_view_data.dart';
@@ -193,7 +194,13 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
       dependencies: RoomFollowWatchlistDependencies.fromPreviewDependencies(dependencies),
       trace: trace,
     );
-    followWatchlist.listenable.addListener(notifyListeners);
+    // Panel / follow updates use local ListenableBuilders so they must not fan
+    // into this ChangeNotifier (full room page rebuild / player surface path).
+    if (shouldSessionCoordinatorFanOutChildNotify(
+      RoomSessionChildNotifySource.followWatchlist,
+    )) {
+      followWatchlist.listenable.addListener(notifyListeners);
+    }
 
     panel = RoomPanelController(
       pageController: panelPageController,
@@ -202,7 +209,11 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
         unawaited(followWatchlist.ensureLoaded());
       },
     );
-    panel.addListener(notifyListeners);
+    if (shouldSessionCoordinatorFanOutChildNotify(
+      RoomSessionChildNotifySource.panelSelection,
+    )) {
+      panel.addListener(notifyListeners);
+    }
 
     controlsAction = RoomControlsActionCoordinator(
       context: RoomControlsActionContext(
@@ -276,7 +287,11 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
         captureRenderedPlayerSurface: captureRenderedPlayerSurface,
       ),
     );
-    controlsAction.addListener(notifyListeners);
+    if (shouldSessionCoordinatorFanOutChildNotify(
+      RoomSessionChildNotifySource.controlsAction,
+    )) {
+      controlsAction.addListener(notifyListeners);
+    }
 
     followRoomTransition = RoomFollowRoomTransitionCoordinator(
       currentProviderId: providerId,
@@ -507,7 +522,7 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
   late Future<RoomSessionLoadResult> _roomFuture;
   bool _disposed = false;
 
-  bool get _isActive => !_disposed;
+  bool get _isActive => !_disposed && isMounted();
   RoomPageSessionState get state => _state;
   Future<RoomSessionLoadResult> get roomFuture => _roomFuture;
   int _roomFutureToken = 0;
@@ -554,7 +569,10 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     fullscreenSessionController.prepareForInPlaceFollowRoomSwitch();
     // Keep the previous playback surface until the next room source binds so
     // fullscreen does not sit on a long black frame during network load.
-    _replaceState(_state.copyWith(refreshInFlight: true));
+    // Defer notify until roomFuture is swapped (single rebuild).
+    if (!_disposed) {
+      _state = _state.copyWith(refreshInFlight: true);
+    }
     _forcePlaybackRebindOnNextResolvedRoomState = true;
 
     try {
@@ -586,7 +604,9 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
       // Keep previous latestLoadedState / last video frame while loading.
       final future = _trackRoomFuture(_load());
       _roomFuture = future;
-      notifyListeners();
+      if (!_disposed) {
+        notifyListeners();
+      }
       await future;
       if (!_isActive) {
         return;
@@ -805,7 +825,10 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     }
     _forcePlaybackRebindOnNextResolvedRoomState =
         forcePlaybackRebind && !reloadPlayer;
-    _replaceState(_state.copyWith(refreshInFlight: true));
+    // Single notify: refresh flag + roomFuture swap (avoid double rebuild).
+    if (!_disposed) {
+      _state = _state.copyWith(refreshInFlight: true);
+    }
     final previousFuture = _roomFuture;
     final future = _trackRoomFuture(
       reloadPlayer
@@ -818,7 +841,9 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
             ),
     );
     _roomFuture = future;
-    notifyListeners();
+    if (!_disposed) {
+      notifyListeners();
+    }
     danmakuController.clearFeed();
     try {
       await future;
@@ -913,13 +938,25 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     _completeForegroundResumeWaiter();
     sessionController.clearCurrent();
 
-    panel.removeListener(notifyListeners);
+    if (shouldSessionCoordinatorFanOutChildNotify(
+      RoomSessionChildNotifySource.panelSelection,
+    )) {
+      panel.removeListener(notifyListeners);
+    }
     panel.dispose();
     panelPageController.dispose();
-    followWatchlist.listenable.removeListener(notifyListeners);
+    if (shouldSessionCoordinatorFanOutChildNotify(
+      RoomSessionChildNotifySource.followWatchlist,
+    )) {
+      followWatchlist.listenable.removeListener(notifyListeners);
+    }
     followWatchlist.dispose();
     chatViewport.dispose();
-    controlsAction.removeListener(notifyListeners);
+    if (shouldSessionCoordinatorFanOutChildNotify(
+      RoomSessionChildNotifySource.controlsAction,
+    )) {
+      controlsAction.removeListener(notifyListeners);
+    }
     controlsAction.dispose();
     followRoomTransition.removeListener(notifyListeners);
     followRoomTransition.dispose();
@@ -1200,9 +1237,131 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
     if (_disposed) {
       return;
     }
+    final previous = _state;
     _state = next;
-    notifyListeners();
+    if (shouldNotifyRoomPageSessionListeners(
+      previous: previous,
+      next: next,
+    )) {
+      notifyListeners();
+    }
   }
+}
+
+/// Whether a session state transition should fan into page rebuild listeners.
+///
+/// Ignores bootstrap-only [RoomPlaybackSessionState] pending fields that the
+/// room page does not read (pendingPlaybackSource / Available / AutoPlay).
+@visibleForTesting
+bool shouldNotifyRoomPageSessionListeners({
+  required RoomPageSessionState previous,
+  required RoomPageSessionState next,
+}) {
+  if (identical(previous, next)) {
+    return false;
+  }
+  if (!identical(previous.latestLoadedState, next.latestLoadedState)) {
+    return true;
+  }
+  if (!_roomPlaybackSessionUiEqual(
+    previous.playbackSession,
+    next.playbackSession,
+  )) {
+    return true;
+  }
+  if (!identical(previous.playerPreferences, next.playerPreferences)) {
+    return true;
+  }
+  if (!identical(previous.danmakuPreferences, next.danmakuPreferences)) {
+    return true;
+  }
+  if (!identical(previous.roomUiPreferences, next.roomUiPreferences)) {
+    return true;
+  }
+  if (!_stringListEqual(previous.blockedKeywords, next.blockedKeywords)) {
+    return true;
+  }
+  if (previous.isFollowed != next.isFollowed) {
+    return true;
+  }
+  if (previous.ancillaryLoading != next.ancillaryLoading) {
+    return true;
+  }
+  if (previous.refreshInFlight != next.refreshInFlight) {
+    return true;
+  }
+  if (previous.isLeavingRoom != next.isLeavingRoom) {
+    return true;
+  }
+  if (previous.showDanmakuOverlay != next.showDanmakuOverlay) {
+    return true;
+  }
+  if (previous.volume != next.volume) {
+    return true;
+  }
+  return false;
+}
+
+bool _roomPlaybackSessionUiEqual(
+  RoomPlaybackSessionState left,
+  RoomPlaybackSessionState right,
+) {
+  if (identical(left, right)) {
+    return true;
+  }
+  return identical(left.activeRoomDetail, right.activeRoomDetail) &&
+      identical(left.selectedQuality, right.selectedQuality) &&
+      identical(left.effectiveQuality, right.effectiveQuality) &&
+      _playbackSourceUiEqual(left.playbackSource, right.playbackSource) &&
+      _playUrlsUiEqual(left.playUrls, right.playUrls) &&
+      left.playbackAvailable == right.playbackAvailable;
+}
+
+bool _playbackSourceUiEqual(PlaybackSource? left, PlaybackSource? right) {
+  if (identical(left, right)) {
+    return true;
+  }
+  if (left == null || right == null) {
+    return left == right;
+  }
+  return left.url == right.url &&
+      left.externalAudio?.url == right.externalAudio?.url &&
+      left.bufferProfile == right.bufferProfile;
+}
+
+bool _playUrlsUiEqual(List<LivePlayUrl> left, List<LivePlayUrl> right) {
+  if (identical(left, right)) {
+    return true;
+  }
+  if (left.length != right.length) {
+    return false;
+  }
+  for (var i = 0; i < left.length; i += 1) {
+    final a = left[i];
+    final b = right[i];
+    if (identical(a, b)) {
+      continue;
+    }
+    if (a.url != b.url || a.lineLabel != b.lineLabel) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _stringListEqual(List<String> left, List<String> right) {
+  if (identical(left, right)) {
+    return true;
+  }
+  if (left.length != right.length) {
+    return false;
+  }
+  for (var i = 0; i < left.length; i += 1) {
+    if (left[i] != right[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 class RoomSessionCancelledException implements Exception {

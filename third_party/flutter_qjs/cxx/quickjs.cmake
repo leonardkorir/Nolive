@@ -18,6 +18,13 @@ add_library(quickjs STATIC
 target_compile_options(quickjs PRIVATE "-DCONFIG_VERSION=\"${QUICKJS_VERSION}\"")
 target_compile_options(quickjs PRIVATE "-DDUMP_LEAKS")
 
+# Keep QuickJS C API symbols local to the plugin DSO. Exporting JS_* globally
+# collides with dart_quickjs (native assets) which builds a separate QuickJS
+# and uses @Native FFI; PLT interposition then SIGSEGVs DouyuQuickJsSigner.
+if(NOT MSVC)
+    target_compile_options(quickjs PRIVATE "-fvisibility=hidden")
+endif()
+
 if(MSVC)
     # https://github.com/ekibun/flutter_qjs/issues/7
     target_compile_options(quickjs PRIVATE "/Oi-")

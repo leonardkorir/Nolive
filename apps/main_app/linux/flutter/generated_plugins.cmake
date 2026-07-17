@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  desktop_webview_window
   flutter_qjs
   flutter_secure_storage_linux
   fvp

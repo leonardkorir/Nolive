@@ -23,3 +23,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: false
+
+dependency_overrides:
+  media_kit_video:
+    path: ../../third_party/media_kit_video

@@ -17,6 +17,7 @@ import 'package:nolive_app/src/features/room/presentation/room_fullscreen_runtim
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_platforms.dart';
 import 'package:nolive_app/src/features/room/presentation/room_page_session_coordinator.dart';
+import 'package:nolive_app/src/features/room/presentation/room_panel_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_playback_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
 import 'package:nolive_app/src/features/room/presentation/room_twitch_recovery_controller.dart';
@@ -26,10 +27,61 @@ import 'package:nolive_app/src/features/settings/application/manage_danmaku_pref
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_room_ui_preferences_use_case.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
+import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
 import 'room_fullscreen_test_fakes.dart';
 
 void main() {
+  test(
+    'page session coordinator does not fan panel, follow, or controls into full notifyListeners',
+    () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final harness = _RoomPageSessionHarness();
+      addTearDown(harness.dispose);
+      final coordinator = harness.createCoordinator();
+      addTearDown(coordinator.dispose);
+
+      var notifyCount = 0;
+      coordinator.addListener(() {
+        notifyCount += 1;
+      });
+
+      final beforePanel = notifyCount;
+      // Prefer handlePageChanged to avoid PageController.animateToPage side effects.
+      coordinator.panel.handlePageChanged(RoomPanel.follow.index);
+      expect(
+        notifyCount,
+        beforePanel,
+        reason: 'panel selection must not schedule full room session rebuild',
+      );
+      expect(coordinator.panel.selectedPanel, RoomPanel.follow);
+
+      final beforeFollow = notifyCount;
+      coordinator.followWatchlist.replaceSnapshot(
+        const FollowWatchlist(entries: []),
+        hydrated: true,
+      );
+      expect(
+        notifyCount,
+        beforeFollow,
+        reason: 'follow watchlist updates must not fan into session notify',
+      );
+
+      final beforeControls = notifyCount;
+      // Utility auto-close notify should not fan into session ChangeNotifier.
+      coordinator.controlsAction.notifyListeners();
+      expect(
+        notifyCount,
+        beforeControls,
+        reason: 'controlsAction must not fan into full room session notify',
+      );
+
+      // Session state still notifies (control path).
+      coordinator.updateVolume(0.42);
+      expect(notifyCount, greaterThan(beforeControls));
+    },
+  );
+
   test(
     'page session coordinator initial load applies session and schedules playback bootstrap and ancillary load',
     () async {

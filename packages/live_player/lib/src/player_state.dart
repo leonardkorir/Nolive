@@ -4,6 +4,9 @@ import 'player_backend.dart';
 
 enum PlaybackBufferProfile {
   defaultLowLatency,
+  /// Foreign live (Twitch/YouTube, etc.) on phone and desktop: cache on,
+  /// multi-second readahead. Delivery-only; does not change Auto quality policy.
+  desktopStableLive,
   edgeLowLatencyHls,
   loopbackStableHls,
   chaturbateLlHlsProxyStable,

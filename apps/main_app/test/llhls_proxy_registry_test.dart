@@ -8,6 +8,9 @@ class _FakePlatformAdapter implements HlsProxyPlatformAdapter {
   bool get isMobile => true;
 
   @override
+  bool get supportsHeadlessWebView => true;
+
+  @override
   bool get kDebugMode => true;
 
   @override

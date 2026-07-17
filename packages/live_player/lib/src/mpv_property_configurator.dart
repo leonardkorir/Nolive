@@ -12,6 +12,8 @@ class MpvPropertyConfigurator {
     required String audioOutputDriver,
     required String hardwareDecoder,
     required bool logEnabled,
+    bool isAndroid = false,
+    bool allowExternalNativeWindow = false,
   }) {
     return resolveMpvRuntimeConfiguration(
       enableHardwareAcceleration: enableHardwareAcceleration,
@@ -22,6 +24,8 @@ class MpvPropertyConfigurator {
       audioOutputDriver: audioOutputDriver,
       hardwareDecoder: hardwareDecoder,
       logEnabled: logEnabled,
+      isAndroid: isAndroid,
+      allowExternalNativeWindow: allowExternalNativeWindow,
     );
   }
 
@@ -100,6 +104,74 @@ extension MpvPlayerPropertyLifecycle on MpvPlayer {
       }
     }
   }
+
+  /// Tear down the independent VO window and leave vo=null while idle.
+  Future<void> _parkExternalNativeWindow(mk.Player player) async {
+    try {
+      final platform = player.platform;
+      if (platform is mk.NativePlayer) {
+        await platform.setProperty('vo', 'null');
+      }
+    } catch (_) {
+      // Best-effort park.
+    }
+    // Give X11/GLX time to finish X_GLXDestroyWindow before WebKit opens.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    _logEvent('stop external-native-window parked vo=null');
+  }
+
+  /// Destroy the in-process libmpv handle so no GLX resources remain.
+  ///
+  /// Must only be called from the stop/dispose serialization path when
+  /// [usesExternalNativeWindow] is true. Next [setSource] recreates it.
+  Future<void> _teardownExternalNativeMediaKitPlayer() async {
+    final player = _player;
+    if (player == null) {
+      return;
+    }
+    for (final subscription in List<StreamSubscription<dynamic>>.of(
+      _subscriptions,
+    )) {
+      try {
+        await subscription.cancel();
+      } catch (_) {}
+    }
+    _subscriptions.clear();
+    _player = null;
+    _controller = null;
+    _controllerNotifier.value = null;
+    _initialized = false;
+    _runtimeConfiguration = null;
+    try {
+      await player.dispose();
+    } catch (error) {
+      _logEvent('external-native-window dispose ignored error=$error');
+    }
+    // Extra settle: WebKit headless create races late GLX destroy callbacks.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    _logEvent('external-native-window full teardown done');
+  }
+
+  /// Enable gpu-next/gpu only immediately before open() with real media.
+  Future<void> _armExternalNativeWindowForPlayback(mk.Player player) async {
+    if (_runtimeConfiguration?.usesExternalNativeWindow != true) {
+      return;
+    }
+    final externalVo =
+        _runtimeConfiguration?.externalNativeVideoOutputDriver ??
+        kDefaultExternalNativeVideoOutputDriver;
+    try {
+      final platform = player.platform;
+      if (platform is mk.NativePlayer) {
+        await platform.setProperty('vo', externalVo);
+        _logEvent('setSource external-native-window armed vo=$externalVo');
+      }
+    } catch (error) {
+      _logEvent(
+        'setSource external-native-window arm failed error=$error',
+      );
+    }
+  }
 }
 
 class MpvRuntimeConfiguration {
@@ -108,12 +180,21 @@ class MpvRuntimeConfiguration {
     required this.logLevel,
     required this.platformProperties,
     this.androidOutputFallbackReason,
+    this.usesExternalNativeWindow = false,
+    this.externalNativeVideoOutputDriver,
   });
 
   final VideoControllerConfiguration controllerConfiguration;
   final mk.MPVLogLevel logLevel;
   final Map<String, String> platformProperties;
   final String? androidOutputFallbackReason;
+
+  /// When true, video is rendered by mpv's own VO window (gpu-next/gpu/...).
+  /// Flutter embed texture / VideoController must not be created.
+  final bool usesExternalNativeWindow;
+
+  /// Effective external VO (e.g. gpu-next). Null when embed path is used.
+  final String? externalNativeVideoOutputDriver;
 }
 
 Future<Uint8List?> waitForScreenshotFileBytes(
@@ -158,10 +239,16 @@ bool shouldIgnoreMpvErrorMessage({
           normalized.contains('missing picture in access unit'))) {
     return true;
   }
-  if (source.bufferProfile ==
-          PlaybackBufferProfile.chaturbateLlHlsProxyStable &&
+  // Stripchat / CB local LL-HLS fMP4: intermittent AAC decode glitches during
+  // ABR / sliding-window refresh must not hard-fail the room (Android keeps
+  // playing; desktop libmpv surfaces "Error decoding audio" as stream.error).
+  if ((source.bufferProfile == PlaybackBufferProfile.loopbackStableHls ||
+          source.bufferProfile ==
+              PlaybackBufferProfile.chaturbateLlHlsProxyStable) &&
       (normalized.contains('found duplicated moov atom') ||
-          normalized.contains('audio device underrun'))) {
+          normalized.contains('audio device underrun') ||
+          normalized.contains('error decoding audio') ||
+          normalized.contains('invalid audio pts'))) {
     return true;
   }
   final isSeekabilityWarning =
@@ -218,6 +305,8 @@ Map<String, String> resolveMpvSourcePlatformProperties({
       source.bufferProfile == PlaybackBufferProfile.chaturbateLlHlsProxyStable;
   final prefersLoopbackStableBuffer =
       source.bufferProfile == PlaybackBufferProfile.loopbackStableHls;
+  final prefersDesktopStableLive =
+      source.bufferProfile == PlaybackBufferProfile.desktopStableLive;
   final prefersChaturbateDirectStableFallback =
       prefersChaturbateProxyStableBuffer &&
       !_looksLikeChaturbateLoopbackProxySource(source);
@@ -268,6 +357,9 @@ Map<String, String> resolveMpvSourcePlatformProperties({
     // for split LL-HLS where PTS discontinuities between the separate video
     // and audio chunklists would otherwise cause A/V desynchronisation.
     'video-sync': 'display-tempo',
+    // Desktop: drop late frames at VO when the embed texture cannot keep up
+    // (S/W upload path). Prefer this over time-throttling the texture thread.
+    if (!isAndroid) 'framedrop': 'vo',
     if (normalizedVideoTrackSelection.isNotEmpty)
       'vid': normalizedVideoTrackSelection,
     if (normalizedHardwareDecoder.isNotEmpty)
@@ -287,6 +379,14 @@ Map<String, String> resolveMpvSourcePlatformProperties({
       'cache-pause-initial': 'no',
       'audio-buffer': '1.2',
     });
+    // Desktop: slightly thicker demuxer headroom for 1080p LL-HLS quality switches.
+    if (!isAndroid) {
+      properties['cache-secs'] = '12';
+      properties['demuxer-readahead-secs'] = '12';
+      properties['demuxer-max-back-bytes'] = '50331648';
+      properties['demuxer-max-bytes'] = '50331648';
+      properties['audio-buffer'] = '1.4';
+    }
     properties['demuxer-lavf-o'] = _buildLavfOptionString(const {
       'live_start_index': '-1',
       'seg_max_retry': '3',
@@ -296,12 +396,50 @@ Map<String, String> resolveMpvSourcePlatformProperties({
     if (prefersChaturbateDirectStableFallback) {
       properties['demuxer-lavf-analyzeduration'] = '5';
       properties['demuxer-lavf-probesize'] = '5000000';
-      properties['hwdec'] = 'auto-safe';
+      // Do not force hwdec=auto-safe here: on desktop libmpv embed that
+      // overrides the shared runtime decoder (auto-copy) and often leaves
+      // hwdec-current inactive. Preserve the runtime/normalized hwdec set above
+      // so Linux VAAPI/NVDEC stay engaged for Chaturbate like every other site.
     } else {
       properties['demuxer-lavf-analyzeduration'] = '2';
       properties['demuxer-lavf-probesize'] = '500000';
     }
-    properties['video-sync'] = 'audio';
+    // Desktop: display-tempo reduces visible tear vs audio-clock frame timing
+    // on S/W texture upload; Android keeps audio for split LL-HLS A/V glue.
+    properties['video-sync'] = isAndroid ? 'audio' : 'display-tempo';
+  } else if (prefersDesktopStableLive) {
+    // Foreign live (Twitch / YouTube) on phone + desktop: multi-second cache.
+    // Mobile previously used defaultLowLatency (cache=no) and failed Twitch
+    // Auto health / stuttered on 1080p YT. Desktop path proven playable.
+    // Android keeps video-sync=audio for MediaCodec A/V glue.
+    properties.addAll(<String, String>{
+      'cache': 'yes',
+      // Phone: deeper runway — logs showed pos≈buffer mid-play underruns at 480p.
+      'cache-secs': isAndroid ? '24' : '22',
+      'demuxer-seekable-cache': 'no',
+      'demuxer-donate-buffer': 'no',
+      'demuxer-max-back-bytes': isAndroid ? '134217728' : '134217728',
+      'demuxer-max-bytes': isAndroid ? '134217728' : '134217728',
+      'demuxer-readahead-secs': isAndroid ? '24' : '22',
+      'cache-pause': 'yes',
+      // Shorter pause-wait: long freezes felt like "卡" even with large buffer.
+      'cache-pause-wait': isAndroid ? '2' : '5',
+      'cache-pause-initial': 'yes',
+      'audio-buffer': isAndroid ? '1.2' : '1.4',
+      'video-sync': isAndroid ? 'audio' : 'display-tempo',
+    });
+    properties['demuxer-lavf-o'] = _buildLavfOptionString({
+      if (prefersYoutubeLocalizedHlsMaster)
+        'protocol_whitelist': 'file,crypto,data,http,https,tcp,tls',
+      // Keep a few segments of headroom against proxy/CDN RTT spikes.
+      'live_start_index': isAndroid ? '-3' : '-3',
+      'seg_max_retry': '10',
+      'http_persistent': '1',
+      // Parallel local-proxy GETs reduce underrun when warm is still filling.
+      'http_multiple': '1',
+    });
+    properties['demuxer-lavf-analyzeduration'] = '3';
+    properties['demuxer-lavf-probesize'] = '500000';
   } else if (prefersEdgeLowLatencyHls) {
     if (prefersStripchatLoopbackStableMaster) {
       properties.addAll(const <String, String>{
@@ -436,6 +574,11 @@ Map<String, String> resolveMpvSourcePlatformProperties({
     properties['demuxer-lavf-analyzeduration'] = '3';
     properties['demuxer-lavf-probesize'] = '500000';
   } else if (prefersLoopbackStableBuffer) {
+    // Android baseline for StripchatLlHlsProxy (shared cache numbers).
+    // Desktop-only deltas for AES LL-HLS + proxy tax:
+    // - thicker multi-second readahead / demuxer caps (AES + short segments)
+    // - no cache-pause-initial (libmpv stall)
+    // - video-sync=audio + lavf live edge opts (reduce A/V thrash)
     properties.addAll(const <String, String>{
       'cache': 'yes',
       'cache-secs': '8',
@@ -449,9 +592,54 @@ Map<String, String> resolveMpvSourcePlatformProperties({
       'cache-pause-initial': 'yes',
       'audio-buffer': '0.4',
     });
-    properties['demuxer-lavf-analyzeduration'] = '3';
-    properties['demuxer-lavf-probesize'] = '500000';
-    properties['video-sync'] = 'display-tempo';
+    if (!isAndroid) {
+      // Desktop AES LL-HLS (Stripchat): proxy + mouflon decrypt is the bottleneck.
+      // Glamorous retest 15:43: publishedMedia=8 still mid-play buffering —
+      // keep thick readahead, but resume faster after underrun and allow the
+      // demuxer to pull multiple proxy assets in parallel.
+      // 154803: Source mid rebuf with thick playlist — give demuxer more runway
+      // and more parallel local-proxy pulls without demoting quality.
+      properties['cache-secs'] = '40';
+      properties['demuxer-max-back-bytes'] = '268435456';
+      properties['demuxer-max-bytes'] = '268435456';
+      properties['demuxer-readahead-secs'] = '40';
+      properties['cache-pause'] = 'yes';
+      // Brief pause absorbs proxy AES lag without long freezes.
+      properties['cache-pause-wait'] = '3';
+      // Still pause at open so first frames are not empty, but do not over-wait.
+      properties['cache-pause-initial'] = 'yes';
+      properties['audio-buffer'] = '2.0';
+      // Prefer display-tempo on native VO so late segments do not yank A/V with
+      // the audio clock as hard (less "hitchy" feel than video-sync=audio).
+      properties['video-sync'] = 'display-tempo';
+      properties['demuxer-lavf-o'] = _buildLavfOptionString(const {
+        'live_start_index': '-4',
+        'seg_max_retry': '16',
+        'http_persistent': '1',
+        // Parallel segment GETs into local proxy (catch-up after underrun).
+        'http_multiple': '1',
+      });
+      properties['demuxer-lavf-analyzeduration'] = '2';
+      properties['demuxer-lavf-probesize'] = '500000';
+    } else {
+      // Android SC loopback: slightly thicker than baseline 8s so cold CDN /
+      // simple-publish windows do not health-fail before first A/V tracks.
+      properties['cache-secs'] = '12';
+      properties['demuxer-readahead-secs'] = '12';
+      properties['demuxer-max-back-bytes'] = '100663296';
+      properties['demuxer-max-bytes'] = '100663296';
+      properties['cache-pause-wait'] = '3';
+      properties['audio-buffer'] = '0.8';
+      properties['video-sync'] = 'audio';
+      properties['demuxer-lavf-o'] = _buildLavfOptionString(const {
+        'live_start_index': '-3',
+        'seg_max_retry': '10',
+        'http_persistent': '1',
+        'http_multiple': '1',
+      });
+      properties['demuxer-lavf-analyzeduration'] = '3';
+      properties['demuxer-lavf-probesize'] = '500000';
+    }
   } else if (prefersStableBuffer) {
     final isFlv = _looksLikeLiveFlv(source.url);
     properties.addAll(<String, String>{
@@ -463,20 +651,14 @@ Map<String, String> resolveMpvSourcePlatformProperties({
       'demuxer-max-bytes': '67108864',
       'demuxer-readahead-secs': '10',
     });
-  } else if (prefersLoopbackStableBuffer) {
-    properties.addAll(const <String, String>{
-      'cache': 'yes',
-      'cache-secs': '8',
-      'demuxer-seekable-cache': 'no',
-      'demuxer-donate-buffer': 'no',
-      'demuxer-max-back-bytes': '67108864',
-      'demuxer-max-bytes': '67108864',
-      'demuxer-readahead-secs': '8',
-      'cache-pause': 'yes',
-      'cache-pause-wait': '2',
-      'cache-pause-initial': 'yes',
-      'audio-buffer': '0.4',
-    });
+    // Desktop high-FPS game FLV (60fps 1080p/1440p): display clock + vo drop
+    // reduces "game stream feels juddery" under embed texture path.
+    if (!isAndroid) {
+      properties['video-sync'] = 'display-tempo';
+      properties['audio-buffer'] = '0.3';
+      properties['cache-pause'] = 'no';
+      properties['cache-pause-initial'] = 'no';
+    }
   } else if (doubleBufferingEnabled) {
     final isFlv = _looksLikeLiveFlv(source.url);
     properties.addAll(<String, String>{
@@ -511,7 +693,8 @@ Map<String, String> resolveMpvSourcePlatformProperties({
       prefersStableMasterEdgeHls ||
       prefersYoutubeLocalizedHlsMaster ||
       prefersStripchatLoopbackStableMaster ||
-      prefersLoopbackStableBuffer) {
+      prefersLoopbackStableBuffer ||
+      prefersDesktopStableLive) {
     properties.remove('hls-bitrate');
   } else if (normalizedHlsBitrate.isNotEmpty) {
     properties['hls-bitrate'] = normalizedHlsBitrate;
@@ -537,6 +720,28 @@ String _quoteLavfOptionValue(String value) {
   return '[${value.replaceAll(']', r'\]')}]';
 }
 
+/// Desktop VO values that open a separate window (not embeddable by media_kit).
+const Set<String> kDesktopWindowOpeningVos = <String>{
+  'gpu',
+  'gpu-next',
+  'sdl',
+  'vaapi',
+  'dmabuf-wayland',
+  'direct3d',
+  'xv',
+  'x11',
+  'wayland',
+};
+
+/// Default VO when the user opts into the independent native mpv window path.
+const String kDefaultExternalNativeVideoOutputDriver = 'gpu-next';
+
+bool isDesktopWindowOpeningMpvVo(String videoOutputDriver) {
+  return kDesktopWindowOpeningVos.contains(
+    videoOutputDriver.trim().toLowerCase(),
+  );
+}
+
 MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
   required bool enableHardwareAcceleration,
   required bool compatMode,
@@ -546,16 +751,44 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
   required String hardwareDecoder,
   required bool logEnabled,
   String audioOutputDriver = 'auto',
+  bool isAndroid = false,
+  bool allowExternalNativeWindow = false,
 }) {
-  final sanitizedVideoOutputDriver = videoOutputDriver.trim().isEmpty
+  var sanitizedVideoOutputDriver = videoOutputDriver.trim().isEmpty
       ? MpvPlayer._fallbackVideoOutputDriver
       : videoOutputDriver.trim();
-  final sanitizedHardwareDecoder = hardwareDecoder.trim().isEmpty
-      ? MpvPlayer._fallbackHardwareDecoder
+  final wantsExternalNativeWindow = !isAndroid && allowExternalNativeWindow;
+  // Opt-in A/B path: keep (or promote to) a real window-opening VO and skip
+  // Flutter texture embed. Default remains embed-safe libmpv.
+  if (wantsExternalNativeWindow) {
+    if (!isDesktopWindowOpeningMpvVo(sanitizedVideoOutputDriver)) {
+      sanitizedVideoOutputDriver = kDefaultExternalNativeVideoOutputDriver;
+    }
+  } else if (!isAndroid &&
+      customOutputEnabled &&
+      isDesktopWindowOpeningMpvVo(sanitizedVideoOutputDriver)) {
+    // Desktop + custom output without external opt-in: never pass
+    // window-opening VOs — orphan external windows cannot be closed cleanly.
+    sanitizedVideoOutputDriver = 'libmpv';
+  }
+  var sanitizedHardwareDecoder = hardwareDecoder.trim().isEmpty
+      ? (isAndroid
+            ? MpvPlayer._fallbackHardwareDecoder
+            : MpvPlayer._fallbackHardwareDecoderDesktop)
       : hardwareDecoder.trim();
+  // Desktop libmpv embed: auto-safe rarely activates VAAPI/NVDEC; auto-copy is
+  // the reliable "hardware decode is actually used" default for all providers.
+  if (!isAndroid &&
+      (sanitizedHardwareDecoder == 'auto-safe' ||
+          sanitizedHardwareDecoder == 'auto')) {
+    sanitizedHardwareDecoder = MpvPlayer._fallbackHardwareDecoderDesktop;
+  }
   final sanitizedAudioOutputDriver = audioOutputDriver.trim().isEmpty
       ? 'auto'
       : audioOutputDriver.trim();
+  final usesExternalNativeWindow =
+      wantsExternalNativeWindow &&
+      isDesktopWindowOpeningMpvVo(sanitizedVideoOutputDriver);
   final attachAfterVideoParameters = _resolveAndroidAttachSurfaceTiming(
     compatMode: compatMode,
     customOutputEnabled: customOutputEnabled,
@@ -563,7 +796,16 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
     enableHardwareAcceleration: enableHardwareAcceleration,
     hardwareDecoder: sanitizedHardwareDecoder,
   );
-  final controllerConfiguration = customOutputEnabled
+  // External window mode still records the intended vo/hwdec for diagnostics,
+  // but MpvPlayer must not construct VideoController (media_kit render path
+  // forces libmpv and fights the independent VO).
+  final controllerConfiguration = usesExternalNativeWindow
+      ? VideoControllerConfiguration(
+          vo: sanitizedVideoOutputDriver,
+          hwdec: enableHardwareAcceleration ? sanitizedHardwareDecoder : 'no',
+          androidAttachSurfaceAfterVideoParameters: attachAfterVideoParameters,
+        )
+      : customOutputEnabled
       ? VideoControllerConfiguration(
           vo: sanitizedVideoOutputDriver,
           hwdec: enableHardwareAcceleration ? sanitizedHardwareDecoder : 'no',
@@ -608,7 +850,14 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
             'cache-pause-wait': '1',
             'cache-pause-initial': 'no',
           },
-    if (customOutputEnabled &&
+    if (usesExternalNativeWindow) ...<String, String>{
+      'vo': sanitizedVideoOutputDriver,
+      'hwdec': enableHardwareAcceleration ? sanitizedHardwareDecoder : 'no',
+      // Do NOT force video-sync here — foreign HLS profiles set display-tempo
+      // or audio per-source. A global audio clock overrode Twitch/SC profiles
+      // and amplified underrun hitching on the independent VO window.
+    },
+    if ((customOutputEnabled || usesExternalNativeWindow) &&
         sanitizedAudioOutputDriver.isNotEmpty &&
         sanitizedAudioOutputDriver != 'auto')
       'ao': sanitizedAudioOutputDriver,
@@ -618,6 +867,9 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
     logLevel: logEnabled ? mk.MPVLogLevel.debug : mk.MPVLogLevel.error,
     platformProperties: platformProperties,
     androidOutputFallbackReason: null,
+    usesExternalNativeWindow: usesExternalNativeWindow,
+    externalNativeVideoOutputDriver:
+        usesExternalNativeWindow ? sanitizedVideoOutputDriver : null,
   );
 }
 

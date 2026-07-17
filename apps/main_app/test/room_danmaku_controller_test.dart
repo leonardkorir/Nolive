@@ -9,6 +9,31 @@ import 'package:nolive_app/src/features/room/application/room_preview_dependenci
 import 'package:nolive_app/src/features/room/presentation/room_danmaku_controller.dart';
 
 void main() {
+  test('danmaku chrome state gate skips no-op and fires on session/reconnect', () {
+    const initial = RoomDanmakuState.initial();
+    expect(
+      shouldScheduleFullRoomPageRebuildForDanmakuState(
+        previous: initial,
+        next: initial,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldScheduleFullRoomPageRebuildForDanmakuState(
+        previous: initial,
+        next: initial.copyWith(reconnectScheduled: true),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldScheduleFullRoomPageRebuildForDanmakuState(
+        previous: initial,
+        next: initial.copyWith(reconnectInFlight: true),
+      ),
+      isTrue,
+    );
+  });
+
   test(
     'danmaku connect error retry logic (stripchat timeout + chaturbate non-retryable)',
     () {

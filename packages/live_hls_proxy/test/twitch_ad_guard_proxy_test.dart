@@ -11,6 +11,9 @@ class _FakePlatformAdapter implements HlsProxyPlatformAdapter {
   bool get isMobile => true;
 
   @override
+  bool get supportsHeadlessWebView => true;
+
+  @override
   bool get kDebugMode => true;
 
   @override
@@ -1066,6 +1069,148 @@ void main() {
       expect(utf8.decode(assetBytes), 'blank-live');
     },
   );
+
+  group('ensureStarted lifecycle', () {
+    test('concurrent ensureStarted single-flight leaves a usable server', () async {
+      final results = await Future.wait([
+        proxy.ensureStarted(),
+        proxy.ensureStarted(),
+        proxy.ensureStarted(),
+      ]);
+      expect(results, hasLength(3));
+
+      // Second wave joins an already-running proxy without rebinding.
+      await Future.wait([proxy.ensureStarted(), proxy.ensureStarted()]);
+
+      final base = 'http://${upstream.address.address}:${upstream.port}';
+      upstream.listen((request) async {
+        request.response.write(_cleanPlaylist(segmentPath: '/life.ts'));
+        await request.response.close();
+      });
+
+      final quality = LivePlayQuality(
+        id: '720p',
+        label: '720p',
+        metadata: {
+          'twitchPlaybackGroup': TwitchPlaybackQualityGroup(
+            id: '720p',
+            label: '720p',
+            sortOrder: 720,
+            candidates: [
+              TwitchPlaybackCandidate(
+                playlistUrl: '$base/life.m3u8',
+                headers: const {},
+                playerType: 'popout',
+                platform: 'web',
+                lineLabel: '默认 Popout',
+              ),
+            ],
+          ).toJson(),
+        },
+      );
+      final wrapped = await proxy.wrapPlayUrls(
+        roomId: 'life_room',
+        quality: quality,
+        playUrls: [
+          LivePlayUrl(
+            url: '$base/life.m3u8',
+            lineLabel: '默认 Popout',
+            metadata: const {'playerType': 'popout'},
+          ),
+        ],
+      );
+      final status = await _readStatusCode(Uri.parse(wrapped.first.url));
+      // Proxy is up; upstream may 404 the playlist path — not the point.
+      // A listening ad-guard endpoint returns a real HTTP status, not connection refused.
+      expect(status, isNotNull);
+      expect(status, greaterThanOrEqualTo(200));
+    });
+
+    test('ensureStarted after dispose throws disposed StateError', () async {
+      await proxy.ensureStarted();
+      await proxy.dispose();
+      await expectLater(
+        proxy.ensureStarted(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('disposed'),
+          ),
+        ),
+      );
+    });
+
+    test(
+      'dispose during ensureStarted fails closed for in-flight callers',
+      () async {
+        final p = TwitchAdGuardProxy(
+          platformAdapter: _FakePlatformAdapter(),
+          enabledOverride: true,
+        );
+        final start = p.ensureStarted();
+        // Yield so _startServer can enter bind; dispose awaits the same future.
+        await Future<void>.delayed(Duration.zero);
+        await p.dispose();
+        try {
+          await start;
+        } on StateError catch (error) {
+          expect(
+            error.message.contains('disposed') ||
+                error.message.contains('failed to start'),
+            isTrue,
+            reason: 'unexpected StateError: ${error.message}',
+          );
+        }
+        // Whether start completed or threw, post-dispose must fail closed.
+        await expectLater(
+          p.ensureStarted(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('disposed'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'concurrent ensureStarted after dispose mid-start all fail closed',
+      () async {
+        final p = TwitchAdGuardProxy(
+          platformAdapter: _FakePlatformAdapter(),
+          enabledOverride: true,
+        );
+        final a = p.ensureStarted();
+        final b = p.ensureStarted();
+        await Future<void>.delayed(Duration.zero);
+        await p.dispose();
+        final results = await Future.wait([
+          a.then<Object?>((_) => null).catchError((Object e) => e),
+          b.then<Object?>((_) => null).catchError((Object e) => e),
+        ]);
+        // At least one path must not succeed silently with no server.
+        // Both may throw disposed, or one may have completed before dispose.
+        final errors = results.whereType<StateError>().toList();
+        if (errors.isEmpty) {
+          // Both completed before dispose won — still fail closed afterward.
+          await expectLater(p.ensureStarted(), throwsA(isA<StateError>()));
+        } else {
+          expect(
+            errors.every(
+              (e) =>
+                  e.message.contains('disposed') ||
+                  e.message.contains('failed to start'),
+            ),
+            isTrue,
+          );
+          await expectLater(p.ensureStarted(), throwsA(isA<StateError>()));
+        }
+      },
+    );
+  });
 }
 
 String _adPlaylist({required String segmentPath}) {

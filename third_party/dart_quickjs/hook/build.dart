@@ -79,6 +79,12 @@ void main(List<String> args) async {
           '-fno-strict-aliasing', // Disable strict aliasing optimizations
           '-fno-omit-frame-pointer', // Keep frame pointer for better debugging
           '-fwrapv', // Wrap signed integer overflow (safer behavior)
+          // Prefer this DSO's own symbols for intra-library PLT/GOT relocations.
+          // Without -Bsymbolic, loading alongside flutter_qjs (which also
+          // exports JS_* from a different QuickJS build) causes symbol
+          // interposition: JS_NewContext in libdart_quickjs.so jumps into
+          // libflutter_qjs_plugin.so and SIGSEGVs the isolate (and process).
+          '-Wl,-Bsymbolic',
         ]);
         // Disable computed goto / direct dispatch on Linux
         // This prevents SIGSEGV when the library is loaded by another application
@@ -94,6 +100,8 @@ void main(List<String> args) async {
         flags.addAll([
           '-fno-fast-math', // Ensure strict floating-point behavior
           '-fstack-protector-strong', // Stack protection
+          // Same interposition risk as Linux when flutter_qjs is also present.
+          '-Wl,-Bsymbolic',
         ]);
 
         // Disable computed goto / direct dispatch on Android

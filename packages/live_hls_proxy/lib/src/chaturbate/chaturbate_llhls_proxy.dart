@@ -155,6 +155,8 @@ class ChaturbateLlHlsProxy {
 
   HttpServer? _server;
   Uri? _endpoint;
+  Future<void>? _startFuture;
+  bool _disposed = false;
 
   Future<List<LivePlayUrl>> wrapPlayUrls({
     required String roomId,
@@ -198,6 +200,16 @@ class ChaturbateLlHlsProxy {
   }
 
   Future<void> dispose() async {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
+    final startFuture = _startFuture;
+    if (startFuture != null) {
+      try {
+        await startFuture;
+      } catch (_) {}
+    }
     final sessions = _sessions.values.toList(growable: false);
     _sessions.clear();
     for (final session in sessions) {
@@ -217,6 +229,7 @@ class ChaturbateLlHlsProxy {
     }
     _server = null;
     _endpoint = null;
+    _startFuture = null;
     _client.close(force: true);
   }
 
@@ -374,10 +387,48 @@ class ChaturbateLlHlsProxy {
   }
 
   Future<void> ensureStarted() async {
+    if (_disposed) {
+      throw StateError('ChaturbateLlHlsProxy is disposed.');
+    }
+    if (_server != null && _endpoint != null) {
+      return;
+    }
+    final existing = _startFuture;
+    if (existing != null) {
+      await existing;
+      _ensureRunningAfterStart();
+      return;
+    }
+    final started = _startServer();
+    _startFuture = started;
+    try {
+      await started;
+      _ensureRunningAfterStart();
+    } finally {
+      if (identical(_startFuture, started)) {
+        _startFuture = null;
+      }
+    }
+  }
+
+  void _ensureRunningAfterStart() {
+    if (_disposed) {
+      throw StateError('ChaturbateLlHlsProxy is disposed.');
+    }
+    if (_server == null || _endpoint == null) {
+      throw StateError('ChaturbateLlHlsProxy failed to start.');
+    }
+  }
+
+  Future<void> _startServer() async {
     if (_server != null && _endpoint != null) {
       return;
     }
     final (server, address) = await _bindLoopbackServer();
+    if (_disposed) {
+      await server.close(force: true);
+      throw StateError('ChaturbateLlHlsProxy is disposed.');
+    }
     _server = server;
     _endpoint = Uri(
       scheme: 'http',
@@ -2098,7 +2149,7 @@ class ChaturbateLlHlsProxy {
     if (override != null) {
       return override;
     }
-    return _platformAdapter.isMobile;
+    return _platformAdapter.supportsHeadlessWebView;
   }
 
   ChaturbateHlsVariant? _selectVariantForQuality({

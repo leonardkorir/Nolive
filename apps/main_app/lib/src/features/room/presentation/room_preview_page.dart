@@ -22,6 +22,7 @@ import 'package:nolive_app/src/features/room/presentation/room_fullscreen_runtim
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_gesture_ui_state.dart';
 import 'package:nolive_app/src/features/room/presentation/room_panel_controller.dart';
+import 'package:nolive_app/src/features/room/presentation/room_page_rebuild_scope.dart';
 import 'package:nolive_app/src/features/room/presentation/room_page_session_coordinator.dart';
 import 'package:nolive_app/src/features/room/presentation/room_page_ui_effects.dart';
 import 'package:nolive_app/src/features/room/presentation/room_player_runtime_observer.dart';
@@ -71,6 +72,20 @@ export 'room_preview_page_player_surface.dart'
         resolveRoomHasRenderedVideo,
         shouldKeepRoomLoadingShellUntilFirstFrame,
         resolveFriendlyPlayerErrorMessage;
+export 'room_page_rebuild_scope.dart'
+    show
+        RoomPreviewDisposePlan,
+        RoomPreviewHeavyDisposeHooks,
+        RoomPreviewHeavyDisposeStep,
+        RoomSessionChildNotifySource,
+        planRoomPreviewDispose,
+        playerStateHasFirstFrameProgress,
+        runRoomPreviewHeavyControllerDispose,
+        shouldForceRoomPageRebuildForVideoSizeChange,
+        shouldNotifyFullscreenSessionListeners,
+        shouldScheduleFullRoomPageRebuildForPlayerState,
+        shouldScheduleFullRoomPageRebuildForSessionChild,
+        shouldSessionCoordinatorFanOutChildNotify;
 
 @visibleForTesting
 bool shouldCleanupPlaybackOnRoomPreviewDispose({
@@ -129,6 +144,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   bool _pageRebuildQueued = false;
   int _embeddedPlayerViewEpoch = 0;
   PlayerState? _currentPlayerState;
+  RoomDanmakuState? _lastDanmakuStateForRebuild;
   bool _hasPageSessionCoordinator = false;
   final RoomGenericLineFailoverController _genericLineFailover =
       RoomGenericLineFailoverController();
@@ -822,39 +838,58 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   }
 
   Widget _buildFollowPanel({required BuildContext context}) {
-    final followState = _followWatchlistState;
-    final watchlist =
-        followState.watchlist ?? const FollowWatchlist(entries: []);
-    return buildRoomFollowPanel(
-      context: context,
-      followState: followState,
-      entries: _pageSessionCoordinator.followAction.buildEntryViewData(
-        watchlist,
-      ),
-      onRefresh: () => _ensureFollowWatchlistLoaded(force: true),
-      onOpenSettings: () {
-        unawaited(_pageSessionCoordinator.pageInteraction.openFollowSettings());
-      },
-      onOpenEntry: (entry) {
-        unawaited(_pageSessionCoordinator.followAction.openFollowRoom(entry));
+    return ListenableBuilder(
+      listenable: _pageSessionCoordinator.followWatchlist.listenable,
+      builder: (context, _) {
+        final followState = _followWatchlistState;
+        final watchlist =
+            followState.watchlist ?? const FollowWatchlist(entries: []);
+        return buildRoomFollowPanel(
+          context: context,
+          followState: followState,
+          entries: _pageSessionCoordinator.followAction.buildEntryViewData(
+            watchlist,
+          ),
+          onRefresh: () => _ensureFollowWatchlistLoaded(force: true),
+          onOpenSettings: () {
+            unawaited(
+              _pageSessionCoordinator.pageInteraction.openFollowSettings(),
+            );
+          },
+          onOpenEntry: (entry) {
+            unawaited(
+              _pageSessionCoordinator.followAction.openFollowRoom(entry),
+            );
+          },
+        );
       },
     );
   }
 
   Widget _buildFullscreenFollowDrawer(BuildContext context) {
-    final followState = _followWatchlistState;
-    final watchlist =
-        followState.watchlist ?? const FollowWatchlist(entries: []);
-    return buildRoomFullscreenFollowDrawer(
-      context: context,
-      showDrawer: _showFullscreenFollowDrawer,
-      followState: followState,
-      entries: _pageSessionCoordinator.followAction.buildEntryViewData(
-        watchlist,
-      ),
-      onClose: _fullscreenSessionController.hideFullscreenFollowDrawer,
-      onOpenEntry: (entry) {
-        unawaited(_pageSessionCoordinator.followAction.openFollowRoom(entry));
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        _pageSessionCoordinator.followWatchlist.listenable,
+        _fullscreenSessionController,
+      ]),
+      builder: (context, _) {
+        final followState = _followWatchlistState;
+        final watchlist =
+            followState.watchlist ?? const FollowWatchlist(entries: []);
+        return buildRoomFullscreenFollowDrawer(
+          context: context,
+          showDrawer: _showFullscreenFollowDrawer,
+          followState: followState,
+          entries: _pageSessionCoordinator.followAction.buildEntryViewData(
+            watchlist,
+          ),
+          onClose: _fullscreenSessionController.hideFullscreenFollowDrawer,
+          onOpenEntry: (entry) {
+            unawaited(
+              _pageSessionCoordinator.followAction.openFollowRoom(entry),
+            );
+          },
+        );
       },
     );
   }
@@ -900,6 +935,7 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
         return playbackSourceFromLivePlayUrl(
           line,
           quality: _effectiveQuality ?? _selectedQuality,
+          providerId: _activeProviderId,
         );
       },
     );
@@ -1003,7 +1039,16 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     if (!mounted) {
       return;
     }
-    _markPageNeedsBuild();
+    final next = _roomDanmakuController.current;
+    final previous = _lastDanmakuStateForRebuild;
+    _lastDanmakuStateForRebuild = next;
+    if (previous == null ||
+        shouldScheduleFullRoomPageRebuildForDanmakuState(
+          previous: previous,
+          next: next,
+        )) {
+      _markPageNeedsBuild();
+    }
   }
 
   void _handleDanmakuMessagesChanged() {
@@ -1161,7 +1206,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
           // non-existent play URLs (rate-limiting issues) when a broadcaster goes private or key expires.
           return _activeProviderId != ProviderId.stripchat;
         },
-        onPlayerStateChanged: (state, {required playbackAvailable}) {
+        onPlayerStateChanged:
+            (state, {required playbackAvailable, forceRebuild = false}) {
+          final previous = _currentPlayerState;
           _currentPlayerState = state;
           _fullscreenSessionController.handlePlayerStateChanged(
             state,
@@ -1175,7 +1222,16 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
               'Stripchat 播放解密失败：pdkey 可能已失效或耗尽。请在"设置 -> 账户设置"中更新 Mouflon 密钥。',
             );
           }
-          _markPageNeedsBuild();
+          // Progress-only ticks after first frame must not rebuild the whole
+          // room page. Status/error/source/progress first-frame and diagnostics
+          // size first-frame (forceRebuild) do.
+          if (shouldScheduleFullRoomPageRebuildForPlayerState(
+            previous: previous,
+            next: state,
+            forceRebuild: forceRebuild,
+          )) {
+            _markPageNeedsBuild();
+          }
         },
         onUnexpectedPlaybackStop: (state) {
           return _handleUnexpectedPlaybackStop(state);
@@ -1212,40 +1268,57 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
     );
     WidgetsBinding.instance.removeObserver(this);
     _clearMdkTextureRecoveryState();
-    final shouldCleanupPlaybackOnDispose =
-        shouldCleanupPlaybackOnRoomPreviewDispose(
-          preserveRoomTransitionOnDispose:
-              _fullscreenSessionController.preserveRoomTransitionOnDispose,
-          leavingRoom: _isLeavingRoom,
-        );
-    if (shouldCleanupPlaybackOnDispose) {
-      unawaited(_restoreSystemUi());
-      unawaited(_setScreenAwake(false));
-      unawaited(_pageSessionCoordinator.cleanupPlaybackOnLeave());
-    }
+    final disposePlan = planRoomPreviewDispose(
+      cleanupPlayback: shouldCleanupPlaybackOnRoomPreviewDispose(
+        preserveRoomTransitionOnDispose:
+            _fullscreenSessionController.preserveRoomTransitionOnDispose,
+        leavingRoom: _isLeavingRoom,
+      ),
+    );
+    final coordinator = _pageSessionCoordinator;
+    final playback = _playbackController;
+    final fullscreen = _fullscreenSessionController;
+    final runtime = _roomRuntime;
+    final observer = _playerRuntimeObserver;
+    final desktopMiniActive = _desktopMiniWindowActive;
+    final preserveTransition = fullscreen.preserveRoomTransitionOnDispose;
+
     _roomDanmakuController.listenable.removeListener(
       _handleDanmakuStateChanged,
     );
     _roomDanmakuController.messages.removeListener(
       _handleDanmakuMessagesChanged,
     );
-    unawaited(_roomRuntime.dispose());
-    _pageSessionCoordinator.removeListener(
-      _handlePageSessionCoordinatorChanged,
-    );
-    _pageSessionCoordinator.dispose();
-    _roomTwitchRecoveryController.dispose();
-    _playbackController.removeListener(_handlePlaybackControllerChanged);
-    _playbackController.dispose();
-    _fullscreenSessionController.removeListener(
-      _handleFullscreenSessionChanged,
-    );
-    unawaited(_playerRuntimeObserver.dispose());
-    if (_desktopMiniWindowActive &&
-        !_fullscreenSessionController.preserveRoomTransitionOnDispose) {
-      unawaited(_exitDesktopMiniWindow());
+    coordinator.removeListener(_handlePageSessionCoordinatorChanged);
+    playback.removeListener(_handlePlaybackControllerChanged);
+    fullscreen.removeListener(_handleFullscreenSessionChanged);
+
+    if (disposePlan.cleanupPlayback) {
+      unawaited(_restoreSystemUi());
+      unawaited(_setScreenAwake(false));
     }
-    _fullscreenSessionController.dispose();
+
+    // Heavy controllers must outlive leave cleanup when cleanup is scheduled.
+    // Ordering is owned by [runRoomPreviewHeavyControllerDispose] so tests
+    // can assert cleanup-before-dispose without theater bool mirrors.
+    unawaited(
+      runRoomPreviewHeavyControllerDispose(
+        plan: disposePlan,
+        hooks: RoomPreviewHeavyDisposeHooks(
+          cleanupPlaybackOnLeave: coordinator.cleanupPlaybackOnLeave,
+          disposeRuntime: runtime.dispose,
+          disposePlayback: playback.dispose,
+          disposeDesktopMini: desktopMiniActive && !preserveTransition
+              ? _exitDesktopMiniWindow
+              : null,
+          disposeFullscreen: fullscreen.dispose,
+          disposeObserver: observer.dispose,
+        ),
+      ),
+    );
+
+    coordinator.dispose();
+    _roomTwitchRecoveryController.dispose();
     super.dispose();
   }
 
@@ -1445,6 +1518,9 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                   ),
                   pageController: _pageSessionCoordinator.panel.pageController,
                   selectedPanel: _selectedPanel,
+                  panelListenable: _pageSessionCoordinator.panel,
+                  resolveSelectedPanel: () =>
+                      _pageSessionCoordinator.panel.selectedPanel,
                   onSelectPanel: _pageSessionCoordinator.panel.selectPanel,
                   onPageChanged:
                       _pageSessionCoordinator.panel.handlePageChanged,
@@ -1475,11 +1551,16 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
                     hasDanmakuSession: _danmakuSession != null,
                   ),
                   followPanel: _buildFollowPanel(context: context),
-                  controlsPanel: _buildControlsPanel(
-                    state: state,
-                    playUrls: playUrls,
-                    playbackSource: playbackSource,
-                    hasPlayback: hasPlayback,
+                  controlsPanel: ListenableBuilder(
+                    listenable: _pageSessionCoordinator.controlsAction,
+                    builder: (context, _) {
+                      return _buildControlsPanel(
+                        state: state,
+                        playUrls: playUrls,
+                        playbackSource: playbackSource,
+                        hasPlayback: hasPlayback,
+                      );
+                    },
                   ),
                   playerSurface: RoomPlayerSurfaceSection(
                     data: _playerSurfaceViewData(

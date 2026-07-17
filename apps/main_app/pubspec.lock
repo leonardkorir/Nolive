@@ -160,6 +160,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.12"
+  desktop_webview_window:
+    dependency: "direct main"
+    description:
+      path: "../../third_party/desktop_webview_window"
+      relative: true
+    source: path
+    version: "0.3.0"
   fake_async:
     dependency: "direct dev"
     description:
@@ -644,12 +651,11 @@ packages:
     source: hosted
     version: "1.0.11"
   media_kit_video:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: media_kit_video
-      sha256: afaa509e7b7e0bf247557a3a740cde903a52c34ace9810f94500e127bd7b043d
-      url: "https://pub.dev"
-    source: hosted
+      path: "../../third_party/media_kit_video"
+      relative: true
+    source: path
     version: "2.0.1"
   meta:
     dependency: transitive

@@ -138,6 +138,7 @@ class ResolvePlaySourceUseCase {
       playbackSource: playbackSourceFromLivePlayUrl(
         primary,
         quality: effectiveQuality,
+        providerId: providerId,
       ),
     );
   }
@@ -203,6 +204,8 @@ class ResolvePlaySourceUseCase {
 PlaybackSource playbackSourceFromLivePlayUrl(
   LivePlayUrl playUrl, {
   LivePlayQuality? quality,
+  ProviderId? providerId,
+  bool? isDesktop,
 }) {
   final audioUrl = playUrl.metadata?['audioUrl']?.toString().trim() ?? '';
   final suppressMasterMetadata = _shouldSuppressMasterMetadataForPlaybackSource(
@@ -216,6 +219,8 @@ PlaybackSource playbackSourceFromLivePlayUrl(
   final bufferProfile = resolvePlaybackBufferProfile(
     playUrl: playUrl,
     quality: quality,
+    providerId: providerId,
+    isDesktop: isDesktop,
   );
   if (kDebugMode) {
     debugPrint(
@@ -255,13 +260,46 @@ bool _shouldSuppressMasterMetadataForPlaybackSource(LivePlayUrl playUrl) {
   return isStripchatLlHlsProxy(playUrl);
 }
 
-const _heavyStreamQualityKeywords = <String>['蓝光30m', '蓝光', '原画'];
+// Labels that imply high bitrate / high resolution domestic FLV.
+// Include 4K / 超高清 so "4K超高清" does not fall through to defaultLowLatency.
+const _heavyStreamQualityKeywords = <String>[
+  '蓝光30m',
+  '蓝光',
+  '原画',
+  '4k',
+  '4K',
+  '超高清',
+  'uhd',
+  '2160',
+  '1440',
+  '2k',
+  '2K',
+];
+
+/// Desktop host detection for buffer-profile resolution (injectable in tests).
+@visibleForTesting
+bool resolveIsDesktopPlaybackHost({
+  TargetPlatform? platform,
+  bool? isWeb,
+}) {
+  if (isWeb ?? kIsWeb) {
+    return false;
+  }
+  final resolved = platform ?? defaultTargetPlatform;
+  return resolved == TargetPlatform.linux ||
+      resolved == TargetPlatform.windows ||
+      resolved == TargetPlatform.macOS;
+}
 
 @visibleForTesting
 PlaybackBufferProfile resolvePlaybackBufferProfile({
   required LivePlayUrl playUrl,
   LivePlayQuality? quality,
+  ProviderId? providerId,
+  bool? isDesktop,
 }) {
+  // Android baseline (shared): Stripchat loopback proxy uses loopbackStableHls;
+  // Chaturbate uses its own chaturbateLlHlsProxyStable profile. Do not cross-map.
   if (isStripchatLlHlsProxy(playUrl) || isStripchatStableFallback(playUrl)) {
     return PlaybackBufferProfile.loopbackStableHls;
   }
@@ -319,7 +357,58 @@ PlaybackBufferProfile resolvePlaybackBufferProfile({
     }
   }
 
+  // Foreign live (Twitch / YouTube): multi-second cache on phone and desktop.
+  // Delivery-only — does not change Auto ABR / quality business policy.
+  // Phone used to fall through to defaultLowLatency (cache=no) and thrash on
+  // ad-guard / 1080p HLS; desktop already used desktopStableLive successfully.
+  // [isDesktop] remains for API compatibility / future host-only profile forks.
+  if (_looksLikeForeignStableLive(
+    playUrl: playUrl,
+    providerId: providerId,
+  )) {
+    return PlaybackBufferProfile.desktopStableLive;
+  }
+
   return PlaybackBufferProfile.defaultLowLatency;
+}
+
+/// Twitch / YouTube (and ad-guard loopback) — shared name kept for callers.
+bool _looksLikeForeignStableLive({
+  required LivePlayUrl playUrl,
+  ProviderId? providerId,
+}) {
+  if (providerId == ProviderId.twitch || providerId == ProviderId.youtube) {
+    return true;
+  }
+  final proxyKind = playUrl.metadata?['proxyKind']?.toString().trim() ?? '';
+  if (proxyKind == 'twitch-ad-guard') {
+    return true;
+  }
+  final uri = Uri.tryParse(playUrl.url);
+  if (uri == null) {
+    return false;
+  }
+  final host = uri.host.toLowerCase();
+  final path = uri.path.toLowerCase();
+  if (path.contains('/twitch-ad-guard/')) {
+    return true;
+  }
+  if (host.contains('ttvnw.net') ||
+      host.contains('twitch.tv') ||
+      host.endsWith('jtvnw.net')) {
+    return true;
+  }
+  if (host.contains('googlevideo.com') ||
+      host.contains('youtube.com') ||
+      host.contains('youtu.be')) {
+    return true;
+  }
+  final master =
+      playUrl.metadata?['masterPlaylistUrl']?.toString().toLowerCase() ?? '';
+  if (master.contains('googlevideo.com') || master.contains('youtube.com')) {
+    return true;
+  }
+  return false;
 }
 
 List<LivePlayUrl> _ensureChaturbateStableFallbackUrls(List<LivePlayUrl> urls) {
@@ -397,7 +486,8 @@ bool _matchesHeavyStreamLabel(String label) {
     return false;
   }
   for (final keyword in _heavyStreamQualityKeywords) {
-    if (normalized.contains(keyword)) {
+    final key = keyword.toLowerCase().replaceAll(' ', '');
+    if (key.isNotEmpty && normalized.contains(key)) {
       return true;
     }
   }

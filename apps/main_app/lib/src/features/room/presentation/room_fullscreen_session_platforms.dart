@@ -87,26 +87,53 @@ class FloatingRoomPipHostFacade implements RoomPipHostFacade {
   FloatingRoomPipHostFacade({
     Floating? floating,
     AppPlatformCapabilities? platform,
-  }) : _floating = floating ?? Floating(),
-       _platform = platform ?? AppPlatformCapabilities.current();
+  }) : _platform = platform ?? AppPlatformCapabilities.current(),
+       // `floating` is Android-only; constructing/probing it on Linux/desktop
+       // starts a 10ms timer that floods MissingPluginException and can
+       // destabilize room enter. Only touch Floating on Android.
+       _floating = (platform ?? AppPlatformCapabilities.current()).isAndroid
+           ? (floating ?? Floating())
+           : floating;
 
-  final Floating _floating;
+  final Floating? _floating;
   final AppPlatformCapabilities _platform;
 
+  bool get _pipSupported => _platform.isAndroid && _floating != null;
+
   @override
-  Future<bool> isPipAvailable() {
-    return _floating.isPipAvailable;
+  Future<bool> isPipAvailable() async {
+    if (!_pipSupported) {
+      return false;
+    }
+    try {
+      return await _floating!.isPipAvailable;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
-  Stream<PiPStatus> get statusStream => _floating.pipStatusStream;
+  Stream<PiPStatus> get statusStream {
+    if (!_pipSupported) {
+      // Never subscribe to floating.pipStatusStream off-Android (10ms probe).
+      return Stream<PiPStatus>.value(PiPStatus.unavailable);
+    }
+    return _floating!.pipStatusStream;
+  }
 
   @override
   Future<PiPStatus> enablePip({required Rational aspectRatio}) async {
+    if (!_pipSupported) {
+      return PiPStatus.unavailable;
+    }
     try {
-      return await _floating.enable(ImmediatePiP(aspectRatio: aspectRatio));
+      return await _floating!.enable(ImmediatePiP(aspectRatio: aspectRatio));
     } catch (_) {
-      return _floating.enable(const ImmediatePiP());
+      try {
+        return await _floating!.enable(const ImmediatePiP());
+      } catch (_) {
+        return PiPStatus.unavailable;
+      }
     }
   }
 
@@ -115,11 +142,11 @@ class FloatingRoomPipHostFacade implements RoomPipHostFacade {
     required Widget childWhenDisabled,
     required Widget childWhenEnabled,
   }) {
-    if (!_platform.isAndroid) {
+    if (!_pipSupported) {
       return childWhenDisabled;
     }
     return PiPSwitcher(
-      floating: _floating,
+      floating: _floating!,
       duration: Duration.zero,
       childWhenDisabled: childWhenDisabled,
       childWhenEnabled: childWhenEnabled,
@@ -182,8 +209,12 @@ class WakelockRoomScreenAwakeFacade implements RoomScreenAwakeFacade {
   const WakelockRoomScreenAwakeFacade();
 
   @override
-  Future<void> toggle({required bool enabled}) {
-    return WakelockPlus.toggle(enable: enabled);
+  Future<void> toggle({required bool enabled}) async {
+    try {
+      await WakelockPlus.toggle(enable: enabled);
+    } catch (_) {
+      // Linux/desktop builds may lack a wakelock plugin path; ignore.
+    }
   }
 }
 

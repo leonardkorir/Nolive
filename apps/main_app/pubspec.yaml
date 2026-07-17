@@ -2,7 +2,7 @@ name: nolive_app
 description: Main Flutter application for Nolive.
 publish_to: none
 
-version: 0.3.6+9
+version: 0.3.7+10
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -29,6 +29,11 @@ dependencies:
   screen_brightness: ^2.1.7
   floating: ^6.0.0
   flutter_inappwebview: ^6.1.5
+  # Linux WebView (scheme B): WebKitGTK headless + desktop login windows.
+  # Vendored: DecidePolicy awaits Dart onUrlRequested and can ignore blocked URLs.
+  # flutter_inappwebview has no Linux implementation; this fills HlsHeadlessWebView.
+  desktop_webview_window:
+    path: ../../third_party/desktop_webview_window
   flutter_qjs:
     path: ../../third_party/flutter_qjs
   live_core:
@@ -92,3 +97,9 @@ flutter_native_splash:
     color: '#101316'
     image: assets/branding/nolive_android_splash.png
     icon_background_color: '#101316'
+
+dependency_overrides:
+  # Linux H/W: vendored media_kit_video with GDK EGL fallback (see third_party/media_kit_video/LINUX_HW_PATCH.md).
+  # Also listed in pubspec_overrides.yaml so Flutter/melos resolution cannot silently fall back to pub.dev.
+  media_kit_video:
+    path: ../../third_party/media_kit_video

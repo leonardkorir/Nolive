@@ -82,6 +82,16 @@ class HttpDouyinTransport extends DouyinTransport {
             'Douyin request failed for $uri with status ${response.statusCode}.',
       );
     }
+    // Empty 2xx bodies (common for web/enter under weak/invalid cookie) are
+    // treated as risk-control style failures so data-source retry can force-
+    // refresh cookie once.
+    if (response.bodyBytes.isEmpty) {
+      throw ProviderParseException(
+        providerId: ProviderId.douyin,
+        message:
+            'Douyin request failed for $uri with empty body (status ${response.statusCode}).',
+      );
+    }
     return DouyinHttpResponse(
       body: utf8.decode(response.bodyBytes),
       headers: response.headers,

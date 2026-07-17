@@ -23,10 +23,12 @@ class HttpDouyinSignService implements DouyinSignService {
   }) : _client = client ?? http.Client(),
        _cookieRequestTimeout = cookieRequestTimeout;
 
-  static String get defaultCookie {
-    final seconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    return 'ttwid=local-fallback-$seconds';
-  }
+  /// Last-resort cookie when no account cookie is injected and dynamic HEAD
+  /// refresh fails. Uses a morphologically valid `ttwid` shape (same style as
+  /// pure_live's static default) instead of an illegal `local-fallback-*` token
+  /// that causes `web/enter` to return empty 200 bodies.
+  static const String defaultCookie =
+      'ttwid=1%7CB1qls3GdnZhUov9o2NxOMxxYS2ff6OSvEWbv0ytbES4%7C1680522049%7C280d802d6d478e3e78d0c807f7c487e7ffec0ae4e5fdd6a0fe74c3c6af149511';
 
   final String cookie;
   final http.Client _client;
@@ -102,7 +104,7 @@ class HttpDouyinSignService implements DouyinSignService {
       }
     } catch (error, stackTrace) {
       developer.log(
-        'Failed to refresh Douyin cookies, falling back to generated cookie.',
+        'Failed to refresh Douyin cookies, falling back to static default ttwid.',
         name: 'live_providers.douyin_sign_service',
         error: error,
         stackTrace: stackTrace,

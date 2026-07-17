@@ -27,6 +27,7 @@ typedef RoomResolvePlaybackRefresh = Future<ResolvedPlaySource> Function(
 typedef RoomPlaybackSourceFromLine = PlaybackSource Function(
   LivePlayUrl playUrl, {
   LivePlayQuality? quality,
+  ProviderId? providerId,
 });
 
 typedef RoomBindPlaybackSourceWithRecovery = Future<bool> Function({

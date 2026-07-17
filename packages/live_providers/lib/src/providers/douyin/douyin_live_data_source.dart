@@ -30,7 +30,7 @@ class DouyinLiveDataSource implements DouyinDataSource {
   final Duration _roomDetailHtmlTimeout;
 
   static final RegExp _kRiskControlStatusPattern = RegExp(
-    r'(status|statusCode|http)\D*(444|403|429)|风控|验证|too many requests|forbidden',
+    r'(status|statusCode|http)\D*(444|403|429)|empty body|风控|验证|too many requests|forbidden',
     caseSensitive: false,
   );
   static final RegExp _kCategoryPayloadPattern = RegExp(

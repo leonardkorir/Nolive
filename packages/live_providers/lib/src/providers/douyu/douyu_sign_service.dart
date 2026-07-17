@@ -83,7 +83,12 @@ class HttpDouyuSignService implements DouyuSignService {
        _ownedSigner = ownedSigner,
        _diagnostics = diagnostics,
        _random = random ?? Random.secure() {
-    (scheduleSignerWarmUp ?? _ownedSigner?.warmUp)?.call();
+    // Prefer an injected scheduler when tests need to observe warm-up.
+    // Default: do not eager-spawn the QuickJS isolate at provider construction.
+    // Isolate + dual QuickJS DSOs (dart_quickjs + flutter_qjs) historically
+    // SIGSEGVed on Linux cold start; signing still lazy-inits the worker on
+    // first play. Call scheduleSignerWarmUp explicitly if warm-up is desired.
+    scheduleSignerWarmUp?.call();
   }
 
   static const String defaultUserAgent =

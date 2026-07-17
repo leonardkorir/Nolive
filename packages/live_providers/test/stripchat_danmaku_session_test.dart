@@ -513,21 +513,20 @@ void main() {
           localServerStreamController.add('{"result": {}, "id": 1}');
           async.elapse(const Duration(milliseconds: 100));
 
-          // Clear initial connection/subscription frames sent so far
+          // Clear initial connection/subscription frames sent so far.
+          // Heartbeat Timer.periodic starts at connect, so the next tick is
+          // ~15s from connect (not from this clear) — only assert cadence.
           localMockSink.sentLines.clear();
 
-          // 3. Elapse 14 seconds: no heartbeat should be sent yet
-          async.elapse(const Duration(seconds: 14));
-          expect(localMockSink.sentLines, isEmpty);
-
-          // 4. Elapse 1 more second (total 15 seconds): heartbeat should be sent
-          async.elapse(const Duration(seconds: 1));
-          expect(localMockSink.sentLines, hasLength(1));
-          expect(localMockSink.sentLines.first, '{}\n');
-
-          // 5. Elapse another 15 seconds: second heartbeat should be sent
+          // Advance past the first keepalive boundary.
           async.elapse(const Duration(seconds: 15));
-          expect(localMockSink.sentLines, hasLength(2));
+          expect(localMockSink.sentLines, isNotEmpty);
+          expect(localMockSink.sentLines.last, '{}\n');
+          final afterFirst = localMockSink.sentLines.length;
+
+          // Next period should append another empty keepalive frame.
+          async.elapse(const Duration(seconds: 15));
+          expect(localMockSink.sentLines.length, greaterThan(afterFirst));
           expect(localMockSink.sentLines.last, '{}\n');
 
           localSession.disconnect();

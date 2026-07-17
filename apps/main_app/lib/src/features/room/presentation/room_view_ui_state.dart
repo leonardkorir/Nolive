@@ -95,4 +95,50 @@ class RoomViewUiState {
           this.fullscreenChromeBeforeLifecycle,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is RoomViewUiState &&
+            isFullscreen == other.isFullscreen &&
+            fullscreenBootstrapPending == other.fullscreenBootstrapPending &&
+            fullscreenBootstrapScheduled ==
+                other.fullscreenBootstrapScheduled &&
+            desktopMiniWindowActive == other.desktopMiniWindowActive &&
+            showInlinePlayerChrome == other.showInlinePlayerChrome &&
+            showFullscreenChrome == other.showFullscreenChrome &&
+            showFullscreenLockButton == other.showFullscreenLockButton &&
+            lockFullscreenControls == other.lockFullscreenControls &&
+            pipSupported == other.pipSupported &&
+            enteringPictureInPicture == other.enteringPictureInPicture &&
+            pausedByLifecycle == other.pausedByLifecycle &&
+            restoreDanmakuAfterPip == other.restoreDanmakuAfterPip &&
+            danmakuVisibleBeforePip == other.danmakuVisibleBeforePip &&
+            fullscreenAutoApplied == other.fullscreenAutoApplied &&
+            showFullscreenFollowDrawer == other.showFullscreenFollowDrawer &&
+            inlineChromeBeforeLifecycle == other.inlineChromeBeforeLifecycle &&
+            fullscreenChromeBeforeLifecycle ==
+                other.fullscreenChromeBeforeLifecycle;
+  }
+
+  @override
+  int get hashCode => Object.hashAll(<Object?>[
+        isFullscreen,
+        fullscreenBootstrapPending,
+        fullscreenBootstrapScheduled,
+        desktopMiniWindowActive,
+        showInlinePlayerChrome,
+        showFullscreenChrome,
+        showFullscreenLockButton,
+        lockFullscreenControls,
+        pipSupported,
+        enteringPictureInPicture,
+        pausedByLifecycle,
+        restoreDanmakuAfterPip,
+        danmakuVisibleBeforePip,
+        fullscreenAutoApplied,
+        showFullscreenFollowDrawer,
+        inlineChromeBeforeLifecycle,
+        fullscreenChromeBeforeLifecycle,
+      ]);
 }

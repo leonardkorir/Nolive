@@ -1,1 +1,6 @@
 include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    # Manual probes / one-off scripts; not part of package hermetic tests.
+    - tool/**

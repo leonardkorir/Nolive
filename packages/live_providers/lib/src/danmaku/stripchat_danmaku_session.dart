@@ -12,7 +12,9 @@ import 'danmaku_web_socket.dart';
 class StripchatDanmakuSession implements DanmakuSession {
   StripchatDanmakuSession({
     required StripchatDanmakuToken danmakuToken,
-    Duration inactivityTimeout = const Duration(minutes: 2),
+    // Keep idle timeout generous: servers briefly pause under load (user log
+    // stream-done → reconnect). Prefer longer idle over drop/rebind thrash.
+    Duration inactivityTimeout = const Duration(minutes: 4),
     WebSocketChannelConnector channelConnector = connectDanmakuWebSocket,
   }) : _modelId = danmakuToken.modelId,
        _websocketUrl = danmakuToken.websocketUrl,
@@ -230,7 +232,8 @@ class StripchatDanmakuSession implements DanmakuSession {
       return;
     }
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    // Faster keep-alive reduces silent server closes under load.
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _sendLine('{}');
     });
   }

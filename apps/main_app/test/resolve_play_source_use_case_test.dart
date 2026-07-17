@@ -650,6 +650,106 @@ void main() {
   });
 
   test(
+    'resolvePlaybackBufferProfile maps Twitch/YouTube to desktopStableLive on phone and desktop',
+    () {
+      const twitchUrl = LivePlayUrl(
+        url: 'http://127.0.0.1:9999/twitch-ad-guard/session/stream.m3u8',
+        metadata: {'proxyKind': 'twitch-ad-guard', 'proxied': true},
+      );
+      const youtubeUrl = LivePlayUrl(
+        url:
+            'https://manifest.googlevideo.com/api/manifest/hls_playlist/id/demo/playlist/index.m3u8',
+      );
+      final quality = LivePlayQuality(
+        id: 'auto',
+        label: 'Auto',
+        isDefault: true,
+      );
+
+      for (final isDesktop in [true, false]) {
+        expect(
+          resolvePlaybackBufferProfile(
+            playUrl: twitchUrl,
+            quality: quality,
+            providerId: ProviderId.twitch,
+            isDesktop: isDesktop,
+          ),
+          PlaybackBufferProfile.desktopStableLive,
+        );
+        expect(
+          resolvePlaybackBufferProfile(
+            playUrl: youtubeUrl,
+            quality: quality,
+            providerId: ProviderId.youtube,
+            isDesktop: isDesktop,
+          ),
+          PlaybackBufferProfile.desktopStableLive,
+        );
+      }
+    },
+  );
+
+  test(
+    'resolvePlaybackBufferProfile keeps domestic FLV and SC/CB profiles on desktop',
+    () {
+      const flv = LivePlayUrl(
+        url: 'https://example.com/live.flv',
+        lineLabel: '原画',
+      );
+      const sc = LivePlayUrl(
+        url: 'http://127.0.0.1:9999/stripchat-llhls/session/playlist.m3u8',
+        metadata: {'proxyKind': 'stripchat-llhls', 'proxied': true},
+      );
+      const cb = LivePlayUrl(
+        url: 'http://127.0.0.1:9999/chaturbate-llhls/session/stream.m3u8',
+        metadata: {'proxyKind': 'chaturbate-llhls', 'proxied': true},
+      );
+      final quality = LivePlayQuality(id: '0', label: '原画', sortOrder: 100);
+
+      expect(
+        resolvePlaybackBufferProfile(
+          playUrl: flv,
+          quality: quality,
+          isDesktop: true,
+        ),
+        PlaybackBufferProfile.heavyStreamStable,
+      );
+      expect(
+        resolvePlaybackBufferProfile(
+          playUrl: sc,
+          quality: quality,
+          isDesktop: true,
+        ),
+        PlaybackBufferProfile.loopbackStableHls,
+      );
+      expect(
+        resolvePlaybackBufferProfile(
+          playUrl: cb,
+          quality: quality,
+          isDesktop: true,
+        ),
+        PlaybackBufferProfile.chaturbateLlHlsProxyStable,
+      );
+    },
+  );
+
+  test(
+    'resolvePlaybackBufferProfile maps 4K/超高清 labels to heavyStreamStable',
+    () {
+      const playUrl = LivePlayUrl(url: 'https://hw1a.douyucdn2.cn/live/x.flv');
+      final fourK = LivePlayQuality(
+        id: '16',
+        label: '4K超高清',
+        sortOrder: 4000,
+      );
+      expect(
+        resolvePlaybackBufferProfile(playUrl: playUrl, quality: fourK),
+        PlaybackBufferProfile.heavyStreamStable,
+      );
+    },
+  );
+
+  test(
     'resolve play source keeps chaturbate mmcdn fallback on stable profile',
     () async {
       final registry = ProviderRegistry()

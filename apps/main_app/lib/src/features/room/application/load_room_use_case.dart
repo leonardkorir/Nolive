@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:live_providers/live_providers.dart';
@@ -11,12 +14,18 @@ LivePlayQuality _kUnavailablePlayQuality = LivePlayQuality(
   isDefault: true,
 );
 
+/// Wall-clock budget for detail + qualities + play URLs so a single hung
+/// network call cannot leave the room page spinning forever (log: douyu hang).
+@visibleForTesting
+const Duration kLoadRoomNetworkTimeout = Duration(seconds: 20);
+
 class LoadRoomUseCase {
   const LoadRoomUseCase(
     this.registry, {
     required this.historyRepository,
     this.roomDetailOverride,
     this.resolveRecordHistoryEnabled,
+    this.networkTimeout = kLoadRoomNetworkTimeout,
   });
 
   final ProviderRegistry registry;
@@ -27,6 +36,7 @@ class LoadRoomUseCase {
   })?
   roomDetailOverride;
   final Future<bool> Function()? resolveRecordHistoryEnabled;
+  final Duration networkTimeout;
 
   Future<LoadedRoomSnapshot> call({
     required ProviderId providerId,
@@ -35,6 +45,58 @@ class LoadRoomUseCase {
     bool preferAdaptiveAutoQuality = true,
     NetworkQualityPreference? qualityPreference,
     bool isCellular = false,
+    NetworkQualityPreference? cellularQualityPreference,
+    bool? recordHistory,
+  }) async {
+    try {
+      return await _loadWithNetworkTimeout(
+        providerId: providerId,
+        roomId: roomId,
+        preferHighestQuality: preferHighestQuality,
+        preferAdaptiveAutoQuality: preferAdaptiveAutoQuality,
+        qualityPreference: qualityPreference,
+        isCellular: isCellular,
+        cellularQualityPreference: cellularQualityPreference,
+        recordHistory: recordHistory,
+      );
+    } on TimeoutException {
+      throw ProviderParseException(
+        providerId: providerId,
+        message:
+            '加载房间超时（${networkTimeout.inSeconds}s），请检查网络后重试。',
+      );
+    }
+  }
+
+  Future<LoadedRoomSnapshot> _loadWithNetworkTimeout({
+    required ProviderId providerId,
+    required String roomId,
+    required bool preferHighestQuality,
+    required bool preferAdaptiveAutoQuality,
+    NetworkQualityPreference? qualityPreference,
+    required bool isCellular,
+    NetworkQualityPreference? cellularQualityPreference,
+    bool? recordHistory,
+  }) {
+    return _loadBody(
+      providerId: providerId,
+      roomId: roomId,
+      preferHighestQuality: preferHighestQuality,
+      preferAdaptiveAutoQuality: preferAdaptiveAutoQuality,
+      qualityPreference: qualityPreference,
+      isCellular: isCellular,
+      cellularQualityPreference: cellularQualityPreference,
+      recordHistory: recordHistory,
+    ).timeout(networkTimeout);
+  }
+
+  Future<LoadedRoomSnapshot> _loadBody({
+    required ProviderId providerId,
+    required String roomId,
+    required bool preferHighestQuality,
+    required bool preferAdaptiveAutoQuality,
+    NetworkQualityPreference? qualityPreference,
+    required bool isCellular,
     NetworkQualityPreference? cellularQualityPreference,
     bool? recordHistory,
   }) async {

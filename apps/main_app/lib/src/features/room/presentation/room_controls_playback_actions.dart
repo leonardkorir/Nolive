@@ -69,6 +69,7 @@ class RoomControlsPlaybackActions {
           playbackSource: context.playbackSourceFromLine(
             refreshedLine,
             quality: resolved.effectiveQuality,
+            providerId: context.providerId,
           ),
         );
       }
@@ -103,6 +104,7 @@ class RoomControlsPlaybackActions {
           context.resolveEffectiveQuality() ??
           context.resolveSelectedQuality() ??
           context.resolveLatestLoadedState()?.snapshot.selectedQuality,
+      providerId: context.providerId,
     );
     context.trace(
       'manual switch line=${playUrl.lineLabel ?? '-'} '

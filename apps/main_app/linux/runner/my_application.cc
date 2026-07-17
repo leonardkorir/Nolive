@@ -75,6 +75,10 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
+  // Plugins (WebKit / media_kit) may touch X; keep non-fatal handler last and
+  // start a watchdog — Flutter/GDK reinstall the fatal default handler later.
+  nolive_start_x_error_handler_watchdog();
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -106,6 +110,10 @@ static void my_application_startup(GApplication* application) {
   // Perform any actions required at application startup.
 
   G_APPLICATION_CLASS(my_application_parent_class)->startup(application);
+
+  // GDK installs its own X error handler when the display opens. Start the
+  // watchdog so GLXBadWindow races with WebKit never hit the fatal default.
+  nolive_start_x_error_handler_watchdog();
 }
 
 // Implements GApplication::shutdown.

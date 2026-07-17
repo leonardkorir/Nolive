@@ -486,9 +486,23 @@ return await (async () => {
     final headlessWebView = _headlessWebView;
     _headlessWebView = null;
     _headlessWebViewFuture = null;
-    if (headlessWebView != null) {
-      _platformAdapter.log('twitch-bridge', 'dispose headless webview');
-      await headlessWebView.dispose();
+    if (headlessWebView == null) {
+      return;
+    }
+    _platformAdapter.log('twitch-bridge', 'dispose headless webview');
+    try {
+      await headlessWebView.dispose().timeout(const Duration(seconds: 5));
+    } catch (error, stackTrace) {
+      // Never let WebView teardown take down the process; bridges are fail-soft.
+      _platformAdapter.debugPrint(
+        'TwitchWebPlaybackBridge dispose failed: $error',
+      );
+      _platformAdapter.log(
+        'twitch-bridge',
+        'dispose headless webview failed (ignored)',
+        error,
+        stackTrace,
+      );
     }
   }
 
@@ -706,6 +720,6 @@ return await (async () => {
   String _buildRoomUrl(String roomId) => 'https://www.twitch.tv/$roomId';
 
   bool get _supportsPlatform {
-    return _platformAdapter.isMobile;
+    return _platformAdapter.supportsHeadlessWebView;
   }
 }

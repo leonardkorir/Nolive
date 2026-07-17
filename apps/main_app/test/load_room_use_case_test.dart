@@ -503,6 +503,75 @@ void main() {
       expect(snapshot.selectedQuality.id, 'auto');
     },
   );
+
+  test('load room surfaces network timeout as ProviderParseException', () async {
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: _kDouyuHangDescriptor,
+          builder: _HangingDouyuProvider.new,
+        ),
+      );
+    final useCase = LoadRoomUseCase(
+      registry,
+      historyRepository: InMemoryHistoryRepository(),
+      networkTimeout: const Duration(milliseconds: 80),
+    );
+
+    await expectLater(
+      () => useCase(providerId: ProviderId.douyu, roomId: '36252'),
+      throwsA(
+        isA<ProviderParseException>().having(
+          (e) => e.message,
+          'message',
+          contains('超时'),
+        ),
+      ),
+    );
+  });
+}
+
+const _kDouyuHangDescriptor = ProviderDescriptor(
+  id: ProviderId.douyu,
+  displayName: '斗鱼',
+  capabilities: {
+    ProviderCapability.roomDetail,
+    ProviderCapability.playQualities,
+    ProviderCapability.playUrls,
+  },
+  supportedPlatforms: {ProviderPlatform.android},
+  maturity: ProviderMaturity.ready,
+);
+
+class _HangingDouyuProvider extends LiveProvider
+    implements SupportsRoomDetail, SupportsPlayQualities, SupportsPlayUrls {
+  @override
+  ProviderDescriptor get descriptor => _kDouyuHangDescriptor;
+
+  @override
+  Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
+    await Future<void>.delayed(const Duration(seconds: 30));
+    return LiveRoomDetail(
+      providerId: ProviderId.douyu,
+      roomId: roomId,
+      title: 'hang',
+      streamerName: 'hang',
+      isLive: true,
+    );
+  }
+
+  @override
+  Future<List<LivePlayQuality>> fetchPlayQualities(LiveRoomDetail detail) async {
+    return [LivePlayQuality(id: '0', label: '原画', isDefault: true)];
+  }
+
+  @override
+  Future<List<LivePlayUrl>> fetchPlayUrls({
+    required LiveRoomDetail detail,
+    required LivePlayQuality quality,
+  }) async {
+    return [const LivePlayUrl(url: 'https://example.com/live.flv')];
+  }
 }
 
 const _kOverrideDescriptor = ProviderDescriptor(

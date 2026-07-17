@@ -415,6 +415,8 @@ class RoomPreviewSections extends StatelessWidget {
     required this.onToggleFollow,
     required this.onRefresh,
     required this.onShareRoom,
+    this.panelListenable,
+    this.resolveSelectedPanel,
     super.key,
   });
 
@@ -432,10 +434,14 @@ class RoomPreviewSections extends StatelessWidget {
   final VoidCallback onRefresh;
   final VoidCallback onShareRoom;
 
-  @override
-  Widget build(BuildContext context) {
-    final panelPager = RoomPanelPager(
-      selectedPanel: selectedPanel,
+  /// When set, panel tab/pager rebuilds from this listenable without requiring
+  /// a parent [setState] (keeps [playerSurface] off the panel update path).
+  final Listenable? panelListenable;
+  final RoomPanel Function()? resolveSelectedPanel;
+
+  Widget _buildPanelPager(RoomPanel panel) {
+    return RoomPanelPager(
+      selectedPanel: panel,
       pageController: pageController,
       onSelectPanel: onSelectPanel,
       onPageChanged: onPageChanged,
@@ -446,6 +452,23 @@ class RoomPreviewSections extends StatelessWidget {
         _RoomPanelScrollPage(child: controlsPanel),
       ],
     );
+  }
+
+  Widget _panelPagerHost() {
+    final listenable = panelListenable;
+    final resolve = resolveSelectedPanel;
+    if (listenable == null || resolve == null) {
+      return _buildPanelPager(selectedPanel);
+    }
+    return ListenableBuilder(
+      listenable: listenable,
+      builder: (context, _) => _buildPanelPager(resolve()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final panelPager = _panelPagerHost();
 
     final orientation = MediaQuery.orientationOf(context);
     if (orientation == Orientation.landscape) {

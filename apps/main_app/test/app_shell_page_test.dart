@@ -33,9 +33,10 @@ void main() {
       navBar.labelBehavior,
       isNot(NavigationDestinationLabelBehavior.alwaysHide),
     );
+    // Product shell keeps all destination labels visible (alwaysShow).
     expect(
       navBar.labelBehavior,
-      NavigationDestinationLabelBehavior.onlyShowSelected,
+      NavigationDestinationLabelBehavior.alwaysShow,
     );
     // Selected tab label is discoverable on the phone shell.
     expect(find.text('关注'), findsWidgets);

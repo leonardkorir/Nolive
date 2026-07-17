@@ -36,4 +36,26 @@ class RoomGestureUiState {
       tipText: clearTipText ? null : (tipText ?? this.tipText),
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is RoomGestureUiState &&
+            tracking == other.tracking &&
+            adjustingBrightness == other.adjustingBrightness &&
+            startY == other.startY &&
+            startVolume == other.startVolume &&
+            startBrightness == other.startBrightness &&
+            tipText == other.tipText;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        tracking,
+        adjustingBrightness,
+        startY,
+        startVolume,
+        startBrightness,
+        tipText,
+      );
 }

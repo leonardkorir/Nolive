@@ -1,7 +1,10 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:nolive_app/src/features/settings/application/manage_provider_accounts_use_case.dart';
+import 'package:nolive_app/src/features/settings/presentation/linux_desktop_web_login_page.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
@@ -10,11 +13,31 @@ bool shouldReportWebLoginLoadFailure(WebResourceRequest request) {
   return request.isForMainFrame ?? true;
 }
 
+bool get _useLinuxDesktopWebLogin =>
+    !kIsWeb && Platform.isLinux;
+
 class ChaturbateWebLoginPage extends StatelessWidget {
   const ChaturbateWebLoginPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    if (_useLinuxDesktopWebLogin) {
+      return const LinuxDesktopWebLoginPage(
+        title: 'Chaturbate 网页登录',
+        initialUrl: 'https://chaturbate.com/',
+        userAgent: _kEmbeddedAndroidBrowserUserAgent,
+        instructions: '完成 Cloudflare 验证或登录后直接保存 Cookie。',
+        allowedHostSuffixes: ['chaturbate.com'],
+        seedUrls: ['https://chaturbate.com/'],
+        quickLinks: [
+          LinuxWebLoginQuickLink(
+            label: '打开首页',
+            url: 'https://chaturbate.com/',
+            icon: Icons.home_outlined,
+          ),
+        ],
+      );
+    }
     return const _WebCookieLoginPage(
       config: _WebCookieLoginConfig(
         title: 'Chaturbate 网页登录',
@@ -40,6 +63,28 @@ class DouyinWebLoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_useLinuxDesktopWebLogin) {
+      return const LinuxDesktopWebLoginPage(
+        title: '抖音网页登录',
+        initialUrl: 'https://live.douyin.com/',
+        userAgent: _kDouyinBrowserUserAgent,
+        instructions: '如需右上角登录入口，可先缩小页面后再登录；浏览直播通常只需要游客 Cookie。',
+        allowedHostSuffixes: ['douyin.com'],
+        seedUrls: ['https://live.douyin.com/', 'https://www.douyin.com/'],
+        quickLinks: [
+          LinuxWebLoginQuickLink(
+            label: '直播页',
+            url: 'https://live.douyin.com/',
+            icon: Icons.live_tv_outlined,
+          ),
+          LinuxWebLoginQuickLink(
+            label: '抖音首页',
+            url: 'https://www.douyin.com/',
+            icon: Icons.home_outlined,
+          ),
+        ],
+      );
+    }
     return const _WebCookieLoginPage(
       config: _WebCookieLoginConfig(
         title: '抖音网页登录',
@@ -71,6 +116,28 @@ class TwitchWebLoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_useLinuxDesktopWebLogin) {
+      return const LinuxDesktopWebLoginPage(
+        title: 'Twitch 网页登录',
+        initialUrl: 'https://www.twitch.tv/',
+        userAgent: _kEmbeddedAndroidBrowserUserAgent,
+        instructions: '如需补强 Twitch Web 辅助播放，可先完成网页登录后再保存 Cookie。',
+        allowedHostSuffixes: ['twitch.tv'],
+        seedUrls: ['https://www.twitch.tv/', 'https://m.twitch.tv/'],
+        quickLinks: [
+          LinuxWebLoginQuickLink(
+            label: 'Twitch 首页',
+            url: 'https://www.twitch.tv/',
+            icon: Icons.home_outlined,
+          ),
+          LinuxWebLoginQuickLink(
+            label: '移动页',
+            url: 'https://m.twitch.tv/',
+            icon: Icons.smartphone_outlined,
+          ),
+        ],
+      );
+    }
     return const _WebCookieLoginPage(
       config: _WebCookieLoginConfig(
         title: 'Twitch 网页登录',
@@ -102,6 +169,23 @@ class StripchatWebLoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_useLinuxDesktopWebLogin) {
+      return const LinuxDesktopWebLoginPage(
+        title: 'Stripchat 网页登录',
+        initialUrl: 'https://zh.stripchat.com/',
+        userAgent: _kEmbeddedAndroidBrowserUserAgent,
+        instructions: '完成登录或 Cloudflare 验证后，打开任意直播间即可收集 Cookie。',
+        allowedHostSuffixes: ['stripchat.com'],
+        seedUrls: ['https://zh.stripchat.com/'],
+        quickLinks: [
+          LinuxWebLoginQuickLink(
+            label: '直播首页',
+            url: 'https://zh.stripchat.com/',
+            icon: Icons.home_outlined,
+          ),
+        ],
+      );
+    }
     return const _WebCookieLoginPage(
       config: _WebCookieLoginConfig(
         title: 'Stripchat 网页登录',

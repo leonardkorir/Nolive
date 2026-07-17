@@ -6,7 +6,7 @@ import 'package:live_providers/src/providers/douyu/douyu_transport.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('constructor schedules douyu signer warmup', () {
+  test('constructor runs injected signer warmup scheduler only', () {
     var warmupScheduled = false;
     HttpDouyuSignService(
       transport: _NoopDouyuTransport(),
@@ -16,6 +16,9 @@ void main() {
     );
 
     expect(warmupScheduled, isTrue);
+
+    // Without an injected scheduler, construction must not spawn QuickJS.
+    HttpDouyuSignService(transport: _NoopDouyuTransport());
   });
 
   test('quickjs signer serializes concurrent sign requests', () async {

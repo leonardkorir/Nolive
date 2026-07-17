@@ -13,6 +13,9 @@ class _FakePlatformAdapter implements HlsProxyPlatformAdapter {
   bool get isMobile => true;
 
   @override
+  bool get supportsHeadlessWebView => true;
+
+  @override
   bool get kDebugMode => true;
 
   @override
@@ -2753,4 +2756,50 @@ void main() {
       await upstream.close(force: true);
     },
   );
+  group('ensureStarted lifecycle', () {
+    test('concurrent ensureStarted single-flight and post-dispose fails closed',
+        () async {
+      final proxy = ChaturbateLlHlsProxy(
+        platformAdapter: _FakePlatformAdapter(),
+        enabledOverride: true,
+      );
+      await Future.wait([
+        proxy.ensureStarted(),
+        proxy.ensureStarted(),
+        proxy.ensureStarted(),
+      ]);
+      await proxy.ensureStarted();
+      await proxy.dispose();
+      await expectLater(
+        proxy.ensureStarted(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('disposed'),
+          ),
+        ),
+      );
+    });
+
+    test('dispose during ensureStarted fails closed', () async {
+      final proxy = ChaturbateLlHlsProxy(
+        platformAdapter: _FakePlatformAdapter(),
+        enabledOverride: true,
+      );
+      final start = proxy.ensureStarted();
+      await Future<void>.delayed(Duration.zero);
+      await proxy.dispose();
+      try {
+        await start;
+      } on StateError catch (error) {
+        expect(
+          error.message.contains('disposed') ||
+              error.message.contains('failed to start'),
+          isTrue,
+        );
+      }
+      await expectLater(proxy.ensureStarted(), throwsA(isA<StateError>()));
+    });
+  });
 }

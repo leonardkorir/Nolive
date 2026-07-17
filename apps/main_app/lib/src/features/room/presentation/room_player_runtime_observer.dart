@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
+import 'package:nolive_app/src/features/room/presentation/room_page_rebuild_scope.dart';
 import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
 import 'package:nolive_app/src/shared/application/app_log.dart';
 
@@ -53,7 +54,11 @@ String summarizeRoomPlaybackSource(PlaybackSource? source) {
 }
 
 typedef RoomPlayerRuntimeStateCallback =
-    void Function(PlayerState state, {required bool playbackAvailable});
+    void Function(
+      PlayerState state, {
+      required bool playbackAvailable,
+      bool forceRebuild,
+    });
 typedef RoomPlayerUnexpectedStopCallback =
     Future<void> Function(PlayerState state);
 typedef RoomPlayerShouldRecoverUnexpectedStop =
@@ -140,9 +145,13 @@ class RoomPlayerRuntimeObserver {
     _forwardPlayerState(state);
   }
 
-  void _forwardPlayerState(PlayerState state) {
+  void _forwardPlayerState(PlayerState state, {bool forceRebuild = false}) {
     final playbackAvailable = context.resolvePlaybackAvailable();
-    context.onPlayerStateChanged(state, playbackAvailable: playbackAvailable);
+    context.onPlayerStateChanged(
+      state,
+      playbackAvailable: playbackAvailable,
+      forceRebuild: forceRebuild,
+    );
     _handleUnexpectedStopState(state, playbackAvailable: playbackAvailable);
     if (kReleaseMode) {
       return;
@@ -270,18 +279,21 @@ class RoomPlayerRuntimeObserver {
       _lastNotifiedVideoHeight = null;
     }
     // First real video size must rebuild the room page so loading shell can
-    // dismiss even if position ticks are throttled (1s) in release.
+    // dismiss even if position ticks are throttled (1s) in release and
+    // PlayerState fields are unchanged.
     final width = diagnostics.width ?? 0;
     final height = diagnostics.height ?? 0;
-    if (width > 0 &&
-        height > 0 &&
-        (width != _lastNotifiedVideoWidth ||
-            height != _lastNotifiedVideoHeight)) {
+    if (shouldForceRoomPageRebuildForVideoSizeChange(
+      previousWidth: _lastNotifiedVideoWidth,
+      previousHeight: _lastNotifiedVideoHeight,
+      nextWidth: width,
+      nextHeight: height,
+    )) {
       _lastNotifiedVideoWidth = width;
       _lastNotifiedVideoHeight = height;
-      context.onPlayerStateChanged(
+      _forwardPlayerState(
         context.runtime.readCurrentState(),
-        playbackAvailable: context.resolvePlaybackAvailable(),
+        forceRebuild: true,
       );
     }
     if (source == null) {

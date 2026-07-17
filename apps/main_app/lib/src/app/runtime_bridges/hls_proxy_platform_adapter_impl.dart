@@ -1,25 +1,42 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' as foundation;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:live_hls_proxy/live_hls_proxy.dart';
 import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
+import 'package:nolive_app/src/app/runtime_bridges/linux_desktop_webview_adapter.dart';
 import 'package:nolive_app/src/shared/application/app_log.dart';
+
+/// Shared Linux cookie jar for headless bridges + web login (process-wide).
+final LinuxDesktopCookieJar linuxDesktopCookieJar = LinuxDesktopCookieJar();
 
 class HlsProxyPlatformAdapterImpl implements HlsProxyPlatformAdapter {
   HlsProxyPlatformAdapterImpl({
     AppPlatformCapabilities? platformCapabilities,
     CookieManager? cookieManager,
+    LinuxDesktopCookieJar? linuxCookieJar,
   }) : _platformCapabilities =
            platformCapabilities ?? AppPlatformCapabilities.current(),
-       _cookieManager = cookieManager ?? CookieManager.instance();
+       _cookieManagerOverride = cookieManager,
+       _linuxCookieJar = linuxCookieJar ?? linuxDesktopCookieJar;
 
   final AppPlatformCapabilities _platformCapabilities;
-  final CookieManager _cookieManager;
+  final CookieManager? _cookieManagerOverride;
+  CookieManager? _cookieManagerLazy;
+  final LinuxDesktopCookieJar _linuxCookieJar;
+
+  CookieManager get _cookieManager =>
+      _cookieManagerOverride ??
+      (_cookieManagerLazy ??= CookieManager.instance());
 
   @override
   bool get isMobile => _platformCapabilities.isMobile;
+
+  @override
+  bool get supportsHeadlessWebView =>
+      _platformCapabilities.supportsHeadlessWebView;
 
   @override
   bool get kDebugMode => foundation.kDebugMode;
@@ -43,9 +60,18 @@ class HlsProxyPlatformAdapterImpl implements HlsProxyPlatformAdapter {
     foundation.debugPrint(message);
   }
 
+  bool get _useLinuxDesktopWebView =>
+      !foundation.kIsWeb &&
+      Platform.isLinux &&
+      _platformCapabilities.supportsHeadlessWebView;
+
   @override
-  HlsProxyCookieManager get cookieManager =>
-      _HlsProxyCookieManagerImpl(_cookieManager);
+  HlsProxyCookieManager get cookieManager {
+    if (_useLinuxDesktopWebView) {
+      return _linuxCookieJar;
+    }
+    return _HlsProxyCookieManagerImpl(_cookieManager);
+  }
 
   @override
   Future<HlsHeadlessWebView> createHeadlessWebView({
@@ -57,6 +83,18 @@ class HlsProxyPlatformAdapterImpl implements HlsProxyPlatformAdapter {
     void Function(int statusCode, String url)? onHttpError,
     void Function(String description, String url)? onLoadError,
   }) async {
+    if (_useLinuxDesktopWebView) {
+      return LinuxDesktopHeadlessWebView(
+        initialUrl: initialUrl,
+        userAgent: userAgent,
+        desktopMode: desktopMode,
+        cookieJar: _linuxCookieJar,
+        shouldBlockRequest: shouldBlockRequest,
+        onConsoleMessage: onConsoleMessage,
+        onHttpError: onHttpError,
+        onLoadError: onLoadError,
+      );
+    }
     return _HlsHeadlessWebViewImpl(
       initialUrl: initialUrl,
       userAgent: userAgent,

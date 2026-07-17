@@ -108,6 +108,21 @@ String resolveFriendlyPlayerErrorMessage(String? rawError) {
       lower.contains('forbidden')) {
     return '该房间的资源链接已过期，请尝试重新进入。';
   }
+  // mpv opaque open failure on loopback LL-HLS proxy (SC/CB/Twitch).
+  // Common when room went private/offline or CDN timed out before proxy
+  // could rewrite the playlist — users previously saw nothing useful.
+  if (lower.contains('failed to open') &&
+      (lower.contains('127.0.0.1') ||
+          lower.contains('localhost') ||
+          lower.contains('stripchat-llhls') ||
+          lower.contains('chaturbate-llhls') ||
+          lower.contains('twitch-ad-guard'))) {
+    return '直播流暂时打不开（可能已下播/私密/线路超时），请刷新或换房间。';
+  }
+  if (lower.contains('playlist upstream unavailable') ||
+      (lower.contains('pdkey') && lower.contains('unavailable'))) {
+    return '直播流暂时打不开（可能已下播/私密/线路超时），请刷新或换房间。';
+  }
   if (lower.contains('mediacodec-device-creation-failed') ||
       lower.contains('could not create device') ||
       lower.contains('mpv-vd-reinit')) {

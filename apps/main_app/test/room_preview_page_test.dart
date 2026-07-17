@@ -2863,6 +2863,12 @@ void main() {
       resolveFriendlyPlayerErrorMessage('TimeoutException after 3s'),
       '加载超时，请尝试刷新。',
     );
+    expect(
+      resolveFriendlyPlayerErrorMessage(
+        'Failed to open http://127.0.0.1:38967/stripchat-llhls/abc/playlist.m3u8.',
+      ),
+      '直播流暂时打不开（可能已下播/私密/线路超时），请刷新或换房间。',
+    );
   });
 
   testWidgets(

@@ -425,28 +425,58 @@ class HttpStripchatApiClient implements StripchatApiClient {
     }
     final masterAuth = _parseMasterPlaylistAuth(body);
 
-    final childUrl = _selectPreferredVariantUrl(
+    final variants = _parseMasterVariants(
       finalUrl,
       body,
-      preferredVariantId: preferredVariantId,
       masterAuth: masterAuth,
     );
-    if (childUrl == null) {
+    if (variants.isEmpty) {
       return directProbe;
     }
-    try {
-      final childResponse = await _get(
-        childUrl,
-        context: 'playback variant playlist',
-        headers: headers,
-      );
-      return _inspectPlaylistResponse(
-        uri: childResponse.request?.url ?? childUrl,
-        body: childResponse.body,
-      );
-    } catch (e) {
-      return directProbe;
+    // Preferred first, then remaining by bandwidth (source child 404 must not
+    // leave playback stuck on empty master — same recovery as llhls proxy).
+    final ordered = <_StripchatMasterVariant>[];
+    final preferred = variants
+        .where(
+          (variant) =>
+              _matchesPreferredVariant(variant.url, preferredVariantId),
+        )
+        .toList(growable: false)
+      ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+    ordered.addAll(preferred);
+    final rest = List<_StripchatMasterVariant>.of(variants)
+      ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+    for (final variant in rest) {
+      if (ordered.any((v) => v.url.toString() == variant.url.toString())) {
+        continue;
+      }
+      ordered.add(variant);
     }
+    StripchatPlaybackProbeResult? lastChildReject;
+    for (final variant in ordered) {
+      try {
+        final childResponse = await _get(
+          variant.url,
+          context: 'playback variant playlist',
+          headers: headers,
+        );
+        final childProbe = _inspectPlaylistResponse(
+          uri: childResponse.request?.url ?? variant.url,
+          body: childResponse.body,
+        );
+        if (childProbe.isPlayable &&
+            !_looksLikeMasterPlaylist(childResponse.body)) {
+          return childProbe;
+        }
+        // Keep ad/VOD reject so we do not fall through to "master is #EXTM3U".
+        if (!childProbe.isPlayable) {
+          lastChildReject = childProbe;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return lastChildReject ?? directProbe;
   }
 
   @override
@@ -557,36 +587,6 @@ class HttpStripchatApiClient implements StripchatApiClient {
 
   bool _looksLikeMasterPlaylist(String body) {
     return body.contains('#EXT-X-STREAM-INF');
-  }
-
-  Uri? _selectPreferredVariantUrl(
-    Uri playlistUri,
-    String body, {
-    String? preferredVariantId,
-    _StripchatMasterPlaylistAuth? masterAuth,
-  }) {
-    final variants = _parseMasterVariants(
-      playlistUri,
-      body,
-      masterAuth: masterAuth,
-    );
-    if (variants.isEmpty) {
-      return null;
-    }
-    final preferred = variants
-        .where(
-          (variant) =>
-              _matchesPreferredVariant(variant.url, preferredVariantId),
-        )
-        .toList(growable: false);
-    if (preferred.isNotEmpty) {
-      preferred.sort(
-        (left, right) => right.bandwidth.compareTo(left.bandwidth),
-      );
-      return preferred.first.url;
-    }
-    variants.sort((left, right) => right.bandwidth.compareTo(left.bandwidth));
-    return variants.first.url;
   }
 
   List<StripchatPlaybackVariant> _parsePlaybackVariants(

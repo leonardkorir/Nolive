@@ -1,6 +1,6 @@
 # Nolive
 
-Nolive 是一个基于 Flutter 的直播聚合客户端，当前以 Android mobile first 为主，统一提供多平台直播间浏览、搜索、关注、播放和弹幕体验。
+Nolive 是一个基于 Flutter 的直播聚合客户端，以 Android 为主发布目标，并提供 **Linux 桌面完整对等**（含国际站 bridge / 网页登录）。统一提供多平台直播间浏览、搜索、关注、播放和弹幕体验。
 
 ## 下载与安装
 
@@ -8,30 +8,31 @@ Nolive 是一个基于 Flutter 的直播聚合客户端，当前以 Android mobi
 - 如果你是大多数近年的 Android 真机，优先下载 `app-arm64-v8a-release.apk`
 - 较老的 32 位设备可尝试 `app-armeabi-v7a-release.apk`
 - `app-x86_64-release.apk` 主要用于 x86_64 Android 模拟器
+- **Linux 桌面**：源码构建 release bundle（见下方「Linux 桌面」）
 
 ## 当前状态
 
 - 当前正式发布目标是 Android。
+- 正式发布主目标仍是 Android（mobile first）；**Linux 桌面**在依赖齐备时可构建与 Android 主路径同能力的桌面端（平板 UI + 播放 + 国际站 WebView bridge / 登录）。
 - 当前对外发布口径为多平台直播聚合客户端。
-- 仓库仍保留不同平台的实现与扩展能力，但它们不构成逐项公开承诺。
-- 当前对外版本变化见 [`CHANGELOG.md`](CHANGELOG.md) 与 GitHub Releases。
+- 主应用版本见 `apps/main_app/pubspec.yaml`（当前 `0.3.7+10`）；对外版本变化见 [`CHANGELOG.md`](CHANGELOG.md) 与 GitHub Releases。
 
 ## 功能概览
 
 - 首页、发现、搜索、关注、我的五段式主流程
-- 直播间详情、清晰度切换、线路切换、播放器后端切换
+- 直播间详情、清晰度 / 线路切换、播放器后端切换、自适应 Auto 画质（可设置）
 - 视频弹幕 overlay、弹幕过滤和显示设置
 - 关注、历史、标签和本地持久化
-- WebDAV 备份、本地快照、局域网同步工具
-- 受控迁移包：单独迁移账号 Cookie 与 WebDAV 密码，不混入日常 snapshot
-- Android 启动画面、应用图标和发布脚本
+- WebDAV 备份、本地快照、局域网发现与分类同步
+- 受控迁移包：单独迁移账号 Cookie 与 WebDAV 密码；局域网同步可在用户显式开关下附带凭证
+- Android 启动画面、应用图标、PiP 与发布脚本
 
 ## 数据与同步边界
 
-- 平台 Cookie、WebDAV 密码属于敏感凭证，默认不进入常规 snapshot、WebDAV 备份或局域网同步 payload。
+- 平台 Cookie、WebDAV 密码属于敏感凭证，默认不进入常规 snapshot、WebDAV 备份或**未开启凭证开关**的局域网同步 payload。
 - 日常 snapshot 用于同步普通设置、屏蔽词、历史、关注和标签，不等于“整机克隆”。
-- 跨设备迁移敏感凭证时，使用设置页中的“受控迁移包”流程，显式导出并通过口令加密导入。
-- `AppBootstrap` 继续作为 composition root；`settings` 和 `sync` 新功能优先通过 feature-scoped dependencies 暴露能力。
+- 跨设备迁移敏感凭证时，优先使用设置页中的「受控迁移包」（口令加密）；局域网同步的凭证附带为显式 opt-in。
+- `AppBootstrap` 是 composition root；feature 页面通过 feature-scoped dependencies 获取能力，不直接依赖完整 bootstrap。
 
 ## 仓库结构
 
@@ -42,13 +43,13 @@ Nolive 是一个基于 Flutter 的直播聚合客户端，当前以 Android mobi
 - `packages/live_danmaku`：弹幕领域能力
 - `packages/live_storage`：本地存储与持久化
 - `packages/live_sync`：同步协议与数据模型
-- `packages/live_shared`：共享工具与公共基础设施
+- `packages/live_hls_proxy`：LL-HLS / Twitch 等 runtime-assisted 纯 Dart 辅助（本地 loopback 等）
 - `scripts/`：构建、安装、校验和 smoke 脚本
 
 ## 环境要求
 
-- Flutter `3.35+`
-- Dart `3.6+`
+- Flutter `3.38+`
+- Dart `3.10+`
 - Android SDK 和可用设备或模拟器
 - `bash`，用于执行仓库提供的脚本
 
@@ -70,6 +71,29 @@ flutter pub run melos run format
 cd apps/main_app
 flutter run -d android
 ```
+
+### Linux 桌面
+
+系统依赖与构建命令见下方；完整桌面验收以本机构建结果为准。
+
+```bash
+# 系统依赖（Debian/Ubuntu 示例）
+sudo apt-get install -y clang cmake ninja-build pkg-config \
+  libgtk-3-dev libsecret-1-dev libjsoncpp-dev libwebkit2gtk-4.1-dev libmpv-dev mpv
+
+# 构建 release bundle
+scripts/build_main_app.sh linux
+# 运行
+apps/main_app/build/linux/x64/release/bundle/nolive
+```
+
+**完整可用条件摘要**：
+
+1. 上述系统依赖安装齐全（尤其 **libsecret** 与 **WebKitGTK 4.1**）
+2. `scripts/build_main_app.sh linux` 产出 bundle
+3. 默认窗口 1280×720 为平板侧栏导航
+4. 国内站列表/进房可播；国际站（Twitch / YouTube / Chaturbate / Stripchat）经 WebView bridge 启用
+5. 设置页网页登录可保存 Cookie；安全存储可用
 
 如果要快速验证 provider 主链路：
 

@@ -224,7 +224,9 @@ class _RoomDanmakuOverlayState extends State<RoomDanmakuOverlay> {
     if (message.type != LiveMessageType.chat) {
       return '';
     }
-    return message.content.trim();
+    // Danmaku from some providers can carry unpaired UTF-16 surrogates which
+    // crash Paragraph layout ("string is not well-formed UTF-16").
+    return normalizeDisplayText(message.content).trim();
   }
 
   String _messageId(LiveMessage message, String text) {

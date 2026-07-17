@@ -1,1 +1,7 @@
 include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    # Manual Linux device smokes / one-off probes; not part of hermetic unit gate.
+    - integration_test/**
+    - tool/**

@@ -7,7 +7,7 @@
 - 文件型 snapshot 顶层持久化
 - follow / history / settings / tag repository 契约
 - file / in-memory repository 实现
-- 顶层 `format_version` 文件格式
+- 顶层 `format_version` 文件格式（`FileStorageSnapshot.currentFormatVersion` 当前为 **2**）
 
 ## 当前导出面
 

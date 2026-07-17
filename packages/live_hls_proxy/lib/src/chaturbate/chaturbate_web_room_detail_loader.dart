@@ -528,7 +528,7 @@ class ChaturbateWebRoomDetailLoader {
   }
 
   bool get _supportsPlatform {
-    return _platformAdapter.isMobile;
+    return _platformAdapter.supportsHeadlessWebView;
   }
 }
 

@@ -46,6 +46,7 @@ void main() {
         videoOutputDriver: '   ',
         hardwareDecoder: '',
         logEnabled: false,
+        isAndroid: true,
       );
 
       expect(config.controllerConfiguration.vo, 'gpu-next');
@@ -73,11 +74,119 @@ void main() {
         audioOutputDriver: 'audiotrack',
         hardwareDecoder: 'mediacodec',
         logEnabled: false,
+        isAndroid: true,
       );
 
       expect(config.platformProperties['ao'], 'audiotrack');
       expect(config.controllerConfiguration.vo, 'gpu-next');
       expect(config.controllerConfiguration.hwdec, 'mediacodec');
+    },
+  );
+
+  test(
+    'resolveMpvRuntimeConfiguration forces libmpv on desktop for window-opening VO',
+    () {
+      final config = resolveMpvRuntimeConfiguration(
+        enableHardwareAcceleration: true,
+        compatMode: false,
+        doubleBufferingEnabled: false,
+        customOutputEnabled: true,
+        videoOutputDriver: 'gpu-next',
+        audioOutputDriver: 'auto',
+        hardwareDecoder: 'auto-safe',
+        logEnabled: false,
+        isAndroid: false,
+      );
+
+      expect(config.controllerConfiguration.vo, 'libmpv');
+      expect(config.usesExternalNativeWindow, isFalse);
+      // Desktop promotes auto-safe → auto-copy so VAAPI/NVDEC actually engage.
+      expect(config.controllerConfiguration.hwdec, 'auto-copy');
+    },
+  );
+
+  test(
+    'resolveMpvRuntimeConfiguration keeps gpu-next for external native window opt-in',
+    () {
+      final config = resolveMpvRuntimeConfiguration(
+        enableHardwareAcceleration: true,
+        compatMode: false,
+        doubleBufferingEnabled: false,
+        customOutputEnabled: true,
+        videoOutputDriver: 'gpu-next',
+        audioOutputDriver: 'auto',
+        hardwareDecoder: 'nvdec-copy',
+        logEnabled: false,
+        isAndroid: false,
+        allowExternalNativeWindow: true,
+      );
+
+      expect(config.usesExternalNativeWindow, isTrue);
+      expect(config.externalNativeVideoOutputDriver, 'gpu-next');
+      expect(config.controllerConfiguration.vo, 'gpu-next');
+      expect(config.controllerConfiguration.hwdec, 'nvdec-copy');
+      expect(config.platformProperties['vo'], 'gpu-next');
+      expect(config.platformProperties['hwdec'], 'nvdec-copy');
+      // video-sync is owned by per-source profiles, not the external VO init path.
+      expect(config.platformProperties.containsKey('video-sync'), isFalse);
+    },
+  );
+
+  test(
+    'resolveMpvRuntimeConfiguration promotes libmpv to gpu-next when external allowed',
+    () {
+      final config = resolveMpvRuntimeConfiguration(
+        enableHardwareAcceleration: true,
+        compatMode: false,
+        doubleBufferingEnabled: false,
+        customOutputEnabled: false,
+        videoOutputDriver: 'libmpv',
+        hardwareDecoder: 'auto-copy',
+        logEnabled: false,
+        isAndroid: false,
+        allowExternalNativeWindow: true,
+      );
+
+      expect(config.usesExternalNativeWindow, isTrue);
+      expect(config.externalNativeVideoOutputDriver, 'gpu-next');
+      expect(config.platformProperties['vo'], 'gpu-next');
+    },
+  );
+
+  test(
+    'resolveMpvRuntimeConfiguration uses auto-copy for empty desktop decoder',
+    () {
+      final config = resolveMpvRuntimeConfiguration(
+        enableHardwareAcceleration: true,
+        compatMode: false,
+        doubleBufferingEnabled: false,
+        customOutputEnabled: false,
+        videoOutputDriver: 'libmpv',
+        hardwareDecoder: '',
+        logEnabled: false,
+        isAndroid: false,
+      );
+
+      expect(config.controllerConfiguration.hwdec, 'auto-copy');
+      expect(config.controllerConfiguration.enableHardwareAcceleration, isTrue);
+    },
+  );
+
+  test(
+    'resolveMpvRuntimeConfiguration keeps Android auto-safe default',
+    () {
+      final config = resolveMpvRuntimeConfiguration(
+        enableHardwareAcceleration: true,
+        compatMode: false,
+        doubleBufferingEnabled: false,
+        customOutputEnabled: false,
+        videoOutputDriver: 'gpu-next',
+        hardwareDecoder: 'auto-safe',
+        logEnabled: false,
+        isAndroid: true,
+      );
+
+      expect(config.controllerConfiguration.hwdec, 'auto-safe');
     },
   );
 
@@ -92,6 +201,7 @@ void main() {
         videoOutputDriver: 'gpu-next',
         hardwareDecoder: 'auto-safe',
         logEnabled: false,
+        isAndroid: true,
       );
 
       expect(
@@ -110,6 +220,7 @@ void main() {
         videoOutputDriver: 'gpu-next',
         hardwareDecoder: 'auto-safe',
         logEnabled: false,
+        isAndroid: true,
       );
 
       expect(
@@ -859,6 +970,16 @@ void main() {
       expect(defaultTimeout, const Duration(milliseconds: 3500));
       expect(youtubeHlsTimeout, const Duration(seconds: 10));
       expect(externalAudioTimeout, const Duration(seconds: 10));
+
+      final twitchTimeout = resolveMpvStartupMediaSignalTimeout(
+        PlaybackSource(
+          url: Uri.parse(
+            'http://127.0.0.1:9/twitch-ad-guard/s/stream.m3u8',
+          ),
+          bufferProfile: PlaybackBufferProfile.desktopStableLive,
+        ),
+      );
+      expect(twitchTimeout, const Duration(seconds: 22));
     },
   );
 
@@ -1845,6 +1966,33 @@ https://rr1---sn-qja5m5-5g.googlevideo.com/videoplayback/id/demo/itag/96/playlis
     );
   });
 
+  test(
+    'shouldIgnoreMpvErrorMessage filters stripchat loopback audio decode glitches',
+    () {
+      final source = PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:9999/stripchat-llhls/session/playlist.m3u8',
+        ),
+        bufferProfile: PlaybackBufferProfile.loopbackStableHls,
+      );
+
+      expect(
+        shouldIgnoreMpvErrorMessage(
+          source: source,
+          message: 'Error decoding audio.',
+        ),
+        isTrue,
+      );
+      expect(
+        shouldIgnoreMpvErrorMessage(
+          source: source,
+          message: 'Invalid audio PTS: 1.234 -> 5.678',
+        ),
+        isTrue,
+      );
+    },
+  );
+
   test('shouldForceSeekableForSource keeps split dash playback untouched', () {
     final source = PlaybackSource(
       url: Uri.parse('https://rr1---sn.example.googlevideo.com/videoplayback'),
@@ -1997,22 +2145,115 @@ https://rr1---sn-qja5m5-5g.googlevideo.com/videoplayback/id/demo/itag/96/playlis
         doubleBufferingEnabled: false,
       );
 
+      // Desktop AES/proxy path: thick multi-second headroom for mouflon + LL-HLS.
       expect(properties['cache'], 'yes');
-      expect(properties['cache-secs'], '8');
+      expect(properties['cache-secs'], '40');
       expect(properties['cache-pause'], 'yes');
-      expect(properties['cache-pause-wait'], '2');
+      expect(properties['cache-pause-wait'], '3');
       expect(properties['cache-pause-initial'], 'yes');
-      expect(properties['audio-buffer'], '0.4');
+      expect(properties['audio-buffer'], '2.0');
       expect(properties['demuxer-seekable-cache'], 'no');
       expect(properties['demuxer-donate-buffer'], 'no');
-      expect(properties['demuxer-max-back-bytes'], '67108864');
-      expect(properties['demuxer-max-bytes'], '67108864');
-      expect(properties['demuxer-readahead-secs'], '8');
-      expect(properties['demuxer-lavf-analyzeduration'], '3');
+      expect(properties['demuxer-max-back-bytes'], '268435456');
+      expect(properties['demuxer-max-bytes'], '268435456');
+      expect(properties['demuxer-readahead-secs'], '40');
+      expect(properties['demuxer-lavf-analyzeduration'], '2');
       expect(properties['demuxer-lavf-probesize'], '500000');
       expect(properties['video-sync'], 'display-tempo');
+      expect(properties['demuxer-lavf-o'], contains('live_start_index=-4'));
+      expect(properties['demuxer-lavf-o'], contains('http_multiple=1'));
       expect(properties['load-unsafe-playlists'], 'yes');
       expect(properties['hls-bitrate'], isNull);
+    },
+  );
+
+  test(
+    'resolveMpvSourcePlatformProperties desktopStableLive enables multi-second cache',
+    () {
+      final twitch = PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:9999/twitch-ad-guard/session/stream.m3u8',
+        ),
+        bufferProfile: PlaybackBufferProfile.desktopStableLive,
+      );
+      final youtube = PlaybackSource(
+        url: Uri.parse(
+          'https://manifest.googlevideo.com/api/manifest/hls_variant/id/demo/itag/0/file/index.m3u8',
+        ),
+        masterPlaylistUrl: Uri.parse(
+          'https://manifest.googlevideo.com/api/manifest/hls_variant/id/demo/itag/0/file/index.m3u8',
+        ),
+        masterPlaylistContent:
+            '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\n'
+            'https://rr1---sn-qja5m5-5g.googlevideo.com/videoplayback/id/demo/itag/96/playlist/index.m3u8\n',
+        bufferProfile: PlaybackBufferProfile.desktopStableLive,
+      );
+
+      for (final source in [twitch, youtube]) {
+        final properties = resolveMpvSourcePlatformProperties(
+          source: source,
+          doubleBufferingEnabled: false,
+        );
+        expect(properties['cache'], 'yes');
+        expect(int.parse(properties['cache-secs']!), greaterThanOrEqualTo(12));
+        expect(
+          int.parse(properties['demuxer-readahead-secs']!),
+          greaterThanOrEqualTo(12),
+        );
+        expect(int.parse(properties['demuxer-max-bytes']!), greaterThan(16777216));
+        expect(properties['cache'], isNot(equals('no')));
+        expect(properties['framedrop'], 'vo');
+        expect(properties.containsKey('hls-bitrate'), isFalse);
+      }
+
+      final youtubeProps = resolveMpvSourcePlatformProperties(
+        source: youtube,
+        doubleBufferingEnabled: false,
+      );
+      expect(youtubeProps['demuxer-lavf-o'], contains('protocol_whitelist'));
+    },
+  );
+
+  test(
+    'resolveMpvHwdecActiveSampleDelay waits until decode can engage',
+    () {
+      final delay = resolveMpvHwdecActiveSampleDelay();
+      expect(delay.inMilliseconds, greaterThanOrEqualTo(500));
+      expect(delay.inMilliseconds, lessThanOrEqualTo(2000));
+      final delays = resolveMpvHwdecActiveSampleDelays();
+      expect(delays.length, greaterThanOrEqualTo(2));
+      expect(delays.last.inMilliseconds, greaterThan(delay.inMilliseconds));
+      expect(looksLikeActiveHwdecCurrent('nvdec-copy'), isTrue);
+      expect(looksLikeActiveHwdecCurrent('-'), isFalse);
+      expect(looksLikeActiveHwdecCurrent('no'), isFalse);
+    },
+  );
+
+  test(
+    'resolveMpvSourcePlatformProperties keeps Android stripchat cache-pause-initial',
+    () {
+      final source = PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:9999/stripchat-llhls/session/playlist.m3u8',
+        ),
+        masterPlaylistUrl: Uri.parse(
+          'https://edge-hls.doppiocdn.com/hls/222064808/master/222064808_auto.m3u8?minHeight=240&playlistType=lowLatency',
+        ),
+        masterPlaylistContent: '#EXTM3U',
+        bufferProfile: PlaybackBufferProfile.loopbackStableHls,
+      );
+
+      final properties = resolveMpvSourcePlatformProperties(
+        source: source,
+        doubleBufferingEnabled: false,
+        isAndroid: true,
+      );
+
+      expect(properties['cache-pause'], 'yes');
+      expect(properties['cache-pause-wait'], '3');
+      expect(properties['cache-pause-initial'], 'yes');
+      expect(properties['cache-secs'], '12');
+      expect(properties['video-sync'], 'audio');
     },
   );
 
@@ -2052,6 +2293,10 @@ https://rr1---sn-qja5m5-5g.googlevideo.com/videoplayback/id/demo/itag/96/playlis
       expect(properties['demuxer-max-back-bytes'], '67108864');
       expect(properties['demuxer-max-bytes'], '67108864');
       expect(properties['demuxer-readahead-secs'], '10');
+      // Desktop FPS game stream pacing.
+      expect(properties['framedrop'], 'vo');
+      expect(properties['video-sync'], 'display-tempo');
+      expect(properties['cache-pause'], 'no');
     },
   );
 
@@ -2144,25 +2389,48 @@ https://rr1---sn-qja5m5-5g.googlevideo.com/videoplayback/id/demo/itag/96/playlis
       );
 
       expect(properties['cache'], 'yes');
-      expect(properties['cache-secs'], '10');
+      expect(properties['cache-secs'], '12');
       expect(properties['cache-pause'], 'no');
       expect(properties['cache-pause-wait'], '1');
       expect(properties['cache-pause-initial'], 'no');
-      expect(properties['audio-buffer'], '1.2');
+      expect(properties['audio-buffer'], '1.4');
       expect(properties['demuxer-seekable-cache'], 'no');
       expect(properties['demuxer-donate-buffer'], 'no');
-      expect(properties['demuxer-max-back-bytes'], '33554432');
-      expect(properties['demuxer-max-bytes'], '33554432');
-      expect(properties['demuxer-readahead-secs'], '10');
+      expect(properties['demuxer-max-back-bytes'], '50331648');
+      expect(properties['demuxer-max-bytes'], '50331648');
+      expect(properties['demuxer-readahead-secs'], '12');
       expect(
         properties['demuxer-lavf-o'],
         'live_start_index=-1,seg_max_retry=3,http_persistent=1,http_multiple=0',
       );
       expect(properties['demuxer-lavf-analyzeduration'], '2');
       expect(properties['demuxer-lavf-probesize'], '500000');
-      expect(properties['video-sync'], 'audio');
+      // Desktop defaults to display-tempo to reduce S/W-texture tear.
+      expect(properties['video-sync'], 'display-tempo');
       expect(properties['load-unsafe-playlists'], 'no');
       expect(properties.containsKey('hls-bitrate'), isFalse);
+    },
+  );
+
+  test(
+    'resolveMpvSourcePlatformProperties keeps chaturbate video-sync=audio on Android',
+    () {
+      final source = PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:9999/chaturbate-llhls/session/stream.m3u8',
+        ),
+        bufferProfile: PlaybackBufferProfile.chaturbateLlHlsProxyStable,
+      );
+
+      final properties = resolveMpvSourcePlatformProperties(
+        source: source,
+        doubleBufferingEnabled: false,
+        isAndroid: true,
+      );
+
+      expect(properties['video-sync'], 'audio');
+      expect(properties['cache'], 'yes');
+      expect(properties['demuxer-readahead-secs'], '10');
     },
   );
 
@@ -2182,11 +2450,35 @@ https://rr1---sn-qja5m5-5g.googlevideo.com/videoplayback/id/demo/itag/96/playlis
         hardwareDecoder: 'mediacodec',
       );
 
-      expect(properties['hwdec'], 'auto-safe');
+      // Must preserve the runtime decoder — do not force auto-safe (breaks
+      // Linux auto-copy / active hwdec-current under libmpv embed).
+      expect(properties['hwdec'], 'mediacodec');
       expect(properties['demuxer-lavf-analyzeduration'], '5');
       expect(properties['demuxer-lavf-probesize'], '5000000');
-      expect(properties['video-sync'], 'audio');
+      // Desktop direct-fallback still uses display-tempo (isAndroid defaults false).
+      expect(properties['video-sync'], 'display-tempo');
       expect(properties['load-unsafe-playlists'], 'yes');
+      expect(properties['hwdec'], isNot(equals('auto-safe')));
+    },
+  );
+
+  test(
+    'resolveMpvSourcePlatformProperties keeps desktop auto-copy for chaturbate direct',
+    () {
+      final source = PlaybackSource(
+        url: Uri.parse(
+          'https://edge6-phx.live.mmcdn.com/live-hls/amlst:demo-sd/playlist.m3u8',
+        ),
+        bufferProfile: PlaybackBufferProfile.chaturbateLlHlsProxyStable,
+      );
+
+      final properties = resolveMpvSourcePlatformProperties(
+        source: source,
+        doubleBufferingEnabled: false,
+        hardwareDecoder: 'auto-copy',
+      );
+
+      expect(properties['hwdec'], 'auto-copy');
     },
   );
 

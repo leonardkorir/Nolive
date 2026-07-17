@@ -99,7 +99,9 @@ class _AppShellPageState extends State<AppShellPage> {
         final orientation = MediaQuery.orientationOf(context);
         final isWide = shortestSide >= 840 ||
             orientation == Orientation.landscape;
-        final useExtendedRail = shortestSide >= 1280;
+        // Desktop windows are often landscape with shortestSide < 1280; still
+        // show labels under icons so 首页/关注 never disappear as icon-only.
+        final useExtendedRail = size.width >= 1400;
         _pageAt(selectedTab);
         final content = IndexedStack(
           key: _indexedStackKey,
@@ -145,9 +147,12 @@ class _AppShellPageState extends State<AppShellPage> {
                               selectedIndex: selectedIndex,
                               useIndicator: true,
                               extended: useExtendedRail,
+                              // Always surface labels: extended rail shows them
+                              // beside icons; compact rail shows them under icons.
                               labelType: useExtendedRail
                                   ? NavigationRailLabelType.none
                                   : NavigationRailLabelType.all,
+                              minWidth: 72,
                               destinations: [
                                 for (final destination in destinations)
                                   NavigationRailDestination(
@@ -176,9 +181,9 @@ class _AppShellPageState extends State<AppShellPage> {
                       body: SafeArea(child: content),
                       bottomNavigationBar: NavigationBar(
                         selectedIndex: selectedIndex,
-                        // Show selected tab label for discoverability / a11y.
-                        labelBehavior: NavigationDestinationLabelBehavior
-                            .onlyShowSelected,
+                        // Desktop-friendly: always show all tab labels.
+                        labelBehavior:
+                            NavigationDestinationLabelBehavior.alwaysShow,
                         onDestinationSelected: (index) {
                           _selectTab(destinations[index].id);
                         },
