@@ -7,13 +7,13 @@ Future<void> main(List<String> args) async {
   final roomId = args.isNotEmpty ? args[0] : '208114';
   final transport = HttpDouyuTransport();
   final sign = HttpDouyuSignService(transport: transport);
-  final ctx = await sign.buildPlayContext(roomId);
-  print('body=${ctx.body}');
+  final body = await sign.buildSignedPlayBody(roomId);
+  print('body=$body');
 
   final response = await transport.postJson(
-    'https://www.douyu.com/lapi/live/getH5Play/$roomId',
-    body: sign.extendPlayBody(ctx.body, cdn: '', rate: '-1'),
-    headers: sign.buildPlayHeaders(roomId, deviceId: ctx.deviceId),
+    'https://www.douyu.com/lapi/live/getH5PlayV1/$roomId',
+    body: body,
+    headers: sign.buildPlayHeaders(roomId),
   );
   print(const JsonEncoder.withIndent('  ').convert(response));
 }

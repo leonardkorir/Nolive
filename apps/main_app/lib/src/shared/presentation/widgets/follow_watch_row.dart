@@ -41,7 +41,11 @@ class FollowWatchRow extends StatelessWidget {
     final tagsLabel = normalizeDisplayText(entry.displayTags.join(' · '));
     final liveDuration = _liveDuration(room?.startedAt);
     final subtitle = normalizeDisplayText(
-      entry.hasError && room == null ? '状态刷新失败，点击后可继续尝试进入房间' : entry.title,
+      entry.isPasswordProtected
+          ? '房间已加锁，需要密码（当前不支持输入密码观看）'
+          : entry.hasError && room == null
+              ? '状态暂未知，点击仍可尝试进入房间'
+              : entry.title,
     );
     final titleColor =
         highContrastOverlay ? const Color(0xFFF8FAFC) : colorScheme.onSurface;
@@ -58,6 +62,7 @@ class FollowWatchRow extends StatelessWidget {
       isLive: entry.isLive,
       isPlaying: isPlaying,
       hasError: entry.hasError,
+      isPasswordProtected: entry.isPasswordProtected,
     );
     final avatarSize = highContrastOverlay ? 44.0 : (showSurface ? 42.0 : 44.0);
     final rowMinHeight =
@@ -913,6 +918,7 @@ class _FollowStatusPresentation {
     required bool isLive,
     required bool isPlaying,
     required bool hasError,
+    bool isPasswordProtected = false,
   }) {
     if (isPlaying) {
       return _FollowStatusPresentation(
@@ -923,6 +929,17 @@ class _FollowStatusPresentation {
         background: brightness == Brightness.dark
             ? const Color(0xFF12261A)
             : const Color(0xFFEAF8EE),
+      );
+    }
+    if (isPasswordProtected) {
+      return _FollowStatusPresentation(
+        label: '加锁',
+        foreground: brightness == Brightness.dark
+            ? const Color(0xFFB8C0CC)
+            : const Color(0xFF475467),
+        background: brightness == Brightness.dark
+            ? const Color(0xFF1F2630)
+            : const Color(0xFFEAECF0),
       );
     }
     if (isLive) {
@@ -937,8 +954,10 @@ class _FollowStatusPresentation {
       );
     }
     if (hasError) {
+      // Probe/network failure — not "room broken". Prefer 未知 over 异常 so
+      // Chaturbate CF/context misses (and other providers) are not overstated.
       return _FollowStatusPresentation(
-        label: '异常',
+        label: '未知',
         foreground: brightness == Brightness.dark
             ? const Color(0xFFF5C46B)
             : const Color(0xFFB7791F),

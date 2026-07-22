@@ -293,6 +293,9 @@ class RoomPlaybackController extends ChangeNotifier {
         !samePlaybackSource(currentSource, targetSource);
     if (shouldSetSource) {
       final activeBackend = currentState.backend ?? playerRuntime.backend;
+      // Do not pre-refresh MPV on ARC first open: dispose+init here + MpvPlayer
+      // ARC tier recreate caused double/triple initialize and worse first-enter
+      // black. Leave/re-enter recovery is handled by leave cleanup timeouts.
       final bound = await bindPlaybackSource(
         playbackSource: targetSource,
         label: 'playback bootstrap',
@@ -530,7 +533,7 @@ class RoomPlaybackController extends ChangeNotifier {
       _prepareMdkTextureRecoveryState(playbackSource);
       if (refreshBackendBeforeFirstSetSource) {
         trace(
-          '$label mdk same-source backend refresh '
+          '$label backend refresh before setSource '
           'source=${summarizePlaybackSource(playbackSource)}',
         );
         await playerRuntime.refreshBackendWithoutPlaybackState();

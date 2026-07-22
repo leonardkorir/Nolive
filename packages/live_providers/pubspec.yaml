@@ -14,6 +14,7 @@ dependencies:
     path: ../../third_party/dart_quickjs
   fixnum: ^1.1.1
   http: ^1.5.0
+  meta: ^1.16.0
   protobuf: ^6.0.0
   web_socket_channel: ^3.0.3
   live_core:

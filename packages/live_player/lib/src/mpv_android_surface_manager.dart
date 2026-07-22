@@ -290,6 +290,11 @@ extension MpvPlayerAndroidSurfaceLifecycle on MpvPlayer {
       try {
         _logEvent('setSource source-switch stop start');
         await player.stop();
+        // Give MediaCodec time to return dequeued GraphicBuffers before the
+        // next open rebinds the surface (reduces freeAllBuffers-while-dequeued).
+        if (isAndroid) {
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+        }
         _logEvent('setSource source-switch stop settle');
       } catch (error) {
         _logEvent('setSource source-switch stop ignored error=$error');
@@ -561,14 +566,19 @@ extension MpvPlayerAndroidSurfaceLifecycle on MpvPlayer {
     }
     try {
       final handle = await player.handle;
+      final primeSize = resolveAndroidSurfacePrimeSize(
+        isArcChromeOs: looksLikeArcChromeOsRuntime(),
+      );
+      _arcLastSurfacePrimeSize = primeSize;
       final primed = await primeAndroidVideoOutputSurface(
         playerHandle: handle,
-        width: 2,
-        height: 2,
+        width: primeSize.width,
+        height: primeSize.height,
       );
       _logEvent(
         'setSource surface-prime ${primed ? 'requested' : 'failed'} '
-        'handle=$handle width=2 height=2',
+        'handle=$handle width=${primeSize.width} height=${primeSize.height} '
+        'arc=${looksLikeArcChromeOsRuntime()}',
       );
       return primed;
     } catch (error) {
@@ -576,6 +586,77 @@ extension MpvPlayerAndroidSurfaceLifecycle on MpvPlayer {
       return false;
     }
   }
+}
+
+/// Phone keeps the historical tiny prime (forces Surface creation without
+/// allocating a full frame).
+///
+/// ARC production default is mediacodec-copy, which skips the MediaCodec
+/// surface warm path — so this prime is unused for the default tier. Any fixed
+/// prime size (window / 1080p / 2K) is resolution-coupled and wrong as a
+/// product default. Do not re-introduce a fixed ARC prime.
+///
+/// Experimental zero-copy must prime to the **actual stream** size known before
+/// open, never a guessed resolution.
+@visibleForTesting
+({int width, int height}) resolveAndroidSurfacePrimeSize({
+  required bool isArcChromeOs,
+  Size? logicalViewSize,
+  Size? primaryViewLogicalSize,
+  int? knownStreamWidth,
+  int? knownStreamHeight,
+}) {
+  if (!isArcChromeOs) {
+    return (width: 2, height: 2);
+  }
+  // Only safe prime: exact stream dimensions when already known.
+  final sw = knownStreamWidth ?? 0;
+  final sh = knownStreamHeight ?? 0;
+  if (sw >= 64 && sh >= 64) {
+    return (width: sw & ~1, height: sh & ~1);
+  }
+  // No known stream size: do not guess 720/1080/2K. Tiny prime is still used
+  // only as a last-resort Surface create; ARC default software avoids this path.
+  assert(() {
+    logicalViewSize;
+    primaryViewLogicalSize;
+    return true;
+  }());
+  return (width: 2, height: 2);
+}
+
+/// True when media_kit will call SetSurfaceSize for a different frame size.
+@visibleForTesting
+bool arcSurfacePrimeMismatchesStream({
+  required int primeWidth,
+  required int primeHeight,
+  required int streamWidth,
+  required int streamHeight,
+}) {
+  if (streamWidth <= 0 || streamHeight <= 0) {
+    return false;
+  }
+  return primeWidth != streamWidth || primeHeight != streamHeight;
+}
+
+@visibleForTesting
+Size? readPrimaryFlutterViewLogicalSize() {
+  if (kIsWeb) {
+    return null;
+  }
+  final view = WidgetsBinding.instance.platformDispatcher.implicitView;
+  if (view == null) {
+    return null;
+  }
+  final dpr = view.devicePixelRatio;
+  if (dpr <= 0) {
+    return null;
+  }
+  final physical = view.physicalSize;
+  if (physical.width <= 0 || physical.height <= 0) {
+    return null;
+  }
+  return Size(physical.width / dpr, physical.height / dpr);
 }
 
 bool shouldStopBeforeOpeningNextSource(PlayerState state) {
@@ -781,7 +862,30 @@ bool isAndroidSurfaceSnapshotReady(AndroidSurfaceSnapshot snapshot) {
 bool isAndroidSurfaceSnapshotReadyForMediaCodec(
   AndroidSurfaceSnapshot snapshot,
 ) {
+  // Phone Android: wid-only is correct (texture often logs as 0 while playback
+  // is fine). Do not tighten this for all platforms.
   return snapshot.wid > 0;
+}
+
+/// ChromeOS ARC reports versions like `R149-16667.55.0` via
+/// [Platform.operatingSystemVersion]. Phone firmwares (e.g. Sony
+/// `58.2.B.0.520`) do not match.
+bool looksLikeArcChromeOsRuntime({
+  String? operatingSystemVersion,
+  bool? isAndroidPlatform,
+}) {
+  final android = isAndroidPlatform ??
+      (!kIsWeb && defaultTargetPlatform == TargetPlatform.android);
+  if (!android) {
+    return false;
+  }
+  final version = (operatingSystemVersion ??
+          (!kIsWeb ? Platform.operatingSystemVersion : ''))
+      .trim();
+  if (version.isEmpty) {
+    return false;
+  }
+  return RegExp(r'^R\d{2,4}-\d+').hasMatch(version);
 }
 
 bool didAndroidSurfaceSnapshotChange({

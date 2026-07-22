@@ -210,6 +210,9 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     loadProviderAccountSettings: loadProviderAccountSettings,
     secureCredentialStore: context.secureCredentialStore,
   );
+  // Persist a stable per-install Douyu `did` (sync path for in-memory /
+  // already-loaded snapshot; async bootstrap also calls ensure beforehand).
+  _ensureDouyuDeviceIdSync(context);
   final providerRegistry = _buildProviderRegistry(
     context,
     runtimeBridges: runtimeBridges,
@@ -494,6 +497,10 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
       followRepository: context.repositories.followRepository,
       registry: providerRegistry,
       roomDetailOverride: runtimeBridges.roomDetailOverride,
+      onDiagnostic: (message, {Object? error}) {
+        final line = error == null ? message : '$message error=$error';
+        AppLog.instance.info('follow', line);
+      },
     ),
     loadFollowPreferences: loadFollowPreferences,
     updateFollowPreferences: updateFollowPreferences,
@@ -709,6 +716,22 @@ String _localSyncPlatformLabel(AppPlatformCapabilities platform) {
   return 'unknown';
 }
 
+/// Ensure a stable per-install Douyu `did` is available for the provider registry.
+///
+/// Writes asynchronously when missing; [DouyuDeviceId] session cache keeps the
+/// same value for this process even before disk flush completes.
+void _ensureDouyuDeviceIdSync(_BootstrapAssemblyContext context) {
+  const key = 'provider_douyu_device_id';
+  final existing = context.settings.stringSetting(key).trim();
+  final resolved = DouyuDeviceId.resolve(existing.isEmpty ? null : existing);
+  if (existing == resolved) {
+    return;
+  }
+  unawaited(
+    context.repositories.settingsRepository.writeValue(key, resolved),
+  );
+}
+
 ProviderRegistry _buildProviderRegistry(
   _BootstrapAssemblyContext context, {
   required AppRuntimeBridges runtimeBridges,
@@ -820,10 +843,15 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
               ),
             );
         final envVoOverride = resolveExternalMpvVoFromEnvironment();
+        // ARC decode ladder (zero-copy → mediacodec-copy → software) lives in
+        // MpvPlayer/resolveMpvRuntimeConfiguration. Bootstrap keeps normal
+        // settings so phones are unchanged; ARC overrides at runtime.
         return MpvPlayer(
           isAndroid: caps.isAndroid,
           enableHardwareAcceleration: _decodeBoolSetting(
-            context.settings.stringSetting('player_mpv_hardware_acceleration'),
+            context.settings.stringSetting(
+              'player_mpv_hardware_acceleration',
+            ),
             fallback: true,
           ),
           compatMode: _decodeBoolSetting(

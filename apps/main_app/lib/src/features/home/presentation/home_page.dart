@@ -313,7 +313,7 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
     });
 
     try {
-      final response = await _loadRecommendPage(page: 1);
+      final response = await _loadRecommendPageWithRetry(page: 1);
       if (!mounted || requestId != _loadRequestId) {
         return;
       }
@@ -357,7 +357,9 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
     });
     final requestId = ++_loadRequestId;
     try {
-      final response = await _loadRecommendPage(page: _currentPage + 1);
+      final response = await _loadRecommendPageWithRetry(
+        page: _currentPage + 1,
+      );
       if (!mounted || requestId != _loadRequestId) {
         return;
       }
@@ -417,6 +419,64 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
     return widget.dependencies.loadProviderRecommendRooms(
       providerId: widget.descriptor.id,
       page: page,
+    );
+  }
+
+  /// Retry transient home-feed timeouts so a single slow GraphQL/discover
+  /// request does not leave the tab empty until the user manually refreshes.
+  Future<PagedResponse<LiveRoom>> _loadRecommendPageWithRetry({
+    required int page,
+    int maxAttempts = 3,
+  }) async {
+    Object? lastError;
+    StackTrace? lastStack;
+    for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        final response = await _loadRecommendPage(page: page);
+        if (response.items.isEmpty && attempt < maxAttempts) {
+          // Empty list is often a soft timeout/rate-limit fallthrough (e.g. CB).
+          AppLog.instance.info(
+            'home',
+            'provider recommend empty, retrying '
+            'provider=${widget.descriptor.id.value} page=$page '
+            'attempt=$attempt/$maxAttempts',
+          );
+          await Future<void>.delayed(Duration(milliseconds: 400 * attempt));
+          continue;
+        }
+        if (attempt > 1) {
+          AppLog.instance.info(
+            'home',
+            'provider recommend recovered '
+            'provider=${widget.descriptor.id.value} page=$page '
+            'attempt=$attempt/$maxAttempts items=${response.items.length}',
+          );
+        }
+        return response;
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStack = stackTrace;
+        final canRetry =
+            attempt < maxAttempts && isTransientHomeRecommendError(error);
+        AppLog.instance.info(
+          'home',
+          canRetry
+              ? 'provider recommend transient failure, retrying '
+                    'provider=${widget.descriptor.id.value} page=$page '
+                    'attempt=$attempt/$maxAttempts error=$error'
+              : 'provider recommend attempt failed '
+                    'provider=${widget.descriptor.id.value} page=$page '
+                    'attempt=$attempt/$maxAttempts error=$error',
+        );
+        if (!canRetry) {
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+        await Future<void>.delayed(Duration(milliseconds: 500 * attempt));
+      }
+    }
+    Error.throwWithStackTrace(
+      lastError ?? Exception('首页推荐加载失败'),
+      lastStack ?? StackTrace.current,
     );
   }
 
@@ -585,4 +645,25 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
       ),
     );
   }
+}
+
+
+/// Transient home recommend failures (timeouts / network) worth auto-retry.
+@visibleForTesting
+bool isTransientHomeRecommendError(Object? error) {
+  if (error == null) {
+    return false;
+  }
+  if (error is TimeoutException) {
+    return true;
+  }
+  final text = error.toString().toLowerCase();
+  return text.contains('timeout') ||
+      text.contains('超时') ||
+      text.contains('timed out') ||
+      text.contains('connection') ||
+      text.contains('socket') ||
+      text.contains('network') ||
+      text.contains('failed host lookup') ||
+      text.contains('未拿到首页推荐');
 }

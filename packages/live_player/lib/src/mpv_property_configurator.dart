@@ -408,24 +408,23 @@ Map<String, String> resolveMpvSourcePlatformProperties({
     // on S/W texture upload; Android keeps audio for split LL-HLS A/V glue.
     properties['video-sync'] = isAndroid ? 'audio' : 'display-tempo';
   } else if (prefersDesktopStableLive) {
-    // Foreign live (Twitch / YouTube) on phone + desktop: multi-second cache.
-    // Mobile previously used defaultLowLatency (cache=no) and failed Twitch
-    // Auto health / stuttered on 1080p YT. Desktop path proven playable.
+    // Foreign live (Twitch / YouTube): multi-second cache on desktop; Android
+    // phone/tablet/ChromeOS use a middle band (~48MB / 16s) — softer than
+    // desktop 128MB, larger than the prior 32MB/10s underrun-prone floor.
     // Android keeps video-sync=audio for MediaCodec A/V glue.
     properties.addAll(<String, String>{
       'cache': 'yes',
-      // Phone: deeper runway — logs showed pos≈buffer mid-play underruns at 480p.
-      'cache-secs': isAndroid ? '24' : '22',
+      'cache-secs': isAndroid ? '16' : '22',
       'demuxer-seekable-cache': 'no',
       'demuxer-donate-buffer': 'no',
-      'demuxer-max-back-bytes': isAndroid ? '134217728' : '134217728',
-      'demuxer-max-bytes': isAndroid ? '134217728' : '134217728',
-      'demuxer-readahead-secs': isAndroid ? '24' : '22',
+      'demuxer-max-back-bytes': isAndroid ? '50331648' : '134217728',
+      'demuxer-max-bytes': isAndroid ? '50331648' : '134217728',
+      'demuxer-readahead-secs': isAndroid ? '16' : '22',
       'cache-pause': 'yes',
       // Shorter pause-wait: long freezes felt like "卡" even with large buffer.
       'cache-pause-wait': isAndroid ? '2' : '5',
       'cache-pause-initial': 'yes',
-      'audio-buffer': isAndroid ? '1.2' : '1.4',
+      'audio-buffer': isAndroid ? '0.8' : '1.4',
       'video-sync': isAndroid ? 'audio' : 'display-tempo',
     });
     properties['demuxer-lavf-o'] = _buildLavfOptionString({
@@ -622,14 +621,14 @@ Map<String, String> resolveMpvSourcePlatformProperties({
       properties['demuxer-lavf-analyzeduration'] = '2';
       properties['demuxer-lavf-probesize'] = '500000';
     } else {
-      // Android SC loopback: slightly thicker than baseline 8s so cold CDN /
-      // simple-publish windows do not health-fail before first A/V tracks.
-      properties['cache-secs'] = '12';
-      properties['demuxer-readahead-secs'] = '12';
-      properties['demuxer-max-back-bytes'] = '100663296';
-      properties['demuxer-max-bytes'] = '100663296';
-      properties['cache-pause-wait'] = '3';
-      properties['audio-buffer'] = '0.8';
+      // Android SC loopback: middle band (~48MB / 16s) — below desktop 256MB
+      // PSS blow-up, above prior 32MB/10s underrun floor.
+      properties['cache-secs'] = '16';
+      properties['demuxer-readahead-secs'] = '16';
+      properties['demuxer-max-back-bytes'] = '50331648';
+      properties['demuxer-max-bytes'] = '50331648';
+      properties['cache-pause-wait'] = '2';
+      properties['audio-buffer'] = '0.6';
       properties['video-sync'] = 'audio';
       properties['demuxer-lavf-o'] = _buildLavfOptionString(const {
         'live_start_index': '-3',
@@ -644,12 +643,12 @@ Map<String, String> resolveMpvSourcePlatformProperties({
     final isFlv = _looksLikeLiveFlv(source.url);
     properties.addAll(<String, String>{
       'cache': 'yes',
-      'cache-secs': '10',
+      'cache-secs': isAndroid ? '8' : '10',
       'demuxer-seekable-cache': isFlv ? 'no' : 'yes',
       'demuxer-donate-buffer': 'yes',
-      'demuxer-max-back-bytes': '67108864',
-      'demuxer-max-bytes': '67108864',
-      'demuxer-readahead-secs': '10',
+      'demuxer-max-back-bytes': isAndroid ? '33554432' : '67108864',
+      'demuxer-max-bytes': isAndroid ? '33554432' : '67108864',
+      'demuxer-readahead-secs': isAndroid ? '8' : '10',
     });
     // Desktop high-FPS game FLV (60fps 1080p/1440p): display clock + vo drop
     // reduces "game stream feels juddery" under embed texture path.
@@ -704,7 +703,47 @@ Map<String, String> resolveMpvSourcePlatformProperties({
   if (shouldUseAudioFilesPropertyForSource(source)) {
     properties['audio-files'] = source.externalAudio!.url.toString();
   }
+  // Final guard: any Android path (phone, tablet, ChromeOS ARC) must stay in
+  // the mobile-safe demux/cache band. Linux desktop never sets isAndroid.
+  if (isAndroid) {
+    applyAndroidMobileLiveBufferBudget(properties);
+  }
   return properties;
+}
+
+/// Mobile-safe live demux/cache budget for Android-class runtimes.
+///
+/// Caps demuxer byte budgets to 64MB and cache/readahead to 16s so ChromeOS
+/// tablets and phones never inherit desktop 96–256MB profiles, while allowing
+/// a middle band (~48MB/16s) for Twitch/YouTube/SC loopback. Call only when
+/// [isAndroid] is true; Linux desktop resolution must not use this helper.
+@visibleForTesting
+void applyAndroidMobileLiveBufferBudget(Map<String, String> properties) {
+  const maxDemuxerBytes = 64 * 1024 * 1024; // 67108864
+  const maxCacheSecs = 16;
+  for (final key in const <String>[
+    'demuxer-max-bytes',
+    'demuxer-max-back-bytes',
+  ]) {
+    final raw = properties[key];
+    if (raw == null) {
+      continue;
+    }
+    final value = int.tryParse(raw);
+    if (value != null && value > maxDemuxerBytes) {
+      properties[key] = '$maxDemuxerBytes';
+    }
+  }
+  for (final key in const <String>['cache-secs', 'demuxer-readahead-secs']) {
+    final raw = properties[key];
+    if (raw == null) {
+      continue;
+    }
+    final value = int.tryParse(raw);
+    if (value != null && value > maxCacheSecs) {
+      properties[key] = '$maxCacheSecs';
+    }
+  }
 }
 
 String _buildLavfOptionString(Map<String, String> options) {
@@ -753,10 +792,42 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
   String audioOutputDriver = 'auto',
   bool isAndroid = false,
   bool allowExternalNativeWindow = false,
+  /// When non-null, force the ARC decode ladder tier (tests / runtime escalate).
+  /// Production MpvPlayer passes the active tier when [looksLikeArcChromeOsRuntime].
+  ArcMpvDecodeTier? arcDecodeTier,
 }) {
-  var sanitizedVideoOutputDriver = videoOutputDriver.trim().isEmpty
+  // ChromeOS ARC: production default is mediacodec-copy (HW decode, any
+  // resolution, no zero-copy Surface size guess). software = fallback only.
+  // Phone firmwares never match R###-… (path stays null).
+  final activeArcTier = arcDecodeTier;
+  var effectiveEnableHardwareAcceleration = enableHardwareAcceleration;
+  var effectiveCompatMode = compatMode;
+  var effectiveCustomOutputEnabled = customOutputEnabled;
+  var effectiveHardwareDecoder = hardwareDecoder;
+  var effectiveVideoOutputDriver = videoOutputDriver;
+  if (activeArcTier != null) {
+    effectiveCompatMode = false;
+    switch (activeArcTier) {
+      case ArcMpvDecodeTier.zeroCopy:
+        effectiveEnableHardwareAcceleration = true;
+        effectiveCustomOutputEnabled = true;
+        effectiveVideoOutputDriver = 'mediacodec_embed';
+        effectiveHardwareDecoder = 'mediacodec';
+      case ArcMpvDecodeTier.mediaCodecCopy:
+        effectiveEnableHardwareAcceleration = true;
+        effectiveCustomOutputEnabled = true;
+        effectiveVideoOutputDriver = 'gpu';
+        effectiveHardwareDecoder = 'mediacodec-copy';
+      case ArcMpvDecodeTier.software:
+        effectiveEnableHardwareAcceleration = false;
+        effectiveCustomOutputEnabled = false;
+        effectiveHardwareDecoder = 'no';
+    }
+  }
+
+  var sanitizedVideoOutputDriver = effectiveVideoOutputDriver.trim().isEmpty
       ? MpvPlayer._fallbackVideoOutputDriver
-      : videoOutputDriver.trim();
+      : effectiveVideoOutputDriver.trim();
   final wantsExternalNativeWindow = !isAndroid && allowExternalNativeWindow;
   // Opt-in A/B path: keep (or promote to) a real window-opening VO and skip
   // Flutter texture embed. Default remains embed-safe libmpv.
@@ -765,23 +836,35 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
       sanitizedVideoOutputDriver = kDefaultExternalNativeVideoOutputDriver;
     }
   } else if (!isAndroid &&
-      customOutputEnabled &&
+      effectiveCustomOutputEnabled &&
       isDesktopWindowOpeningMpvVo(sanitizedVideoOutputDriver)) {
     // Desktop + custom output without external opt-in: never pass
     // window-opening VOs — orphan external windows cannot be closed cleanly.
     sanitizedVideoOutputDriver = 'libmpv';
   }
-  var sanitizedHardwareDecoder = hardwareDecoder.trim().isEmpty
+  if (activeArcTier == ArcMpvDecodeTier.zeroCopy) {
+    sanitizedVideoOutputDriver = 'mediacodec_embed';
+  } else if (activeArcTier == ArcMpvDecodeTier.mediaCodecCopy) {
+    sanitizedVideoOutputDriver = 'gpu';
+  }
+  var sanitizedHardwareDecoder = effectiveHardwareDecoder.trim().isEmpty
       ? (isAndroid
             ? MpvPlayer._fallbackHardwareDecoder
             : MpvPlayer._fallbackHardwareDecoderDesktop)
-      : hardwareDecoder.trim();
+      : effectiveHardwareDecoder.trim();
   // Desktop libmpv embed: auto-safe rarely activates VAAPI/NVDEC; auto-copy is
   // the reliable "hardware decode is actually used" default for all providers.
   if (!isAndroid &&
       (sanitizedHardwareDecoder == 'auto-safe' ||
           sanitizedHardwareDecoder == 'auto')) {
     sanitizedHardwareDecoder = MpvPlayer._fallbackHardwareDecoderDesktop;
+  }
+  if (activeArcTier == ArcMpvDecodeTier.zeroCopy) {
+    sanitizedHardwareDecoder = 'mediacodec';
+  } else if (activeArcTier == ArcMpvDecodeTier.mediaCodecCopy) {
+    sanitizedHardwareDecoder = 'mediacodec-copy';
+  } else if (activeArcTier == ArcMpvDecodeTier.software) {
+    sanitizedHardwareDecoder = 'no';
   }
   final sanitizedAudioOutputDriver = audioOutputDriver.trim().isEmpty
       ? 'auto'
@@ -790,10 +873,10 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
       wantsExternalNativeWindow &&
       isDesktopWindowOpeningMpvVo(sanitizedVideoOutputDriver);
   final attachAfterVideoParameters = _resolveAndroidAttachSurfaceTiming(
-    compatMode: compatMode,
-    customOutputEnabled: customOutputEnabled,
+    compatMode: effectiveCompatMode,
+    customOutputEnabled: effectiveCustomOutputEnabled,
     videoOutputDriver: sanitizedVideoOutputDriver,
-    enableHardwareAcceleration: enableHardwareAcceleration,
+    enableHardwareAcceleration: effectiveEnableHardwareAcceleration,
     hardwareDecoder: sanitizedHardwareDecoder,
   );
   // External window mode still records the intended vo/hwdec for diagnostics,
@@ -802,24 +885,30 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
   final controllerConfiguration = usesExternalNativeWindow
       ? VideoControllerConfiguration(
           vo: sanitizedVideoOutputDriver,
-          hwdec: enableHardwareAcceleration ? sanitizedHardwareDecoder : 'no',
+          hwdec: effectiveEnableHardwareAcceleration
+              ? sanitizedHardwareDecoder
+              : 'no',
           androidAttachSurfaceAfterVideoParameters: attachAfterVideoParameters,
         )
-      : customOutputEnabled
+      : effectiveCustomOutputEnabled
       ? VideoControllerConfiguration(
           vo: sanitizedVideoOutputDriver,
-          hwdec: enableHardwareAcceleration ? sanitizedHardwareDecoder : 'no',
+          hwdec: effectiveEnableHardwareAcceleration
+              ? sanitizedHardwareDecoder
+              : 'no',
           androidAttachSurfaceAfterVideoParameters: attachAfterVideoParameters,
         )
-      : compatMode
+      : effectiveCompatMode
       ? VideoControllerConfiguration(
           vo: 'mediacodec_embed',
           hwdec: 'mediacodec',
           androidAttachSurfaceAfterVideoParameters: attachAfterVideoParameters,
         )
       : VideoControllerConfiguration(
-          enableHardwareAcceleration: enableHardwareAcceleration,
-          hwdec: enableHardwareAcceleration ? sanitizedHardwareDecoder : 'no',
+          enableHardwareAcceleration: effectiveEnableHardwareAcceleration,
+          hwdec: effectiveEnableHardwareAcceleration
+              ? sanitizedHardwareDecoder
+              : 'no',
           androidAttachSurfaceAfterVideoParameters: attachAfterVideoParameters,
         );
   // Live default: disable demuxer playback cache unless the
@@ -852,12 +941,14 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
           },
     if (usesExternalNativeWindow) ...<String, String>{
       'vo': sanitizedVideoOutputDriver,
-      'hwdec': enableHardwareAcceleration ? sanitizedHardwareDecoder : 'no',
+      'hwdec': effectiveEnableHardwareAcceleration
+          ? sanitizedHardwareDecoder
+          : 'no',
       // Do NOT force video-sync here — foreign HLS profiles set display-tempo
       // or audio per-source. A global audio clock overrode Twitch/SC profiles
       // and amplified underrun hitching on the independent VO window.
     },
-    if ((customOutputEnabled || usesExternalNativeWindow) &&
+    if ((effectiveCustomOutputEnabled || usesExternalNativeWindow) &&
         sanitizedAudioOutputDriver.isNotEmpty &&
         sanitizedAudioOutputDriver != 'auto')
       'ao': sanitizedAudioOutputDriver,
@@ -866,7 +957,12 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
     controllerConfiguration: controllerConfiguration,
     logLevel: logEnabled ? mk.MPVLogLevel.debug : mk.MPVLogLevel.error,
     platformProperties: platformProperties,
-    androidOutputFallbackReason: null,
+    androidOutputFallbackReason: switch (activeArcTier) {
+      ArcMpvDecodeTier.zeroCopy => 'arc-chromeos-zerocopy-surface',
+      ArcMpvDecodeTier.mediaCodecCopy => 'arc-chromeos-mediacodec-copy',
+      ArcMpvDecodeTier.software => 'arc-chromeos-software-decode',
+      null => null,
+    },
     usesExternalNativeWindow: usesExternalNativeWindow,
     externalNativeVideoOutputDriver:
         usesExternalNativeWindow ? sanitizedVideoOutputDriver : null,

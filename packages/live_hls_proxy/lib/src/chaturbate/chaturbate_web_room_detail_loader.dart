@@ -8,12 +8,20 @@ import 'package:meta/meta.dart';
 
 import '../hls_proxy_platform_adapter.dart';
 
+/// Default wall-clock budget for headless room-detail bootstrap.
+@visibleForTesting
+/// Default wall-clock budget for headless room-detail WebView.
+///
+/// 12s leaves headroom for cold WebView startup (grace + retries) without
+/// returning to the old 18s waterfall; warm paths still finish earlier.
+const Duration kChaturbateWebRoomDetailDefaultTimeout = Duration(seconds: 12);
+
 class ChaturbateWebRoomDetailLoader {
   ChaturbateWebRoomDetailLoader({
     required HlsProxyPlatformAdapter platformAdapter,
     Future<String> Function()? loadCookie,
     ChaturbateRoomPageParser roomPageParser = const ChaturbateRoomPageParser(),
-    Duration timeout = const Duration(seconds: 18),
+    Duration timeout = kChaturbateWebRoomDetailDefaultTimeout,
     Duration pollInterval = const Duration(milliseconds: 250),
     Duration realtimeBootstrapGracePeriod = const Duration(seconds: 4),
     int webViewStartupRetryCount = 2,

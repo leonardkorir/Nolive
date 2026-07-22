@@ -14,6 +14,7 @@ void main() {
       expect(await bridge.getMediaVolume(), isNull);
       expect(await bridge.setMediaVolume(0.4), isFalse);
       expect(await bridge.lockLandscape(), isFalse);
+      expect(await bridge.freezeFullscreenOrientation(), isFalse);
       expect(await bridge.prepareForPictureInPicture(), isFalse);
       expect(await bridge.enterPictureInPicture(width: 16, height: 9), isFalse);
     });
@@ -128,8 +129,16 @@ void main() {
       );
 
       expect(await bridge.lockLandscape(), isTrue);
+      expect(await bridge.freezeFullscreenOrientation(), isTrue);
       expect(await bridge.prepareForPictureInPicture(), isTrue);
-      expect(calls, <String>['lockLandscape', 'prepareForPictureInPicture']);
+      expect(
+        calls,
+        <String>[
+          'lockLandscape',
+          'freezeFullscreenOrientation',
+          'prepareForPictureInPicture',
+        ],
+      );
     });
   });
 }

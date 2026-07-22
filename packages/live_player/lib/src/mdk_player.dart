@@ -446,6 +446,9 @@ class MdkPlayer implements BasePlayer {
   Future<void> setVolume(double value) async {
     final player = _player;
     final normalized = value.clamp(0, 1).toDouble();
+    if ((normalized - _currentState.volume).abs() < 0.0005) {
+      return;
+    }
     if (player == null) {
       _emit(_currentState.copyWith(volume: normalized));
       return;

@@ -20,6 +20,7 @@ class RoomFullscreenChromeContext {
     required this.readGestureUiState,
     required this.updateGestureUiState,
     required this.isDisposed,
+    this.applyFullscreenControlsLock,
   });
 
   final RoomAndroidPlaybackBridgeFacade androidPlaybackBridge;
@@ -35,6 +36,11 @@ class RoomFullscreenChromeContext {
     RoomGestureUiState Function(RoomGestureUiState current) updater,
   ) updateGestureUiState;
   final bool Function() isDisposed;
+
+  /// When set, chrome lock also pins / restores orientation.
+  /// Returns `true` on success; `false` means lock/unlock orientation failed
+  /// and the caller should not leave UI in a stuck locked state.
+  final Future<bool> Function(bool locked)? applyFullscreenControlsLock;
 }
 
 class RoomFullscreenChromeController {
@@ -98,6 +104,29 @@ class RoomFullscreenChromeController {
             nextLocked ? false : current.showFullscreenFollowDrawer,
       ),
     );
+    // Pin / restore orientation with the UI lock. If native freeze fails while
+    // locking, roll UI back so chrome does not stay "locked" without a pin.
+    final applyLock = context.applyFullscreenControlsLock;
+    if (applyLock != null) {
+      unawaited(() async {
+        final ok = await applyLock(nextLocked);
+        if (ok || context.isDisposed() || !nextLocked) {
+          return;
+        }
+        final stillWantsLock =
+            context.readViewUiState().lockFullscreenControls;
+        if (!stillWantsLock) {
+          return;
+        }
+        context.updateViewUiState(
+          (current) => current.copyWith(
+            lockFullscreenControls: false,
+            showFullscreenChrome: true,
+            showFullscreenLockButton: true,
+          ),
+        );
+      }());
+    }
     scheduleFullscreenChromeAutoHide();
   }
 
@@ -293,7 +322,7 @@ class RoomFullscreenChromeController {
       ),
     );
     try {
-      final brightness = await _screenBrightness.application;
+      final brightness = await _readScreenBrightness();
       if (context.isDisposed()) {
         return;
       }
@@ -322,16 +351,42 @@ class RoomFullscreenChromeController {
     final delta = (gestureState.startY - details.globalPosition.dy) / height;
     if (gestureState.adjustingBrightness) {
       final brightness = (gestureState.startBrightness + delta).clamp(0.0, 1.0);
-      try {
-        await _screenBrightness.setApplicationScreenBrightness(brightness);
-      } catch (_) {}
+      await _writeScreenBrightness(brightness);
       showGestureTip('亮度 ${(brightness * 100).round()}%');
       return;
     }
     final nextVolume = (gestureState.startVolume + delta).clamp(0.0, 1.0);
-    await context.androidPlaybackBridge.setMediaVolume(nextVolume);
+    // Always drive player volume (works on ARC). System stream is best-effort.
     context.updateVolume(nextVolume);
+    try {
+      await context.androidPlaybackBridge.setMediaVolume(nextVolume);
+    } catch (_) {}
     showGestureTip('音量 ${(nextVolume * 100).round()}%');
+  }
+
+  Future<double> _readScreenBrightness() async {
+    try {
+      return await _screenBrightness.application;
+    } catch (_) {
+      // ChromeOS ARC often rejects application brightness; try system level.
+      try {
+        return await _screenBrightness.system;
+      } catch (_) {
+        return 0.5;
+      }
+    }
+  }
+
+  Future<void> _writeScreenBrightness(double brightness) async {
+    try {
+      await _screenBrightness.setApplicationScreenBrightness(brightness);
+      return;
+    } catch (_) {}
+    try {
+      await _screenBrightness.setSystemScreenBrightness(brightness);
+    } catch (_) {
+      // ARC may lack WRITE_SETTINGS; tip still shows relative intent.
+    }
   }
 
   Future<void> handleVerticalDragEnd() async {

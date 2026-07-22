@@ -9,6 +9,7 @@ internal object AndroidPlaybackMethodContract {
     const val lockPortrait = "lockPortrait"
     const val lockLandscape = "lockLandscape"
     const val lockPortraitFullscreen = "lockPortraitFullscreen"
+    const val freezeFullscreenOrientation = "freezeFullscreenOrientation"
     const val prepareForPictureInPicture = "prepareForPictureInPicture"
 
     val methodNames = setOf(
@@ -20,6 +21,7 @@ internal object AndroidPlaybackMethodContract {
         lockPortrait,
         lockLandscape,
         lockPortraitFullscreen,
+        freezeFullscreenOrientation,
         prepareForPictureInPicture,
     )
 }

@@ -638,6 +638,120 @@ window["tsInstance"] = new TS(extend({
   );
 
   test(
+    'follow budget path uses context only and never fetches room page',
+    () async {
+      final apiClient = _FixtureChaturbateApiClient(
+        roomContexts: const {
+          'kitayamachu': {
+            'broadcaster_username': 'kitayamachu',
+            'broadcaster_uid': '1',
+            'room_uid': '2',
+            'room_status': 'public',
+            'room_title': 'follow status',
+            'num_viewers': 42,
+          },
+        },
+        // Page would succeed if called — status-only must not touch it.
+        roomPages: const {
+          'kitayamachu': '<html>should not be requested</html>',
+        },
+      );
+      final dataSource = ChaturbateLiveDataSource(apiClient: apiClient);
+
+      final detail = await ChaturbateRequestScheduler.runAsFollowBudget(
+        () => dataSource.fetchRoomDetail('kitayamachu'),
+      );
+
+      expect(detail.roomId, 'kitayamachu');
+      expect(detail.isLive, isTrue);
+      expect(detail.viewerCount, 42);
+      expect(detail.title, 'follow status');
+      expect(apiClient.roomContextRequestCounts['kitayamachu'], 1);
+      expect(apiClient.roomPageRequestCounts, isEmpty);
+    },
+  );
+
+  test(
+    'follow budget path does not fall back to room page when context fails',
+    () async {
+      final apiClient = _FixtureChaturbateApiClient(
+        failingRoomContexts: const {'kitayamachu'},
+        roomPages: const {
+          'kitayamachu': '''
+<html><script>
+window.initialRoomDossier = "{\\"broadcaster_username\\":\\"kitayamachu\\",\\"room_status\\":\\"public\\",\\"room_title\\":\\"from page\\"}";
+</script></html>
+''',
+        },
+      );
+      final dataSource = ChaturbateLiveDataSource(apiClient: apiClient);
+
+      await expectLater(
+        ChaturbateRequestScheduler.runAsFollowBudget(
+          () => dataSource.fetchRoomDetail('kitayamachu'),
+        ),
+        throwsA(
+          isA<ProviderParseException>().having(
+            (e) => e.message,
+            'message',
+            contains('status 401'),
+          ),
+        ),
+      );
+      expect(apiClient.roomContextRequestCounts['kitayamachu'], 1);
+      expect(apiClient.roomPageRequestCounts, isEmpty);
+    },
+  );
+
+  test(
+    'password-protected context returns locked detail without room page',
+    () async {
+      final apiClient = _FixtureChaturbateApiClient(
+        passwordRoomContexts: const {'kitayamachu'},
+        roomPages: const {
+          'kitayamachu': '<html>should not be requested</html>',
+        },
+      );
+      final dataSource = ChaturbateLiveDataSource(apiClient: apiClient);
+
+      final detail = await dataSource.fetchRoomDetail('kitayamachu');
+
+      expect(detail.roomId, 'kitayamachu');
+      // Password rooms count as not publicly live (follow 未开播 filter).
+      expect(detail.isLive, isFalse);
+      expect(detail.metadata?['passwordProtected'], isTrue);
+      expect(detail.metadata?['roomStatus'], 'password');
+      expect(
+        detail.metadata?['playbackUnavailableReason'],
+        contains('加锁'),
+      );
+      expect(apiClient.roomContextRequestCounts['kitayamachu'], 1);
+      expect(apiClient.roomPageRequestCounts, isEmpty);
+      expect(await dataSource.fetchPlayQualities(detail), isEmpty);
+    },
+  );
+
+  test(
+    'follow budget password path returns locked detail without page',
+    () async {
+      final apiClient = _FixtureChaturbateApiClient(
+        passwordRoomContexts: const {'kitayamachu'},
+        roomPages: const {
+          'kitayamachu': '<html>should not be requested</html>',
+        },
+      );
+      final dataSource = ChaturbateLiveDataSource(apiClient: apiClient);
+
+      final detail = await ChaturbateRequestScheduler.runAsFollowBudget(
+        () => dataSource.fetchRoomDetail('kitayamachu'),
+      );
+
+      expect(detail.metadata?['passwordProtected'], isTrue);
+      expect(apiClient.roomPageRequestCounts, isEmpty);
+    },
+  );
+
+  test(
     'fetch room detail prefers anonymous room context over room page',
     () async {
       const hlsSource =
@@ -1061,6 +1175,8 @@ class _FixtureChaturbateApiClient implements ChaturbateApiClient {
     Set<String>? failingRoomListKeys,
     int roomListFailureStatus = 500,
     Set<String>? failingRoomPages,
+    Set<String>? failingRoomContexts,
+    Set<String>? passwordRoomContexts,
     Set<String>? failingHlsUrls,
     Map<String, Duration>? roomPageDelays,
     Map<String, Duration>? roomContextDelays,
@@ -1080,6 +1196,8 @@ class _FixtureChaturbateApiClient implements ChaturbateApiClient {
        _failingRoomListKeys = {...?failingRoomListKeys},
        _roomListFailureStatus = roomListFailureStatus,
        _failingRoomPages = {...?failingRoomPages},
+       _failingRoomContexts = {...?failingRoomContexts},
+       _passwordRoomContexts = {...?passwordRoomContexts},
        _failingHlsUrls = {...?failingHlsUrls},
        _roomPageDelays = roomPageDelays ?? const {},
        _roomContextDelays = roomContextDelays ?? const {},
@@ -1100,6 +1218,8 @@ class _FixtureChaturbateApiClient implements ChaturbateApiClient {
   final Set<String> _failingRoomListKeys;
   final int _roomListFailureStatus;
   final Set<String> _failingRoomPages;
+  final Set<String> _failingRoomContexts;
+  final Set<String> _passwordRoomContexts;
   final Set<String> _failingHlsUrls;
   final Map<String, Duration> _roomPageDelays;
   final Map<String, Duration> _roomContextDelays;
@@ -1109,6 +1229,7 @@ class _FixtureChaturbateApiClient implements ChaturbateApiClient {
   final Map<String, int> discoverRequestCounts = <String, int>{};
   final Map<String, int> roomListRequestCounts = <String, int>{};
   final Map<String, int> roomPageRequestCounts = <String, int>{};
+  final Map<String, int> roomContextRequestCounts = <String, int>{};
   final Map<String, String?> hlsPlaylistCookies = <String, String?>{};
   final Map<String, String?> roomContextCookies = <String, String?>{};
   final Map<String, String?> roomPageCookies = <String, String?>{};
@@ -1225,9 +1346,29 @@ class _FixtureChaturbateApiClient implements ChaturbateApiClient {
     ChaturbateRequestPriority priority = ChaturbateRequestPriority.normal,
   }) async {
     roomContextCookies[roomId] = cookie;
+    roomContextRequestCounts.update(
+      roomId,
+      (value) => value + 1,
+      ifAbsent: () => 1,
+    );
     final delay = _roomContextDelays[roomId];
     if (delay != null) {
       await Future<void>.delayed(delay);
+    }
+    if (_passwordRoomContexts.contains(roomId)) {
+      throw ProviderParseException(
+        providerId: ProviderId.chaturbate,
+        message:
+            'Chaturbate room context request for $roomId: '
+            'room requires a password.',
+      );
+    }
+    if (_failingRoomContexts.contains(roomId)) {
+      throw ProviderParseException(
+        providerId: ProviderId.chaturbate,
+        message:
+            'Chaturbate room context request for $roomId failed with status 401.',
+      );
     }
     final payload = _roomContexts[roomId];
     if (payload == null) {

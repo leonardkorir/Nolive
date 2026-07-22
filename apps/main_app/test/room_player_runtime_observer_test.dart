@@ -147,13 +147,67 @@ void main() {
 
       expect(recoveryCount, 1);
       expect(
-        traces,
-        contains('player unexpected stop recovery scheduled status=completed'),
+        traces.any(
+          (entry) => entry.contains(
+            'player unexpected stop recovery scheduled status=completed',
+          ),
+        ),
+        isTrue,
       );
       expect(
         traces,
         contains('player unexpected stop recovery refresh status=completed'),
       );
+    },
+  );
+
+  test(
+    'hard open failure uses zero recovery delay when resolver provided',
+    () async {
+      final player = TestRecordingPlayer();
+      final runtime = PlayerRuntimeController(player);
+      final delays = <Duration>[];
+      var recoveryCount = 0;
+      final observer = RoomPlayerRuntimeObserver(
+        context: RoomPlayerRuntimeObserverContext(
+          providerId: ProviderId.douyu,
+          roomId: '5692787',
+          runtime: RoomRuntimeObservationContext.fromPlayerRuntime(runtime),
+          trace: (_) {},
+          resolvePlaybackAvailable: () => true,
+          onPlayerStateChanged:
+              (_, {required playbackAvailable, forceRebuild = false}) {},
+          unexpectedStopRecoveryDelay: const Duration(seconds: 2),
+          resolveUnexpectedStopRecoveryDelay: (state) {
+            final delay =
+                PlaybackFailoverPolicy.isHardOpenFailure(state.errorMessage)
+                ? Duration.zero
+                : const Duration(seconds: 2);
+            delays.add(delay);
+            return delay;
+          },
+          onUnexpectedPlaybackStop: (_) async {
+            recoveryCount += 1;
+          },
+        ),
+      );
+      addTearDown(observer.dispose);
+      addTearDown(player.dispose);
+
+      observer.attach();
+      player.emit(
+        PlayerState(
+          status: PlaybackStatus.error,
+          source: source('hw3.flv'),
+          errorMessage: 'Failed to open https://hw3.douyucdn2.cn/live/x.flv',
+        ),
+      );
+      await flushEvents();
+      await flushEvents();
+
+      expect(delays, isNotEmpty);
+      expect(delays.first, Duration.zero);
+      expect(recoveryCount, 1);
     },
   );
 

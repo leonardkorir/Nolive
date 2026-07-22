@@ -157,6 +157,16 @@ extension MpvPlayerRuntimeBindings on MpvPlayer {
         _emitDiagnostics(
           _currentDiagnostics.copyWith(videoParams: videoParams),
         );
+        // ARC: if stream size != surface prime, media_kit will SetSurfaceSize
+        // and V4L2 often freezes while still reporting these videoParams.
+        final streamWidth = params.dw ?? 0;
+        final streamHeight = params.dh ?? 0;
+        if (streamWidth > 0 && streamHeight > 0) {
+          _maybePreemptArcEscalateOnVideoParams(
+            streamWidth: streamWidth,
+            streamHeight: streamHeight,
+          );
+        }
       }),
       player.stream.audioParams.listen((params) {
         final audioParams = _audioParamsToMap(params);

@@ -57,10 +57,17 @@ class AndroidPlaybackBridge {
     return entered ?? false;
   }
 
+  /// Restores app-shell orientation after fullscreen.
+  ///
+  /// Channel: `lockPortrait` (historical name). On Chromebook ARC this re-arms
+  /// **landscape-only** shell — not portrait.
   Future<bool> lockPortrait() async {
     final locked = await _invokeBool('lockPortrait');
     return locked ?? false;
   }
+
+  /// Alias for [lockPortrait] — preferred name in new call sites.
+  Future<bool> restoreShellOrientation() => lockPortrait();
 
   Future<bool> lockLandscape() async {
     final locked = await _invokeBool('lockLandscape');
@@ -70,6 +77,13 @@ class AndroidPlaybackBridge {
   Future<bool> lockPortraitFullscreen() async {
     final locked = await _invokeBool('lockPortraitFullscreen');
     return locked ?? false;
+  }
+
+  /// Pin current fullscreen pose and stop sensor L/R flips (UI lock button).
+  /// Returns false if the platform does not support freeze or the call failed.
+  Future<bool> freezeFullscreenOrientation() async {
+    final frozen = await _invokeBool('freezeFullscreenOrientation');
+    return frozen ?? false;
   }
 
   Future<bool> prepareForPictureInPicture() async {

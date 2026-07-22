@@ -50,6 +50,39 @@ void main() {
     );
 
     test(
+      'offline room (state OFF) maps isLive=false without stream lines',
+      () {
+        // SlotSun: status from TT_ROOM_DATA only; offline pages often lack streams.
+        final html = '''<html>
+        <script>var TT_ROOM_DATA = {"state":"OFF","isReplay":false,"nick":"OfflineNick"};</script>
+      </html>''';
+        final detail = HuyaMapper.mapRoomDetail(
+          html,
+          requestedRoomId: '998',
+        );
+        expect(detail.isLive, isFalse);
+        expect(detail.roomId, '998');
+        expect(detail.streamerName, 'OfflineNick');
+        expect(detail.metadata?['lines'], isEmpty);
+      },
+    );
+
+    test(
+      'offline room with empty stream blob still maps offline',
+      () {
+        final html = '''<html>
+        <script>var TT_ROOM_DATA = {"state":"OFF","isReplay":false};</script>
+        <script>stream: {"data":[]}</script>
+      </html>''';
+        final detail = HuyaMapper.mapRoomDetail(
+          html,
+          requestedRoomId: '660002',
+        );
+        expect(detail.isLive, isFalse);
+      },
+    );
+
+    test(
       'Room detail JSON lacking default quality in vMultiStreamInfo sets first mapped quality as default',
       () {
         final html = '''<html>

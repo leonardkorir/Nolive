@@ -128,6 +128,82 @@ void main() {
     },
   );
 
+  testWidgets('password-protected room shows 加锁 chip', (tester) async {
+    final entry = FollowWatchEntry(
+      record: const FollowRecord(
+        providerId: ProviderId('demo'),
+        roomId: 'locked-room',
+        streamerName: '加锁主播',
+        lastTitle: '密码房',
+      ),
+      detail: LiveRoomDetail(
+        providerId: const ProviderId('demo'),
+        roomId: 'locked-room',
+        title: '密码房',
+        streamerName: '加锁主播',
+        isLive: false,
+        metadata: const <String, Object?>{
+          'passwordProtected': true,
+          'roomStatus': 'password',
+        },
+      ),
+    );
+
+    expect(entry.isPasswordProtected, isTrue);
+    expect(entry.isLive, isFalse);
+    expect(entry.isOffline, isTrue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FollowWatchRow(
+            entry: entry,
+            providerDescriptor: descriptor,
+            showSurface: false,
+            onTap: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('加锁'), findsOneWidget);
+    expect(find.text('直播中'), findsNothing);
+    expect(find.text('未开播'), findsNothing);
+    expect(find.textContaining('需要密码'), findsOneWidget);
+  });
+
+  testWidgets('status probe failure shows 未知 chip not 异常', (tester) async {
+    final entry = FollowWatchEntry(
+      record: const FollowRecord(
+        providerId: ProviderId('demo'),
+        roomId: 'room-unknown',
+        streamerName: '探测失败主播',
+        lastTitle: '旧标题',
+        lastLiveStatus: 1,
+      ),
+      error: Exception('status probe failed'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FollowWatchRow(
+            entry: entry,
+            providerDescriptor: descriptor,
+            showSurface: false,
+            onTap: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('未知'), findsOneWidget);
+    expect(find.text('异常'), findsNothing);
+    expect(find.textContaining('状态暂未知'), findsOneWidget);
+  });
+
   testWidgets('live unfollow icon stays red', (tester) async {
     final entry = FollowWatchEntry(
       record: const FollowRecord(

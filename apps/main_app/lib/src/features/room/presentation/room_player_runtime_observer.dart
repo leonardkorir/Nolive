@@ -82,6 +82,7 @@ class RoomPlayerRuntimeObserverContext {
     this.shouldRecoverUnexpectedStop = _defaultTrue,
     this.onUnexpectedPlaybackStop = _noopUnexpectedStopRecovery,
     this.unexpectedStopRecoveryDelay = const Duration(seconds: 2),
+    this.resolveUnexpectedStopRecoveryDelay,
   });
 
   final ProviderId providerId;
@@ -95,6 +96,15 @@ class RoomPlayerRuntimeObserverContext {
   final RoomPlayerShouldRecoverUnexpectedStop shouldRecoverUnexpectedStop;
   final RoomPlayerUnexpectedStopCallback onUnexpectedPlaybackStop;
   final Duration unexpectedStopRecoveryDelay;
+
+  /// Optional per-state delay. When null, [unexpectedStopRecoveryDelay] is used.
+  /// Hard open failures (Douyu/mpv `Failed to open`) should use near-zero delay.
+  final Duration Function(PlayerState state)? resolveUnexpectedStopRecoveryDelay;
+
+  Duration recoveryDelayFor(PlayerState state) {
+    return resolveUnexpectedStopRecoveryDelay?.call(state) ??
+        unexpectedStopRecoveryDelay;
+  }
 }
 
 class RoomPlayerRuntimeObserver {
@@ -199,14 +209,16 @@ class RoomPlayerRuntimeObserver {
     }
     _unexpectedStopRecoveryTimer?.cancel();
     _unexpectedStopRecoverySignature = signature;
+    final delay = context.recoveryDelayFor(state);
     _unexpectedStopRecoveryTimer = Timer(
-      context.unexpectedStopRecoveryDelay,
+      delay,
       () {
         unawaited(_runUnexpectedStopRecovery(signature));
       },
     );
     context.trace(
-      'player unexpected stop recovery scheduled status=${state.status.name}',
+      'player unexpected stop recovery scheduled status=${state.status.name} '
+      'delayMs=${delay.inMilliseconds}',
     );
   }
 

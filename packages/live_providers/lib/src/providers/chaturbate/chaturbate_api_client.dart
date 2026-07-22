@@ -5,6 +5,7 @@ import 'package:live_core/live_core.dart';
 
 import '../provider_json.dart';
 import '../provider_runtime_support.dart';
+import 'chaturbate_password.dart';
 import 'chaturbate_request_scheduler.dart';
 
 abstract interface class ChaturbateApiClient {
@@ -555,6 +556,14 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
     }
     if (response.statusCode == 200) {
       return;
+    }
+    // Password-gated rooms return JSON 401 ("This room requires a password.")
+    // — not Cloudflare. Surface a stable marker for follow/UI mapping.
+    if (looksLikeChaturbatePasswordProtectedResponse(response)) {
+      throw ProviderParseException(
+        providerId: ProviderId.chaturbate,
+        message: 'Chaturbate $context: $kChaturbatePasswordRequiredMarker.',
+      );
     }
     throw ProviderParseException(
       providerId: ProviderId.chaturbate,

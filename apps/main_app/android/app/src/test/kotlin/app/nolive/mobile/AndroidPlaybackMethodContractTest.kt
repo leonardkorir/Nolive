@@ -15,6 +15,8 @@ class AndroidPlaybackMethodContractTest {
             "setMediaVolume",
             "lockPortrait",
             "lockLandscape",
+            "lockPortraitFullscreen",
+            "freezeFullscreenOrientation",
             "prepareForPictureInPicture",
         )
 
@@ -25,7 +27,7 @@ class AndroidPlaybackMethodContractTest {
     fun `playback method constants stay unique`() {
         assertTrue(
             "Method channel names must be unique",
-            AndroidPlaybackMethodContract.methodNames.size == 8,
+            AndroidPlaybackMethodContract.methodNames.size == 10,
         )
     }
 }

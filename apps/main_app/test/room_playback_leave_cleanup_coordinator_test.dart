@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_runtime_context.dart';
@@ -93,30 +95,90 @@ void main() {
 
     expect(harness.player.events, isNot(contains('stop')));
   });
+
+  test('cleanup completes when player stop stalls beyond timeout', () async {
+    final hangGate = Completer<void>();
+    final harness = _CleanupHarness(
+      stopHangGate: hangGate,
+      stopTimeout: const Duration(milliseconds: 60),
+    );
+    addTearDown(() async {
+      if (!hangGate.isCompleted) {
+        hangGate.complete();
+      }
+      await harness.dispose();
+    });
+    harness.player.emit(
+      PlayerState(
+        backend: PlayerBackend.mpv,
+        status: PlaybackStatus.playing,
+        source: PlaybackSource(url: Uri.parse('https://example.com/live.m3u8')),
+      ),
+    );
+
+    final sw = Stopwatch()..start();
+    await harness.coordinator
+        .cleanupPlaybackOnLeave()
+        .timeout(const Duration(milliseconds: 400));
+    sw.stop();
+
+    expect(sw.elapsedMilliseconds, lessThan(350));
+    expect(
+      harness.traces.any((line) => line.contains('stop timed out')),
+      isTrue,
+    );
+    expect(
+      harness.traces,
+      contains('cleanup playback complete backend=mpv'),
+    );
+  });
 }
 
 class _CleanupHarness {
   _CleanupHarness({
     this.playerBackend = PlayerBackend.mpv,
     this.refreshableRuntime = false,
+    this.stopHangGate,
+    this.stopTimeout = PlayerRuntimeController.defaultRoomTeardownTimeout,
   }) : player = TestRecordingPlayer(playerBackend: playerBackend) {
     final playerRuntime = refreshableRuntime
         ? (_refreshRuntime = _RefreshTrackingPlayerRuntime(player))
         : PlayerRuntimeController(player);
+    final baseRuntime =
+        RoomFullscreenRuntimeContext.fromPlayerRuntime(playerRuntime);
+    final hangGate = stopHangGate;
+    final runtime = hangGate == null
+        ? baseRuntime
+        : RoomFullscreenRuntimeContext(
+            readCurrentState: baseRuntime.readCurrentState,
+            resolveBackend: baseRuntime.resolveBackend,
+            setSource: baseRuntime.setSource,
+            play: baseRuntime.play,
+            pause: baseRuntime.pause,
+            stop: () async {
+              player.events.add('stop');
+              await hangGate.future;
+            },
+            refreshBackendWithoutPlaybackState:
+                baseRuntime.refreshBackendWithoutPlaybackState,
+          );
     coordinator = RoomPlaybackLeaveCleanupCoordinator(
       context: RoomPlaybackLeaveCleanupContext(
-        runtime: RoomFullscreenRuntimeContext.fromPlayerRuntime(playerRuntime),
+        runtime: runtime,
         androidPlaybackBridge: android,
         readViewUiState: () => viewUiState,
         trace: traces.add,
         shouldRefreshBackendAfterCleanup:
             shouldRefreshNativeBackendAfterLeaveCleanup,
+        stopTimeout: stopTimeout,
       ),
     );
   }
 
   final PlayerBackend playerBackend;
   final bool refreshableRuntime;
+  final Completer<void>? stopHangGate;
+  final Duration stopTimeout;
   final TestRecordingPlayer player;
   final TestRoomAndroidPlaybackBridgeFacade android =
       TestRoomAndroidPlaybackBridgeFacade();

@@ -15,6 +15,11 @@ class TwitchWebPlaybackBridge {
     Duration pollInterval = const Duration(milliseconds: 500),
     Duration bootstrapScriptTimeout = const Duration(seconds: 4),
     Duration webViewStartTimeout = const Duration(seconds: 10),
+    /// Extra attempts after the first headless create/run (CB-style cold start).
+    /// Default 2 → up to 3 total tries on `Must be started before we block`.
+    int webViewStartupRetryCount = 2,
+    Duration webViewStartupRetryDelay = const Duration(milliseconds: 650),
+    Duration webViewRecreateCooldown = const Duration(milliseconds: 350),
     Duration idleDisposeDelay = const Duration(minutes: 2),
     TwitchWebPlaybackLifecycle? lifecycle,
   }) : _platformAdapter = platformAdapter,
@@ -23,6 +28,15 @@ class TwitchWebPlaybackBridge {
        _pollInterval = pollInterval,
        _bootstrapScriptTimeout = bootstrapScriptTimeout,
        _webViewStartTimeout = webViewStartTimeout,
+       _webViewStartupRetryCount = webViewStartupRetryCount < 0
+           ? 0
+           : webViewStartupRetryCount,
+       _webViewStartupRetryDelay = webViewStartupRetryDelay.isNegative
+           ? Duration.zero
+           : webViewStartupRetryDelay,
+       _webViewRecreateCooldown = webViewRecreateCooldown.isNegative
+           ? Duration.zero
+           : webViewRecreateCooldown,
        _idleDisposeDelay = idleDisposeDelay {
     _lifecycle =
         lifecycle ??
@@ -279,11 +293,15 @@ return await (async () => {
   final Duration _pollInterval;
   final Duration _bootstrapScriptTimeout;
   final Duration _webViewStartTimeout;
+  final int _webViewStartupRetryCount;
+  final Duration _webViewStartupRetryDelay;
+  final Duration _webViewRecreateCooldown;
   final Duration _idleDisposeDelay;
   late final TwitchWebPlaybackLifecycle _lifecycle;
   HlsHeadlessWebView? _headlessWebView;
   Future<HlsHeadlessWebView>? _headlessWebViewFuture;
   Future<void> _operationChain = Future<void>.value();
+  DateTime? _lastWebViewDisposeAt;
 
   /// Overall bound for one bootstrap attempt (start + poll + script).
   Duration get operationTimeout =>
@@ -411,26 +429,131 @@ return await (async () => {
       return existing;
     }
 
-    final future = () async {
-      _platformAdapter.log('twitch-bridge', 'create headless webview');
-      final webView = await _platformAdapter
-          .createHeadlessWebView(
-            initialUrl: homeUrl,
-            userAgent: embeddedBrowserUserAgent,
-            desktopMode: true,
-          )
-          .timeout(_webViewStartTimeout);
-      _headlessWebView = webView;
-      await webView.run().timeout(_webViewStartTimeout);
-      await _waitUntilDocumentReady(webView);
-      return webView;
-    }();
+    final future = _createHeadlessWebViewWithStartupRetries();
     _headlessWebViewFuture = future;
     try {
       return await future;
     } catch (_) {
-      await _disposeHeadlessWebView();
+      // Clear only if this future is still the active one (avoid racing a
+      // concurrent re-ensure after dispose).
+      if (identical(_headlessWebViewFuture, future)) {
+        await _disposeHeadlessWebView();
+      }
       rethrow;
+    }
+  }
+
+  /// Create + run headless WebView with CB-style cold-start recreate retries.
+  ///
+  /// Android/WebView packages often throw `Must be started before we block`
+  /// from `addDocumentStartJavaScript` on the first (or post-dispose) start.
+  /// Retries dispose the failed instance, wait [webViewStartupRetryDelay], then
+  /// open a fresh HeadlessInAppWebView. Non-transient errors (timeouts, etc.)
+  /// do not retry so hang/timeout tests stay bounded.
+  Future<HlsHeadlessWebView> _createHeadlessWebViewWithStartupRetries() async {
+    final maxAttempts = _webViewStartupRetryCount + 1;
+    Object? lastError;
+    StackTrace? lastStackTrace;
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      HlsHeadlessWebView? webView;
+      try {
+        await _waitForWebViewRecreateCooldown();
+        _platformAdapter.log(
+          'twitch-bridge',
+          'create headless webview attempt=$attempt/$maxAttempts',
+        );
+        webView = await _platformAdapter
+            .createHeadlessWebView(
+              initialUrl: homeUrl,
+              userAgent: embeddedBrowserUserAgent,
+              desktopMode: true,
+            )
+            .timeout(_webViewStartTimeout);
+        _headlessWebView = webView;
+        await webView.run().timeout(_webViewStartTimeout);
+        await _waitUntilDocumentReady(webView);
+        return webView;
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+        final canRetry =
+            attempt < maxAttempts &&
+            _looksLikeTransientWebViewStartupFailure(error);
+        _platformAdapter.log(
+          'twitch-bridge',
+          canRetry
+              ? 'startup transient failure attempt=$attempt/$maxAttempts '
+                    'retryDelayMs=${_webViewStartupRetryDelay.inMilliseconds} '
+                    'error=${_summarizeError(error)}'
+              : 'startup failed attempt=$attempt/$maxAttempts '
+                    'error=${_summarizeError(error)}',
+          error,
+          stackTrace,
+        );
+        // Drop the failed instance without clearing [_headlessWebViewFuture]
+        // so concurrent callers keep awaiting this retry loop.
+        await _disposeFailedStartupWebView(webView);
+        if (!canRetry) {
+          break;
+        }
+        if (_webViewStartupRetryDelay > Duration.zero) {
+          await Future<void>.delayed(_webViewStartupRetryDelay);
+        }
+      }
+    }
+
+    Error.throwWithStackTrace(
+      lastError ??
+          StateError('Twitch headless webview startup failed without error'),
+      lastStackTrace ?? StackTrace.current,
+    );
+  }
+
+  bool _looksLikeTransientWebViewStartupFailure(Object error) {
+    final message = error.toString();
+    return message.contains('Must be started before we block') ||
+        message.contains('addDocumentStartJavaScript');
+  }
+
+  String _summarizeError(Object error) {
+    final normalized = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.length <= 220) {
+      return normalized;
+    }
+    return '${normalized.substring(0, 220)}...';
+  }
+
+  Future<void> _waitForWebViewRecreateCooldown() async {
+    final lastDisposeAt = _lastWebViewDisposeAt;
+    if (lastDisposeAt == null || _webViewRecreateCooldown == Duration.zero) {
+      return;
+    }
+    final elapsed = DateTime.now().difference(lastDisposeAt);
+    if (elapsed < _webViewRecreateCooldown) {
+      await Future<void>.delayed(_webViewRecreateCooldown - elapsed);
+    }
+  }
+
+  /// Dispose a failed create/run instance mid-retry without clearing the
+  /// in-flight [_headlessWebViewFuture].
+  Future<void> _disposeFailedStartupWebView(HlsHeadlessWebView? webView) async {
+    final instance = webView ?? _headlessWebView;
+    _headlessWebView = null;
+    if (instance == null) {
+      return;
+    }
+    try {
+      await instance.dispose().timeout(const Duration(seconds: 5));
+    } catch (error, stackTrace) {
+      _platformAdapter.log(
+        'twitch-bridge',
+        'dispose failed startup webview (ignored)',
+        error,
+        stackTrace,
+      );
+    } finally {
+      _lastWebViewDisposeAt = DateTime.now();
     }
   }
 
@@ -503,6 +626,8 @@ return await (async () => {
         error,
         stackTrace,
       );
+    } finally {
+      _lastWebViewDisposeAt = DateTime.now();
     }
   }
 

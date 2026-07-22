@@ -1,4 +1,5 @@
 import 'package:live_core/live_core.dart';
+import 'package:meta/meta.dart';
 
 import '../provider_json.dart';
 import 'douyu_data_source.dart';
@@ -6,11 +7,57 @@ import 'douyu_mapper.dart';
 import 'douyu_sign_service.dart';
 import 'douyu_transport.dart';
 
+/// Classification of non-zero getH5Play `error` codes.
+enum DouyuH5PlayErrorKind {
+  /// Room not broadcasting / offline.
+  offline,
+
+  /// Rate limit / frequency control.
+  rateLimited,
+
+  /// Sign / auth / encryption failure.
+  authFailed,
+
+  /// Other temporary or unknown API failures.
+  temporary,
+}
+
+/// Maps Douyu getH5Play error code + msg to a recovery-oriented kind.
+@visibleForTesting
+DouyuH5PlayErrorKind classifyDouyuH5PlayError(int errorCode, String? msg) {
+  if (errorCode == -5) {
+    return DouyuH5PlayErrorKind.offline;
+  }
+  final m = (msg ?? '').toLowerCase();
+  if (m.contains('未开播') ||
+      m.contains('不在线') ||
+      m.contains('offline') ||
+      m.contains('not live') ||
+      m.contains('房间关闭')) {
+    return DouyuH5PlayErrorKind.offline;
+  }
+  if (errorCode == 429 ||
+      m.contains('频繁') ||
+      m.contains('rate') ||
+      m.contains('limit') ||
+      m.contains('too many')) {
+    return DouyuH5PlayErrorKind.rateLimited;
+  }
+  if (m.contains('鉴权') ||
+      m.contains('签名') ||
+      m.contains('sign') ||
+      m.contains('auth') ||
+      m.contains('encrypt') ||
+      errorCode == -1 && m.contains('参数')) {
+    return DouyuH5PlayErrorKind.authFailed;
+  }
+  return DouyuH5PlayErrorKind.temporary;
+}
+
 class DouyuLiveDataSource implements DouyuDataSource {
   static const int _recommendPageSize = 40;
   static const int _playRequestMaxAttempts = 2;
   static const Duration _playRequestRetryBackoff = Duration(milliseconds: 1);
-  static const Duration _cachedPlayContextMaxAge = Duration(seconds: 60);
 
   DouyuLiveDataSource({
     required DouyuTransport transport,
@@ -151,20 +198,24 @@ class DouyuLiveDataSource implements DouyuDataSource {
 
   @override
   Future<LiveRoomDetail> fetchRoomDetail(String roomId) async {
+    // SlotSun getRoomDetail: betard only (no sign). Sign happens at play time.
     final roomResponse = await _transport.getJson(
       'https://www.douyu.com/betard/$roomId',
       headers: _signService.buildRoomHeaders(roomId),
     );
     final roomInfo = DouyuMapper.extractRoomInfo(roomResponse);
-    final realRoomId = roomInfo['room_id']?.toString() ?? roomId;
-    final playContext = await _runPlayRequestWithRetry(
-      () => _signService.buildPlayContext(realRoomId),
-    );
-
+    final sign = _signService;
+    final resolvedDeviceId = sign is HttpDouyuSignService
+        ? sign.deviceId
+        : DouyuDeviceId.legacyShared;
     return DouyuMapper.mapRoomDetail(
       roomInfo: roomInfo,
       requestedRoomId: roomId,
-      playContext: playContext,
+      playContext: DouyuSignedPlayContext(
+        body: '',
+        deviceId: resolvedDeviceId,
+        timestamp: 0,
+      ),
     );
   }
 
@@ -172,22 +223,38 @@ class DouyuLiveDataSource implements DouyuDataSource {
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
-    final playContext = await _resolvePlayContext(detail);
+    // SlotSun: DouyuUtils.sign(rid) then POST getH5PlayV1 (fresh body every time).
+    final body = await _runPlayRequestWithRetry(
+      () => _signService.buildSignedPlayBody(detail.roomId),
+    );
     final response = await _runPlayRequestWithRetry(
       () => _transport.postJson(
-        'https://www.douyu.com/lapi/live/getH5Play/${detail.roomId}',
-        body: _signService.extendPlayBody(
-          playContext.body,
-          cdn: '',
-          rate: '-1',
-        ),
-        headers: _signService.buildPlayHeaders(
-          detail.roomId,
-          deviceId: playContext.deviceId,
-        ),
+        'https://www.douyu.com/lapi/live/getH5PlayV1/${detail.roomId}',
+        body: body,
+        headers: _signService.buildPlayHeaders(detail.roomId),
       ),
     );
 
+    final errorCode = _asInt(response['error']) ?? 0;
+    if (errorCode != 0) {
+      final msg = response['msg']?.toString();
+      final kind = classifyDouyuH5PlayError(errorCode, msg);
+      // Offline → empty ladder so UI can show "未开播" without thrashing.
+      if (kind == DouyuH5PlayErrorKind.offline) {
+        return const [];
+      }
+      // Sign / rate-limit / temporary: surface so room recovery can retry.
+      throw ProviderParseException(
+        providerId: ProviderId.douyu,
+        message:
+            'Douyu getH5Play failed ($kind, error=$errorCode): '
+            '${msg ?? 'unknown'}',
+      );
+    }
+    final data = response['data'];
+    if (data is! Map) {
+      return const [];
+    }
     return DouyuMapper.mapPlayQualities(response);
   }
 
@@ -196,63 +263,72 @@ class DouyuLiveDataSource implements DouyuDataSource {
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    final playContext = await _resolvePlayContext(detail);
+    // SlotSun: for each CDN, DouyuUtils.sign(rid, rate:, cdn:) then getH5Play.
     final rate = (quality.metadata?['rate'] ?? quality.id).toString();
     final cdns = _extractCdns(quality);
     final urls = <LivePlayUrl>[];
-    final headers = _signService.buildPlayHeaders(
-      detail.roomId,
-      deviceId: playContext.deviceId,
-    );
+    // SlotSun plays bare URL — no stream headers.
+    final streamHeaders = _signService.buildStreamHeaders(detail.roomId);
+    DouyuH5PlayErrorKind? lastNonOfflineKind;
+    String? lastNonOfflineMsg;
+    var lastNonOfflineCode = 0;
 
     for (final cdn in cdns) {
-      final response = await _runPlayRequestWithRetry(
-        () => _transport.postJson(
-          'https://www.douyu.com/lapi/live/getH5Play/${detail.roomId}',
-          body: _signService.extendPlayBody(
-            playContext.body,
-            cdn: cdn,
-            rate: rate,
-          ),
-          headers: headers,
+      final body = await _runPlayRequestWithRetry(
+        () => _signService.buildSignedPlayBody(
+          detail.roomId,
+          cdn: cdn,
+          rate: rate,
         ),
       );
+      final response = await _runPlayRequestWithRetry(
+        () => _transport.postJson(
+          'https://www.douyu.com/lapi/live/getH5PlayV1/${detail.roomId}',
+          body: body,
+          headers: _signService.buildPlayHeaders(detail.roomId),
+        ),
+      );
+      final errorCode = _asInt(response['error']) ?? 0;
+      if (errorCode != 0) {
+        final msg = response['msg']?.toString();
+        final kind = classifyDouyuH5PlayError(errorCode, msg);
+        if (kind != DouyuH5PlayErrorKind.offline) {
+          lastNonOfflineKind = kind;
+          lastNonOfflineMsg = msg;
+          lastNonOfflineCode = errorCode;
+        }
+        continue;
+      }
+      final data = response['data'];
+      if (data is! Map) {
+        continue;
+      }
       urls.addAll(
-        DouyuMapper.mapPlayUrls(response, headers: headers, lineLabel: cdn),
+        DouyuMapper.mapPlayUrls(
+          response,
+          headers: streamHeaders,
+          lineLabel: cdn,
+        ),
+      );
+    }
+
+    if (urls.isEmpty && lastNonOfflineKind != null) {
+      throw ProviderParseException(
+        providerId: ProviderId.douyu,
+        message:
+            'Douyu getH5Play urls failed ($lastNonOfflineKind, '
+            'error=$lastNonOfflineCode): ${lastNonOfflineMsg ?? 'unknown'}',
       );
     }
 
     final unique = <String, LivePlayUrl>{};
     for (final item in urls) {
-      unique[item.url] = item;
+      unique.putIfAbsent(item.url, () => item);
     }
-    return unique.values.toList(growable: false);
-  }
-
-  Future<DouyuSignedPlayContext> _resolvePlayContext(
-    LiveRoomDetail detail,
-  ) async {
-    final metadata = detail.metadata ?? const <String, Object?>{};
-    final body = metadata['playBody']?.toString() ?? '';
-    final deviceId = metadata['deviceId']?.toString() ?? '';
-    final timestamp = _asInt(metadata['signatureTimestamp']);
-    if (body.isNotEmpty &&
-        deviceId.isNotEmpty &&
-        timestamp != null &&
-        _isFreshPlayContext(timestamp)) {
-      return DouyuSignedPlayContext(
-        body: body,
-        deviceId: deviceId,
-        timestamp: timestamp,
-        script: metadata['signScript']?.toString() ?? '',
-      );
-    }
-    return _signService.buildPlayContext(detail.roomId);
-  }
-
-  bool _isFreshPlayContext(int timestampSeconds) {
-    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    return nowSeconds - timestampSeconds <= _cachedPlayContextMaxAge.inSeconds;
+    // Prefer reliable hosts first; still bare-URL like SlotSun.
+    return DouyuMapper.preferReliableDouyuPlayUrls(
+      unique.values.toList(growable: false),
+    );
   }
 
   List<String> _extractCdns(LivePlayQuality quality) {

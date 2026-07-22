@@ -25,7 +25,11 @@ class LoadFollowWatchlistUseCase {
   const LoadFollowWatchlistUseCase({
     required this.followRepository,
     required this.registry,
-    this.detailTimeout = const Duration(seconds: 8),
+    this.detailTimeout = const Duration(seconds: 12),
+    /// Extra attempts after the first detail fetch (timeouts / network blips).
+    /// Default 2 → up to 3 tries. Tests can pass 0 for a single attempt.
+    this.detailRetryCount = 2,
+    this.detailRetryBaseDelay = const Duration(milliseconds: 350),
     this.maxConcurrent = 6,
     /// Cap concurrent Chaturbate detail fetches (only when scope includes CB).
     this.maxConcurrentChaturbate = 1,
@@ -35,11 +39,14 @@ class LoadFollowWatchlistUseCase {
     /// Goal: stay under CF limits so we rarely see 429 at all.
     this.chaturbateSpacing = const Duration(seconds: 2),
     this.roomDetailOverride,
+    this.onDiagnostic,
   });
 
   final FollowRepository followRepository;
   final ProviderRegistry registry;
   final Duration detailTimeout;
+  final int detailRetryCount;
+  final Duration detailRetryBaseDelay;
   final int maxConcurrent;
   final int maxConcurrentChaturbate;
   final int maxChaturbatePerRefresh;
@@ -49,6 +56,9 @@ class LoadFollowWatchlistUseCase {
     required String roomId,
   })?
   roomDetailOverride;
+
+  /// Optional diagnostic sink (tests / AppLog wiring).
+  final void Function(String message, {Object? error})? onDiagnostic;
 
   Future<FollowWatchlist> call({
     FollowWatchlistRefreshScope scope = FollowWatchlistRefreshScope.allProviders,
@@ -210,44 +220,81 @@ class LoadFollowWatchlistUseCase {
   }
 
   Future<_ResolvedFollowEntry> _inspectFollow(FollowRecord record) async {
-    try {
-      final provider = registry.create(record.providerId);
-      final detailFuture = () async {
-        Object? providerError;
-        StackTrace? providerStackTrace;
-        try {
-          return await provider
-              .requireContract<SupportsRoomDetail>(
-                ProviderCapability.roomDetail,
-              )
-              .fetchRoomDetail(record.roomId);
-        } catch (error, stackTrace) {
-          providerError = error;
-          providerStackTrace = stackTrace;
-        }
-
-        if (shouldAllowRoomDetailOverride(provider.descriptor.id)) {
-          final overridden = await roomDetailOverride?.call(
-            providerId: provider.descriptor.id,
-            roomId: record.roomId,
-          );
-          if (overridden != null) {
-            return overridden;
+    final maxAttempts = detailRetryCount < 0 ? 1 : detailRetryCount + 1;
+    Object? lastError;
+    for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        final provider = registry.create(record.providerId);
+        final detailFuture = () async {
+          Object? providerError;
+          StackTrace? providerStackTrace;
+          try {
+            return await provider
+                .requireContract<SupportsRoomDetail>(
+                  ProviderCapability.roomDetail,
+                )
+                .fetchRoomDetail(record.roomId);
+          } catch (error, stackTrace) {
+            providerError = error;
+            providerStackTrace = stackTrace;
           }
+
+          if (shouldAllowRoomDetailOverride(provider.descriptor.id)) {
+            final overridden = await roomDetailOverride?.call(
+              providerId: provider.descriptor.id,
+              roomId: record.roomId,
+            );
+            if (overridden != null) {
+              return overridden;
+            }
+          }
+          Error.throwWithStackTrace(
+            providerError,
+            providerStackTrace,
+          );
+        }();
+        final detail = await detailFuture.timeout(detailTimeout);
+        final syncedRecord = _buildSyncedRecord(record, detail);
+        if (attempt > 1) {
+          onDiagnostic?.call(
+            'follow detail recovered '
+            'provider=${record.providerId.value} room=${record.roomId} '
+            'attempt=$attempt/$maxAttempts live=${detail.isLive}',
+          );
         }
-        Error.throwWithStackTrace(providerError, providerStackTrace);
-      }();
-      final detail = await detailFuture.timeout(detailTimeout);
-      final syncedRecord = _buildSyncedRecord(record, detail);
-      return _ResolvedFollowEntry(
-        entry: FollowWatchEntry(record: syncedRecord ?? record, detail: detail),
-        updatedRecord: syncedRecord,
-      );
-    } catch (error) {
-      return _ResolvedFollowEntry(
-        entry: FollowWatchEntry(record: record, error: error),
-      );
+        return _ResolvedFollowEntry(
+          entry: FollowWatchEntry(
+            record: syncedRecord ?? record,
+            detail: detail,
+          ),
+          updatedRecord: syncedRecord,
+        );
+      } catch (error) {
+        lastError = error;
+        final canRetry =
+            attempt < maxAttempts && isTransientFollowDetailError(error);
+        onDiagnostic?.call(
+          canRetry
+              ? 'follow detail transient failure '
+                    'provider=${record.providerId.value} room=${record.roomId} '
+                    'attempt=$attempt/$maxAttempts'
+              : 'follow detail failed '
+                    'provider=${record.providerId.value} room=${record.roomId} '
+                    'attempt=$attempt/$maxAttempts',
+          error: error,
+        );
+        if (!canRetry) {
+          break;
+        }
+        final delay = detailRetryBaseDelay * attempt;
+        if (delay > Duration.zero) {
+          await Future<void>.delayed(delay);
+        }
+      }
     }
+    return _ResolvedFollowEntry(
+      entry: FollowWatchEntry(record: record, error: lastError),
+    );
   }
 
   FollowRecord? _buildSyncedRecord(FollowRecord record, LiveRoomDetail detail) {
@@ -364,6 +411,51 @@ bool isChaturbateFollowRateLimitError(Object? error) {
   return text.contains('429') ||
       text.contains('rate limit') ||
       text.contains('too many requests');
+}
+
+/// Transient network / timeout failures worth a short follow-detail retry.
+///
+/// Includes cold-start transport races seen on device logs:
+/// - `Client is already closed`
+/// - `request failed before response`
+@visibleForTesting
+bool isTransientFollowDetailError(Object? error) {
+  if (error == null) {
+    return false;
+  }
+  if (error is TimeoutException) {
+    return true;
+  }
+  final text = error.toString().toLowerCase();
+  // Parse/auth/CF/password lock are not transient network blips.
+  if (text.contains('cloudflare') ||
+      text.contains('challenge page') ||
+      text.contains('requires a password') ||
+      text.contains('room requires a password') ||
+      text.contains('status 401') ||
+      text.contains('status 403') ||
+      text.contains('status 404')) {
+    return false;
+  }
+  return text.contains('timeout') ||
+      text.contains('timed out') ||
+      text.contains('超时') ||
+      text.contains('connection') ||
+      text.contains('socket') ||
+      text.contains('network') ||
+      text.contains('failed host lookup') ||
+      text.contains('connection closed') ||
+      text.contains('connection reset') ||
+      text.contains('already closed') ||
+      text.contains('client is already closed') ||
+      text.contains('failed before response') ||
+      text.contains('before response') ||
+      text.contains('clientexception') ||
+      text.contains('http request failed') ||
+      text.contains('connection refused') ||
+      text.contains('connection aborted') ||
+      text.contains('broken pipe') ||
+      text.contains('software caused connection abort');
 }
 
 double _followPriorityScore(FollowRecord record) {

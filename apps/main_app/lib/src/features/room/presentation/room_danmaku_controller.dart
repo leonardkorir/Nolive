@@ -128,6 +128,23 @@ bool shouldRetryDanmakuConnectionError({
   return !(blockedByCloudflare || chaturbate403);
 }
 
+/// Default reconnect backoff for unexpected stream close / bind thrash.
+///
+/// Attempt is 1-based. Grows exponentially: 2s, 4s, 8s, 16s, then caps at 30s
+/// so a burst of disconnects cannot schedule N immediate full rebinds.
+@visibleForTesting
+Duration defaultDanmakuReconnectDelay(int attempt) {
+  final clamped = attempt < 1 ? 1 : attempt;
+  final exp = clamped > 5 ? 5 : clamped;
+  final seconds = 1 << exp; // 2,4,8,16,32 for attempts 1..5
+  return Duration(seconds: seconds > 30 ? 30 : seconds);
+}
+
+/// How long a reconnected stream must stay open before the attempt counter
+/// resets (prevents attempt→1 on every short-lived rebind).
+@visibleForTesting
+const Duration kDanmakuReconnectHealthyReset = Duration(seconds: 45);
+
 class RoomDanmakuController {
   static const Duration _defaultConnectTimeout = Duration(seconds: 6);
   static const Duration _douyuConnectTimeout = Duration(seconds: 20);
@@ -191,6 +208,7 @@ class RoomDanmakuController {
   Timer? _danmakuTelemetryTimer;
   Timer? _playerSuperChatOverlayTimer;
   Timer? _danmakuReconnectTimer;
+  Timer? _danmakuReconnectHealthyTimer;
   StreamSubscription<LiveMessage>? _danmakuSubscription;
   int _playerSuperChatDisplaySeconds = 8;
   int _frequencyWindowSeconds = 8;
@@ -262,12 +280,15 @@ class RoomDanmakuController {
     final bindGeneration = ++_bindGeneration;
     _suspendedByLifecycle = false;
     _activeRoomDetail = activeRoomDetail;
+    // Preserve reconnectAttempt across rebind so backoff can grow; only clear
+    // in-flight/scheduled flags (session logs showed attempt reset → 2s loops).
+    final preservedAttempt = current.reconnectAttempt;
+    _clearReconnectScheduleFlags(preserveAttempt: true);
     _trace(
       'danmaku bind start room=${activeRoomDetail.roomId} '
       'bind=$bindGeneration session=${_describeSession(session)}',
     );
     await _disposeSessionInternal(clearSession: true, reason: 'bind start');
-    resetReconnectState();
     if (_disposed || bindGeneration != _bindGeneration) {
       _trace(
         'danmaku bind abandoned room=${activeRoomDetail.roomId} '
@@ -285,7 +306,17 @@ class RoomDanmakuController {
       return;
     }
 
-    _emit(current.copyWith(session: session));
+    _emit(
+      current.copyWith(
+        session: session,
+        reconnectAttempt: preservedAttempt,
+        reconnectInFlight: false,
+        reconnectScheduled: false,
+      ),
+    );
+    if (preservedAttempt > 0) {
+      _armReconnectHealthyReset();
+    }
     _startDanmakuTelemetry(
       activeRoomDetail: activeRoomDetail,
       session: session,
@@ -454,6 +485,8 @@ class RoomDanmakuController {
     _reconnectGeneration += 1;
     _danmakuReconnectTimer?.cancel();
     _danmakuReconnectTimer = null;
+    _danmakuReconnectHealthyTimer?.cancel();
+    _danmakuReconnectHealthyTimer = null;
     if (_disposed) {
       return;
     }
@@ -464,6 +497,42 @@ class RoomDanmakuController {
         reconnectScheduled: false,
       ),
     );
+  }
+
+  void _clearReconnectScheduleFlags({required bool preserveAttempt}) {
+    _danmakuReconnectTimer?.cancel();
+    _danmakuReconnectTimer = null;
+    if (_disposed) {
+      return;
+    }
+    _emit(
+      current.copyWith(
+        reconnectInFlight: false,
+        reconnectScheduled: false,
+        reconnectAttempt: preserveAttempt ? current.reconnectAttempt : 0,
+      ),
+    );
+  }
+
+  void _armReconnectHealthyReset() {
+    _danmakuReconnectHealthyTimer?.cancel();
+    final generation = _reconnectGeneration;
+    final attemptSnapshot = current.reconnectAttempt;
+    _danmakuReconnectHealthyTimer = Timer(kDanmakuReconnectHealthyReset, () {
+      _danmakuReconnectHealthyTimer = null;
+      if (_disposed || generation != _reconnectGeneration) {
+        return;
+      }
+      if (current.reconnectAttempt != attemptSnapshot) {
+        return;
+      }
+      _trace(
+        'danmaku reconnect healthy reset after '
+        '${kDanmakuReconnectHealthyReset.inSeconds}s '
+        'room=${_describeRoom(_activeRoomDetail)}',
+      );
+      _emit(current.copyWith(reconnectAttempt: 0));
+    });
   }
 
   Future<void> dispose() {
@@ -497,6 +566,8 @@ class RoomDanmakuController {
     _playerSuperChatOverlayTimer = null;
     _danmakuReconnectTimer?.cancel();
     _danmakuReconnectTimer = null;
+    _danmakuReconnectHealthyTimer?.cancel();
+    _danmakuReconnectHealthyTimer = null;
     _pendingDanmakuMessages.clear();
     _trace(
       'danmaku dispose room=${_describeRoom(detail)} '
@@ -565,10 +636,13 @@ class RoomDanmakuController {
       }
       return;
     }
+    // Cancel healthy-reset so a flapping stream keeps growing backoff.
+    _danmakuReconnectHealthyTimer?.cancel();
+    _danmakuReconnectHealthyTimer = null;
     final attempt = current.reconnectAttempt + 1;
     final delay =
         reconnectDelayBuilder?.call(attempt) ??
-        Duration(seconds: math.min(12, math.max(2, attempt * 2)));
+        defaultDanmakuReconnectDelay(attempt);
     _emit(
       current.copyWith(reconnectAttempt: attempt, reconnectScheduled: true),
     );

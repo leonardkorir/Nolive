@@ -684,10 +684,14 @@ class RoomPageSessionCoordinator extends ChangeNotifier {
   }
 
   void updateVolume(double value) {
-    if (_state.volume == value) {
+    final normalized = value.clamp(0.0, 1.0);
+    if (_state.volume == normalized) {
       return;
     }
-    _replaceState(_state.copyWith(volume: value));
+    _replaceState(_state.copyWith(volume: normalized));
+    // Gesture volume previously only updated UI state; system AudioManager on
+    // ChromeOS ARC often no-ops, so player volume must be driven here.
+    unawaited(dependencies.playerRuntime.setVolume(normalized));
   }
 
   Future<void> updateScaleMode(PlayerScaleMode scaleMode) async {

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:live_storage/live_storage.dart';
@@ -113,7 +114,13 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
   FlutterSecureCredentialStore._(this._storage);
 
   static const String _keyPrefix = 'nolive.secure.';
-  static const Duration _storageOperationTimeout = Duration(seconds: 10);
+
+  /// Cold-start open must not block the UI shell for tens of seconds when the
+  /// device Keystore hangs (observed on some Sony / ChromeOS ARC devices).
+  static const Duration openStorageOperationTimeout = Duration(seconds: 3);
+  static const int openStorageRetryAttempts = 1;
+
+  static const Duration _storageOperationTimeout = Duration(seconds: 8);
   static const int _storageRetryAttempts = 2;
   static const Duration _storageRetryDelay = Duration(milliseconds: 250);
 
@@ -123,17 +130,91 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
   @override
   bool get storesSecureValuesSeparately => true;
 
+  /// Default Android backends tried at open (encrypted first, then legacy).
+  static List<FlutterSecureStorage> defaultAndroidStorageCandidates() {
+    return const <FlutterSecureStorage>[
+      FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+      ),
+      FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: false),
+      ),
+    ];
+  }
+
   static Future<FlutterSecureCredentialStore> open({
     FlutterSecureStorage? storage,
+    List<FlutterSecureStorage>? storageCandidates,
+    Duration? openTimeout,
+    int? openRetryAttempts,
   }) async {
-    final store = FlutterSecureCredentialStore._(
-      storage ??
-          const FlutterSecureStorage(
-            aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    final boundTimeout = openTimeout ?? openStorageOperationTimeout;
+    final boundRetries = openRetryAttempts ?? openStorageRetryAttempts;
+
+    if (storage != null) {
+      final store = FlutterSecureCredentialStore._(storage);
+      await store._load(
+        timeout: boundTimeout,
+        retryAttempts: boundRetries,
+      );
+      return store;
+    }
+
+    // Desktop / iOS: single default backend. Android: try encrypted then legacy
+    // keystore backends so a hung EncryptedSharedPreferences path cannot soft
+    // brick cold start for ~20s.
+    final List<FlutterSecureStorage> candidates;
+    if (storageCandidates != null) {
+      candidates = storageCandidates;
+    } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      candidates = defaultAndroidStorageCandidates();
+    } else {
+      candidates = const <FlutterSecureStorage>[FlutterSecureStorage()];
+    }
+
+    Object? lastError;
+    StackTrace? lastStack;
+    for (var index = 0; index < candidates.length; index += 1) {
+      final candidate = candidates[index];
+      try {
+        final store = FlutterSecureCredentialStore._(candidate);
+        await store._load(
+          timeout: boundTimeout,
+          retryAttempts: boundRetries,
+        );
+        if (index > 0) {
+          AppLog.instance.info(
+            'bootstrap',
+            'secure store open fell back to alternate Android backend '
+                'index=$index keys=${store.snapshot().length}',
+          );
+        }
+        return store;
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStack = stackTrace;
+        AppLog.instance.info(
+          'bootstrap',
+          'secure store open candidate failed index=$index '
+              'error=$error',
+        );
+        // Device Keystore hangs (not just a bad EncryptedSharedPreferences
+        // path): further backends would also stall cold start. Fail open fast.
+        final timedOut = error is TimeoutException ||
+            (error is SecureCredentialStoreUnavailableException &&
+                error.message.contains('timed out'));
+        if (timedOut) {
+          break;
+        }
+      }
+    }
+    Error.throwWithStackTrace(
+      lastError ??
+          const SecureCredentialStoreUnavailableException(
+            'Secure storage open failed: no backend available',
           ),
+      lastStack ?? StackTrace.current,
     );
-    await store._load();
-    return store;
   }
 
   @override
@@ -206,8 +287,16 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
     }
   }
 
-  Future<void> _load() async {
-    final stored = await _runStorageOperation('readAll()', _storage.readAll);
+  Future<void> _load({
+    Duration timeout = _storageOperationTimeout,
+    int retryAttempts = _storageRetryAttempts,
+  }) async {
+    final stored = await _runStorageOperation(
+      'readAll()',
+      _storage.readAll,
+      timeout: timeout,
+      retryAttempts: retryAttempts,
+    );
     _cache
       ..clear()
       ..addEntries(
@@ -229,12 +318,14 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
 
   Future<T> _runStorageOperation<T>(
     String operation,
-    Future<T> Function() action,
-  ) async {
-    const maxAttempts = _storageRetryAttempts;
+    Future<T> Function() action, {
+    Duration timeout = _storageOperationTimeout,
+    int retryAttempts = _storageRetryAttempts,
+  }) async {
+    final maxAttempts = retryAttempts.clamp(1, 5);
     for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        return await action().timeout(_storageOperationTimeout);
+        return await action().timeout(timeout);
       } on TimeoutException catch (error) {
         if (attempt < maxAttempts) {
           await Future<void>.delayed(_storageRetryDelay);
@@ -593,6 +684,8 @@ class LazySecureCredentialStore implements SecureCredentialStore {
         stackTrace: stackTrace,
       );
       _activeStore = _fallbackStore;
+      // Do not dual-write to a store that failed open/promote.
+      _resolvedStore = null;
       await _publishSnapshotIfChanged();
       AppLog.instance.info(
         'bootstrap',

@@ -6,8 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:live_player/live_player.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
+import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
+
 import 'room_desktop_mini_window_coordinator.dart';
 import 'room_fullscreen_chrome_controller.dart';
+import 'room_fullscreen_form_factor_policy.dart';
 import 'room_fullscreen_runtime_context.dart';
 import 'room_fullscreen_session_platforms.dart';
 import 'room_gesture_ui_state.dart';
@@ -53,6 +56,7 @@ class RoomFullscreenSessionBindings {
     required this.resolveScreenSize,
     required this.resolvePlaybackSourceForLifecycleRestore,
     required this.resolveIsVerticalVideo,
+    this.resolveIsArcChromeOs,
   });
 
   final RoomFullscreenRuntimeContext runtime;
@@ -71,6 +75,9 @@ class RoomFullscreenSessionBindings {
   final Future<PlaybackSource?> Function()
       resolvePlaybackSourceForLifecycleRestore;
   final bool Function() resolveIsVerticalVideo;
+
+  /// Optional override for tests; defaults to ChromeOS ARC version sniffing.
+  final bool Function()? resolveIsArcChromeOs;
 }
 
 class RoomFullscreenSessionController extends ChangeNotifier {
@@ -102,6 +109,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
         readGestureUiState: () => _gestureUiState,
         updateGestureUiState: _updateGestureUiState,
         isDisposed: () => _disposed,
+        applyFullscreenControlsLock: applyFullscreenControlsLock,
       ),
       screenBrightness: screenBrightness,
     );
@@ -168,6 +176,8 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   bool _preserveRoomTransitionOnDispose = false;
   bool _disposed = false;
   int _fullscreenBootstrapRequestToken = 0;
+  /// Last applied fullscreen orientation mode (phone portrait vs large flexible).
+  RoomFullscreenVideoOrientationMode? _lastAppliedOrientationMode;
 
   RoomViewUiState get viewUiState => _viewUiState;
   RoomGestureUiState get gestureUiState => _gestureUiState;
@@ -251,11 +261,42 @@ class RoomFullscreenSessionController extends ChangeNotifier {
     PlayerState? playerState, {
     required bool playbackAvailable,
     required bool autoFullscreenEnabled,
+    bool videoAspectMayHaveChanged = false,
   }) {
     maybeApplyAutoFullscreen(
       playerState,
       playbackAvailable: playbackAvailable,
       autoFullscreenEnabled: autoFullscreenEnabled,
+    );
+    if (videoAspectMayHaveChanged) {
+      maybeSyncFullscreenOrientationToVideoAspect();
+    }
+  }
+
+  /// When diagnostics first report size while fullscreen, re-apply mode:
+  /// phone vertical → hard portrait; non-ARC large tablet vertical → hold;
+  /// ARC stays long-edge landscape (no portrait re-apply).
+  void maybeSyncFullscreenOrientationToVideoAspect() {
+    if (_disposed ||
+        !_viewUiState.fullscreenSessionActive ||
+        _viewUiState.lockFullscreenControls) {
+      return;
+    }
+    final mode = resolveFullscreenVideoOrientationMode();
+    if (_lastAppliedOrientationMode == mode) {
+      return;
+    }
+    bindings.trace(
+      'fullscreen orientation re-apply mode=${mode.name} after size known',
+    );
+    unawaited(applyFullscreenSystemUi());
+  }
+
+  RoomFullscreenVideoOrientationMode resolveFullscreenVideoOrientationMode() {
+    return resolveRoomFullscreenVideoOrientationMode(
+      screenSize: bindings.resolveScreenSize(),
+      verticalVideo: bindings.resolveIsVerticalVideo(),
+      isArcChromeOs: _isArcChromeOs(),
     );
   }
 
@@ -351,6 +392,13 @@ class RoomFullscreenSessionController extends ChangeNotifier {
     await restoreSystemUi();
   }
 
+  bool _isArcChromeOs() {
+    return bindings.resolveIsArcChromeOs?.call() ??
+        looksLikeArcChromeOsVersion(
+          AppPlatformCapabilities.current().operatingSystemVersion,
+        );
+  }
+
   Future<void> applyFullscreenSystemUi() async {
     if (_disposed) {
       return;
@@ -360,13 +408,42 @@ class RoomFullscreenSessionController extends ChangeNotifier {
       if (_disposed) {
         return;
       }
+      final mode = resolveFullscreenVideoOrientationMode();
       final verticalVideo = bindings.resolveIsVerticalVideo();
+      final isArc = _isArcChromeOs();
       if (platforms.androidPlaybackBridge.isSupported) {
-        if (verticalVideo) {
-          await platforms.androidPlaybackBridge.lockPortraitFullscreen();
-        } else {
+        if (isArc) {
+          // Single ARC authority: native landscape-only only. Do not dual-write
+          // Flutter multi-orientation lists (map to USER* and fight intercept).
           await platforms.androidPlaybackBridge.lockLandscape();
+        } else {
+          switch (mode) {
+            case RoomFullscreenVideoOrientationMode.hardPortrait:
+              // Phone + vertical stream: classic hard portrait.
+              await platforms.systemUi.setPreferredOrientations(const [
+                DeviceOrientation.portraitUp,
+              ]);
+              await platforms.androidPlaybackBridge.lockPortraitFullscreen();
+            case RoomFullscreenVideoOrientationMode.userHoldPortraitOrLandscape:
+              // Non-ARC large tablets only.
+              await platforms.androidPlaybackBridge.restoreShellOrientation();
+              await platforms.systemUi.setPreferredOrientations(
+                kRoomVerticalLargeFormOrientations,
+              );
+            case RoomFullscreenVideoOrientationMode.longEdgeLandscape:
+              await platforms.systemUi.setPreferredOrientations(const [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ]);
+              // Native last: long-edge L/R (works without system free-rotate).
+              await platforms.androidPlaybackBridge.lockLandscape();
+          }
         }
+        _lastAppliedOrientationMode = mode;
+        bindings.trace(
+          'fullscreen orientation mode=${mode.name} vertical=$verticalVideo '
+          'arc=$isArc',
+        );
         if (_disposed) {
           return;
         }
@@ -375,15 +452,27 @@ class RoomFullscreenSessionController extends ChangeNotifier {
         );
         return;
       }
-      if (verticalVideo) {
-        await platforms.systemUi.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-        ]);
+      // Non-Android: Flutter orientations only (no native bridge).
+      if (isArc) {
+        // Desktop/web never is ARC; keep branch defensive.
+        _lastAppliedOrientationMode = mode;
       } else {
-        await platforms.systemUi.setPreferredOrientations([
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
+        switch (mode) {
+          case RoomFullscreenVideoOrientationMode.hardPortrait:
+            await platforms.systemUi.setPreferredOrientations(const [
+              DeviceOrientation.portraitUp,
+            ]);
+          case RoomFullscreenVideoOrientationMode.userHoldPortraitOrLandscape:
+            await platforms.systemUi.setPreferredOrientations(
+              kRoomVerticalLargeFormOrientations,
+            );
+          case RoomFullscreenVideoOrientationMode.longEdgeLandscape:
+            await platforms.systemUi.setPreferredOrientations(const [
+              DeviceOrientation.landscapeLeft,
+              DeviceOrientation.landscapeRight,
+            ]);
+        }
+        _lastAppliedOrientationMode = mode;
       }
       if (_disposed) {
         return;
@@ -402,12 +491,22 @@ class RoomFullscreenSessionController extends ChangeNotifier {
       return;
     }
     try {
+      final isArc = _isArcChromeOs();
       if (platforms.androidPlaybackBridge.isSupported) {
-        await platforms.androidPlaybackBridge.lockPortrait();
+        // restoreShellOrientation: phone → free shell; ARC → landscape-only.
+        await platforms.androidPlaybackBridge.restoreShellOrientation();
+        if (!isArc) {
+          await platforms.systemUi.setPreferredOrientations(
+            kRoomAppPreferredOrientations,
+          );
+        }
+        // ARC: no Flutter orientation list — native shell is sole writer.
+      } else if (!isArc) {
+        await platforms.systemUi.setPreferredOrientations(
+          kRoomAppPreferredOrientations,
+        );
       }
-      await platforms.systemUi.setPreferredOrientations(
-        DeviceOrientation.values,
-      );
+      _lastAppliedOrientationMode = null;
       if (_disposed) {
         return;
       }
@@ -436,6 +535,69 @@ class RoomFullscreenSessionController extends ChangeNotifier {
     try {
       await platforms.screenAwake.toggle(enabled: enabled);
     } catch (_) {}
+  }
+
+  /// Fullscreen chrome lock: pin the current pose and stop sensor L/R flips.
+  /// Unlock restores sensor landscape (or portrait) via [applyFullscreenSystemUi].
+  ///
+  /// Returns `false` when pin/restore failed so chrome can roll back UI lock.
+  Future<bool> applyFullscreenControlsLock(bool locked) async {
+    if (_disposed || !_viewUiState.fullscreenSessionActive) {
+      return false;
+    }
+    try {
+      if (!locked) {
+        await applyFullscreenSystemUi();
+        return true;
+      }
+      final size = bindings.resolveScreenSize();
+      final landscape = size.width >= size.height;
+      final isArc = _isArcChromeOs();
+      if (platforms.androidPlaybackBridge.isSupported) {
+        if (!isArc) {
+          // Phone/tablet: SystemChrome first, native freeze last so L+R sensor
+          // mapping cannot undo a fixed pin.
+          if (landscape) {
+            await platforms.systemUi.setPreferredOrientations(const [
+              DeviceOrientation.landscapeLeft,
+              DeviceOrientation.landscapeRight,
+            ]);
+          } else {
+            await platforms.systemUi.setPreferredOrientations(const [
+              DeviceOrientation.portraitUp,
+            ]);
+          }
+        }
+        // ARC: native freeze only (sole orientation authority).
+        final frozen =
+            await platforms.androidPlaybackBridge.freezeFullscreenOrientation();
+        if (!frozen) {
+          bindings.trace(
+            'fullscreen controls lock orientation failed: freeze returned false '
+            'landscape=$landscape arc=$isArc',
+          );
+          return false;
+        }
+      } else if (landscape) {
+        // Without a native freeze API, pin both landscape sides only.
+        await platforms.systemUi.setPreferredOrientations(const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      } else {
+        await platforms.systemUi.setPreferredOrientations(const [
+          DeviceOrientation.portraitUp,
+        ]);
+      }
+      bindings.trace(
+        'fullscreen controls lock orientation '
+        'locked=true landscape=$landscape freeze=true arc=$isArc',
+      );
+      return true;
+    } catch (error) {
+      bindings.trace('fullscreen controls lock orientation failed: $error');
+      return false;
+    }
   }
 
   Future<void> toggleDesktopMiniWindow() async {

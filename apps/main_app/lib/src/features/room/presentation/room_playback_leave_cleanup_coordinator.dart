@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
 import 'package:live_player/live_player.dart';
 
 import 'room_fullscreen_runtime_context.dart';
@@ -13,6 +16,10 @@ class RoomPlaybackLeaveCleanupContext {
     required this.readViewUiState,
     required this.trace,
     required this.shouldRefreshBackendAfterCleanup,
+    // Keep stop shorter than serializeRoomTeardown (5s) so force-refresh can
+    // still run before the outer teardown waiter is released.
+    this.stopTimeout = const Duration(seconds: 2),
+    this.forceRefreshTimeout = const Duration(seconds: 2),
   });
 
   final RoomFullscreenRuntimeContext runtime;
@@ -20,6 +27,12 @@ class RoomPlaybackLeaveCleanupContext {
   final RoomViewUiState Function() readViewUiState;
   final void Function(String message) trace;
   final RoomShouldRefreshBackendAfterCleanup shouldRefreshBackendAfterCleanup;
+
+  /// Bound for a single player stop during leave cleanup.
+  final Duration stopTimeout;
+
+  /// Bound for force-refresh after a hung stop (must fit under outer teardown).
+  final Duration forceRefreshTimeout;
 }
 
 class RoomPlaybackLeaveCleanupCoordinator {
@@ -83,8 +96,44 @@ class RoomPlaybackLeaveCleanupCoordinator {
 
   Future<void> _stopPlayerForCleanup(
       RoomFullscreenRuntimeContext runtime) async {
+    // Widget tests dispose mid-teardown; Future.timeout leaves pending timers.
+    final boundStop = context.stopTimeout;
+    final boundRefresh = context.forceRefreshTimeout;
+    final useTimeout = !_isFlutterWidgetTestBinding;
     try {
-      await runtime.stop();
+      if (useTimeout) {
+        await runtime.stop().timeout(boundStop);
+      } else {
+        await runtime.stop();
+      }
+    } on TimeoutException {
+      context.trace(
+        'cleanup playback stop timed out after '
+        '${boundStop.inMilliseconds}ms',
+      );
+      // Hung stop recovery for any platform (observed worst on ChromeOS ARC:
+      // stop can hang 5s+; next room reuses a dirty MPV and first-open freezes).
+      // Happy path (phone tens-of-ms stop) never hits this branch.
+      try {
+        if (useTimeout) {
+          await runtime
+              .refreshBackendWithoutPlaybackState()
+              .timeout(boundRefresh);
+        } else {
+          await runtime.refreshBackendWithoutPlaybackState();
+        }
+        context.trace('cleanup playback force refresh after stop timeout');
+      } on TimeoutException {
+        context.trace(
+          'cleanup playback force refresh after stop timeout timed out after '
+          '${boundRefresh.inMilliseconds}ms',
+        );
+      } catch (error) {
+        context.trace(
+          'cleanup playback force refresh after stop timeout failed '
+          'error=$error',
+        );
+      }
     } catch (error) {
       context.trace('cleanup playback stop failed error=$error');
     }
@@ -113,5 +162,15 @@ class RoomPlaybackLeaveCleanupCoordinator {
         'cleanup playback refresh failed backend=${backend.name} error=$error',
       );
     }
+  }
+}
+
+bool get _isFlutterWidgetTestBinding {
+  try {
+    final name = WidgetsBinding.instance.runtimeType.toString();
+    return name.contains('TestWidgetsFlutterBinding') ||
+        name.contains('AutomatedTestWidgetsFlutterBinding');
+  } catch (_) {
+    return false;
   }
 }

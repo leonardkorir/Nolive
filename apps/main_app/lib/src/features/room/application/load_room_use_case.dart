@@ -347,6 +347,8 @@ class LoadRoomUseCase {
       'private',
       'restricted',
       'locked',
+      'passwordProtected',
+      'hasPassword',
       'paywalled',
     ]) {
       final value = metadata[key];

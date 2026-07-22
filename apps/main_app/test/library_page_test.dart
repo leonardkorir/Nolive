@@ -299,9 +299,12 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+    // Cold-start defer (~1.2s) + detail retries when the error string looks
+    // transient ("network unavailable" → isTransientFollowDetailError).
+    await tester.pump(const Duration(milliseconds: 4000));
+    await tester.pump();
 
-    expect(find.text('异常'), findsOneWidget);
+    expect(find.text('未知'), findsOneWidget);
 
     await tester.tap(find.text('未开播'));
     await tester.pumpAndSettle();

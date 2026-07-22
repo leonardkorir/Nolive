@@ -10,6 +10,10 @@ internal data class FullscreenLandscapeSession(
     val memoryCaptureScheduled: Boolean = false,
     val memoryCaptured: Boolean = false,
     val suspended: Boolean = false,
+    // UI chrome lock: pin current side and stop sensor L/R flips.
+    val frozen: Boolean = false,
+    // True for landscape-primary tablets / Chromebook ARC (long-edge near 0°/180°).
+    val naturalLandscapePrimary: Boolean = false,
 ) {
     fun requestedOrientationForEntry(): Int {
         return initialOrientation
@@ -20,7 +24,19 @@ internal data class FullscreenLandscapeSession(
     }
 
     fun shouldTrackSensors(): Boolean {
-        return !suspended
+        return !suspended && !frozen
+    }
+
+    fun markFrozen(): FullscreenLandscapeSession {
+        return copy(frozen = true)
+    }
+
+    fun markUnfrozen(): FullscreenLandscapeSession {
+        return if (frozen) {
+            copy(frozen = false)
+        } else {
+            this
+        }
     }
 
     fun updateActiveOrientation(orientation: Int): FullscreenLandscapeSession {

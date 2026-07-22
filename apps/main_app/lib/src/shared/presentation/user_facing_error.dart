@@ -13,6 +13,13 @@ String formatUserFacingError(
     return fallback;
   }
   final lower = raw.toLowerCase();
+  // Chaturbate password rooms return JSON 401 — not a generic auth failure.
+  if (lower.contains('requires a password') ||
+      lower.contains('room requires a password') ||
+      lower.contains('password-protected') ||
+      (lower.contains('已加锁') && lower.contains('密码'))) {
+    return '该房间已加锁，需要密码才能观看；当前版本暂不支持输入密码。';
+  }
   if (_looksLikeNetwork(lower)) {
     return '网络连接失败，请检查网络后重试';
   }

@@ -10,6 +10,19 @@ void main() {
     expect(message, isNot(contains('Exception:')));
   });
 
+  test('formatUserFacingError maps Chaturbate password rooms', () {
+    expect(
+      formatUserFacingError(
+        Exception(
+          'ProviderParseException(provider.parse_failure): '
+          'Chaturbate room context request for kitayamachu: '
+          'room requires a password.',
+        ),
+      ),
+      contains('加锁'),
+    );
+  });
+
   test('formatUserFacingError maps timeout and keeps short Chinese passthrough',
       () {
     expect(

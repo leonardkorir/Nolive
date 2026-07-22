@@ -89,7 +89,53 @@ class FollowWatchEntry {
 
   bool get hasError => error != null;
 
+  /// Password-gated room (e.g. Chaturbate lock) — online but not freely playable.
+  ///
+  /// Detected from detail metadata and/or provider error text without coupling
+  /// this domain model to a single platform package.
+  bool get isPasswordProtected {
+    final room = detail;
+    if (room != null) {
+      final metadata = room.metadata;
+      if (metadata != null) {
+        for (final key in const [
+          'passwordProtected',
+          'hasPassword',
+          'locked',
+        ]) {
+          final value = metadata[key];
+          if (value == true) {
+            return true;
+          }
+          final normalized = value?.toString().trim().toLowerCase() ?? '';
+          if (normalized == 'true' ||
+              normalized == '1' ||
+              normalized == 'yes') {
+            return true;
+          }
+        }
+        final status =
+            metadata['roomStatus']?.toString().trim().toLowerCase() ?? '';
+        if (status == 'password' || status == 'password_protected') {
+          return true;
+        }
+      }
+    }
+    final err = error;
+    if (err == null) {
+      return false;
+    }
+    final text = err.toString().toLowerCase();
+    return text.contains('requires a password') ||
+        text.contains('room requires a password') ||
+        text.contains('password-protected');
+  }
+
   bool get isLive {
+    // Password-locked rooms are not treated as publicly live (未开播 filter).
+    if (isPasswordProtected) {
+      return false;
+    }
     if (detail != null) {
       return detail!.isLive;
     }
@@ -97,6 +143,8 @@ class FollowWatchEntry {
     return record.lastLiveStatus == 2;
   }
 
+  /// Offline for filters: not live, and not a probe error ("未知").
+  /// Password-locked rooms count as offline (未开播), with a distinct 加锁 chip.
   bool get isOffline => !hasError && !isLive;
 
   bool get isUnavailable => hasError && !isLive;

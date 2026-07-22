@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:live_core/live_core.dart';
+import 'package:meta/meta.dart';
 
 import '../provider_json.dart';
 import '../provider_runtime_support.dart';
@@ -9,6 +10,7 @@ import 'chaturbate_data_source.dart';
 import 'chaturbate_discover_policy.dart';
 import 'chaturbate_hls_master_playlist_parser.dart';
 import 'chaturbate_mapper.dart';
+import 'chaturbate_password.dart';
 import 'chaturbate_request_scheduler.dart';
 import 'chaturbate_room_page_parser.dart';
 
@@ -29,6 +31,27 @@ typedef _ChaturbatePageBootstrap = ({
   Map<String, dynamic> pushService,
 });
 
+/// Default Chaturbate HTTP waits (cancellable via [Future.timeout]).
+/// Discover stays short; room detail uses a slightly longer cold-start band.
+@visibleForTesting
+const Duration kChaturbateDefaultRoomPageRequestTimeout = Duration(seconds: 6);
+
+@visibleForTesting
+const Duration kChaturbateDefaultRoomContextRequestTimeout = Duration(
+  seconds: 4,
+);
+
+@visibleForTesting
+const Duration kChaturbateDefaultHlsPlaylistRequestTimeout = Duration(
+  seconds: 5,
+);
+
+@visibleForTesting
+const Duration kChaturbateDefaultDiscoverRequestTimeout = Duration(seconds: 6);
+
+@visibleForTesting
+const Duration kChaturbateDefaultDiscoverOverallTimeout = Duration(seconds: 12);
+
 class ChaturbateLiveDataSource implements ChaturbateDataSource {
   static const int _maxPlaybackBootstrapCacheEntries = 64;
 
@@ -38,11 +61,15 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
     ChaturbateHlsMasterPlaylistParser hlsMasterPlaylistParser =
         const ChaturbateHlsMasterPlaylistParser(),
     List<String>? recommendCarouselIds,
-    Duration roomPageRequestTimeout = const Duration(seconds: 6),
-    Duration roomContextRequestTimeout = const Duration(seconds: 3),
-    Duration hlsPlaylistRequestTimeout = const Duration(seconds: 4),
-    Duration discoverRequestTimeout = const Duration(seconds: 8),
-    Duration discoverOverallTimeout = const Duration(seconds: 12),
+    // Prefer short, cancellable waits so discover/detail waterfalls do not
+    // pin 8–12s futures on every carousel card (session-2026-07-21).
+    Duration roomPageRequestTimeout = kChaturbateDefaultRoomPageRequestTimeout,
+    Duration roomContextRequestTimeout =
+        kChaturbateDefaultRoomContextRequestTimeout,
+    Duration hlsPlaylistRequestTimeout =
+        kChaturbateDefaultHlsPlaylistRequestTimeout,
+    Duration discoverRequestTimeout = kChaturbateDefaultDiscoverRequestTimeout,
+    Duration discoverOverallTimeout = kChaturbateDefaultDiscoverOverallTimeout,
     ChaturbateDiscoverBudget discoverBudget =
         kDefaultChaturbateDiscoverBudget,
     void Function(String message)? diagnostics,
@@ -145,6 +172,58 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
     // must wrap work with [ChaturbateRequestScheduler.runAsFollowBudget] so
     // only that path demotes to low + long 429 backoff.
     final normalizedRoomId = roomId.trim();
+    final followStatusOnly = ChaturbateRequestScheduler.isInFollowBudgetZone;
+
+    // Follow refresh: one lightweight chatvideocontext call for isLive/title.
+    // Never hit room-page HTML (CF challenges + multiplies 429 under crawl).
+    // Password rooms → synthetic detail (加锁). Other probe failures rethrow.
+    if (followStatusOnly) {
+      if (normalizedRoomId.isEmpty) {
+        throw ProviderParseException(
+          providerId: ProviderId.chaturbate,
+          message: 'Chaturbate follow status requires a non-empty roomId.',
+        );
+      }
+      try {
+        final contextDetail = await _fetchRoomDetailFromContext(
+          normalizedRoomId,
+        );
+        // Cookie csrf only — no page fetch for danmaku (follow list does not need it).
+        final merged = _mergeRealtimeBootstrap(
+          detail: contextDetail,
+          csrfToken: _configuredCookieCsrfToken(),
+        );
+        return _attachRequestCookie(merged);
+      } catch (error, stackTrace) {
+        if (isChaturbatePasswordProtectedError(error)) {
+          reportProviderDiagnostic(
+            providerId: ProviderId.chaturbate,
+            scope: 'chaturbate follow status password',
+            message:
+                'password-protected roomId=$normalizedRoomId; '
+                'returning locked detail (no room page)',
+            error: error,
+            stackTrace: stackTrace,
+            diagnostics: _diagnostics,
+          );
+          return _attachRequestCookie(
+            chaturbatePasswordProtectedDetail(normalizedRoomId),
+          );
+        }
+        reportProviderDiagnostic(
+          providerId: ProviderId.chaturbate,
+          scope: 'chaturbate follow status context',
+          message:
+              'status-only context failed for roomId=$normalizedRoomId; '
+              'not falling back to room page (follow budget)',
+          error: error,
+          stackTrace: stackTrace,
+          diagnostics: _diagnostics,
+        );
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+    }
+
     if (normalizedRoomId.isEmpty) {
       return _attachRequestCookie(
         await _fetchRoomDetailFromPage(
@@ -153,10 +232,8 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
         ),
       );
     }
-    // B: status path — context first (isLive/title). Never prime HLS bootstrap
-    // here (that is C / enter-room). Soft page only if still missing danmaku
-    // token after cookie csrf (enter-room / play needs token; follow with
-    // csrftoken in account cookie stays at 1 request).
+    // Enter-room path — context first (isLive/title + optional hls). Soft page
+    // only if still missing danmaku token after cookie csrf.
     try {
       final contextDetail = await _fetchRoomDetailFromContext(normalizedRoomId);
       var merged = _mergeRealtimeBootstrap(
@@ -179,6 +256,22 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
       }
       return _attachRequestCookie(merged);
     } catch (error, stackTrace) {
+      // Password lock is definitive — page scrape cannot unlock without a password.
+      if (isChaturbatePasswordProtectedError(error)) {
+        reportProviderDiagnostic(
+          providerId: ProviderId.chaturbate,
+          scope: 'chaturbate room detail password',
+          message:
+              'password-protected roomId=$normalizedRoomId; '
+              'not falling back to room page',
+          error: error,
+          stackTrace: stackTrace,
+          diagnostics: _diagnostics,
+        );
+        return _attachRequestCookie(
+          chaturbatePasswordProtectedDetail(normalizedRoomId),
+        );
+      }
       // Context API often 401s while page/play still works — not a dead cookie.
       reportProviderDiagnostic(
         providerId: ProviderId.chaturbate,
@@ -493,6 +586,9 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
   Future<List<LivePlayQuality>> fetchPlayQualities(
     LiveRoomDetail detail,
   ) async {
+    if (isChaturbatePasswordProtectedDetail(detail)) {
+      return const <LivePlayQuality>[];
+    }
     final enrichedDetail = await _detailWithPlaybackBootstrap(detail);
     final metadata = enrichedDetail.metadata ?? const <String, Object?>{};
     final referer = enrichedDetail.sourceUrl;
@@ -537,6 +633,9 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
+    if (isChaturbatePasswordProtectedDetail(detail)) {
+      return const <LivePlayUrl>[];
+    }
     final resolved = await _resolvePlayableQuality(
       detail: detail,
       quality: quality,

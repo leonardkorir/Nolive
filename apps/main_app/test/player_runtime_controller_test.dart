@@ -86,6 +86,68 @@ void main() {
       expect(order, <String>['outer-start', 'inner', 'outer-end']);
     },
   );
+
+  test(
+    'serializeRoomTeardown releases pending waiters when action stalls',
+    () async {
+      final hangGate = Completer<void>();
+      final runtime = PlayerRuntimeController(
+        _TestSwitchablePlayer(PlayerBackend.mpv),
+        roomTeardownTimeout: const Duration(milliseconds: 80),
+      );
+      addTearDown(() async {
+        if (!hangGate.isCompleted) {
+          hangGate.complete();
+        }
+        await runtime.dispose();
+      });
+
+      final teardown = runtime.serializeRoomTeardown(() async {
+        await hangGate.future;
+      });
+      expect(runtime.hasPendingRoomTeardown, isTrue);
+
+      await teardown.timeout(const Duration(milliseconds: 400));
+      expect(runtime.hasPendingRoomTeardown, isFalse);
+
+      // Subsequent room-load waits must return immediately after release.
+      await runtime
+          .waitForPendingRoomTeardown()
+          .timeout(const Duration(milliseconds: 50));
+    },
+  );
+
+  test(
+    'waitForPendingRoomTeardown times out even if action still running',
+    () async {
+      final hang = Completer<void>();
+      final runtime = PlayerRuntimeController(
+        _TestSwitchablePlayer(PlayerBackend.mpv),
+        roomTeardownTimeout: const Duration(days: 1),
+      );
+      addTearDown(() async {
+        if (!hang.isCompleted) {
+          hang.complete();
+        }
+        await runtime.dispose();
+      });
+
+      unawaited(
+        runtime.serializeRoomTeardown(
+          () => hang.future,
+          timeout: const Duration(days: 1),
+        ),
+      );
+      expect(runtime.hasPendingRoomTeardown, isTrue);
+
+      final sw = Stopwatch()..start();
+      await runtime
+          .waitForPendingRoomTeardown(timeout: const Duration(milliseconds: 60))
+          .timeout(const Duration(milliseconds: 200));
+      sw.stop();
+      expect(sw.elapsedMilliseconds, lessThan(180));
+    },
+  );
 }
 
 class _TestSwitchablePlayer implements BasePlayer {

@@ -111,7 +111,10 @@ class ReferenceProviderCatalog {
     ),
     ProviderRegistration(
       descriptor: DouyuProvider.kDescriptor,
-      builder: DouyuProvider.live,
+      builder: () => DouyuProvider.live(
+        // Per-install did from settings (bootstrap ensures a stable value).
+        deviceId: stringSetting?.call('provider_douyu_device_id'),
+      ),
     ),
     ProviderRegistration(
       descriptor: HuyaProvider.kDescriptor,

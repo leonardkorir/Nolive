@@ -43,6 +43,18 @@ typedef StripchatWarmDecodedUrlBridge = Future<void> Function(String roomUrl);
 typedef _StripchatMouflonDecryptor =
     Future<String?> Function(String encryptedSegment, String pdkey);
 
+/// Whether a stripchat/proxy log line should be emitted.
+///
+/// [verbose] covers per-segment pdkey/mouflon chatter and is suppressed when
+/// [kDebugMode] is false (production-style logging).
+@visibleForTesting
+bool shouldEmitStripchatProxyLog({
+  required bool verbose,
+  required bool kDebugMode,
+}) {
+  return !verbose || kDebugMode;
+}
+
 class StripchatLlHlsProxy {
   StripchatLlHlsProxy({
     required HlsProxyPlatformAdapter platformAdapter,
@@ -3058,9 +3070,12 @@ class StripchatLlHlsProxy {
           ),
           keyCache: session.keyCache,
           tracePdkey: (phase, {required pkey, required source}) {
-            _trace('pdkey $phase pkey=$pkey source=$source');
+            _trace(
+              'pdkey $phase pkey=$pkey source=$source',
+              verbose: true,
+            );
           },
-          traceDecision: (message) => _trace(message),
+          traceDecision: (message) => _trace(message, verbose: true),
           onPdkeyAllFailed: session.notePdkeyAllFailed,
           decryptMouflonSegment: session.decryptMouflonSegment,
           kDebugMode: _platformAdapter.kDebugMode,
@@ -3695,7 +3710,16 @@ class StripchatLlHlsProxy {
     return _platformAdapter.supportsHeadlessWebView;
   }
 
-  void _trace(String message) {
+  /// Logs proxy diagnostics. Segment-level pdkey/mouflon chatter is [verbose]
+  /// and only emitted when [HlsProxyPlatformAdapter.kDebugMode] is true so
+  /// release captures are not flooded (session-2026-07-21: 4.5k INFO lines).
+  void _trace(String message, {bool verbose = false}) {
+    if (!shouldEmitStripchatProxyLog(
+      verbose: verbose,
+      kDebugMode: _platformAdapter.kDebugMode,
+    )) {
+      return;
+    }
     final redacted = message.replaceAllMapped(
       RegExp(r'(pkeys?|psch)=([a-zA-Z0-9_-]+)'),
       (match) {

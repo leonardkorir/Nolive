@@ -1,4 +1,5 @@
 import 'package:live_core/live_core.dart';
+import 'package:meta/meta.dart';
 
 import '../provider_json.dart';
 import 'douyu_sign_service.dart';
@@ -92,12 +93,7 @@ class DouyuMapper {
 
   static List<LivePlayQuality> mapPlayQualities(Map<String, dynamic> response) {
     final data = _asMap(response['data']);
-    final cdns = _sortedCdns(
-      _asList(data['cdnsWithName'])
-          .map((item) => _asMap(item)['cdn']?.toString() ?? '')
-          .where((item) => item.isNotEmpty)
-          .toList(growable: false),
-    );
+    final cdns = sortedDouyuCdnsFromApi(_asList(data['cdnsWithName']));
     final currentRate = _asInt(data['rate']);
     final multirates = _asList(data['multirates']);
     final qualityMap = <String, Object?>{};
@@ -242,17 +238,140 @@ class DouyuMapper {
     return int.tryParse(normalized);
   }
 
-  static List<String> _sortedCdns(List<String> cdns) {
-    final items = List<String>.from(cdns);
-    items.sort((left, right) {
-      final leftIsScdn = left.startsWith('scdn');
-      final rightIsScdn = right.startsWith('scdn');
-      if (leftIsScdn == rightIsScdn) {
-        return 0;
+  /// Prefer reliable CDN families first (session logs: hw1a OK, hw3/hw3a often
+  /// fail; scdn last). API `re-weight` boosts ranking when present.
+  @visibleForTesting
+  static List<String> sortedDouyuCdnsFromApi(List<dynamic> cdnsWithName) {
+    final entries = <({String cdn, int weight})>[];
+    for (final raw in cdnsWithName) {
+      final item = _asMap(raw);
+      final cdn = item['cdn']?.toString().trim() ?? '';
+      if (cdn.isEmpty) {
+        continue;
       }
-      return leftIsScdn ? 1 : -1;
+      final weight =
+          _asInt(item['re-weight']) ??
+          _asInt(item['re_weight']) ??
+          _asInt(item['weight']) ??
+          0;
+      entries.add((cdn: cdn, weight: weight));
+    }
+    entries.sort((left, right) {
+      final scoreLeft = douyuCdnNamePreferenceScore(left.cdn) + left.weight;
+      final scoreRight = douyuCdnNamePreferenceScore(right.cdn) + right.weight;
+      final byScore = scoreRight.compareTo(scoreLeft);
+      if (byScore != 0) {
+        return byScore;
+      }
+      return left.cdn.compareTo(right.cdn);
     });
-    return items;
+    final seen = <String>{};
+    final ordered = <String>[];
+    for (final entry in entries) {
+      if (seen.add(entry.cdn)) {
+        ordered.add(entry.cdn);
+      }
+    }
+    return ordered;
+  }
+
+  @visibleForTesting
+  static int douyuCdnNamePreferenceScore(String cdn) {
+    final n = cdn.toLowerCase();
+    if (n.startsWith('scdn')) {
+      return -1_000_000;
+    }
+    // Prefer lines that commonly resolve to stable edges in device logs.
+    if (n.contains('hw1') || n == 'hw-h5') {
+      return 25_000;
+    }
+    if (n.startsWith('ws') || n.contains('tct')) {
+      return 40_000;
+    }
+    if (n.startsWith('hs')) {
+      return 30_000;
+    }
+    // hw3* edges frequently Failed to open on some networks — try later.
+    if (n.contains('hw3')) {
+      return -30_000;
+    }
+    return 0;
+  }
+
+  /// Max play URLs kept per host after preference sort.
+  ///
+  /// 1 preferred + 1 alternate token: multi-line failover still advances across
+  /// hosts first, but a second same-host token remains if the first expires.
+  @visibleForTesting
+  static const int maxPlayUrlsPerHost = 2;
+
+  /// Sort resolved play URLs so the player opens the most reliable host first.
+  ///
+  /// Collapses excess same-host lines (different tokens / CDN labels that
+  /// resolve to one edge) while keeping up to [maxPlayUrlsPerHost] per host.
+  static List<LivePlayUrl> preferReliableDouyuPlayUrls(List<LivePlayUrl> urls) {
+    final items = List<LivePlayUrl>.from(urls);
+    items.sort((left, right) {
+      final byHost = douyuPlayUrlHostPreferenceScore(
+        right.url,
+      ).compareTo(douyuPlayUrlHostPreferenceScore(left.url));
+      if (byHost != 0) {
+        return byHost;
+      }
+      // Prefer higher re-weight CDN labels when host score ties.
+      final byLabel = douyuCdnNamePreferenceScore(
+        right.lineLabel ?? '',
+      ).compareTo(douyuCdnNamePreferenceScore(left.lineLabel ?? ''));
+      if (byLabel != 0) {
+        return byLabel;
+      }
+      return left.url.compareTo(right.url);
+    });
+    final hostCounts = <String, int>{};
+    final collapsed = <LivePlayUrl>[];
+    for (final item in items) {
+      final host = Uri.tryParse(item.url)?.host.toLowerCase() ?? item.url;
+      final count = hostCounts[host] ?? 0;
+      if (count >= maxPlayUrlsPerHost) {
+        continue;
+      }
+      hostCounts[host] = count + 1;
+      collapsed.add(item);
+    }
+    return collapsed;
+  }
+
+  @visibleForTesting
+  static int douyuPlayUrlHostPreferenceScore(String url) {
+    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+    if (host.contains('hw1a') || host.contains('hw1.')) {
+      return 100;
+    }
+    if (host.startsWith('ws') ||
+        host.contains('wsa') ||
+        host.contains('wss') ||
+        host.contains('ws-') ||
+        host.contains('ws3') ||
+        host.contains('ws2')) {
+      return 90;
+    }
+    if (host.contains('tct') || host.contains('hs')) {
+      return 70;
+    }
+    // Device logs: hwa / hw3* often Fail to open on some networks; try later.
+    if (host.contains('hwa')) {
+      return 25;
+    }
+    if (host.contains('hw3a')) {
+      return 10;
+    }
+    if (host.contains('hw3')) {
+      return 15;
+    }
+    if (host.contains('scdn') || host.startsWith('sc')) {
+      return 5;
+    }
+    return 50;
   }
 
   static String _stripHighlight(String? value) {

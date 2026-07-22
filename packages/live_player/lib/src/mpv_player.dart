@@ -27,6 +27,63 @@ const String kMpvAndroidSurfaceTimeoutError =
 const String kMpvNoMediaTrackStartupError =
     'MPV did not expose audio/video tracks after startup';
 
+/// ChromeOS ARC decode options.
+///
+/// Product rules (user-confirmed):
+/// - Prefer **hardware decode** on Chromebook when it can work.
+/// - **Any resolution** must play (720 / 1080 / 2K / …).
+/// - Soft decode was already stable; it is a **fallback**, not a silent default.
+///
+/// geralt ARCVM evidence:
+/// - [zeroCopy] needs Surface size == stream size; guessing size breaks other
+///   resolutions (1080 failed when we forced a 2K prime).
+/// - [mediaCodecCopy] hard decode without zero-copy Surface bind; works across
+///   resolutions (brief black then play). Default production tier.
+/// - [software] last resort if copy cannot produce A/V.
+enum ArcMpvDecodeTier {
+  /// Zero-copy Surface. Experimental only — not the ARC default.
+  zeroCopy,
+
+  /// Hard decode + copy into gpu VO — ARC **default** (resolution-agnostic).
+  mediaCodecCopy,
+
+  /// Software decode — fallback only when hard-copy fails.
+  software,
+}
+
+/// Escalate toward safer tiers only. Default start is [mediaCodecCopy];
+/// zerocopy is not on the automatic ladder (resolution/Surface-size traps).
+ArcMpvDecodeTier? nextArcMpvDecodeTier(ArcMpvDecodeTier current) {
+  return switch (current) {
+    ArcMpvDecodeTier.zeroCopy => ArcMpvDecodeTier.mediaCodecCopy,
+    ArcMpvDecodeTier.mediaCodecCopy => ArcMpvDecodeTier.software,
+    ArcMpvDecodeTier.software => null,
+  };
+}
+
+String arcMpvDecodeTierLabel(ArcMpvDecodeTier tier) {
+  return switch (tier) {
+    ArcMpvDecodeTier.zeroCopy => 'zerocopy',
+    ArcMpvDecodeTier.mediaCodecCopy => 'mediacodec-copy',
+    ArcMpvDecodeTier.software => 'software',
+  };
+}
+
+/// Result of waiting for startup A/V after play (ARC ladder).
+enum ArcStartupMediaPollOutcome {
+  /// Width/params/buffer/position signal present — treat as playable.
+  gotSignal,
+
+  /// Player reported error before a media signal — demote tier, do not "succeed".
+  failed,
+
+  /// Wait budget elapsed with neither signal nor terminal error.
+  timedOut,
+
+  /// Source changed / player closed mid-wait — stop escalating.
+  aborted,
+}
+
 Future<void>? _pendingAndroidDebugMediaKitReferenceCleanup;
 
 @visibleForTesting
@@ -257,8 +314,18 @@ class MpvPlayer implements BasePlayer {
   AndroidEmbeddedPlayGate? _pendingAndroidEmbeddedPlayGate;
   bool _emittedMediaCodecDeviceFailureForSource = false;
   DateTime? _lastMpvOpeningDoneAt;
+
   DateTime? _lastMediaCodecHardwareDecoderReadyAt;
   Completer<DateTime>? _pendingMediaCodecHardwareDecoderReadyCompleter;
+
+  /// Active ARC decode tier. Default hard-copy (user wants HW decode; any
+  /// resolution). Escalate to software only on failure. Phone never uses this.
+  ArcMpvDecodeTier _arcDecodeTier = ArcMpvDecodeTier.mediaCodecCopy;
+
+  /// Last ARC surface prime (for mismatch detect vs videoParams).
+  ({int width, int height})? _arcLastSurfacePrimeSize;
+
+  bool _arcPreemptiveEscalateInFlight = false;
 
   @override
   PlayerBackend get backend => PlayerBackend.mpv;
@@ -291,118 +358,21 @@ class MpvPlayer implements BasePlayer {
   @override
   Future<void> setSource(PlaybackSource source) async {
     await _runSerialized('setSource', () async {
-      await _initializeInternal();
-      final player = _player;
-      if (player == null) {
+      // ARC: each room retries hard-copy first (not zerocopy, not sticky soft).
+      // Soft is only reached via escalate after copy fails for this open.
+      if (isAndroid &&
+          looksLikeArcChromeOsRuntime() &&
+          _arcDecodeTier != ArcMpvDecodeTier.mediaCodecCopy) {
+        await _recreateMediaKitBackendForArcTier(
+          ArcMpvDecodeTier.mediaCodecCopy,
+        );
+      } else {
+        await _initializeInternal();
+      }
+      if (_player == null) {
         return;
       }
-      final previousState = _currentState;
-      final openPreparation = resolveMpvOpenPreparation(
-        previousState: previousState,
-        isAndroid: isAndroid,
-      );
-      final previousSyntheticPlaylistFile = _activeSyntheticPlaylistFile;
-      final openPlan = await _resolveOpenPlan(source);
-      _androidEmbeddedPlayGateGeneration += 1;
-      _pendingAndroidEmbeddedPlayGate = null;
-      _emittedMediaCodecDeviceFailureForSource = false;
-      _lastMpvOpeningDoneAt = null;
-      _lastMediaCodecHardwareDecoderReadyAt = null;
-      _pendingMediaCodecHardwareDecoderReadyCompleter = null;
-      _logEvent(
-        'setSource video=${_shortSourceDescriptor(source.url)} '
-        'audio=${source.externalAudio == null ? '-' : _shortSourceDescriptor(source.externalAudio!.url)} '
-        'audioHeaders=${source.externalAudio?.headers.keys.join(',') ?? '-'} '
-        'strategy=${openPlan.strategy}',
-      );
-      _logEvent(
-        'open plan strategy=${openPlan.strategy} '
-        'media=${_shortSourceDescriptor(openPlan.mediaUri)} '
-        'scheme=${openPlan.mediaUri.scheme.isEmpty ? '-' : openPlan.mediaUri.scheme} '
-        'localFile=${openPlan.mediaUri.scheme == 'file'} '
-        'loadsAudioInside=${openPlan.loadsAudioInsideMedia} '
-        'master=${source.masterPlaylistUrl == null ? '-' : _shortSourceDescriptor(source.masterPlaylistUrl!)} '
-        'embeddedMaster=${source.masterPlaylistContent?.trim().isNotEmpty == true} '
-        'hlsBitrate=${source.hlsBitrate?.trim().isNotEmpty == true ? source.hlsBitrate : '-'}',
-      );
-      _emitDiagnostics(_freshDiagnostics(clearRecentLogs: true));
-      _emit(
-        _currentState.copyWith(
-          status: PlaybackStatus.buffering,
-          source: source,
-          clearErrorMessage: true,
-        ),
-      );
-      final androidOpenPreparation = await _preparePlayerForNextOpen(
-        player,
-        shouldStopBeforeOpen: openPreparation.shouldStopBeforeOpen,
-        barrierDuration: openPreparation.barrierDuration,
-        isInitialOpen: !openPreparation.shouldStopBeforeOpen,
-      );
-      _lastBroadcastPosition = Duration.zero;
-      _lastBroadcastBuffered = Duration.zero;
-      // Re-arm gpu-next/gpu only when actually opening media (window stays
-      // closed while idle / during headless webview bootstrap).
-      await _armExternalNativeWindowForPlayback(player);
-      final preloadedExternalAudioConfigured = await _configureSourceOptions(
-        player,
-        source,
-      );
-      if (androidOpenPreparation.deferPlayUntilSurfaceReady) {
-        final surfaceReadyBeforeOpen =
-            await _waitForAndroidSurfaceBeforeInitialOpen(
-              previousSurface: androidOpenPreparation.previousSurface,
-            );
-        if (!surfaceReadyBeforeOpen) {
-          _pendingAndroidEmbeddedPlayGate = (
-            generation: _androidEmbeddedPlayGateGeneration,
-            previousSurface: androidOpenPreparation.previousSurface,
-            isInitialOpen: !androidOpenPreparation.shouldStopBeforeOpen,
-          );
-          _logEvent(
-            'setSource play-gate pending '
-            'initial=${!androidOpenPreparation.shouldStopBeforeOpen} '
-            'wid-before=${androidOpenPreparation.previousSurface.wid} '
-            'texture-before=${androidOpenPreparation.previousSurface.textureId} '
-            'reason=surface-published-after-open',
-          );
-        }
-      }
-      await player.open(
-        mk.Media(
-          openPlan.mediaUri.toString(),
-          httpHeaders: openPlan.httpHeaders,
-        ),
-        play: false,
-      );
-      // Delay hwdec-active until decode can engage; immediate open often logs
-      // current=- which is a false inactive signal.
-      unawaited(_scheduleActiveHardwareDecodeLog(player));
-      if (openPlan.loadsAudioInsideMedia || preloadedExternalAudioConfigured) {
-        await player.setAudioTrack(mk.AudioTrack.auto());
-      } else if (source.externalAudio != null) {
-        await _addExternalAudioAfterOpen(player, source);
-      } else {
-        await player.setAudioTrack(mk.AudioTrack.auto());
-      }
-      if (_currentState.status == PlaybackStatus.error &&
-          _currentState.source == source) {
-        _logEvent(
-          'setSource ready skipped current-error error=${_currentState.errorMessage ?? '-'}',
-        );
-      } else {
-        _emit(
-          _currentState.copyWith(
-            status: PlaybackStatus.ready,
-            source: source,
-            clearErrorMessage: true,
-          ),
-        );
-      }
-      await _deleteSyntheticPlaylistFile(
-        previousSyntheticPlaylistFile,
-        preserveIfSameAsActive: true,
-      );
+      await _openSourceUnlocked(source);
     });
   }
 
@@ -420,6 +390,10 @@ class MpvPlayer implements BasePlayer {
       final source = _currentState.source;
       await player.play();
       await _awaitAndroidStartupMediaSignalAfterPlay(source);
+      // Do NOT stall-escalate mediacodec-copy on estimated-vf-fps: ARC logs show
+      // current=mediacodec-copy + videoParams while fps is empty/0 — demoting
+      // recreated the whole player mid-watch and caused extra black/error loops.
+      // Zero-copy experimental path may still use size-mismatch preempt only.
     });
   }
 
@@ -564,7 +538,15 @@ class MpvPlayer implements BasePlayer {
     await _runSerialized('setVolume', () async {
       final player = _player;
       final normalized = value.clamp(0, 1).toDouble();
+      // Skip redundant backend writes (session logs: 100+ setVolume/hour).
+      if (player != null &&
+          (normalized - _currentState.volume).abs() < 0.0005) {
+        return;
+      }
       if (player == null) {
+        if ((normalized - _currentState.volume).abs() < 0.0005) {
+          return;
+        }
         _emit(_currentState.copyWith(volume: normalized));
         return;
       }
@@ -748,6 +730,7 @@ class MpvPlayer implements BasePlayer {
       logEnabled: logEnabled,
       isAndroid: isAndroid,
       allowExternalNativeWindow: allowExternalNativeWindow,
+      arcDecodeTier: _activeArcDecodeTierOrNull(),
     );
     _runtimeConfiguration = runtimeConfiguration;
     final player = mk.Player(
@@ -797,7 +780,340 @@ class MpvPlayer implements BasePlayer {
       'attachAfterVideoParams='
       '${controllerConfiguration.androidAttachSurfaceAfterVideoParameters ?? 'platform-default'} '
       'doubleBuffering=$doubleBufferingEnabled logEnabled=$logEnabled '
-      'androidOutputFallback=${runtimeConfiguration.androidOutputFallbackReason ?? '-'}',
+      'androidOutputFallback=${runtimeConfiguration.androidOutputFallbackReason ?? '-'} '
+      'arcDecodeTier=${_activeArcDecodeTierOrNull() == null ? '-' : arcMpvDecodeTierLabel(_arcDecodeTier)}',
+    );
+  }
+
+  ArcMpvDecodeTier? _activeArcDecodeTierOrNull() {
+    if (!isAndroid || !looksLikeArcChromeOsRuntime()) {
+      return null;
+    }
+    return _arcDecodeTier;
+  }
+
+  /// videoParams size != surface prime ⇒ media_kit will SetSurfaceSize and
+  /// ARC V4L2 often freezes with false-positive hwdec. Escalate before freeze.
+  void _maybePreemptArcEscalateOnVideoParams({
+    required int streamWidth,
+    required int streamHeight,
+  }) {
+    if (_arcPreemptiveEscalateInFlight) {
+      return;
+    }
+    if (_activeArcDecodeTierOrNull() != ArcMpvDecodeTier.zeroCopy) {
+      return;
+    }
+    final prime = _arcLastSurfacePrimeSize;
+    if (prime == null) {
+      return;
+    }
+    if (!arcSurfacePrimeMismatchesStream(
+      primeWidth: prime.width,
+      primeHeight: prime.height,
+      streamWidth: streamWidth,
+      streamHeight: streamHeight,
+    )) {
+      return;
+    }
+    final source = _currentState.source;
+    if (source == null) {
+      return;
+    }
+    _arcPreemptiveEscalateInFlight = true;
+    _logEvent(
+      'arc zerocopy preempt escalate reason=surface-size-mismatch '
+      'prime=${prime.width}x${prime.height} stream=${streamWidth}x$streamHeight',
+    );
+    unawaited(
+      _runSerialized('arcPreemptEscalate', () async {
+        try {
+          if (_isClosedForOperations ||
+              _currentState.source != source ||
+              _arcDecodeTier != ArcMpvDecodeTier.zeroCopy) {
+            return;
+          }
+          final recovered = await _escalateArcDecodeTierAndReplay(
+            source,
+            reason: 'surface-size-mismatch',
+          );
+          if (!recovered) {
+            _logEvent('arc zerocopy preempt escalate failed all tiers');
+          }
+        } catch (error) {
+          _logEvent('arc zerocopy preempt escalate error=$error');
+        } finally {
+          _arcPreemptiveEscalateInFlight = false;
+        }
+      }),
+    );
+  }
+
+  /// Tear down media_kit player/controller without closing this [MpvPlayer]
+  /// shell, then re-init with the current ARC tier.
+  /// Shorter than first-open health budget so leave/stop can run after failover.
+  static const Duration _arcEscalateMediaSignalTimeout = Duration(seconds: 4);
+
+  Future<void> _recreateMediaKitBackendForArcTier(
+    ArcMpvDecodeTier tier,
+  ) async {
+    _logEvent(
+      'arc decode tier recreate from=${arcMpvDecodeTierLabel(_arcDecodeTier)} '
+      'to=${arcMpvDecodeTierLabel(tier)}',
+    );
+    _arcDecodeTier = tier;
+    _arcLastSurfacePrimeSize = null;
+    _arcPreemptiveEscalateInFlight = false;
+    _androidEmbeddedPlayGateGeneration += 1;
+    _pendingAndroidEmbeddedPlayGate = null;
+    _emittedMediaCodecDeviceFailureForSource = false;
+    _lastMpvOpeningDoneAt = null;
+    _lastMediaCodecHardwareDecoderReadyAt = null;
+    _pendingMediaCodecHardwareDecoderReadyCompleter = null;
+    for (final subscription in _subscriptions) {
+      await subscription.cancel();
+    }
+    _subscriptions.clear();
+    final player = _player;
+    _player = null;
+    _controller = null;
+    _controllerNotifier.value = null;
+    _runtimeConfiguration = null;
+    _initialized = false;
+    if (player != null) {
+      try {
+        await player.stop();
+      } catch (_) {}
+      try {
+        await player.dispose();
+      } catch (_) {}
+    }
+    await _initializeInternal();
+    // Fresh media_kit player defaults volume to 100; restore session volume.
+    final restoredVolume = (_currentState.volume.clamp(0, 1) * 100).toDouble();
+    try {
+      await _player?.setVolume(restoredVolume);
+    } catch (error) {
+      _logEvent('arc recreate restore volume failed error=$error');
+    }
+  }
+
+  /// Poll outcome for ARC ladder decisions. Error is NOT success — otherwise
+  /// decoder/device failures never demote copy → software.
+  @visibleForTesting
+  static ArcStartupMediaPollOutcome classifyArcStartupMediaPoll({
+    required bool isClosed,
+    required bool sourceStillActive,
+    required PlaybackStatus status,
+    required bool hasMediaSignal,
+  }) {
+    if (isClosed || !sourceStillActive) {
+      return ArcStartupMediaPollOutcome.aborted;
+    }
+    if (hasMediaSignal) {
+      return ArcStartupMediaPollOutcome.gotSignal;
+    }
+    if (status == PlaybackStatus.error) {
+      return ArcStartupMediaPollOutcome.failed;
+    }
+    return ArcStartupMediaPollOutcome.timedOut;
+  }
+
+  Future<ArcStartupMediaPollOutcome> _pollAndroidStartupMediaSignal(
+    PlaybackSource source, {
+    required Duration timeout,
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final outcome = classifyArcStartupMediaPoll(
+        isClosed: _isClosedForOperations,
+        sourceStillActive: _currentState.source == source,
+        status: _currentState.status,
+        hasMediaSignal: hasMpvStartupMediaSignal(
+          state: _currentState,
+          diagnostics: _currentDiagnostics,
+        ),
+      );
+      if (outcome != ArcStartupMediaPollOutcome.timedOut) {
+        return outcome;
+      }
+      await Future<void>.delayed(_androidStartupMediaSignalPollInterval);
+    }
+    return classifyArcStartupMediaPoll(
+      isClosed: _isClosedForOperations,
+      sourceStillActive: _currentState.source == source,
+      status: _currentState.status,
+      hasMediaSignal: hasMpvStartupMediaSignal(
+        state: _currentState,
+        diagnostics: _currentDiagnostics,
+      ),
+    );
+  }
+
+  /// Escalate ARC decode tier and re-open [source] after hard-copy (or
+  /// experimental zero-copy) fails. Must run inside an existing
+  /// `_runSerialized` chain (no nested setSource/play serialization).
+  Future<bool> _escalateArcDecodeTierAndReplay(
+    PlaybackSource source, {
+    String reason = 'no-media-signal',
+  }) async {
+    while (true) {
+      if (_isClosedForOperations || _currentState.source != source) {
+        return false;
+      }
+      final next = nextArcMpvDecodeTier(_arcDecodeTier);
+      if (next == null) {
+        return false;
+      }
+      _logEvent(
+        'arc decode tier escalate reason=$reason '
+        'next=${arcMpvDecodeTierLabel(next)}',
+      );
+      await _recreateMediaKitBackendForArcTier(next);
+      final player = _player;
+      if (player == null) {
+        return false;
+      }
+      await _openSourceUnlocked(source);
+      if (_isClosedForOperations || _currentState.source != source) {
+        return false;
+      }
+      // Open-time hard error: try next tier without waiting full health budget.
+      if (_currentState.status == PlaybackStatus.error) {
+        continue;
+      }
+      await player.play();
+      final outcome = await _pollAndroidStartupMediaSignal(
+        source,
+        timeout: _arcEscalateMediaSignalTimeout,
+      );
+      if (outcome == ArcStartupMediaPollOutcome.gotSignal) {
+        _logEvent(
+          'arc decode tier escalate recovered '
+          'tier=${arcMpvDecodeTierLabel(_arcDecodeTier)}',
+        );
+        return true;
+      }
+      if (outcome == ArcStartupMediaPollOutcome.aborted) {
+        return false;
+      }
+      // failed or timedOut → keep demoting
+    }
+  }
+
+  /// Open [source] without taking the operation lock (caller holds it).
+  Future<void> _openSourceUnlocked(PlaybackSource source) async {
+    final player = _player;
+    if (player == null) {
+      return;
+    }
+    final previousState = _currentState;
+    final openPreparation = resolveMpvOpenPreparation(
+      previousState: previousState,
+      isAndroid: isAndroid,
+    );
+    final previousSyntheticPlaylistFile = _activeSyntheticPlaylistFile;
+    final openPlan = await _resolveOpenPlan(source);
+    _androidEmbeddedPlayGateGeneration += 1;
+    _pendingAndroidEmbeddedPlayGate = null;
+    _emittedMediaCodecDeviceFailureForSource = false;
+    _lastMpvOpeningDoneAt = null;
+    _lastMediaCodecHardwareDecoderReadyAt = null;
+    _pendingMediaCodecHardwareDecoderReadyCompleter = null;
+    _logEvent(
+      'setSource video=${_shortSourceDescriptor(source.url)} '
+      'audio=${source.externalAudio == null ? '-' : _shortSourceDescriptor(source.externalAudio!.url)} '
+      'audioHeaders=${source.externalAudio?.headers.keys.join(',') ?? '-'} '
+      'strategy=${openPlan.strategy} '
+      'arcTier=${_activeArcDecodeTierOrNull() == null ? '-' : arcMpvDecodeTierLabel(_arcDecodeTier)}',
+    );
+    _logEvent(
+      'open plan strategy=${openPlan.strategy} '
+      'media=${_shortSourceDescriptor(openPlan.mediaUri)} '
+      'scheme=${openPlan.mediaUri.scheme.isEmpty ? '-' : openPlan.mediaUri.scheme} '
+      'localFile=${openPlan.mediaUri.scheme == 'file'} '
+      'loadsAudioInside=${openPlan.loadsAudioInsideMedia} '
+      'master=${source.masterPlaylistUrl == null ? '-' : _shortSourceDescriptor(source.masterPlaylistUrl!)} '
+      'embeddedMaster=${source.masterPlaylistContent?.trim().isNotEmpty == true} '
+      'hlsBitrate=${source.hlsBitrate?.trim().isNotEmpty == true ? source.hlsBitrate : '-'}',
+    );
+    _emitDiagnostics(_freshDiagnostics(clearRecentLogs: true));
+    _emit(
+      _currentState.copyWith(
+        status: PlaybackStatus.buffering,
+        source: source,
+        clearErrorMessage: true,
+      ),
+    );
+    final androidOpenPreparation = await _preparePlayerForNextOpen(
+      player,
+      shouldStopBeforeOpen: openPreparation.shouldStopBeforeOpen,
+      barrierDuration: openPreparation.barrierDuration,
+      isInitialOpen: !openPreparation.shouldStopBeforeOpen,
+    );
+    _lastBroadcastPosition = Duration.zero;
+    _lastBroadcastBuffered = Duration.zero;
+    // Re-arm gpu-next/gpu only when actually opening media (window stays
+    // closed while idle / during headless webview bootstrap).
+    await _armExternalNativeWindowForPlayback(player);
+    final preloadedExternalAudioConfigured = await _configureSourceOptions(
+      player,
+      source,
+    );
+    if (androidOpenPreparation.deferPlayUntilSurfaceReady) {
+      final surfaceReadyBeforeOpen =
+          await _waitForAndroidSurfaceBeforeInitialOpen(
+            previousSurface: androidOpenPreparation.previousSurface,
+          );
+      if (!surfaceReadyBeforeOpen) {
+        _pendingAndroidEmbeddedPlayGate = (
+          generation: _androidEmbeddedPlayGateGeneration,
+          previousSurface: androidOpenPreparation.previousSurface,
+          isInitialOpen: !androidOpenPreparation.shouldStopBeforeOpen,
+        );
+        _logEvent(
+          'setSource play-gate pending '
+          'initial=${!androidOpenPreparation.shouldStopBeforeOpen} '
+          'wid-before=${androidOpenPreparation.previousSurface.wid} '
+          'texture-before=${androidOpenPreparation.previousSurface.textureId} '
+          'reason=surface-published-after-open',
+        );
+      }
+    }
+    await player.open(
+      mk.Media(
+        openPlan.mediaUri.toString(),
+        httpHeaders: openPlan.httpHeaders,
+      ),
+      play: false,
+    );
+    // Delay hwdec-active until decode can engage; immediate open often logs
+    // current=- which is a false inactive signal.
+    unawaited(_scheduleActiveHardwareDecodeLog(player));
+    if (openPlan.loadsAudioInsideMedia || preloadedExternalAudioConfigured) {
+      await player.setAudioTrack(mk.AudioTrack.auto());
+    } else if (source.externalAudio != null) {
+      await _addExternalAudioAfterOpen(player, source);
+    } else {
+      await player.setAudioTrack(mk.AudioTrack.auto());
+    }
+    if (_currentState.status == PlaybackStatus.error &&
+        _currentState.source == source) {
+      _logEvent(
+        'setSource ready skipped current-error error=${_currentState.errorMessage ?? '-'}',
+      );
+    } else {
+      _emit(
+        _currentState.copyWith(
+          status: PlaybackStatus.ready,
+          source: source,
+          clearErrorMessage: true,
+        ),
+      );
+    }
+    await _deleteSyntheticPlaylistFile(
+      previousSyntheticPlaylistFile,
+      preserveIfSameAsActive: true,
     );
   }
 
@@ -831,31 +1147,38 @@ class MpvPlayer implements BasePlayer {
       return;
     }
     final timeout = resolveMpvStartupMediaSignalTimeout(source);
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      if (_isClosedForOperations ||
-          _currentState.source != source ||
-          _currentState.status == PlaybackStatus.error ||
-          hasMpvStartupMediaSignal(
-            state: _currentState,
-            diagnostics: _currentDiagnostics,
-          )) {
+    final outcome = await _pollAndroidStartupMediaSignal(
+      source,
+      timeout: timeout,
+    );
+    if (outcome == ArcStartupMediaPollOutcome.gotSignal) {
+      return;
+    }
+    if (outcome == ArcStartupMediaPollOutcome.aborted ||
+        _isClosedForOperations ||
+        _currentState.source != source) {
+      return;
+    }
+    // ARC: demote on timeout OR stream/decoder error (error must not skip soft).
+    if (_activeArcDecodeTierOrNull() != null) {
+      final reason = outcome == ArcStartupMediaPollOutcome.failed
+          ? 'startup-error'
+          : 'no-media-signal';
+      final recovered = await _escalateArcDecodeTierAndReplay(
+        source,
+        reason: reason,
+      );
+      if (recovered) {
         return;
       }
-      await Future<void>.delayed(_androidStartupMediaSignalPollInterval);
     }
-    if (_isClosedForOperations ||
-        _currentState.source != source ||
-        _currentState.status == PlaybackStatus.error ||
-        hasMpvStartupMediaSignal(
-          state: _currentState,
-          diagnostics: _currentDiagnostics,
-        )) {
+    if (_currentState.status == PlaybackStatus.error) {
       return;
     }
     _logEvent(
       'startup health failed timeout=${timeout.inMilliseconds}ms '
-      'error=$kMpvNoMediaTrackStartupError',
+      'error=$kMpvNoMediaTrackStartupError '
+      'arcTier=${_activeArcDecodeTierOrNull() == null ? '-' : arcMpvDecodeTierLabel(_arcDecodeTier)}',
     );
     _emitDiagnostics(
       _currentDiagnostics.copyWith(error: kMpvNoMediaTrackStartupError),

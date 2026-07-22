@@ -115,7 +115,11 @@ class MemoryPlayer implements BasePlayer {
 
   @override
   Future<void> setVolume(double value) async {
-    _emit(_currentState.copyWith(volume: value.clamp(0, 1)));
+    final normalized = value.clamp(0, 1).toDouble();
+    if ((normalized - _currentState.volume).abs() < 0.0005) {
+      return;
+    }
+    _emit(_currentState.copyWith(volume: normalized));
   }
 
   @override

@@ -102,8 +102,111 @@ void main() {
 
   test('specialized providers skip generic multi-line failover', () {
     expect(shouldUseGenericMultiLineFailover(ProviderId.bilibili), isTrue);
+    expect(shouldUseGenericMultiLineFailover(ProviderId.douyu), isTrue);
     expect(shouldUseGenericMultiLineFailover(ProviderId.twitch), isFalse);
     expect(shouldUseGenericMultiLineFailover(ProviderId.chaturbate), isFalse);
     expect(shouldUseGenericMultiLineFailover(ProviderId.stripchat), isFalse);
+  });
+
+  test(
+    'hard open failure switches to next line immediately under default policy',
+    () {
+      final controller = RoomGenericLineFailoverController();
+      controller.reset(playUrls: lines, sourceBuilder: sourceOf);
+
+      final first = controller.nextStep(
+        errorMessage: 'Failed to open https://hw3.example/a.flv',
+      )!;
+      expect(first.action, PlaybackFailoverAction.switchToNextLine);
+      expect(first.lineIndex, 1);
+      expect(first.playbackSource?.url.toString(), lines[1].url);
+    },
+  );
+
+  test('soft stop under default policy retries once before switching', () {
+    final controller = RoomGenericLineFailoverController();
+    controller.reset(playUrls: lines, sourceBuilder: sourceOf);
+
+    final soft = controller.nextStep(errorMessage: 'buffering underrun')!;
+    expect(soft.action, PlaybackFailoverAction.retryCurrentLine);
+    expect(soft.lineIndex, 0);
+
+    final afterSoft = controller.nextStep(errorMessage: 'buffering underrun')!;
+    expect(afterSoft.action, PlaybackFailoverAction.switchToNextLine);
+    expect(afterSoft.lineIndex, 1);
+  });
+
+  test('terminal play reload budget caps and delays grow', () {
+    final budget = RoomTerminalPlayReloadBudget(
+      maxReloads: 2,
+      baseDelay: const Duration(seconds: 1),
+      maxDelay: const Duration(seconds: 8),
+    );
+
+    expect(budget.canReload, isTrue);
+    expect(budget.peekDelay(), const Duration(seconds: 1));
+    expect(budget.used, 0);
+    expect(budget.consume(), const Duration(seconds: 1));
+    expect(budget.used, 1);
+    expect(budget.consume(), const Duration(seconds: 2));
+    expect(budget.used, 2);
+    expect(budget.canReload, isFalse);
+    expect(budget.consume(), isNull);
+    expect(budget.peekDelay(), isNull);
+
+    budget.reset();
+    expect(budget.canReload, isTrue);
+    expect(budget.used, 0);
+  });
+
+  test('terminal budget refund restores a spent slot', () {
+    final budget = RoomTerminalPlayReloadBudget(maxReloads: 2);
+    expect(budget.consume(), isNotNull);
+    expect(budget.used, 1);
+    budget.refund();
+    expect(budget.used, 0);
+    expect(budget.canReload, isTrue);
+  });
+
+  test('terminal budget resets only after healthy playing window', () {
+    final budget = RoomTerminalPlayReloadBudget(
+      maxReloads: 2,
+      healthyPlayingBeforeReset: const Duration(seconds: 8),
+    );
+    budget.consume();
+    budget.consume();
+    expect(budget.canReload, isFalse);
+
+    final t0 = DateTime.utc(2026, 7, 22, 12);
+    budget.notePlaying(isPlaying: true, now: t0);
+    expect(budget.canReload, isFalse);
+    budget.notePlaying(
+      isPlaying: true,
+      now: t0.add(const Duration(seconds: 3)),
+    );
+    expect(budget.canReload, isFalse);
+    budget.notePlaying(
+      isPlaying: true,
+      now: t0.add(const Duration(seconds: 8)),
+    );
+    expect(budget.canReload, isTrue);
+    expect(budget.used, 0);
+  });
+
+  test('brief playing then non-playing does not reset terminal budget', () {
+    final budget = RoomTerminalPlayReloadBudget(
+      maxReloads: 1,
+      healthyPlayingBeforeReset: const Duration(seconds: 8),
+    );
+    budget.consume();
+    final t0 = DateTime.utc(2026, 7, 22, 12);
+    budget.notePlaying(isPlaying: true, now: t0);
+    budget.notePlaying(isPlaying: false, now: t0.add(const Duration(seconds: 1)));
+    budget.notePlaying(
+      isPlaying: true,
+      now: t0.add(const Duration(seconds: 2)),
+    );
+    // Healthy window restarted; still under 8s continuous.
+    expect(budget.canReload, isFalse);
   });
 }

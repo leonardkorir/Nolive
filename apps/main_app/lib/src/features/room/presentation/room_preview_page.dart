@@ -148,6 +148,12 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
   bool _hasPageSessionCoordinator = false;
   final RoomGenericLineFailoverController _genericLineFailover =
       RoomGenericLineFailoverController();
+  final RoomTerminalPlayReloadBudget _terminalPlayReloadBudget =
+      RoomTerminalPlayReloadBudget();
+  String? _terminalPlayReloadRoomKey;
+  /// True after this room/source has reached [PlaybackStatus.playing] at least once.
+  /// Used so mid-stream TCP glitches are not treated as hard-open.
+  bool _playbackHasReachedPlaying = false;
 
   Future<RoomSessionLoadResult> get _future =>
       _pageSessionCoordinator.roomFuture;
@@ -939,26 +945,66 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
         );
       },
     );
+    // Terminal reload budget resets only on successful playing (see
+    // onPlayerStateChanged) so a failed reloadRoom cannot clear the cap.
+  }
+
+  void _ensureTerminalPlayReloadBudgetForActiveRoom() {
+    final key = '${_activeProviderId.value}/$_activeRoomId';
+    if (_terminalPlayReloadRoomKey == key) {
+      return;
+    }
+    _terminalPlayReloadRoomKey = key;
+    _terminalPlayReloadBudget.reset();
+    _playbackHasReachedPlaying = false;
   }
 
   Future<void> _handleUnexpectedPlaybackStop(PlayerState state) async {
+    if (_isLeavingRoom ||
+        _playerBindingInFlight ||
+        _pageSessionState.refreshInFlight) {
+      return;
+    }
+    _ensureTerminalPlayReloadBudgetForActiveRoom();
     // ensureSession (not reset): preserve retry/line across repeated stops.
     _syncGenericLineFailoverState(currentSource: state.source);
+    final hardOpen = PlaybackFailoverPolicy.isHardOpenFailure(
+      state.errorMessage,
+      hasReachedPlaying: _playbackHasReachedPlaying,
+    );
     if (shouldUseGenericMultiLineFailover(_activeProviderId) &&
         _genericLineFailover.canHandle) {
-      final step = _genericLineFailover.nextStep();
-      if (step != null &&
-          step.action != PlaybackFailoverAction.terminalFailure &&
-          step.playbackSource != null) {
+      // Loop lines until bind succeeds or terminal — bind false is not
+      // "all CDNs exhausted" and must not jump to full play-source reload.
+      while (_genericLineFailover.canHandle) {
+        final step = _genericLineFailover.nextStep(
+          errorMessage: state.errorMessage,
+        );
+        if (step == null) {
+          break;
+        }
+        if (step.action == PlaybackFailoverAction.terminalFailure) {
+          await _reloadPlaySourcesAfterTerminal(
+            hardOpen: hardOpen,
+            lineIndex: step.lineIndex,
+          );
+          return;
+        }
+        if (step.playbackSource == null) {
+          continue;
+        }
         _roomTrace(
           'generic multi-line failover action=${step.action.name} '
           'line=${step.lineIndex + 1}/${_genericLineFailover.lines.length} '
-          'retry=${step.retryCount}',
+          'retry=${step.retryCount} '
+          'hardOpen=$hardOpen',
         );
         if (step.delay > Duration.zero) {
           await Future<void>.delayed(step.delay);
         }
-        if (!mounted || _isLeavingRoom) {
+        if (!mounted ||
+            _isLeavingRoom ||
+            _pageSessionState.refreshInFlight) {
           return;
         }
         final bound = await _playbackController.bindPlaybackSource(
@@ -970,11 +1016,74 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
         if (bound) {
           return;
         }
+        _roomTrace(
+          'generic multi-line failover bind failed '
+          'line=${step.lineIndex + 1} — try next line',
+        );
       }
+    }
+    if (hardOpen) {
+      await _reloadPlaySourcesAfterTerminal(hardOpen: true);
+      return;
     }
     await _pageSessionCoordinator.refreshRoom(
       showFeedback: false,
       reloadPlayer: false,
+      forcePlaybackRebind: true,
+    );
+  }
+
+  /// Full play-URL re-fetch after multi-line terminal (or hard-open fallthrough).
+  ///
+  /// Budget + growing delay prevent tight loops when every CDN is dead.
+  /// Slot is spent only after preconditions still pass post-delay; abort refunds.
+  Future<void> _reloadPlaySourcesAfterTerminal({
+    required bool hardOpen,
+    int? lineIndex,
+  }) async {
+    final delay = _terminalPlayReloadBudget.peekDelay();
+    if (delay == null) {
+      _roomTrace(
+        'generic multi-line failover terminal budget exhausted '
+        'used=${_terminalPlayReloadBudget.used} hardOpen=$hardOpen — stop',
+      );
+      return;
+    }
+    _roomTrace(
+      'generic multi-line failover terminal '
+      '${lineIndex == null ? '' : 'line=${lineIndex + 1}/${_genericLineFailover.lines.length} '}'
+      'hardOpen=$hardOpen used=${_terminalPlayReloadBudget.used} '
+      'delayMs=${delay.inMilliseconds} — waiting before reload',
+    );
+    if (delay > Duration.zero) {
+      await Future<void>.delayed(delay);
+    }
+    if (!mounted ||
+        _isLeavingRoom ||
+        _pageSessionState.refreshInFlight) {
+      _roomTrace(
+        'generic multi-line failover terminal reload aborted '
+        'after delay (mounted=$mounted leaving=$_isLeavingRoom '
+        'refreshInFlight=${_pageSessionState.refreshInFlight}) — no budget spend',
+      );
+      return;
+    }
+    final spent = _terminalPlayReloadBudget.consume();
+    if (spent == null) {
+      _roomTrace(
+        'generic multi-line failover terminal budget exhausted after delay '
+        'hardOpen=$hardOpen — stop',
+      );
+      return;
+    }
+    _roomTrace(
+      'generic multi-line failover terminal reload '
+      'reload=${_terminalPlayReloadBudget.used} hardOpen=$hardOpen',
+    );
+    _genericLineFailover.clear();
+    await _pageSessionCoordinator.refreshRoom(
+      showFeedback: false,
+      reloadPlayer: true,
       forcePlaybackRebind: true,
     );
   }
@@ -1204,16 +1313,45 @@ class _RoomPreviewPageState extends State<RoomPreviewPage>
           // Stripchat streams involve complex JS-bridge key decryptions and private-mode/P2P
           // status transitions. Blind hot-retries on stop can cause infinite loops fetching
           // non-existent play URLs (rate-limiting issues) when a broadcaster goes private or key expires.
-          return _activeProviderId != ProviderId.stripchat;
+          if (_activeProviderId == ProviderId.stripchat) {
+            return false;
+          }
+          // Do not schedule recovery while a room refresh is already in flight.
+          if (_pageSessionState.refreshInFlight) {
+            return false;
+          }
+          return true;
+        },
+        // Douyu/mpv hard open failures must switch CDN immediately; soft stalls
+        // keep the 2s debounce so brief completed/error blips are not flapped.
+        resolveUnexpectedStopRecoveryDelay: (state) {
+          if (PlaybackFailoverPolicy.isHardOpenFailure(
+            state.errorMessage,
+            hasReachedPlaying: _playbackHasReachedPlaying,
+          )) {
+            return Duration.zero;
+          }
+          return const Duration(seconds: 2);
         },
         onPlayerStateChanged:
             (state, {required playbackAvailable, forceRebuild = false}) {
           final previous = _currentPlayerState;
           _currentPlayerState = state;
+          if (state.status == PlaybackStatus.playing) {
+            _playbackHasReachedPlaying = true;
+            // Reset terminal budget only after continuous healthy playing.
+            _ensureTerminalPlayReloadBudgetForActiveRoom();
+            _terminalPlayReloadBudget.notePlaying(isPlaying: true);
+          } else {
+            _terminalPlayReloadBudget.notePlaying(isPlaying: false);
+          }
           _fullscreenSessionController.handlePlayerStateChanged(
             state,
             playbackAvailable: playbackAvailable,
             autoFullscreenEnabled: _autoFullscreenEnabled,
+            // First video size from diagnostics (forceRebuild) may flip
+            // horizontal→vertical after double-tap fullscreen.
+            videoAspectMayHaveChanged: forceRebuild,
           );
           if (state.status == PlaybackStatus.error &&
               _roomSessionController.current?.resolved?.hasPdkeyHealthAlert ==

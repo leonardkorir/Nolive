@@ -125,4 +125,21 @@ class FullscreenLandscapeSessionTest {
             session.updateActiveOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED),
         )
     }
+
+    @Test
+    fun `frozen session stops sensor tracking until unfrozen`() {
+        val frozen = FullscreenLandscapeSession(
+            initialOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+        ).markAdjustmentUnlocked()
+            .markFrozen()
+
+        assertTrue(frozen.frozen)
+        assertFalse(frozen.shouldTrackSensors())
+
+        val unfrozen = frozen.markUnfrozen()
+
+        assertFalse(unfrozen.frozen)
+        assertTrue(unfrozen.shouldTrackSensors())
+        assertEquals(unfrozen, unfrozen.markUnfrozen())
+    }
 }

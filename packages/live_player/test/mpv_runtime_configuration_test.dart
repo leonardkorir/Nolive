@@ -615,12 +615,213 @@ void main() {
         isAndroidSurfaceSnapshotReadyForMediaCodec((wid: 0, textureId: 5)),
         isFalse,
       );
+      // Phone path: wid-only readiness (texture often 0 while playback works).
       expect(
         isAndroidSurfaceSnapshotReadyForMediaCodec((wid: 12, textureId: 0)),
         isTrue,
       );
     },
   );
+
+  test('looksLikeArcChromeOsRuntime matches ARC only', () {
+    expect(
+      looksLikeArcChromeOsRuntime(
+        operatingSystemVersion: 'R149-16667.55.0',
+        isAndroidPlatform: true,
+      ),
+      isTrue,
+    );
+    expect(
+      looksLikeArcChromeOsRuntime(
+        operatingSystemVersion: 'R149-16667.61.0 release-keys',
+        isAndroidPlatform: true,
+      ),
+      isTrue,
+    );
+    // Sony phone firmware must not take ARC surface path.
+    expect(
+      looksLikeArcChromeOsRuntime(
+        operatingSystemVersion: '58.2.B.0.520',
+        isAndroidPlatform: true,
+      ),
+      isFalse,
+    );
+    expect(
+      looksLikeArcChromeOsRuntime(
+        operatingSystemVersion: 'R149-16667.55.0',
+        isAndroidPlatform: false,
+      ),
+      isFalse,
+    );
+  });
+
+  test(
+    'resolveMpvRuntimeConfiguration applies ARC decode ladder tiers',
+    () {
+      final zeroCopy = resolveMpvRuntimeConfiguration(
+        enableHardwareAcceleration: false,
+        compatMode: false,
+        doubleBufferingEnabled: false,
+        customOutputEnabled: false,
+        videoOutputDriver: 'gpu-next',
+        hardwareDecoder: 'auto-safe',
+        logEnabled: false,
+        isAndroid: true,
+        arcDecodeTier: ArcMpvDecodeTier.zeroCopy,
+      );
+      expect(zeroCopy.controllerConfiguration.vo, 'mediacodec_embed');
+      expect(zeroCopy.controllerConfiguration.hwdec, 'mediacodec');
+      expect(
+        zeroCopy.androidOutputFallbackReason,
+        'arc-chromeos-zerocopy-surface',
+      );
+      expect(
+        usesEmbeddedAndroidMediaCodecOutput(
+          compatMode: false,
+          customOutputEnabled: true,
+          videoOutputDriver: 'mediacodec_embed',
+          enableHardwareAcceleration: true,
+          hardwareDecoder: 'mediacodec',
+        ),
+        isTrue,
+      );
+
+      final copy = resolveMpvRuntimeConfiguration(
+        enableHardwareAcceleration: true,
+        compatMode: true,
+        doubleBufferingEnabled: false,
+        customOutputEnabled: true,
+        videoOutputDriver: 'mediacodec_embed',
+        hardwareDecoder: 'mediacodec',
+        logEnabled: false,
+        isAndroid: true,
+        arcDecodeTier: ArcMpvDecodeTier.mediaCodecCopy,
+      );
+      expect(copy.controllerConfiguration.vo, 'gpu');
+      expect(copy.controllerConfiguration.hwdec, 'mediacodec-copy');
+      expect(
+        copy.androidOutputFallbackReason,
+        'arc-chromeos-mediacodec-copy',
+      );
+
+      final soft = resolveMpvRuntimeConfiguration(
+        enableHardwareAcceleration: true,
+        compatMode: true,
+        doubleBufferingEnabled: false,
+        customOutputEnabled: true,
+        videoOutputDriver: 'mediacodec_embed',
+        hardwareDecoder: 'mediacodec',
+        logEnabled: false,
+        isAndroid: true,
+        arcDecodeTier: ArcMpvDecodeTier.software,
+      );
+      expect(soft.controllerConfiguration.hwdec, 'no');
+      expect(
+        soft.androidOutputFallbackReason,
+        'arc-chromeos-software-decode',
+      );
+
+      // Phone path: no arcDecodeTier → normal zero-copy embed.
+      final phoneConfig = resolveMpvRuntimeConfiguration(
+        enableHardwareAcceleration: true,
+        compatMode: true,
+        doubleBufferingEnabled: false,
+        customOutputEnabled: false,
+        videoOutputDriver: 'gpu-next',
+        hardwareDecoder: 'mediacodec',
+        logEnabled: false,
+        isAndroid: true,
+      );
+      expect(phoneConfig.controllerConfiguration.vo, 'mediacodec_embed');
+      expect(phoneConfig.controllerConfiguration.hwdec, 'mediacodec');
+      expect(phoneConfig.androidOutputFallbackReason, isNull);
+    },
+  );
+
+  test('resolveAndroidSurfacePrimeSize is resolution-agnostic on ARC', () {
+    expect(
+      resolveAndroidSurfacePrimeSize(isArcChromeOs: false),
+      (width: 2, height: 2),
+    );
+    // Without known stream size: no guessed 1080/2K prime.
+    final unknown = resolveAndroidSurfacePrimeSize(
+      isArcChromeOs: true,
+      logicalViewSize: const Size(1280, 800),
+    );
+    expect(unknown.width, 2);
+    expect(unknown.height, 2);
+    // With known stream size: prime matches any resolution.
+    final p1080 = resolveAndroidSurfacePrimeSize(
+      isArcChromeOs: true,
+      knownStreamWidth: 1920,
+      knownStreamHeight: 1080,
+    );
+    expect(p1080, (width: 1920, height: 1080));
+    final p2k = resolveAndroidSurfacePrimeSize(
+      isArcChromeOs: true,
+      knownStreamWidth: 2560,
+      knownStreamHeight: 1440,
+    );
+    expect(p2k, (width: 2560, height: 1440));
+    final p720 = resolveAndroidSurfacePrimeSize(
+      isArcChromeOs: true,
+      knownStreamWidth: 1280,
+      knownStreamHeight: 720,
+    );
+    expect(p720, (width: 1280, height: 720));
+  });
+
+  test('nextArcMpvDecodeTier walks copy → software (HW first, soft fallback)', () {
+    expect(
+      nextArcMpvDecodeTier(ArcMpvDecodeTier.mediaCodecCopy),
+      ArcMpvDecodeTier.software,
+    );
+    expect(nextArcMpvDecodeTier(ArcMpvDecodeTier.software), isNull);
+    // zerocopy is not the production start; if ever used, still demotes safely.
+    expect(
+      nextArcMpvDecodeTier(ArcMpvDecodeTier.zeroCopy),
+      ArcMpvDecodeTier.mediaCodecCopy,
+    );
+  });
+
+  test('classifyArcStartupMediaPoll treats error as failed not success', () {
+    expect(
+      MpvPlayer.classifyArcStartupMediaPoll(
+        isClosed: false,
+        sourceStillActive: true,
+        status: PlaybackStatus.error,
+        hasMediaSignal: false,
+      ),
+      ArcStartupMediaPollOutcome.failed,
+    );
+    expect(
+      MpvPlayer.classifyArcStartupMediaPoll(
+        isClosed: false,
+        sourceStillActive: true,
+        status: PlaybackStatus.playing,
+        hasMediaSignal: true,
+      ),
+      ArcStartupMediaPollOutcome.gotSignal,
+    );
+    expect(
+      MpvPlayer.classifyArcStartupMediaPoll(
+        isClosed: false,
+        sourceStillActive: true,
+        status: PlaybackStatus.playing,
+        hasMediaSignal: false,
+      ),
+      ArcStartupMediaPollOutcome.timedOut,
+    );
+    expect(
+      MpvPlayer.classifyArcStartupMediaPoll(
+        isClosed: true,
+        sourceStillActive: true,
+        status: PlaybackStatus.playing,
+        hasMediaSignal: false,
+      ),
+      ArcStartupMediaPollOutcome.aborted,
+    );
+  });
 
   test(
     'waitForFreshAndroidSurfacePublication resolves on fresh wid change',
@@ -2250,10 +2451,83 @@ https://rr1---sn-qja5m5-5g.googlevideo.com/videoplayback/id/demo/itag/96/playlis
       );
 
       expect(properties['cache-pause'], 'yes');
-      expect(properties['cache-pause-wait'], '3');
+      expect(properties['cache-pause-wait'], '2');
       expect(properties['cache-pause-initial'], 'yes');
-      expect(properties['cache-secs'], '12');
+      expect(properties['cache-secs'], '16');
+      expect(
+        int.parse(properties['demuxer-max-bytes']!),
+        lessThanOrEqualTo(67108864),
+      );
       expect(properties['video-sync'], 'audio');
+    },
+  );
+
+  test(
+    'Android mobile-safe budgets for desktopStableLive/loopback; Linux keeps desktop',
+    () {
+      final twitch = PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:9999/twitch-ad-guard/session/stream.m3u8',
+        ),
+        bufferProfile: PlaybackBufferProfile.desktopStableLive,
+      );
+      final loopback = PlaybackSource(
+        url: Uri.parse(
+          'http://127.0.0.1:9999/stripchat-llhls/session/playlist.m3u8',
+        ),
+        bufferProfile: PlaybackBufferProfile.loopbackStableHls,
+      );
+      final heavy = PlaybackSource(
+        url: Uri.parse('https://example.com/live.flv'),
+        bufferProfile: PlaybackBufferProfile.heavyStreamStable,
+      );
+
+      for (final source in [twitch, loopback, heavy]) {
+        final android = resolveMpvSourcePlatformProperties(
+          source: source,
+          doubleBufferingEnabled: false,
+          isAndroid: true,
+        );
+        expect(
+          int.parse(android['demuxer-max-bytes']!),
+          lessThanOrEqualTo(67108864),
+          reason: '${source.bufferProfile} Android demux',
+        );
+        expect(
+          int.parse(android['cache-secs']!),
+          lessThanOrEqualTo(16),
+          reason: '${source.bufferProfile} Android cache-secs',
+        );
+      }
+
+      final linuxTwitch = resolveMpvSourcePlatformProperties(
+        source: twitch,
+        doubleBufferingEnabled: false,
+        isAndroid: false,
+      );
+      expect(linuxTwitch['demuxer-max-bytes'], '134217728');
+      expect(linuxTwitch['cache-secs'], '22');
+
+      final linuxLoopback = resolveMpvSourcePlatformProperties(
+        source: loopback,
+        doubleBufferingEnabled: false,
+        isAndroid: false,
+      );
+      expect(linuxLoopback['demuxer-max-bytes'], '268435456');
+      expect(linuxLoopback['cache-secs'], '40');
+
+      // Guard helper itself.
+      final map = <String, String>{
+        'demuxer-max-bytes': '134217728',
+        'demuxer-max-back-bytes': '100663296',
+        'cache-secs': '24',
+        'demuxer-readahead-secs': '24',
+      };
+      applyAndroidMobileLiveBufferBudget(map);
+      expect(map['demuxer-max-bytes'], '67108864');
+      expect(map['demuxer-max-back-bytes'], '67108864');
+      expect(map['cache-secs'], '16');
+      expect(map['demuxer-readahead-secs'], '16');
     },
   );
 

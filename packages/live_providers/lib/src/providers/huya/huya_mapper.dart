@@ -51,28 +51,46 @@ class HuyaMapper {
     String html, {
     required String requestedRoomId,
   }) {
+    // SlotSun: status comes from TT_ROOM_DATA only
+    // (state == ON && !isReplay). Offline rooms often lack a usable stream
+    // blob — that must still resolve as isLive=false for follow chips.
     final roomDataJson = _extractJsonObject(html, 'var TT_ROOM_DATA');
-    final streamJsonRaw = _extractJsonObject(html, 'stream:');
-    if (roomDataJson == null || streamJsonRaw == null) {
+    if (roomDataJson == null) {
       throw ProviderParseException(
         providerId: ProviderId.huya,
-        message:
-            'Huya room detail HTML did not contain expected room payloads.',
+        message: 'Huya room detail HTML did not contain TT_ROOM_DATA.',
       );
     }
 
     final roomData = _decodeMap(roomDataJson, context: 'room data');
-    final streamJson = _decodeMap(streamJsonRaw, context: 'stream data');
-    final streamDataJson = _asMap(_asList(streamJson['data']).firstOrNull);
-    final liveInfo = _asMap(streamDataJson['gameLiveInfo']);
-    final streamInfoList = _asList(streamDataJson['gameStreamInfoList']);
-    if (liveInfo.isEmpty || streamDataJson.isEmpty) {
+    final isLive =
+        roomData['state'] == 'ON' && roomData['isReplay'] != true;
+    final streamJsonRaw = _extractJsonObject(html, 'stream:');
+
+    Map<String, dynamic> liveInfo = const {};
+    Map<String, dynamic> streamDataJson = const {};
+    var streamJson = const <String, dynamic>{};
+    if (streamJsonRaw != null) {
+      try {
+        streamJson = _decodeMap(streamJsonRaw, context: 'stream data');
+        streamDataJson = _asMap(_asList(streamJson['data']).firstOrNull);
+        liveInfo = _asMap(streamDataJson['gameLiveInfo']);
+      } catch (_) {
+        // Offline pages may ship truncated / empty stream payloads.
+        if (isLive) {
+          rethrow;
+        }
+      }
+    }
+
+    if (isLive && (liveInfo.isEmpty || streamDataJson.isEmpty)) {
       throw ProviderParseException(
         providerId: ProviderId.huya,
-        message: 'Huya room detail payload was empty or invalid.',
+        message: 'Huya live room detail payload was empty or invalid.',
       );
     }
-    final status = roomData['state'] == 'ON' && roomData['isReplay'] != true;
+
+    final streamInfoList = _asList(streamDataJson['gameStreamInfoList']);
     final firstStreamInfo = _asMap(streamInfoList.firstOrNull);
     final topSid = _asInt(firstStreamInfo['lChannelId']);
     final subSid = _asInt(firstStreamInfo['lSubChannelId']);
@@ -80,7 +98,7 @@ class HuyaMapper {
     final lines = <Map<String, Object?>>[];
     final bitRates = <Map<String, Object?>>[];
 
-    if (status) {
+    if (isLive) {
       for (final item in streamInfoList) {
         final lineMap = _asMap(item);
         if ((lineMap['sFlvUrl']?.toString().isNotEmpty ?? false)) {
@@ -117,31 +135,48 @@ class HuyaMapper {
       }
     }
 
-    if (status && lines.isEmpty) {
+    if (isLive && lines.isEmpty) {
       throw ProviderParseException(
         providerId: ProviderId.huya,
         message: 'Huya room detail did not contain playable stream lines.',
       );
     }
 
+    // Prefer stream liveInfo when present; offline may only have roomData.
+    final nick = liveInfo['nick']?.toString() ??
+        roomData['nick']?.toString() ??
+        '';
+    final introduction = liveInfo['introduction']?.toString() ??
+        roomData['introduction']?.toString() ??
+        '';
+    final screenshot = liveInfo['screenshot']?.toString() ??
+        roomData['screenshot']?.toString();
+    final avatar = liveInfo['avatar180']?.toString() ??
+        roomData['avatar180']?.toString();
+    final gameName = liveInfo['gameFullName']?.toString() ??
+        roomData['gameFullName']?.toString() ??
+        '';
+
     return LiveRoomDetail(
       providerId: ProviderId.huya,
       roomId: requestedRoomId,
-      title: normalizeDisplayText(liveInfo['introduction']?.toString()),
-      streamerName: normalizeDisplayText(liveInfo['nick']?.toString()),
-      streamerAvatarUrl: liveInfo['avatar180']?.toString(),
-      coverUrl: liveInfo['screenshot']?.toString(),
-      keyframeUrl: liveInfo['screenshot']?.toString(),
-      areaName: normalizeDisplayText(liveInfo['gameFullName']?.toString()),
-      description: normalizeDisplayText(liveInfo['introduction']?.toString()),
+      title: normalizeDisplayText(introduction),
+      streamerName: normalizeDisplayText(nick),
+      streamerAvatarUrl: avatar,
+      coverUrl: isLive ? screenshot : null,
+      keyframeUrl: isLive ? screenshot : null,
+      areaName: normalizeDisplayText(gameName),
+      description: normalizeDisplayText(introduction),
       sourceUrl: 'https://www.huya.com/$requestedRoomId',
-      isLive: status,
-      viewerCount: _asInt(liveInfo['totalCount']),
-      danmakuToken: HuyaDanmakuToken(
-        ayyuid: yySid ?? 0,
-        topSid: topSid ?? 0,
-        subSid: subSid ?? 0,
-      ),
+      isLive: isLive,
+      viewerCount: isLive ? _asInt(liveInfo['totalCount']) : null,
+      danmakuToken: isLive
+          ? HuyaDanmakuToken(
+              ayyuid: yySid ?? 0,
+              topSid: topSid ?? 0,
+              subSid: subSid ?? 0,
+            )
+          : null,
       metadata: {
         'isReplay': roomData['isReplay'] == true,
         'lines': lines,

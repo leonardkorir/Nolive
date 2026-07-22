@@ -29,11 +29,15 @@ class DouyuProvider extends LiveProvider
   factory DouyuProvider.live({
     DouyuTransport? transport,
     DouyuSignService? signService,
+    String? deviceId,
   }) {
     final ownedTransport = transport == null ? HttpDouyuTransport() : null;
     final resolvedTransport = transport ?? ownedTransport!;
     final ownedSignService = signService == null
-        ? HttpDouyuSignService(transport: resolvedTransport)
+        ? HttpDouyuSignService(
+            transport: resolvedTransport,
+            deviceId: deviceId,
+          )
         : null;
     final resolvedSignService = signService ?? ownedSignService!;
     return DouyuProvider(

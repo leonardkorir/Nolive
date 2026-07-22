@@ -267,6 +267,19 @@ class _FakeDouyuRecommendSignService implements DouyuSignService {
       const {};
 
   @override
+  Map<String, String> buildStreamHeaders(String roomId, {String? deviceId}) =>
+      const {};
+
+  @override
+  Future<String> buildSignedPlayBody(
+    String roomId, {
+    String cdn = '',
+    String rate = '-1',
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<DouyuSignedPlayContext> buildPlayContext(String roomId) {
     throw UnimplementedError();
   }

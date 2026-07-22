@@ -86,6 +86,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    // Library defers first follow-status crawl (~1.2s) so transports finish
+    // cold-start bootstrap before remote detail requests.
+    await tester.pump(const Duration(milliseconds: 1200));
+    await tester.pumpAndSettle();
 
     expect(detailCalls, 1);
 

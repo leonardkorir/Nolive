@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:live_providers/src/providers/douyu/douyu_quickjs_signer.dart';
 import 'package:live_providers/src/providers/douyu/douyu_sign_service.dart';
 import 'package:live_providers/src/providers/douyu/douyu_transport.dart';
@@ -107,7 +109,7 @@ function ub98484234(roomId, deviceId, timestamp) {
     expect(result, 'rid=restored&did=device-restored&tt=1700000001');
   });
 
-  test('extendPlayBody keeps douyu origin-friendly playback flags', () {
+  test('extendPlayBody matches SlotSun Douyu_new origin flags', () {
     final service = HttpDouyuSignService(
       transport: _NoopDouyuTransport(),
       signExecutor:
@@ -120,32 +122,193 @@ function ub98484234(roomId, deviceId, timestamp) {
     );
 
     final body = service.extendPlayBody(
-      'rid=5526219&did=test-device&tt=1700000000&sign=test-sign',
+      'enc_data=enc&tt=1700000000&did=${HttpDouyuSignService.kDefaultDeviceId}&auth=abc',
       cdn: 'hw-h5',
       rate: '0',
     );
 
     expect(body, contains('cdn=hw-h5'));
     expect(body, contains('rate=0'));
-    expect(body, contains('ver=Douyu_223061205'));
+    expect(body, contains('ver=Douyu_new'));
     expect(body, contains('iar=0'));
     expect(body, contains('ive=0'));
     expect(body, contains('hevc=0'));
     expect(body, contains('fa=0'));
+    expect(body, isNot(contains('ver=Douyu_223061205')));
+  });
+
+  test('stream headers empty like SlotSun bare Douyu URL playback', () {
+    final service = HttpDouyuSignService(
+      transport: _NoopDouyuTransport(),
+      signExecutor:
+          ({
+            required String script,
+            required String roomId,
+            required String deviceId,
+            required int timestamp,
+          }) async => '',
+    );
+
+    final play = service.buildPlayHeaders('5526219');
+    final stream = service.buildStreamHeaders('5526219');
+
+    expect(play['content-type'], 'application/x-www-form-urlencoded');
+    expect(play['user-agent'], contains('Windows NT'));
+    // SlotSun getH5Play: no cookie / referer on API headers.
+    expect(play.containsKey('cookie'), isFalse);
+    expect(play.containsKey('referer'), isFalse);
+    // SlotSun LivePlayUrl(urls:) — no stream headers.
+    expect(stream, isEmpty);
+  });
+
+  test('buildSignedPlayBody matches SlotSun full form shape', () async {
+    DouyuDeviceId.clearSessionCacheForTest();
+    final transport = _StubEncryptionTransport();
+    const did = HttpDouyuSignService.kDefaultDeviceId;
+    final service = HttpDouyuSignService(
+      transport: transport,
+      random: Random(1),
+      deviceId: did,
+    );
+
+    final body = await service.buildSignedPlayBody(
+      '5526219',
+      cdn: 'ws-h5',
+      rate: '0',
+    );
+
+    expect(body, startsWith('enc_data='));
+    expect(body, contains('&tt='));
+    expect(body, contains('&did=$did'));
+    expect(body, contains('&auth='));
+    expect(body, contains('&cdn=ws-h5'));
+    expect(body, contains('&rate=0'));
+    expect(body, contains('&hevc=0&fa=0&ive=0&ver=Douyu_new&iar=0'));
   });
 
   test(
-    'buildPlayContext rotates device ids and falls back to signed body',
+    'buildPlayContext uses SlotSun websec getEncryption + per-install did',
     () async {
-      final transport = _StubDouyuTransport(
-        response: {
-          'data': {'room5526219': 'function ub98484234() {}'},
-        },
-      );
-      final diagnostics = <String>[];
+      DouyuDeviceId.clearSessionCacheForTest();
+      final transport = _StubEncryptionTransport();
+      const did = HttpDouyuSignService.kDefaultDeviceId;
       final service = HttpDouyuSignService(
         transport: transport,
         random: Random(1),
+        deviceId: did,
+      );
+
+      final first = await service.buildPlayContext('5526219');
+      final second = await service.buildPlayContext('5526219');
+
+      expect(first.deviceId, did);
+      expect(second.deviceId, did);
+      expect(first.deviceId, equals(second.deviceId));
+      expect(first.body, contains('enc_data=enc-payload'));
+      expect(first.body, contains('did=$did'));
+      expect(first.body, contains('auth='));
+      // SlotSun sign() always includes cdn/rate in the same body.
+      expect(first.body, contains('cdn='));
+      expect(first.body, contains('rate=-1'));
+      expect(first.body, contains('ver=Douyu_new'));
+      expect(first.script, isEmpty);
+
+      // Second call should reuse cached encryption key (single GET).
+      expect(transport.encryptionGets, 1);
+      expect(
+        transport.lastUrl,
+        'https://www.douyu.com/wgapi/livenc/liveweb/websec/getEncryption',
+      );
+      expect(transport.lastQuery?['did'], did);
+
+      final extended = service.extendPlayBody(
+        first.body,
+        cdn: 'hw-h5',
+        rate: '0',
+      );
+      expect(extended, contains('cdn=hw-h5'));
+      expect(extended, contains('ver=Douyu_new'));
+
+      // Auth matches SlotSun: secret=md5(rand+key), auth=md5(secret+key+rid+tt)
+      final secret = md5.convert(utf8.encode('randkey')).toString();
+      final auth = md5
+          .convert(utf8.encode('${secret}key5526219${first.timestamp}'))
+          .toString();
+      expect(first.body, contains('auth=$auth'));
+
+      expect(
+        service.buildRoomHeaders('5526219')['user-agent'],
+        contains('Windows NT'),
+      );
+    },
+  );
+
+  test('websec form percent-encodes Base64 reserved characters', () async {
+    DouyuDeviceId.clearSessionCacheForTest();
+    final transport = _StubEncryptionTransport(
+      encData: 'abc+def/ghi=',
+    );
+    final service = HttpDouyuSignService(
+      transport: transport,
+      deviceId: HttpDouyuSignService.kDefaultDeviceId,
+    );
+
+    final body = await service.buildSignedPlayBody('1', cdn: 'x', rate: '0');
+    expect(body, contains('enc_data=abc%2Bdef%2Fghi%3D'));
+    expect(body, isNot(contains('enc_data=abc+def/ghi=')));
+  });
+
+  test('past expire_at falls back to local TTL without refetch thrash', () async {
+    DouyuDeviceId.clearSessionCacheForTest();
+    final transport = _StubEncryptionTransport();
+    final service = HttpDouyuSignService(
+      transport: transport,
+      deviceId: HttpDouyuSignService.kDefaultDeviceId,
+    );
+
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    service.seedEncryptionKeyForTest(
+      {
+        'rand_str': 'rand',
+        'enc_time': 1,
+        'is_special': 0,
+        'key': 'key',
+        'enc_data': 'enc-payload',
+        'expire_at': now - 10, // already past
+      },
+      localExpireAtSeconds: now + 3600,
+    );
+
+    await service.buildSignedPlayBody('1');
+    await service.buildSignedPlayBody('1');
+    expect(transport.encryptionGets, 0);
+  });
+
+  test('concurrent ensureEncryptionKey coalesces to one GET', () async {
+    DouyuDeviceId.clearSessionCacheForTest();
+    final transport = _SlowEncryptionTransport();
+    final service = HttpDouyuSignService(
+      transport: transport,
+      deviceId: HttpDouyuSignService.kDefaultDeviceId,
+    );
+
+    await Future.wait([
+      service.buildSignedPlayBody('1'),
+      service.buildSignedPlayBody('2'),
+      service.buildSignedPlayBody('3'),
+    ]);
+    expect(transport.encryptionGets, 1);
+  });
+
+  test(
+    'buildPlayContext falls back to legacy homeH5Enc when websec fails',
+    () async {
+      DouyuDeviceId.clearSessionCacheForTest();
+      final transport = _LegacyFallbackTransport();
+      final diagnostics = <String>[];
+      final service = HttpDouyuSignService(
+        transport: transport,
+        deviceId: HttpDouyuSignService.kDefaultDeviceId,
         diagnostics: diagnostics.add,
         signExecutor:
             ({
@@ -156,29 +319,13 @@ function ub98484234(roomId, deviceId, timestamp) {
             }) async => throw StateError('signer failed'),
       );
 
-      final first = await service.buildPlayContext('5526219');
-      final second = await service.buildPlayContext('5526219');
-
-      expect(first.deviceId, hasLength(32));
-      expect(second.deviceId, hasLength(32));
-      expect(first.deviceId, isNot(equals(second.deviceId)));
-      expect(first.body, contains('sign='));
-      expect(
-        service.buildRoomHeaders('5526219')['user-agent'],
-        contains('Chrome/'),
-      );
-      expect(
-        service.buildRoomHeaders('5526219')['user-agent'],
-        isNot(contains('Windows NT')),
-      );
-      expect(
-        service.buildRoomHeaders('5526219')['user-agent'],
-        isNot(contains('Edg/')),
-      );
-      expect(transport.lastHeaders?['user-agent'], contains('Chrome/'));
+      final ctx = await service.buildPlayContext('5526219');
+      expect(ctx.deviceId, HttpDouyuSignService.kDefaultDeviceId);
+      expect(ctx.body, contains('sign='));
+      expect(transport.hitHomeH5Enc, isTrue);
       expect(
         diagnostics,
-        contains(contains('sign executor failed; using fallback body')),
+        contains(contains('websec encryption failed')),
       );
     },
   );
@@ -216,11 +363,13 @@ class _NoopDouyuTransport implements DouyuTransport {
   }) async => throw UnimplementedError();
 }
 
-class _StubDouyuTransport extends _NoopDouyuTransport {
-  _StubDouyuTransport({required this.response});
+class _StubEncryptionTransport extends _NoopDouyuTransport {
+  _StubEncryptionTransport({this.encData = 'enc-payload'});
 
-  final Map<String, dynamic> response;
-  Map<String, String>? lastHeaders;
+  final String encData;
+  int encryptionGets = 0;
+  String? lastUrl;
+  Map<String, String>? lastQuery;
 
   @override
   Future<Map<String, dynamic>> getJson(
@@ -228,9 +377,58 @@ class _StubDouyuTransport extends _NoopDouyuTransport {
     Map<String, String> queryParameters = const {},
     Map<String, String> headers = const {},
   }) async {
-    lastHeaders = headers;
-    expect(url, 'https://www.douyu.com/swf_api/homeH5Enc');
-    expect(queryParameters['rids'], '5526219');
-    return response;
+    lastUrl = url;
+    lastQuery = queryParameters;
+    if (url.contains('getEncryption')) {
+      encryptionGets += 1;
+      return {
+        'data': {
+          'rand_str': 'rand',
+          'enc_time': 1,
+          'is_special': 0,
+          'key': 'key',
+          'enc_data': encData,
+        },
+      };
+    }
+    fail('Unexpected GET $url');
+  }
+}
+
+class _SlowEncryptionTransport extends _StubEncryptionTransport {
+  @override
+  Future<Map<String, dynamic>> getJson(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    return super.getJson(
+      url,
+      queryParameters: queryParameters,
+      headers: headers,
+    );
+  }
+}
+
+class _LegacyFallbackTransport extends _NoopDouyuTransport {
+  bool hitHomeH5Enc = false;
+
+  @override
+  Future<Map<String, dynamic>> getJson(
+    String url, {
+    Map<String, String> queryParameters = const {},
+    Map<String, String> headers = const {},
+  }) async {
+    if (url.contains('getEncryption')) {
+      throw StateError('encryption unavailable');
+    }
+    if (url.contains('homeH5Enc')) {
+      hitHomeH5Enc = true;
+      return {
+        'data': {'room5526219': 'function ub98484234() {}'},
+      };
+    }
+    fail('Unexpected GET $url');
   }
 }

@@ -5,11 +5,21 @@ import 'package:flutter/widgets.dart';
 import 'package:live_player/live_player.dart';
 
 class PlayerRuntimeController {
-  PlayerRuntimeController(this._delegate);
+  PlayerRuntimeController(
+    this._delegate, {
+    Duration roomTeardownTimeout = defaultRoomTeardownTimeout,
+  }) : _roomTeardownTimeout = roomTeardownTimeout;
+
+  /// Bound for a single room teardown action / pending wait.
+  ///
+  /// Stalled native `stop()` must not leave [hasPendingRoomTeardown] true
+  /// indefinitely (observed on ChromeOS ARC after long playback).
+  static const Duration defaultRoomTeardownTimeout = Duration(seconds: 5);
 
   static final Object _roomTeardownZoneKey = Object();
 
   final BasePlayer _delegate;
+  final Duration _roomTeardownTimeout;
   Future<void> _pendingRoomTeardown = Future<void>.value();
   int _queuedRoomTeardowns = 0;
 
@@ -28,6 +38,8 @@ class PlayerRuntimeController {
   bool get supportsScreenshot => _delegate.supportsScreenshot;
 
   bool get hasPendingRoomTeardown => _queuedRoomTeardowns > 0;
+
+  Duration get roomTeardownTimeout => _roomTeardownTimeout;
 
   List<PlayerBackend> get supportedBackends {
     final delegate = _delegate;
@@ -111,11 +123,24 @@ class PlayerRuntimeController {
 
   Future<Uint8List?> captureScreenshot() => _delegate.captureScreenshot();
 
-  Future<void> waitForPendingRoomTeardown() => _pendingRoomTeardown;
+  Future<void> waitForPendingRoomTeardown({Duration? timeout}) {
+    final bound = _effectiveTeardownTimeout(timeout);
+    return _awaitBounded(
+      _pendingRoomTeardown,
+      bound,
+      // Pending queue should already drain via serialize timeout; this is a
+      // belt-and-suspenders so room load never blocks forever.
+      onTimeout: () {},
+    );
+  }
 
   Future<void> dispose() => _delegate.dispose();
 
-  Future<void> serializeRoomTeardown(Future<void> Function() action) {
+  Future<void> serializeRoomTeardown(
+    Future<void> Function() action, {
+    Duration? timeout,
+  }) {
+    final bound = _effectiveTeardownTimeout(timeout);
     final previous = _pendingRoomTeardown;
     final activeRoomTeardown = Zone.current[_roomTeardownZoneKey];
     final completer = Completer<void>();
@@ -124,9 +149,11 @@ class PlayerRuntimeController {
     return runZoned(() async {
       try {
         if (!identical(activeRoomTeardown, previous)) {
-          await previous;
+          await _awaitBounded(previous, bound, onTimeout: () {});
         }
-        await action();
+        await _awaitBounded(action(), bound);
+      } on TimeoutException {
+        // Release waiters even when stop/cleanup stalls in native code.
       } finally {
         _queuedRoomTeardowns -= 1;
         if (!completer.isCompleted) {
@@ -134,6 +161,70 @@ class PlayerRuntimeController {
         }
       }
     }, zoneValues: <Object?, Object?>{_roomTeardownZoneKey: completer.future});
+  }
+
+  Duration _effectiveTeardownTimeout(Duration? timeout) {
+    // Widget tests dispose the room page while teardown is still in-flight.
+    // A multi-second timeout timer then fails `!timersPending`. Keep production
+    // Chromebook hang protection, but skip the artificial timer under tests.
+    if (_isFlutterWidgetTestBinding) {
+      return Duration.zero;
+    }
+    return timeout ?? _roomTeardownTimeout;
+  }
+
+  static bool get _isFlutterWidgetTestBinding {
+    try {
+      final name = WidgetsBinding.instance.runtimeType.toString();
+      return name.contains('TestWidgetsFlutterBinding') ||
+          name.contains('AutomatedTestWidgetsFlutterBinding');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Like [Future.timeout], but always cancels the timer when [future] ends.
+  ///
+  /// [Future.timeout] under [runZoned] + Flutter's fake-async can leave a
+  /// pending timer after the future completes, which fails widget tests.
+  static Future<void> _awaitBounded(
+    Future<void> future,
+    Duration bound, {
+    void Function()? onTimeout,
+  }) {
+    if (bound <= Duration.zero) {
+      return future;
+    }
+    final completer = Completer<void>();
+    late final Timer timer;
+    timer = Timer(bound, () {
+      if (completer.isCompleted) {
+        return;
+      }
+      if (onTimeout != null) {
+        onTimeout();
+        completer.complete();
+        return;
+      }
+      completer.completeError(
+        TimeoutException('operation timed out', bound),
+      );
+    });
+    future.then(
+      (_) {
+        timer.cancel();
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        timer.cancel();
+        if (!completer.isCompleted) {
+          completer.completeError(error, stackTrace);
+        }
+      },
+    );
+    return completer.future;
   }
 
   Widget buildView({

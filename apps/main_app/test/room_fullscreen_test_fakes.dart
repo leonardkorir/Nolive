@@ -154,6 +154,8 @@ class TestRoomAndroidPlaybackBridgeFacade
   Object? lockPortraitError;
   Object? lockLandscapeError;
   Object? lockPortraitFullscreenError;
+  Object? freezeFullscreenOrientationError;
+  bool freezeFullscreenOrientationResult = true;
   final List<String> events = <String>[];
 
   @override
@@ -186,6 +188,9 @@ class TestRoomAndroidPlaybackBridgeFacade
   }
 
   @override
+  Future<bool> restoreShellOrientation() => lockPortrait();
+
+  @override
   Future<bool> lockLandscape() async {
     events.add('lockLandscape');
     final error = lockLandscapeError;
@@ -203,6 +208,16 @@ class TestRoomAndroidPlaybackBridgeFacade
       throw error;
     }
     return true;
+  }
+
+  @override
+  Future<bool> freezeFullscreenOrientation() async {
+    events.add('freezeFullscreenOrientation');
+    final error = freezeFullscreenOrientationError;
+    if (error != null) {
+      throw error;
+    }
+    return freezeFullscreenOrientationResult;
   }
 
   @override

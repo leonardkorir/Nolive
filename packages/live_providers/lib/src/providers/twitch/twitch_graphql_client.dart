@@ -11,7 +11,8 @@ import 'twitch_playback_bootstrap.dart';
 class TwitchGraphQlClient {
   TwitchGraphQlClient({
     required TwitchApiClient apiClient,
-    Duration requestTimeout = const Duration(seconds: 12),
+    // Slightly longer default: home popular browse is often cold + foreign RTT.
+    Duration requestTimeout = const Duration(seconds: 18),
   }) : _apiClient = apiClient,
        _requestTimeout = requestTimeout;
 

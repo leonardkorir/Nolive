@@ -35,6 +35,7 @@ enum _LibraryMenuAction { subscribe, toggleMode, sort, settings }
 
 class _LibraryPageState extends State<LibraryPage> {
   Timer? _autoRefreshTimer;
+  Timer? _coldStartRefreshTimer;
   _FollowFilter _followFilter = _FollowFilter.all;
   _FollowDisplayMode _displayMode = _FollowDisplayMode.list;
   _FollowSortMode _sortMode = _FollowSortMode.liveFirst;
@@ -93,6 +94,7 @@ class _LibraryPageState extends State<LibraryPage> {
     widget.dependencies.followDataRevision.removeListener(
       _handleFollowDataRevision,
     );
+    _coldStartRefreshTimer?.cancel();
     _autoRefreshTimer?.cancel();
     _progressiveUi.dispose();
     super.dispose();
@@ -107,6 +109,23 @@ class _LibraryPageState extends State<LibraryPage> {
     // Default tab is 关注: refresh non-CB fully; CB only crawls a small slow
     // batch so we never stampede CF into 429.
     if (snapshot == null && localData.watchlist.entries.isNotEmpty) {
+      // Defer first remote status crawl until after cold-start bootstrap so
+      // HTTP clients are not still closed/recreating (device logs: huya/douyin
+      // "failed before response" / "Client is already closed" at t+1s).
+      _scheduleColdStartRefresh();
+    }
+  }
+
+  /// First auto live-status refresh after process/page open.
+  ///
+  /// Local rows paint immediately via [_reloadLocalState]; remote detail waits
+  /// briefly so provider transports can finish bootstrap.
+  void _scheduleColdStartRefresh() {
+    _coldStartRefreshTimer?.cancel();
+    _coldStartRefreshTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (!mounted) {
+        return;
+      }
       unawaited(
         _refresh(
           showErrorSnackBar: false,
@@ -114,7 +133,7 @@ class _LibraryPageState extends State<LibraryPage> {
           fullRefresh: true,
         ),
       );
-    }
+    });
   }
 
   void _handleFollowDataRevision() {
@@ -893,6 +912,8 @@ class _LibraryPageState extends State<LibraryPage> {
                               ),
                               room: entry.toLiveRoom(),
                               descriptor: descriptor,
+                              statusLabel:
+                                  entry.isPasswordProtected ? '加锁' : null,
                               onTap: () => _openRoom(
                                 entry.record.providerId,
                                 entry.roomId,

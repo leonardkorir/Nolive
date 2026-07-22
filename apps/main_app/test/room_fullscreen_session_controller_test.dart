@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_runtime_context.dart';
+import 'package:nolive_app/src/features/room/presentation/room_fullscreen_form_factor_policy.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_platforms.dart';
 import 'package:nolive_app/src/features/room/presentation/room_view_ui_state.dart';
@@ -29,10 +30,140 @@ void main() {
     await harness.dispose();
   });
 
-  testWidgets('enter fullscreen with vertical video locks portrait orientation on Android', (
+  testWidgets(
+    'large freeform enter fullscreen still uses long-edge landscape hard lock',
+    (tester) async {
+      final harness = _ControllerHarness(screenSize: const Size(1280, 800));
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+
+      expect(harness.controller.viewUiState.isFullscreen, isTrue);
+      // No freeWindow-by-shortestSide: always lockLandscape for horizontal video.
+      expect(harness.android.events, contains('lockLandscape'));
+      expect(harness.android.events, isNot(contains('lockPortraitFullscreen')));
+      expect(
+        harness.systemUi.lastOrientations,
+        containsAll(const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]),
+      );
+      expect(
+        harness.traces.any(
+          (line) => line.contains('mode=longEdgeLandscape'),
+        ),
+        isTrue,
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'ARC form factor uses phone landscape hard lock for horizontal video',
+    (tester) async {
+      final harness = _ControllerHarness(
+        screenSize: const Size(360, 640),
+        isArcChromeOs: true,
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+
+      // Chromebook convertibles: lock landscape like phone, not freeWindow.
+      expect(harness.android.events, contains('lockLandscape'));
+      expect(harness.android.events, isNot(contains('lockPortraitFullscreen')));
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'tablet exit fullscreen restores free orientation without landscape lock',
+    (tester) async {
+      final harness = _ControllerHarness(screenSize: const Size(800, 1280));
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+      harness.android.events.clear();
+      await harness.controller.exitFullscreen();
+
+      expect(harness.controller.viewUiState.isFullscreen, isFalse);
+      expect(harness.android.events, contains('lockPortrait'));
+      expect(harness.android.events, isNot(contains('lockLandscape')));
+      expect(
+        harness.systemUi.lastOrientations,
+        containsAll(kRoomAppPreferredOrientations),
+      );
+      expect(
+        harness.systemUi.lastOrientations,
+        isNot(contains(DeviceOrientation.portraitDown)),
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'fullscreen chrome lock freezes orientation instead of re-arming sensor',
+    (tester) async {
+      final harness = _ControllerHarness(screenSize: const Size(1280, 800));
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+      harness.android.events.clear();
+
+      harness.controller.toggleFullscreenLock();
+      await tester.pump();
+      // Allow the unawaited freeze future to complete.
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(harness.controller.viewUiState.lockFullscreenControls, isTrue);
+      expect(harness.android.events, contains('freezeFullscreenOrientation'));
+      // Must not call lockLandscape again — that re-enables sensor spin.
+      expect(harness.android.events, isNot(contains('lockLandscape')));
+      expect(
+        harness.traces.any((line) => line.contains('freeze=true')),
+        isTrue,
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'fullscreen chrome unlock restores sensor landscape session',
+    (tester) async {
+      final harness = _ControllerHarness();
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+      harness.controller.toggleFullscreenLock();
+      await tester.pump(const Duration(milliseconds: 20));
+      harness.android.events.clear();
+
+      harness.controller.toggleFullscreenLock();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(harness.controller.viewUiState.lockFullscreenControls, isFalse);
+      expect(harness.android.events, contains('lockLandscape'));
+      expect(
+        harness.android.events,
+        isNot(contains('freezeFullscreenOrientation')),
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets('phone vertical video locks portrait orientation on Android', (
     tester,
   ) async {
-    final harness = _ControllerHarness(verticalVideo: true);
+    final harness = _ControllerHarness(
+      verticalVideo: true,
+      screenSize: const Size(360, 800),
+    );
     addTearDown(harness.dispose);
 
     await harness.controller.enterFullscreen();
@@ -40,9 +171,319 @@ void main() {
     expect(harness.controller.viewUiState.isFullscreen, isTrue);
     expect(harness.android.events, contains('lockPortraitFullscreen'));
     expect(harness.android.events, isNot(contains('lockLandscape')));
+    expect(
+      harness.traces.any((line) => line.contains('mode=hardPortrait')),
+      isTrue,
+    );
 
     await harness.dispose();
   });
+
+  testWidgets(
+    'ARC vertical video stays long-edge landscape (no portrait)',
+    (tester) async {
+      final harness = _ControllerHarness(
+        verticalVideo: true,
+        screenSize: const Size(1280, 800),
+        isArcChromeOs: true,
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+
+      // Product decision: Chromebook never portrait — letterbox vertical sources.
+      // Single ARC authority: native lockLandscape only, no Flutter orient lists.
+      expect(harness.android.events, contains('lockLandscape'));
+      expect(harness.android.events, isNot(contains('lockPortraitFullscreen')));
+      expect(harness.systemUi.lastOrientations, isNull);
+      expect(
+        harness.traces.any(
+          (line) =>
+              line.contains('mode=longEdgeLandscape') && line.contains('arc=true'),
+        ),
+        isTrue,
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'ARC enter/exit fullscreen never dual-writes Flutter orientations',
+    (tester) async {
+      final harness = _ControllerHarness(
+        screenSize: const Size(1280, 800),
+        isArcChromeOs: true,
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+      expect(harness.android.events, contains('lockLandscape'));
+      expect(harness.systemUi.lastOrientations, isNull);
+      expect(
+        harness.systemUi.events.any((e) => e.startsWith('orientations:')),
+        isFalse,
+      );
+
+      harness.android.events.clear();
+      harness.systemUi.events.clear();
+      await harness.controller.exitFullscreen();
+      expect(harness.android.events, contains('lockPortrait'));
+      expect(harness.systemUi.lastOrientations, isNull);
+      expect(
+        harness.systemUi.events.any((e) => e.startsWith('orientations:')),
+        isFalse,
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'fullscreen chrome lock rolls back UI when freeze fails',
+    (tester) async {
+      final harness = _ControllerHarness(screenSize: const Size(1280, 800));
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+      harness.android.freezeFullscreenOrientationResult = false;
+      harness.android.events.clear();
+
+      harness.controller.toggleFullscreenLock();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(harness.android.events, contains('freezeFullscreenOrientation'));
+      expect(harness.controller.viewUiState.lockFullscreenControls, isFalse);
+      expect(harness.controller.viewUiState.showFullscreenChrome, isTrue);
+      expect(
+        harness.traces.any((line) => line.contains('freeze returned false')),
+        isTrue,
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'phone vertical chrome lock freezes portrait pose not landscape',
+    (tester) async {
+      final harness = _ControllerHarness(
+        verticalVideo: true,
+        // Portrait phone frame so lock path chooses portrait pin.
+        screenSize: const Size(360, 800),
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+      expect(harness.android.events, contains('lockPortraitFullscreen'));
+      harness.android.events.clear();
+      harness.systemUi.events.clear();
+
+      harness.controller.toggleFullscreenLock();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(harness.controller.viewUiState.lockFullscreenControls, isTrue);
+      expect(harness.android.events, contains('freezeFullscreenOrientation'));
+      // Must not re-arm long-edge landscape under a portrait hard lock.
+      expect(harness.android.events, isNot(contains('lockLandscape')));
+      expect(
+        harness.systemUi.lastOrientations,
+        equals(const [DeviceOrientation.portraitUp]),
+      );
+      expect(
+        harness.traces.any(
+          (line) =>
+              line.contains('locked=true') &&
+              line.contains('landscape=false') &&
+              line.contains('freeze=true'),
+        ),
+        isTrue,
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'ARC chrome lock freezes via native only without Flutter orient dual-write',
+    (tester) async {
+      final harness = _ControllerHarness(
+        screenSize: const Size(1280, 800),
+        isArcChromeOs: true,
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+      harness.android.events.clear();
+      harness.systemUi.events.clear();
+
+      harness.controller.toggleFullscreenLock();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(harness.android.events, contains('freezeFullscreenOrientation'));
+      expect(harness.android.events, isNot(contains('lockLandscape')));
+      expect(
+        harness.systemUi.events.any((e) => e.startsWith('orientations:')),
+        isFalse,
+      );
+      expect(harness.controller.viewUiState.lockFullscreenControls, isTrue);
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'non-ARC large tablet vertical uses Flutter hold-flexible orientations',
+    (tester) async {
+      final harness = _ControllerHarness(
+        verticalVideo: true,
+        screenSize: const Size(1280, 800),
+        isArcChromeOs: false,
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+
+      expect(harness.android.events, contains('lockPortrait'));
+      expect(harness.android.events, isNot(contains('lockPortraitFullscreen')));
+      expect(
+        harness.systemUi.lastOrientations,
+        containsAll(const [
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]),
+      );
+      expect(
+        harness.systemUi.lastOrientations,
+        isNot(contains(DeviceOrientation.portraitDown)),
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'phone re-applies hard portrait when video becomes vertical after enter',
+    (tester) async {
+      // Double-tap enter before size is known → landscape first.
+      final harness = _ControllerHarness(
+        verticalVideo: false,
+        screenSize: const Size(360, 800),
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+      expect(harness.android.events, contains('lockLandscape'));
+      harness.android.events.clear();
+
+      // Diagnostics size arrives as portrait stream.
+      harness.verticalVideo = true;
+      harness.controller.handlePlayerStateChanged(
+        const PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+        ),
+        playbackAvailable: true,
+        autoFullscreenEnabled: false,
+        videoAspectMayHaveChanged: true,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(harness.android.events, contains('lockPortraitFullscreen'));
+      expect(
+        harness.traces.any(
+          (line) => line.contains('re-apply mode=hardPortrait'),
+        ),
+        isTrue,
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'non-ARC large tablet re-applies hold-flexible when video becomes vertical',
+    (tester) async {
+      final harness = _ControllerHarness(
+        verticalVideo: false,
+        screenSize: const Size(1280, 800),
+        isArcChromeOs: false,
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+      expect(harness.android.events, contains('lockLandscape'));
+      harness.android.events.clear();
+
+      harness.verticalVideo = true;
+      harness.controller.handlePlayerStateChanged(
+        const PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+        ),
+        playbackAvailable: true,
+        autoFullscreenEnabled: false,
+        videoAspectMayHaveChanged: true,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(harness.android.events, contains('lockPortrait'));
+      expect(harness.android.events, isNot(contains('lockPortraitFullscreen')));
+      expect(
+        harness.traces.any(
+          (line) =>
+              line.contains('re-apply mode=userHoldPortraitOrLandscape'),
+        ),
+        isTrue,
+      );
+
+      await harness.dispose();
+    },
+  );
+
+  testWidgets(
+    'ARC does not re-apply portrait when video becomes vertical',
+    (tester) async {
+      final harness = _ControllerHarness(
+        verticalVideo: false,
+        screenSize: const Size(1280, 800),
+        isArcChromeOs: true,
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.enterFullscreen();
+      expect(harness.android.events, contains('lockLandscape'));
+      harness.android.events.clear();
+
+      harness.verticalVideo = true;
+      harness.controller.handlePlayerStateChanged(
+        const PlayerState(
+          backend: PlayerBackend.mpv,
+          status: PlaybackStatus.playing,
+        ),
+        playbackAvailable: true,
+        autoFullscreenEnabled: false,
+        videoAspectMayHaveChanged: true,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      // Mode stays longEdgeLandscape — no re-apply needed / no portrait lock.
+      expect(harness.android.events, isEmpty);
+      expect(
+        harness.traces.any((line) => line.contains('re-apply mode=hardPortrait')),
+        isFalse,
+      );
+
+      await harness.dispose();
+    },
+  );
 
   testWidgets('enter fullscreen with vertical video sets preferred orientations on non-Android', (
     tester,
@@ -117,7 +558,11 @@ void main() {
     expect(harness.android.events, contains('lockPortrait'));
     expect(
       harness.systemUi.lastOrientations,
-      containsAll(DeviceOrientation.values),
+      containsAll(kRoomAppPreferredOrientations),
+    );
+    expect(
+      harness.systemUi.lastOrientations,
+      isNot(contains(DeviceOrientation.portraitDown)),
     );
 
     await harness.dispose();
@@ -638,6 +1083,7 @@ class _ControllerHarness {
     this.refreshableRuntime = false,
     this.verticalVideo = false,
     this.screenSize = const Size(360, 640),
+    this.isArcChromeOs = false,
   }) : player = TestRecordingPlayer(playerBackend: playerBackend),
        android = TestRoomAndroidPlaybackBridgeFacade(),
        pipHost = TestRoomPipHostFacade(),
@@ -673,6 +1119,7 @@ class _ControllerHarness {
           return restoredPlaybackSource;
         },
         resolveIsVerticalVideo: () => verticalVideo,
+        resolveIsArcChromeOs: () => isArcChromeOs,
       ),
       platforms: RoomFullscreenSessionPlatforms(
         androidPlaybackBridge: android,
@@ -687,8 +1134,9 @@ class _ControllerHarness {
   final bool backgroundAutoPauseEnabled;
   final PlayerBackend playerBackend;
   final bool refreshableRuntime;
-  final bool verticalVideo;
+  bool verticalVideo;
   final Size screenSize;
+  final bool isArcChromeOs;
   final TestRecordingPlayer player;
   final TestRoomAndroidPlaybackBridgeFacade android;
   final TestRoomPipHostFacade pipHost;

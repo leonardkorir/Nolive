@@ -1,9 +1,14 @@
 export 'src/provider_registry.dart';
 export 'src/providers/bilibili/bilibili_provider.dart';
 export 'src/providers/chaturbate/chaturbate_provider.dart';
+export 'src/providers/chaturbate/chaturbate_password.dart';
 export 'src/providers/chaturbate/chaturbate_request_scheduler.dart';
 export 'src/providers/douyin/douyin_provider.dart';
 export 'src/providers/douyu/douyu_provider.dart';
+export 'src/providers/douyu/douyu_sign_service.dart'
+    show DouyuDeviceId, HttpDouyuSignService, DouyuSignService;
+export 'src/providers/douyu/douyu_live_data_source.dart'
+    show DouyuH5PlayErrorKind, classifyDouyuH5PlayError;
 export 'src/providers/huya/huya_provider.dart';
 export 'src/providers/migration_placeholder_provider.dart';
 export 'src/providers/twitch/twitch_provider.dart';

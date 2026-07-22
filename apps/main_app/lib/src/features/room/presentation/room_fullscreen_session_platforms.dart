@@ -15,11 +15,18 @@ abstract class RoomAndroidPlaybackBridgeFacade {
 
   Future<bool> setMediaVolume(double value);
 
+  /// Restores app-shell orientation. Channel name is historical `lockPortrait`;
+  /// on ARC this re-arms **landscape-only** shell, not portrait.
   Future<bool> lockPortrait();
+
+  /// Preferred name for [lockPortrait] at new call sites.
+  Future<bool> restoreShellOrientation();
 
   Future<bool> lockLandscape();
 
   Future<bool> lockPortraitFullscreen();
+
+  Future<bool> freezeFullscreenOrientation();
 
   Future<bool> prepareForPictureInPicture();
 }
@@ -55,6 +62,11 @@ class DefaultRoomAndroidPlaybackBridgeFacade
   }
 
   @override
+  Future<bool> restoreShellOrientation() {
+    return AndroidPlaybackBridge.instance.restoreShellOrientation();
+  }
+
+  @override
   Future<bool> lockLandscape() {
     return AndroidPlaybackBridge.instance.lockLandscape();
   }
@@ -62,6 +74,11 @@ class DefaultRoomAndroidPlaybackBridgeFacade
   @override
   Future<bool> lockPortraitFullscreen() {
     return AndroidPlaybackBridge.instance.lockPortraitFullscreen();
+  }
+
+  @override
+  Future<bool> freezeFullscreenOrientation() {
+    return AndroidPlaybackBridge.instance.freezeFullscreenOrientation();
   }
 
   @override

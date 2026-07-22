@@ -191,28 +191,40 @@ Future<AppBootstrap> createPersistentAppBootstrap({
           'keys=${resolvedSecureCredentialStore.snapshot().length}',
     );
 
-    // Sequence secure credentials BEFORE first provider traffic (home CB list /
-    // follow stampede). Deferred post-frame warm left first request with
-    // keys=0 and empty account_chaturbate_cookie (no cf_clearance).
-    await resolvedSecureCredentialStore.ensureReady();
-    AppLog.instance.info(
-      'bootstrap',
-      'secure store ensureReady done '
-          'separate=${resolvedSecureCredentialStore.storesSecureValuesSeparately} '
-          'keys=${resolvedSecureCredentialStore.snapshot().length}',
-    );
-
-    if (resolvedSecureCredentialStore.storesSecureValuesSeparately) {
-      await MigrateSensitiveSettingsToSecureStoreUseCase(
-        settingsRepository: repositories.settingsRepository,
-        secureCredentialStore: resolvedSecureCredentialStore,
-      )();
-    } else {
-      AppLog.instance.info(
-        'bootstrap',
-        'secure settings migration skipped mode=legacy-settings-fallback',
-      );
-    }
+    // Do NOT block shell on flutter_secure_storage / Keystore. Devices with a
+    // broken Keystore (e.g. some Sony builds) hang readAll() for seconds and
+    // look "unable to open". LazySecureCredentialStore already seeds from
+    // settings for immediate snapshot; promote secure store in the background.
+    // Host app also re-arms warmUpSecureCredentialStore once the shell mounts.
+    unawaited(() async {
+      try {
+        await resolvedSecureCredentialStore.ensureReady();
+        AppLog.instance.info(
+          'bootstrap',
+          'secure store ensureReady done '
+              'separate=${resolvedSecureCredentialStore.storesSecureValuesSeparately} '
+              'keys=${resolvedSecureCredentialStore.snapshot().length}',
+        );
+        if (resolvedSecureCredentialStore.storesSecureValuesSeparately) {
+          await MigrateSensitiveSettingsToSecureStoreUseCase(
+            settingsRepository: repositories.settingsRepository,
+            secureCredentialStore: resolvedSecureCredentialStore,
+          )();
+        } else {
+          AppLog.instance.info(
+            'bootstrap',
+            'secure settings migration skipped mode=legacy-settings-fallback',
+          );
+        }
+      } catch (error, stackTrace) {
+        AppLog.instance.error(
+          'bootstrap',
+          'background secure store warm-up failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }());
 
     await ensureDefaultAppState(
       settingsRepository: repositories.settingsRepository,
@@ -223,6 +235,22 @@ Future<AppBootstrap> createPersistentAppBootstrap({
       settingsRepository: repositories.settingsRepository,
       preferencesNotifier: state.layoutPreferences,
     );
+    // Persist Douyu per-install did before live registry construction.
+    final existingDouyuDid =
+        (await repositories.settingsRepository.readValue<String>(
+              'provider_douyu_device_id',
+            ))
+            ?.trim() ??
+        '';
+    final douyuDid = DouyuDeviceId.resolve(
+      existingDouyuDid.isEmpty ? null : existingDouyuDid,
+    );
+    if (existingDouyuDid != douyuDid) {
+      await repositories.settingsRepository.writeValue(
+        'provider_douyu_device_id',
+        douyuDid,
+      );
+    }
 
     final bootstrap = _assembleAppBootstrap(
       _BootstrapAssemblyContext(

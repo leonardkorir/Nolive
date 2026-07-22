@@ -41,12 +41,15 @@ class LiveRoomGridCard extends StatelessWidget {
     required this.room,
     required this.descriptor,
     this.onTap,
+    /// When set (e.g. follow password lock), replaces the live/offline/viewer chip.
+    this.statusLabel,
     super.key,
   });
 
   final LiveRoom room;
   final ProviderDescriptor descriptor;
   final VoidCallback? onTap;
+  final String? statusLabel;
 
   static const double compactMainAxisExtent = 150;
 
@@ -129,17 +132,27 @@ class LiveRoomGridCard extends StatelessWidget {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(
-                                  Icons.local_fire_department_rounded,
-                                  size: 12,
-                                  color: Colors.white,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  _viewerCountLabel(
-                                    viewerCount: room.viewerCount,
-                                    isLive: room.isLive,
+                                if (statusLabel == null) ...[
+                                  const Icon(
+                                    Icons.local_fire_department_rounded,
+                                    size: 12,
+                                    color: Colors.white,
                                   ),
+                                  const SizedBox(width: 2),
+                                ] else ...[
+                                  const Icon(
+                                    Icons.lock_rounded,
+                                    size: 12,
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(width: 2),
+                                ],
+                                Text(
+                                  statusLabel ??
+                                      _viewerCountLabel(
+                                        viewerCount: room.viewerCount,
+                                        isLive: room.isLive,
+                                      ),
                                   style: theme.textTheme.labelMedium?.copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,

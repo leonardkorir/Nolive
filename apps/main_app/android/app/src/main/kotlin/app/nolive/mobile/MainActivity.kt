@@ -16,6 +16,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.util.Rational
+import android.view.OrientationEventListener
 import android.view.Surface
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
@@ -42,7 +43,7 @@ class MainActivity : FlutterActivity() {
     private val fullscreenLandscapeSensorListener by lazy(LazyThreadSafetyMode.NONE) {
         object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                onFullscreenLandscapeSensorChanged(event)
+                onFullscreenLandscapeGravityChanged(event)
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -52,24 +53,120 @@ class MainActivity : FlutterActivity() {
     private var fullscreenLandscapeSession: FullscreenLandscapeSession? = null
     private var fullscreenLandscapeSessionStartedAtMs: Long? = null
     private var fullscreenLandscapeSensorTrackingEnabled = false
+    private var fullscreenOrientationEventListener: OrientationEventListener? = null
     private var lastKnownLandscapeSensorOrientation: Int? = null
+    /// ARC landscape-only mode (not phone). No portrait at all on Chromebook.
+    private var arcLandscapeOnlyMode = false
+    private var lastArcPinnedOrientation: Int? = null
+    private var orientationPassthrough = false
+    /// Chrome UI lock pin when frozen without / with a landscape session.
+    /// Kept across onResume so ARC does not re-arm SENSOR_LANDSCAPE over freeze.
+    private var chromeLockFrozenPin: Int? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler(::handlePlaybackMethod)
+        // Phone never enters here. ARC: landscape only for whole app lifecycle.
+        mainHandler.post {
+            if (isArcChromeOsDevice() && fullscreenLandscapeSession == null) {
+                startArcLandscapeOnlyMode(reason = "engine")
+            }
+        }
+        mainHandler.postDelayed({
+            if (isArcChromeOsDevice() && fullscreenLandscapeSession == null) {
+                startArcLandscapeOnlyMode(reason = "engine-delayed")
+            }
+        }, 500)
+    }
+
+    override fun setRequestedOrientation(requestedOrientation: Int) {
+        // Phone path: never blocked (isArcChromeOsDevice is false).
+        // ARC: reject portrait / free USER so the shell cannot leave landscape.
+        if (
+            isArcChromeOsDevice() &&
+            !orientationPassthrough &&
+            isArcForbiddenOrientation(requestedOrientation)
+        ) {
+            Log.i(
+                ORIENTATION_LOG_TAG,
+                "arc ignore orient=${orientationLabel(requestedOrientation)} " +
+                    "keep=${orientationLabel(lastArcPinnedOrientation)}",
+            )
+            val keep = lastArcPinnedOrientation
+                ?: ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            if (this.requestedOrientation != keep) {
+                pinActivityOrientation(keep, "reassert-landscapeOnly")
+            }
+            return
+        }
+        super.setRequestedOrientation(requestedOrientation)
+        if (!isArcForbiddenOrientation(requestedOrientation)) {
+            lastArcPinnedOrientation = requestedOrientation
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        if (fullscreenLandscapeSession != null) {
-            startFullscreenLandscapeSensorTracking()
+        val session = fullscreenLandscapeSession
+        when (
+            val action = FullscreenLandscapeOrientationMemory.resolveResumeOrientationAction(
+                landscapeSessionFrozen = session?.frozen == true,
+                landscapeSessionActiveOrientation = session?.activeOrientation,
+                chromeLockFrozenPin = chromeLockFrozenPin,
+                hasLandscapeSession = session != null,
+                isArcChromeOs = isArcChromeOsDevice(),
+            )
+        ) {
+            is ResumeOrientationAction.KeepFrozen -> {
+                pinActivityOrientation(action.pin, "resume-frozen")
+            }
+            ResumeOrientationAction.ResumeLandscapeSensors -> {
+                // Shared landscape hard-lock path (phone + ARC fullscreen).
+                stopArcLandscapeOnlyMode()
+                startFullscreenLandscapeSensorTracking()
+            }
+            ResumeOrientationAction.StartArcLandscapeOnly -> {
+                startArcLandscapeOnlyMode(reason = "resume")
+            }
+            ResumeOrientationAction.None -> Unit
         }
     }
 
     override fun onPause() {
         stopFullscreenLandscapeSensorTracking()
         super.onPause()
+    }
+
+    private fun isArcForbiddenOrientation(orientation: Int): Boolean {
+        // Anything that can leave long-edge landscape on ARC.
+        return when (orientation) {
+            ActivityInfo.SCREEN_ORIENTATION_USER,
+            ActivityInfo.SCREEN_ORIENTATION_FULL_USER,
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR,
+            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR,
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
+            ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT,
+            -> true
+            else -> false
+        }
+    }
+
+    private fun pinActivityOrientation(orientation: Int, source: String) {
+        orientationPassthrough = true
+        try {
+            super.setRequestedOrientation(orientation)
+        } finally {
+            orientationPassthrough = false
+        }
+        lastArcPinnedOrientation = orientation
+        Log.i(
+            ORIENTATION_LOG_TAG,
+            "pin orient source=$source side=${orientationLabel(orientation)}",
+        )
     }
 
     private fun handlePlaybackMethod(call: MethodCall, result: MethodChannel.Result) {
@@ -104,6 +201,9 @@ class MainActivity : FlutterActivity() {
             AndroidPlaybackMethodContract.lockPortraitFullscreen -> {
                 result.success(lockPortraitFullscreen())
             }
+            AndroidPlaybackMethodContract.freezeFullscreenOrientation -> {
+                result.success(freezeFullscreenOrientation())
+            }
             AndroidPlaybackMethodContract.prepareForPictureInPicture -> {
                 result.success(prepareForPictureInPicture())
             }
@@ -129,41 +229,64 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun lockLandscape(): Boolean {
+        // Fullscreen long-edge L/R via OrientationEventListener (works when
+        // ChromeOS auto-rotate is off). Shell ARC uses SENSOR_LANDSCAPE;
+        // fullscreen upgrades to a pinned L/R session.
+        stopArcLandscapeOnlyMode()
+        chromeLockFrozenPin = null
+        val naturalLandscapePrimary = resolveNaturalLandscapePrimary()
         val existingSession = fullscreenLandscapeSession
         if (existingSession != null) {
+            // Unlock path: clear UI freeze so long-edge L/R can work again.
+            val resumed = existingSession.markResumed().markUnfrozen()
+            fullscreenLandscapeSession = resumed
             startFullscreenLandscapeSensorTracking()
-            fullscreenLandscapeSession = existingSession.markResumed()
-            val activeSession = fullscreenLandscapeSession ?: existingSession
+            val activeSession = fullscreenLandscapeSession ?: resumed
             val requestedOrientationForLock = activeSession.requestedOrientationForActiveLock()
-            if (requestedOrientation != requestedOrientationForLock) {
-                requestedOrientation = requestedOrientationForLock
-            }
+            pinActivityOrientation(requestedOrientationForLock, "lockLandscape-reuse")
             Log.i(
                 ORIENTATION_LOG_TAG,
-                if (existingSession.suspended) {
-                    "resumeLandscape initial=${orientationLabel(activeSession.initialOrientation)} mode=${orientationLabel(requestedOrientationForLock)}"
-                } else {
-                    "reuseLandscape initial=${orientationLabel(activeSession.initialOrientation)} mode=${orientationLabel(requestedOrientationForLock)}"
+                when {
+                    existingSession.frozen ->
+                        "unfreezeLandscape initial=${orientationLabel(activeSession.initialOrientation)} mode=${orientationLabel(requestedOrientationForLock)} naturalLand=${activeSession.naturalLandscapePrimary}"
+                    existingSession.suspended ->
+                        "resumeLandscape initial=${orientationLabel(activeSession.initialOrientation)} mode=${orientationLabel(requestedOrientationForLock)}"
+                    else ->
+                        "reuseLandscape initial=${orientationLabel(activeSession.initialOrientation)} mode=${orientationLabel(requestedOrientationForLock)}"
                 },
             )
-            if (existingSession.suspended && isLandscapeConfiguration()) {
+            if (
+                (existingSession.suspended || existingSession.frozen) &&
+                isLandscapeConfiguration()
+            ) {
+                val sessionAfter = fullscreenLandscapeSession
+                if (sessionAfter != null && !sessionAfter.adjustmentUnlocked) {
+                    fullscreenLandscapeSession = sessionAfter.markAdjustmentUnlocked()
+                }
                 onFullscreenLandscapeConfigurationChanged()
             }
             return true
         }
         val storedOrientation = readLastLandscapeOrientation()
+        val initial = resolveInitialLandscapeOrientation(storedOrientation)
         val session = FullscreenLandscapeSession(
-            initialOrientation = resolveInitialLandscapeOrientation(storedOrientation),
+            initialOrientation = initial,
+            naturalLandscapePrimary = naturalLandscapePrimary,
         )
         fullscreenLandscapeSession = session
         fullscreenLandscapeSessionStartedAtMs = SystemClock.elapsedRealtime()
         lastKnownLandscapeSensorOrientation = null
         cancelFullscreenLandscapeMemoryCapture(reason = "newSession")
         startFullscreenLandscapeSensorTracking()
-        requestedOrientation = session.requestedOrientationForEntry()
+        pinActivityOrientation(
+            session.requestedOrientationForEntry(),
+            "lockLandscape-new",
+        )
         Log.i(
             ORIENTATION_LOG_TAG,
-            "lockLandscape initial=${orientationLabel(session.initialOrientation)} stored=${orientationLabel(storedOrientation)}",
+            "lockLandscape initial=${orientationLabel(session.initialOrientation)} " +
+                "stored=${orientationLabel(storedOrientation)} " +
+                "naturalLand=$naturalLandscapePrimary",
         )
         if (isLandscapeConfiguration()) {
             onFullscreenLandscapeConfigurationChanged()
@@ -171,28 +294,133 @@ class MainActivity : FlutterActivity() {
         return true
     }
 
-    private fun isTabletDevice(): Boolean {
-        val screenLayout = resources.configuration.screenLayout
-        val screenLayoutSize = screenLayout and Configuration.SCREENLAYOUT_SIZE_MASK
-        return screenLayoutSize >= Configuration.SCREENLAYOUT_SIZE_LARGE
+    // Pin the current fullscreen pose and stop sensor rotation (UI lock).
+    private fun freezeFullscreenOrientation(): Boolean {
+        stopArcLandscapeOnlyMode()
+        stopFullscreenLandscapeSensorTracking()
+        val session = fullscreenLandscapeSession
+        if (session != null) {
+            val pin = session.activeOrientation
+            fullscreenLandscapeSession = session.markFrozen()
+            chromeLockFrozenPin = pin
+            pinActivityOrientation(pin, "freezeLandscape")
+            return true
+        }
+        // No landscape session: pin whatever pose we are in (portrait hard
+        // fullscreen on phone, or current long-edge landscape on ARC shell).
+        val pin = FullscreenLandscapeOrientationMemory.fixedOrientationForCurrentPose(
+            displayRotation = currentDisplayRotation(),
+            configurationOrientation = resources.configuration.orientation,
+        )
+        chromeLockFrozenPin = pin
+        pinActivityOrientation(pin, "freezeCurrent")
+        return true
     }
 
+    private fun isArcChromeOsDevice(): Boolean {
+        return FullscreenLandscapeOrientationMemory.looksLikeArcChromeOsDevice(
+            fingerprint = Build.FINGERPRINT,
+            display = Build.DISPLAY,
+            incremental = Build.VERSION.INCREMENTAL,
+        )
+    }
+
+    private fun resolveNaturalLandscapePrimary(): Boolean {
+        // ARC convertibles are landscape-primary panels with installOrientation 270.
+        if (isArcChromeOsDevice()) {
+            return true
+        }
+        return FullscreenLandscapeOrientationMemory.isNaturalLandscapePrimary(
+            displayRotation = currentDisplayRotation(),
+            configurationOrientation = resources.configuration.orientation,
+        )
+    }
+
+    /**
+     * Restores app-shell orientation after fullscreen / PiP.
+     *
+     * Channel name remains `lockPortrait` for binary compatibility.
+     * - **Phone**: clear landscape session → system free orientations.
+     * - **ARC**: re-arm landscape-only shell (never portrait).
+     */
     private fun lockPortrait(): Boolean {
         clearFullscreenLandscapeManagement()
+        if (isArcChromeOsDevice()) {
+            startArcLandscapeOnlyMode(reason = "restoreShell")
+            return true
+        }
+        stopArcLandscapeOnlyMode()
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         return true
     }
 
     private fun lockPortraitFullscreen(): Boolean {
         clearFullscreenLandscapeManagement()
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // Phone vertical fullscreen only. ARC never requests this path.
+        if (isArcChromeOsDevice()) {
+            startArcLandscapeOnlyMode(reason = "lockPortraitFullscreen-arc")
+            return true
+        }
+        stopArcLandscapeOnlyMode()
+        pinActivityOrientation(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            "lockPortraitFullscreen",
+        )
         return true
     }
 
     private fun prepareForPictureInPicture(): Boolean {
         suspendFullscreenLandscapeManagement()
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        stopArcLandscapeOnlyMode()
+        orientationPassthrough = true
+        try {
+            // PiP: allow system freedom; ARC will re-arm landscape-only on resume.
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        } finally {
+            orientationPassthrough = false
+        }
         return true
+    }
+
+    private fun startArcLandscapeOnlyMode(reason: String) {
+        if (!isArcChromeOsDevice()) {
+            return
+        }
+        val landscape = fullscreenLandscapeSession
+        // Never override an active chrome freeze with SENSOR_LANDSCAPE.
+        if (landscape != null && landscape.frozen) {
+            pinActivityOrientation(
+                landscape.activeOrientation,
+                "arcLandscapeOnly-keepFrozen reason=$reason",
+            )
+            return
+        }
+        val freezePin = chromeLockFrozenPin
+        if (freezePin != null) {
+            pinActivityOrientation(
+                freezePin,
+                "arcLandscapeOnly-keepFrozen reason=$reason",
+            )
+            return
+        }
+        if (landscape != null && !landscape.suspended) {
+            return
+        }
+        arcLandscapeOnlyMode = true
+        // SENSOR_LANDSCAPE: long-edge L/R only, never portrait (no reverse flip).
+        pinActivityOrientation(
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            "arcLandscapeOnly reason=$reason",
+        )
+        Log.i(ORIENTATION_LOG_TAG, "arc landscape-only enabled reason=$reason")
+    }
+
+    private fun stopArcLandscapeOnlyMode() {
+        if (!arcLandscapeOnlyMode) {
+            return
+        }
+        arcLandscapeOnlyMode = false
+        Log.i(ORIENTATION_LOG_TAG, "arc landscape-only disabled")
     }
 
     private fun scheduleFullscreenLandscapeMemoryCapture() {
@@ -288,6 +516,7 @@ class MainActivity : FlutterActivity() {
         fullscreenLandscapeSession = null
         fullscreenLandscapeSessionStartedAtMs = null
         lastKnownLandscapeSensorOrientation = null
+        chromeLockFrozenPin = null
         stopFullscreenLandscapeSensorTracking()
     }
 
@@ -299,6 +528,43 @@ class MainActivity : FlutterActivity() {
         if (session == null || !session.shouldTrackSensors()) {
             return
         }
+        // Prefer OrientationEventListener: degrees are relative to natural
+        // orientation, so landscape-primary Chromebooks map long-edge correctly
+        // without ChromeOS free-rotate.
+        val orientationListener = object : OrientationEventListener(
+            this,
+            SensorManager.SENSOR_DELAY_UI,
+        ) {
+            override fun onOrientationChanged(orientation: Int) {
+                if (orientation == OrientationEventListener.ORIENTATION_UNKNOWN) {
+                    return
+                }
+                val active = fullscreenLandscapeSession ?: return
+                val nextOrientation =
+                    FullscreenLandscapeOrientationMemory.orientationForSensorDegrees(
+                        sensorDegrees = orientation,
+                        naturalLandscapePrimary = active.naturalLandscapePrimary,
+                    )
+                if (nextOrientation != null) {
+                    lastKnownLandscapeSensorOrientation = nextOrientation
+                }
+                applyLandscapeSensorOrientationIfNeeded(
+                    orientation = nextOrientation,
+                    source = "orientationEvent deg=$orientation",
+                )
+            }
+        }
+        if (orientationListener.canDetectOrientation()) {
+            fullscreenOrientationEventListener = orientationListener
+            orientationListener.enable()
+            fullscreenLandscapeSensorTrackingEnabled = true
+            Log.i(
+                ORIENTATION_LOG_TAG,
+                "landscape orientationEvent enabled naturalLand=${session.naturalLandscapePrimary}",
+            )
+            return
+        }
+        // Fallback: raw gravity (axis depends on natural landscape primary).
         val manager = sensorManager
         val sensor = fullscreenLandscapeSensor
         if (manager == null || sensor == null) {
@@ -313,7 +579,7 @@ class MainActivity : FlutterActivity() {
         if (fullscreenLandscapeSensorTrackingEnabled) {
             Log.i(
                 ORIENTATION_LOG_TAG,
-                "landscape sensor enabled type=${sensor.name}",
+                "landscape gravity fallback enabled type=${sensor.name} naturalLand=${session.naturalLandscapePrimary}",
             )
             return
         }
@@ -324,19 +590,23 @@ class MainActivity : FlutterActivity() {
         if (!fullscreenLandscapeSensorTrackingEnabled) {
             return
         }
+        fullscreenOrientationEventListener?.disable()
+        fullscreenOrientationEventListener = null
         sensorManager?.unregisterListener(fullscreenLandscapeSensorListener)
         fullscreenLandscapeSensorTrackingEnabled = false
         Log.i(ORIENTATION_LOG_TAG, "landscape sensor disabled")
     }
 
-    private fun onFullscreenLandscapeSensorChanged(event: SensorEvent) {
+    private fun onFullscreenLandscapeGravityChanged(event: SensorEvent) {
         if (event.values.size < 3) {
             return
         }
+        val session = fullscreenLandscapeSession ?: return
         val nextOrientation = FullscreenLandscapeOrientationMemory.orientationForGravityVector(
             x = event.values[0],
             y = event.values[1],
             z = event.values[2],
+            naturalLandscapePrimary = session.naturalLandscapePrimary,
         )
         lastKnownLandscapeSensorOrientation = nextOrientation
         if (nextOrientation == null) {
@@ -344,7 +614,7 @@ class MainActivity : FlutterActivity() {
         }
         applyLandscapeSensorOrientationIfNeeded(
             orientation = nextOrientation,
-            source = "sensor",
+            source = "gravity",
         )
     }
 
@@ -353,7 +623,7 @@ class MainActivity : FlutterActivity() {
         source: String,
     ) {
         val session = fullscreenLandscapeSession ?: return
-        if (!session.adjustmentUnlocked || session.suspended) {
+        if (!session.adjustmentUnlocked || session.suspended || session.frozen) {
             return
         }
         val nextOrientation = orientation ?: return
@@ -361,12 +631,8 @@ class MainActivity : FlutterActivity() {
             return
         }
         fullscreenLandscapeSession = session.updateActiveOrientation(nextOrientation)
-        if (requestedOrientation != nextOrientation) {
-            requestedOrientation = nextOrientation
-            Log.i(
-                ORIENTATION_LOG_TAG,
-                "rotate landscape source=$source side=${orientationLabel(nextOrientation)}",
-            )
+        if (lastArcPinnedOrientation != nextOrientation) {
+            pinActivityOrientation(nextOrientation, "landscape-$source")
         }
     }
 
@@ -425,10 +691,14 @@ class MainActivity : FlutterActivity() {
 
     private fun onFullscreenLandscapeConfigurationChanged() {
         val session = fullscreenLandscapeSession ?: return
+        val rotation = currentDisplayRotation()
         Log.i(
             ORIENTATION_LOG_TAG,
-            "landscape config rotation=${rotationLabel(currentDisplayRotation())} active=${orientationLabel(session.activeOrientation)} cached=${orientationLabel(lastKnownLandscapeSensorOrientation)}",
+            "landscape config rotation=${rotationLabel(rotation)} active=${orientationLabel(session.activeOrientation)} cached=${orientationLabel(lastKnownLandscapeSensorOrientation)} naturalLand=${session.naturalLandscapePrimary}",
         )
+        if (session.frozen || session.suspended) {
+            return
+        }
         if (!session.adjustmentUnlocked) {
             fullscreenLandscapeSession = session.markAdjustmentUnlocked()
             Log.i(
@@ -454,8 +724,12 @@ class MainActivity : FlutterActivity() {
             ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> "landscape"
             ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE -> "reverseLandscape"
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> "sensorLandscape"
+            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR -> "fullSensor"
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR -> "sensor"
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT -> "portrait"
+            ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT -> "reversePortrait"
             ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED -> "unspecified"
+            ActivityInfo.SCREEN_ORIENTATION_USER -> "user"
             else -> "unknown"
         }
     }
@@ -526,7 +800,13 @@ class MainActivity : FlutterActivity() {
             return false
         }
         val targetVolume = (value * maxVolume).roundToInt().coerceIn(0, maxVolume)
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
+        // FLAG_SHOW_UI helps some ARC / tablet shells surface stream volume;
+        // still may not move ChromeOS host chrome volume — app also drives player volume.
+        audioManager.setStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            targetVolume,
+            AudioManager.FLAG_SHOW_UI,
+        )
         return true
     }
 }

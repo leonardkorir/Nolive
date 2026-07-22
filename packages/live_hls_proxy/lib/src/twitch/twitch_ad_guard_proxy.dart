@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/src/providers/twitch/twitch_playback_manifest.dart';
+import 'package:meta/meta.dart';
 import '../hls_proxy_delivery_knobs.dart';
 import '../hls_proxy_platform_adapter.dart';
 
@@ -352,29 +353,27 @@ class TwitchAdGuardProxy {
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
-    final response = request.response;
+    final gate = TwitchProxyResponseGate(request.response);
     try {
       _purgeExpiredSessions();
       final segments = request.uri.pathSegments;
       if (segments.length < 3 || segments.first != _routePrefix) {
-        response.statusCode = HttpStatus.notFound;
-        await response.close();
+        await gate.commitStatusAndClose(HttpStatus.notFound);
         return;
       }
       final session = _sessions[segments[1]];
       if (session == null) {
-        response.statusCode = HttpStatus.gone;
-        await response.close();
+        await gate.commitStatusAndClose(HttpStatus.gone);
         return;
       }
       session.touch();
       final action = segments[2];
       if (action == 'stream.m3u8') {
         if (session.mode == _TwitchAdGuardMode.auto) {
-          await _writeSyntheticMasterPlaylist(response, session);
+          await _writeSyntheticMasterPlaylist(gate, session);
         } else {
           await _writeVariantPlaylist(
-            response,
+            gate,
             session: session,
             candidates: session.fixedCandidates,
           );
@@ -385,8 +384,7 @@ class TwitchAdGuardProxy {
         final groupKey = segments[3].replaceAll('.m3u8', '');
         final group = session.groupsById[groupKey];
         if (group == null) {
-          response.statusCode = HttpStatus.notFound;
-          await response.close();
+          await gate.commitStatusAndClose(HttpStatus.notFound);
           return;
         }
         if (_platformAdapter.kDebugMode) {
@@ -398,7 +396,7 @@ class TwitchAdGuardProxy {
           );
         }
         await _writeVariantPlaylist(
-          response,
+          gate,
           session: session,
           groupId: group.id,
           candidates: group.candidates,
@@ -409,30 +407,30 @@ class TwitchAdGuardProxy {
         final assetId = segments[3];
         final asset = session.assets[assetId];
         if (asset == null) {
-          response.statusCode = HttpStatus.notFound;
-          await response.close();
+          await gate.commitStatusAndClose(HttpStatus.notFound);
           return;
         }
-        await _pipeAsset(response, session: session, assetId: assetId, asset: asset);
+        await _pipeAsset(gate, session: session, assetId: assetId, asset: asset);
         return;
       }
-      response.statusCode = HttpStatus.notFound;
-      await response.close();
+      await gate.commitStatusAndClose(HttpStatus.notFound);
     } catch (error) {
-      _platformAdapter.log('twitch/proxy', 'TwitchAdGuardProxy request failed: $error');
-      response.statusCode = HttpStatus.internalServerError;
-      await response.close();
+      _platformAdapter.log(
+        'twitch/proxy',
+        'TwitchAdGuardProxy request failed: $error',
+      );
+      // Never throw "Header already sent" — only write status if still open.
+      await gate.commitStatusAndClose(HttpStatus.internalServerError);
     }
   }
 
   Future<void> _writeSyntheticMasterPlaylist(
-    HttpResponse response,
+    TwitchProxyResponseGate gate,
     _TwitchAdGuardSession session,
   ) async {
     final endpoint = _endpoint;
     if (endpoint == null || session.autoGroups.isEmpty) {
-      response.statusCode = HttpStatus.internalServerError;
-      await response.close();
+      await gate.commitStatusAndClose(HttpStatus.internalServerError);
       return;
     }
     final buffer = StringBuffer()..writeln('#EXTM3U');
@@ -452,17 +450,11 @@ class TwitchAdGuardProxy {
       );
       buffer.writeln(variantUri.toString());
     }
-    response.headers.contentType = ContentType(
-      'application',
-      'vnd.apple.mpegurl',
-      charset: 'utf-8',
-    );
-    response.write(buffer.toString());
-    await response.close();
+    await gate.writePlaylistBody(buffer.toString());
   }
 
   Future<void> _writeVariantPlaylist(
-    HttpResponse response, {
+    TwitchProxyResponseGate gate, {
     required _TwitchAdGuardSession session,
     String? groupId,
     required List<TwitchPlaybackCandidate> candidates,
@@ -480,13 +472,7 @@ class TwitchAdGuardProxy {
             '[TwitchAdGuardProxy] variant sticky hit group=$groupId',
           );
         }
-        response.headers.contentType = ContentType(
-          'application',
-          'vnd.apple.mpegurl',
-          charset: 'utf-8',
-        );
-        response.write(cached);
-        await response.close();
+        await gate.writePlaylistBody(cached);
         return;
       }
     }
@@ -496,8 +482,7 @@ class TwitchAdGuardProxy {
       session: session,
     );
     if (selected == null) {
-      response.statusCode = HttpStatus.badGateway;
-      await response.close();
+      await gate.commitStatusAndClose(HttpStatus.badGateway);
       return;
     }
     if (_platformAdapter.kDebugMode) {
@@ -527,13 +512,7 @@ class TwitchAdGuardProxy {
         stickyTtl,
       );
     }
-    response.headers.contentType = ContentType(
-      'application',
-      'vnd.apple.mpegurl',
-      charset: 'utf-8',
-    );
-    response.write(playlist);
-    await response.close();
+    await gate.writePlaylistBody(playlist);
     final warmLimit = _d.twitchAssetWarmPrefetchLimit;
     if (warmLimit > 0) {
       session.warmAssets(
@@ -903,7 +882,7 @@ class TwitchAdGuardProxy {
   }
 
   Future<void> _pipeAsset(
-    HttpResponse response, {
+    TwitchProxyResponseGate gate, {
     required _TwitchAdGuardSession session,
     required String assetId,
     required _TwitchAdGuardAsset asset,
@@ -911,47 +890,51 @@ class TwitchAdGuardProxy {
     final cached = session.cachedBytes[assetId];
     if (cached != null) {
       session.touchCachedBytes(assetId);
-      response.statusCode = HttpStatus.ok;
-      response.contentLength = cached.bytes.length;
-      if (cached.contentType != null) {
-        response.headers.contentType = cached.contentType;
-      }
-      response.add(cached.bytes);
-      await response.close();
+      await gate.writeBytes(
+        statusCode: HttpStatus.ok,
+        bytes: cached.bytes,
+        contentType: cached.contentType,
+      );
       return;
     }
 
     final request = await _client.getUrl(Uri.parse(asset.url));
     asset.headers.forEach(request.headers.set);
     final upstream = await request.close();
-    response.statusCode = upstream.statusCode;
     final contentType = upstream.headers.contentType;
-    if (contentType != null) {
-      response.headers.contentType = contentType;
-    }
     final cacheControl = upstream.headers.value(HttpHeaders.cacheControlHeader);
-    if (cacheControl != null && cacheControl.isNotEmpty) {
-      response.headers.set(HttpHeaders.cacheControlHeader, cacheControl);
-    }
     // Always stream to the player first (release-era pipe semantics).
     // Optionally collect bytes for warm/reuse — never block the demuxer on a
     // full-segment fold before the first chunk is written (phone underruns).
     final canByteCache =
         session.delivery.twitchEnableAssetByteCache &&
         session.delivery.twitchAssetBytesCacheLimit > 0;
-    if (upstream.contentLength >= 0) {
-      response.contentLength = upstream.contentLength;
-    }
+    final contentLength = upstream.contentLength >= 0
+        ? upstream.contentLength
+        : null;
     if (upstream.statusCode != HttpStatus.ok) {
-      await upstream.pipe(response);
+      await gate.pipeUpstream(
+        statusCode: upstream.statusCode,
+        upstream: upstream,
+        contentType: contentType,
+        cacheControl: cacheControl,
+        contentLength: contentLength,
+      );
       return;
     }
     final collected = canByteCache ? <int>[] : null;
-    await for (final chunk in upstream) {
-      response.add(chunk);
-      collected?.addAll(chunk);
-    }
-    await response.close();
+    await gate.streamChunks(
+      statusCode: upstream.statusCode,
+      contentType: contentType,
+      cacheControl: cacheControl,
+      contentLength: contentLength,
+      chunks: upstream,
+      onChunk: collected == null
+          ? null
+          : (chunk) {
+              collected.addAll(chunk);
+            },
+    );
     if (collected != null && collected.isNotEmpty) {
       session.putCachedBytes(
         assetId,
@@ -1240,6 +1223,175 @@ class TwitchAdGuardProxy {
       return override;
     }
     return _platformAdapter.supportsHeadlessWebView;
+  }
+}
+
+/// Single-commit gate for [HttpResponse] so cancel/error paths never throw
+/// `Bad state: Header already sent` after a successful write has begun.
+@visibleForTesting
+class TwitchProxyResponseGate {
+  TwitchProxyResponseGate(this.response);
+
+  final HttpResponse response;
+  bool _statusCommitted = false;
+  bool _closed = false;
+
+  bool get isClosed => _closed;
+  bool get canSetStatus => !_statusCommitted && !_closed;
+
+  Future<void> commitStatusAndClose(int statusCode) async {
+    if (_closed) {
+      return;
+    }
+    if (_statusCommitted) {
+      await _closeQuietly();
+      return;
+    }
+    try {
+      response.statusCode = statusCode;
+      _statusCommitted = true;
+      await response.close();
+      _closed = true;
+    } catch (_) {
+      await _closeQuietly();
+    }
+  }
+
+  Future<void> writePlaylistBody(String body) async {
+    if (_closed) {
+      return;
+    }
+    try {
+      if (!_statusCommitted) {
+        response.statusCode = HttpStatus.ok;
+        _statusCommitted = true;
+      }
+      response.headers.contentType = ContentType(
+        'application',
+        'vnd.apple.mpegurl',
+        charset: 'utf-8',
+      );
+      response.write(body);
+      await response.close();
+      _closed = true;
+    } catch (_) {
+      await _closeQuietly();
+    }
+  }
+
+  Future<void> writeBytes({
+    required int statusCode,
+    required List<int> bytes,
+    ContentType? contentType,
+  }) async {
+    if (_closed) {
+      return;
+    }
+    try {
+      if (!_statusCommitted) {
+        response.statusCode = statusCode;
+        _statusCommitted = true;
+      }
+      response.contentLength = bytes.length;
+      if (contentType != null) {
+        response.headers.contentType = contentType;
+      }
+      response.add(bytes);
+      await response.close();
+      _closed = true;
+    } catch (_) {
+      await _closeQuietly();
+    }
+  }
+
+  Future<void> pipeUpstream({
+    required int statusCode,
+    required HttpClientResponse upstream,
+    ContentType? contentType,
+    String? cacheControl,
+    int? contentLength,
+  }) async {
+    if (_closed) {
+      try {
+        await upstream.drain<void>();
+      } catch (_) {}
+      return;
+    }
+    try {
+      if (!_statusCommitted) {
+        response.statusCode = statusCode;
+        _statusCommitted = true;
+      }
+      if (contentType != null) {
+        response.headers.contentType = contentType;
+      }
+      if (cacheControl != null && cacheControl.isNotEmpty) {
+        response.headers.set(HttpHeaders.cacheControlHeader, cacheControl);
+      }
+      if (contentLength != null && contentLength >= 0) {
+        response.contentLength = contentLength;
+      }
+      await upstream.pipe(response);
+      _closed = true;
+    } catch (_) {
+      try {
+        await upstream.drain<void>();
+      } catch (_) {}
+      await _closeQuietly();
+    }
+  }
+
+  Future<void> streamChunks({
+    required int statusCode,
+    required Stream<List<int>> chunks,
+    ContentType? contentType,
+    String? cacheControl,
+    int? contentLength,
+    void Function(List<int> chunk)? onChunk,
+  }) async {
+    if (_closed) {
+      // Mirror pipeUpstream: drain so the upstream response is not left pinned.
+      try {
+        await chunks.drain<void>();
+      } catch (_) {}
+      return;
+    }
+    try {
+      if (!_statusCommitted) {
+        response.statusCode = statusCode;
+        _statusCommitted = true;
+      }
+      if (contentType != null) {
+        response.headers.contentType = contentType;
+      }
+      if (cacheControl != null && cacheControl.isNotEmpty) {
+        response.headers.set(HttpHeaders.cacheControlHeader, cacheControl);
+      }
+      if (contentLength != null && contentLength >= 0) {
+        response.contentLength = contentLength;
+      }
+      await for (final chunk in chunks) {
+        response.add(chunk);
+        onChunk?.call(chunk);
+      }
+      await response.close();
+      _closed = true;
+    } catch (_) {
+      try {
+        await chunks.drain<void>();
+      } catch (_) {}
+      await _closeQuietly();
+    }
+  }
+
+  Future<void> _closeQuietly() async {
+    if (_closed) {
+      return;
+    }
+    try {
+      await response.close();
+    } catch (_) {}
+    _closed = true;
   }
 }
 

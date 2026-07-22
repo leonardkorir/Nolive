@@ -204,6 +204,42 @@ void main() {
   });
 
   test(
+    'chaturbate room context password 401 is not a generic failure',
+    () async {
+      final client = HttpChaturbateApiClient(
+        requestScheduler: ChaturbateRequestScheduler(
+          minSpacing: Duration.zero,
+          maxConcurrent: 8,
+        ),
+        client: MockClient((request) async {
+          expect(request.url.path, '/api/chatvideocontext/kitayamachu/');
+          return http.Response(
+            jsonEncode({
+              'status': 401,
+              'detail': 'This room requires a password.',
+              'code': 'unauthorized',
+              'ts_context': null,
+            }),
+            401,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
+
+      await expectLater(
+        client.fetchRoomContext('kitayamachu'),
+        throwsA(
+          isA<ProviderParseException>().having(
+            (e) => e.message,
+            'message',
+            contains('room requires a password'),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'chaturbate room context can suppress configured cookie header',
     () async {
       final client = HttpChaturbateApiClient(

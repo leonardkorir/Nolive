@@ -55,7 +55,11 @@ void main() {
     expect(detail.sourceUrl, 'https://www.douyu.com/312212');
     expect(detail.isLive, isTrue);
     expect(detail.viewerCount, 132000);
-    expect((detail.metadata?['deviceId']), 'test-device-id');
+    // Room detail no longer pre-signs (SlotSun signs at play time).
+    expect(
+      detail.metadata?['deviceId'],
+      HttpDouyuSignService.kDefaultDeviceId,
+    );
 
     final qualities = await provider.fetchPlayQualities(detail);
     expect(qualities, isNotEmpty);
@@ -73,8 +77,15 @@ void main() {
       quality: qualities.firstWhere((item) => item.isDefault),
     );
     expect(urls, hasLength(3));
-    expect(urls.first.url, startsWith('https://stream.douyu.test/'));
-    expect(urls.first.headers['referer'], 'https://www.douyu.com/312212');
+    // Host preference: hw1a first, then tct, scdn last.
+    expect(urls.first.url, contains('hw1a.douyu.test'));
+    expect(urls.map((item) => Uri.parse(item.url).host).toList(), [
+      'hw1a.douyu.test',
+      'tct.douyu.test',
+      'scdn.douyu.test',
+    ]);
+    // SlotSun bare URL: no stream headers on Douyu FLV.
+    expect(urls.first.headers, isEmpty);
     expect(urls.first.metadata?['rate'], 4);
     expect(
       transport.postBodies.where((item) => item.contains('rate=4')).length,
@@ -108,27 +119,127 @@ void main() {
       );
     },
   );
+
+  test(
+    'betard offline still attempts getH5Play (stale show_status)',
+    () async {
+      // betard show_status=0 but getH5Play can still return ladder/URLs.
+      final transport = _FakeDouyuTransport()..offlineRoom = true;
+      final signService = _FakeDouyuSignService();
+      final provider = DouyuProvider(
+        dataSource: DouyuLiveDataSource(
+          transport: transport,
+          signService: signService,
+        ),
+      );
+
+      final detail = await provider.fetchRoomDetail('312212');
+      expect(detail.isLive, isFalse);
+      final qualities = await provider.fetchPlayQualities(detail);
+      expect(qualities, isNotEmpty);
+      expect(
+        transport.postBodies.where((item) => item.contains('rate=-1')),
+        isNotEmpty,
+      );
+    },
+  );
+
+  test('getH5Play error -5 yields empty qualities without throw', () async {
+    final transport = _FakeDouyuTransport()..playErrorCode = -5;
+    final signService = _FakeDouyuSignService();
+    final provider = DouyuProvider(
+      dataSource: DouyuLiveDataSource(
+        transport: transport,
+        signService: signService,
+      ),
+    );
+
+    final detail = await provider.fetchRoomDetail('312212');
+    expect(detail.isLive, isTrue);
+    final qualities = await provider.fetchPlayQualities(detail);
+    expect(qualities, isEmpty);
+  });
+
+  test('getH5Play non-offline error throws typed failure', () async {
+    final transport = _FakeDouyuTransport()
+      ..playErrorCode = 1
+      ..playErrorMsg = '请求过于频繁';
+    final signService = _FakeDouyuSignService();
+    final provider = DouyuProvider(
+      dataSource: DouyuLiveDataSource(
+        transport: transport,
+        signService: signService,
+      ),
+    );
+
+    final detail = await provider.fetchRoomDetail('312212');
+    await expectLater(
+      provider.fetchPlayQualities(detail),
+      throwsA(
+        isA<ProviderParseException>().having(
+          (e) => e.message,
+          'message',
+          contains('rateLimited'),
+        ),
+      ),
+    );
+  });
+
+  test('classifyDouyuH5PlayError maps offline and auth', () {
+    expect(
+      classifyDouyuH5PlayError(-5, null),
+      DouyuH5PlayErrorKind.offline,
+    );
+    expect(
+      classifyDouyuH5PlayError(1, '房间未开播'),
+      DouyuH5PlayErrorKind.offline,
+    );
+    expect(
+      classifyDouyuH5PlayError(1, '签名错误'),
+      DouyuH5PlayErrorKind.authFailed,
+    );
+    expect(
+      classifyDouyuH5PlayError(1, '请求过于频繁'),
+      DouyuH5PlayErrorKind.rateLimited,
+    );
+  });
 }
 
 class _FakeDouyuSignService implements DouyuSignService {
   @override
   Map<String, String> buildPlayHeaders(String roomId, {String? deviceId}) {
-    final resolvedDeviceId = deviceId ?? 'test-device-id';
     return {
       'user-agent': 'test-agent',
-      'referer': 'https://www.douyu.com/$roomId',
-      'cookie': 'dy_did=$resolvedDeviceId;acf_did=$resolvedDeviceId',
       'content-type': 'application/x-www-form-urlencoded',
+      'accept':
+          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'accept-language': 'zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3',
     };
   }
 
   @override
+  Map<String, String> buildStreamHeaders(String roomId, {String? deviceId}) {
+    // SlotSun Douyu: bare URL.
+    return const {};
+  }
+
+  @override
+  Future<String> buildSignedPlayBody(
+    String roomId, {
+    String cdn = '',
+    String rate = '-1',
+  }) async {
+    return 'enc_data=test&tt=1700000000&did=test-device-id&auth=test-auth'
+        '&cdn=$cdn&rate=$rate&hevc=0&fa=0&ive=0&ver=Douyu_new&iar=0';
+  }
+
+  @override
   Future<DouyuSignedPlayContext> buildPlayContext(String roomId) async {
-    return const DouyuSignedPlayContext(
-      body: 'rid=312212&did=test-device-id&tt=1700000000&sign=test-sign',
+    final body = await buildSignedPlayBody(roomId);
+    return DouyuSignedPlayContext(
+      body: body,
       deviceId: 'test-device-id',
       timestamp: 1700000000,
-      script: 'function ub98484234() {}',
     );
   }
 
@@ -155,7 +266,7 @@ class _FakeDouyuSignService implements DouyuSignService {
     required String cdn,
     required String rate,
   }) {
-    return '$baseBody&cdn=$cdn&rate=$rate&ver=Douyu_223061205&iar=0&ive=0&hevc=0&fa=0';
+    return '$baseBody&cdn=$cdn&rate=$rate&hevc=0&fa=0&ive=0&ver=Douyu_new&iar=0';
   }
 }
 
@@ -163,6 +274,9 @@ class _FakeDouyuTransport implements DouyuTransport {
   final List<String> requestedUrls = [];
   final List<String> postBodies = [];
   int failPlayPostCount = 0;
+  bool offlineRoom = false;
+  int playErrorCode = 0;
+  String playErrorMsg = '房间未开播';
 
   @override
   Future<Map<String, dynamic>> getJson(
@@ -241,9 +355,22 @@ class _FakeDouyuTransport implements DouyuTransport {
           'room_pic': 'https://staticlive.douyucdn.cn/upload/demo-room-pic.jpg',
           'second_lvl_name': '网游竞技',
           'show_details': '这是一个用于 provider 迁移测试的直播间。',
-          'show_status': 1,
+          'show_status': offlineRoom ? 0 : 1,
           'videoLoop': 0,
           'room_biz_all': {'hot': '13.2万'},
+        },
+      });
+    }
+    if (uri.toString().startsWith(
+      'https://www.douyu.com/wgapi/livenc/liveweb/websec/getEncryption',
+    )) {
+      return jsonEncode({
+        'data': {
+          'rand_str': 'rand',
+          'enc_time': 1,
+          'is_special': 0,
+          'key': 'key',
+          'enc_data': 'enc',
         },
       });
     }
@@ -288,7 +415,7 @@ class _FakeDouyuTransport implements DouyuTransport {
     expect(headers['content-type'], 'application/x-www-form-urlencoded');
 
     if (uri.toString().startsWith(
-      'https://www.douyu.com/lapi/live/getH5Play/312212',
+      'https://www.douyu.com/lapi/live/getH5PlayV1/312212',
     )) {
       if (failPlayPostCount > 0) {
         failPlayPostCount -= 1;
@@ -298,6 +425,13 @@ class _FakeDouyuTransport implements DouyuTransport {
         );
       }
       if (body.contains('rate=-1')) {
+        if (playErrorCode != 0) {
+          return jsonEncode({
+            'error': playErrorCode,
+            'msg': playErrorMsg,
+            'data': '',
+          });
+        }
         return jsonEncode({
           'error': 0,
           'data': {
@@ -317,7 +451,7 @@ class _FakeDouyuTransport implements DouyuTransport {
       }
 
       if (!body.contains('rate=-1')) {
-        expect(body.contains('ver=Douyu_223061205'), isTrue);
+        expect(body.contains('ver=Douyu_new'), isTrue);
         expect(body.contains('iar=0'), isTrue);
         expect(body.contains('ive=0'), isTrue);
       }
@@ -327,12 +461,18 @@ class _FakeDouyuTransport implements DouyuTransport {
           : body.contains('cdn=hw-h5')
           ? 'hw-h5'
           : 'scdn';
+      // Distinct hosts so preferReliableDouyuPlayUrls does not collapse lines.
+      final host = switch (line) {
+        'tct-h5' => 'tct.douyu.test',
+        'hw-h5' => 'hw1a.douyu.test',
+        _ => 'scdn.douyu.test',
+      };
       return jsonEncode({
         'error': 0,
         'data': {
           'cdn': line,
           'rate': 4,
-          'rtmp_url': 'https://stream.douyu.test/$line',
+          'rtmp_url': 'https://$host/live',
           'rtmp_live': 'live_312212.m3u8?rate=4&amp;token=${line}Token',
         },
       });

@@ -67,6 +67,7 @@ void main() {
         followRepository: followRepository,
         registry: registry,
         detailTimeout: const Duration(milliseconds: 1),
+        detailRetryCount: 0,
         maxConcurrent: 1,
       ).call();
 
@@ -928,6 +929,98 @@ void main() {
       expect(biliEntry.detail?.title, '远程B站');
     },
   );
+
+  test('follow detail retries transient timeout then succeeds', () async {
+    final followRepository = InMemoryFollowRepository();
+    await followRepository.upsert(
+      const FollowRecord(
+        providerId: ProviderId.huya,
+        roomId: '998',
+        streamerName: '虎牙主播',
+        lastLiveStatus: 1,
+      ),
+    );
+
+    var calls = 0;
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: const ProviderDescriptor(
+            id: ProviderId.huya,
+            displayName: '虎牙',
+            capabilities: {ProviderCapability.roomDetail},
+            supportedPlatforms: {ProviderPlatform.android},
+            maturity: ProviderMaturity.ready,
+          ),
+          builder: () => _FakeDetailProvider(
+            (roomId) async {
+              calls += 1;
+              if (calls == 1) {
+                throw TimeoutException('slow');
+              }
+              return LiveRoomDetail(
+                providerId: ProviderId.huya,
+                roomId: roomId,
+                title: '在播标题',
+                streamerName: '虎牙主播',
+                isLive: true,
+              );
+            },
+            descriptor: const ProviderDescriptor(
+              id: ProviderId.huya,
+              displayName: '虎牙',
+              capabilities: {ProviderCapability.roomDetail},
+              supportedPlatforms: {ProviderPlatform.android},
+              maturity: ProviderMaturity.ready,
+            ),
+          ),
+        ),
+      );
+
+    final watchlist = await LoadFollowWatchlistUseCase(
+      followRepository: followRepository,
+      registry: registry,
+      detailTimeout: const Duration(seconds: 2),
+      detailRetryCount: 2,
+      detailRetryBaseDelay: const Duration(milliseconds: 10),
+      maxConcurrent: 1,
+    ).call();
+
+    expect(calls, 2);
+    expect(watchlist.entries.single.isLive, isTrue);
+    expect(watchlist.entries.single.hasError, isFalse);
+    expect(watchlist.entries.single.detail?.isLive, isTrue);
+  });
+
+  test('isTransientFollowDetailError detects timeouts and cold-start races', () {
+    expect(isTransientFollowDetailError(TimeoutException('x')), isTrue);
+    expect(isTransientFollowDetailError(Exception('socket hang up')), isTrue);
+    expect(
+      isTransientFollowDetailError(
+        Exception('Huya request failed before response: https://www.huya.com/998'),
+      ),
+      isTrue,
+    );
+    expect(
+      isTransientFollowDetailError(
+        Exception('ClientException: HTTP request failed. Client is already closed.'),
+      ),
+      isTrue,
+    );
+    expect(
+      isTransientFollowDetailError(
+        Exception('Twitch GraphQL request failed before response.'),
+      ),
+      isTrue,
+    );
+    expect(isTransientFollowDetailError(Exception('parse boom')), isFalse);
+    expect(
+      isTransientFollowDetailError(
+        Exception('Chaturbate received a Cloudflare challenge page'),
+      ),
+      isFalse,
+    );
+  });
 
   test('localOnly scope never hits any provider network', () async {
     final followRepository = InMemoryFollowRepository();
