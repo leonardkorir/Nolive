@@ -13,8 +13,7 @@ bool shouldReportWebLoginLoadFailure(WebResourceRequest request) {
   return request.isForMainFrame ?? true;
 }
 
-bool get _useLinuxDesktopWebLogin =>
-    !kIsWeb && Platform.isLinux;
+bool get _useLinuxDesktopWebLogin => !kIsWeb && Platform.isLinux;
 
 class ChaturbateWebLoginPage extends StatelessWidget {
   const ChaturbateWebLoginPage({super.key});
@@ -323,7 +322,7 @@ class _WebCookieLoginPageState extends State<_WebCookieLoginPage> {
       if (!mounted) {
         return;
       }
-            showAppErrorSnackBar(context, error);
+      showAppErrorSnackBar(context, error);
     } finally {
       if (mounted) {
         setState(() {
@@ -524,7 +523,7 @@ class _WebCookieLoginPageState extends State<_WebCookieLoginPage> {
                 if (description.isEmpty) {
                   return;
                 }
-                    showAppSnackBar(context, '页面加载失败：$description');
+                showAppSnackBar(context, '页面加载失败：$description');
               },
               onConsoleMessage: (controller, consoleMessage) {
                 debugPrint(

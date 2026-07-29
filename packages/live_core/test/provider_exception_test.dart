@@ -54,15 +54,11 @@ void main() {
 class _FakeProvider extends LiveProvider implements SupportsRoomSearch {
   @override
   ProviderDescriptor get descriptor => const ProviderDescriptor(
-        id: ProviderId('fake'),
-        displayName: 'Fake',
-        capabilities: {
-          ProviderCapability.searchRooms,
-        },
-        supportedPlatforms: {
-          ProviderPlatform.linux,
-        },
-      );
+    id: ProviderId('fake'),
+    displayName: 'Fake',
+    capabilities: {ProviderCapability.searchRooms},
+    supportedPlatforms: {ProviderPlatform.linux},
+  );
 
   @override
   Future<PagedResponse<LiveRoom>> searchRooms(String query, {int page = 1}) {
@@ -74,29 +70,23 @@ class _FullContractProvider extends LiveProvider
     implements SupportsLogin, SupportsSuperChat, SupportsBackupSync {
   @override
   ProviderDescriptor get descriptor => const ProviderDescriptor(
-        id: ProviderId('full-contract'),
-        displayName: 'Full Contract',
-        capabilities: {
-          ProviderCapability.login,
-          ProviderCapability.superChat,
-          ProviderCapability.backupSync,
-        },
-        supportedPlatforms: {
-          ProviderPlatform.linux,
-        },
-      );
+    id: ProviderId('full-contract'),
+    displayName: 'Full Contract',
+    capabilities: {
+      ProviderCapability.login,
+      ProviderCapability.superChat,
+      ProviderCapability.backupSync,
+    },
+    supportedPlatforms: {ProviderPlatform.linux},
+  );
 }
 
 class _MisalignedCapabilityProvider extends LiveProvider {
   @override
   ProviderDescriptor get descriptor => const ProviderDescriptor(
-        id: ProviderId('misaligned'),
-        displayName: 'Misaligned',
-        capabilities: {
-          ProviderCapability.login,
-        },
-        supportedPlatforms: {
-          ProviderPlatform.linux,
-        },
-      );
+    id: ProviderId('misaligned'),
+    displayName: 'Misaligned',
+    capabilities: {ProviderCapability.login},
+    supportedPlatforms: {ProviderPlatform.linux},
+  );
 }

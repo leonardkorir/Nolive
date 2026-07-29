@@ -46,13 +46,15 @@ class RoomPlaybackSessionState {
       activeRoomDetail: clearActiveRoomDetail
           ? null
           : activeRoomDetail ?? this.activeRoomDetail,
-      selectedQuality:
-          clearSelectedQuality ? null : selectedQuality ?? this.selectedQuality,
+      selectedQuality: clearSelectedQuality
+          ? null
+          : selectedQuality ?? this.selectedQuality,
       effectiveQuality: clearEffectiveQuality
           ? null
           : effectiveQuality ?? this.effectiveQuality,
-      playbackSource:
-          clearPlaybackSource ? null : playbackSource ?? this.playbackSource,
+      playbackSource: clearPlaybackSource
+          ? null
+          : playbackSource ?? this.playbackSource,
       playUrls: playUrls ?? this.playUrls,
       playbackAvailable: playbackAvailable ?? this.playbackAvailable,
       pendingPlaybackSource: clearPendingPlaybackSource

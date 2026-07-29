@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_playback_source_helpers.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_source_helpers.dart';
 
 void main() {
   test('summarizePlaybackSource includes split audio metadata', () {

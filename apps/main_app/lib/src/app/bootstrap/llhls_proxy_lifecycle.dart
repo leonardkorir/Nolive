@@ -47,30 +47,36 @@ class LlhlsProxyRegistry {
     required ProviderId providerId,
   }) {
     if (kDebugMode) {
-      debugPrint('[LlhlsProxyRegistry] registerSession roomId=$roomId providerId=${providerId.value}');
+      debugPrint(
+        '[LlhlsProxyRegistry] registerSession roomId=$roomId providerId=${providerId.value}',
+      );
     }
   }
 
-  void unregisterSession({
-    required String roomId,
-  }) {
+  void unregisterSession({required String roomId}) {
     if (kDebugMode) {
       debugPrint('[LlhlsProxyRegistry] unregisterSession roomId=$roomId');
     }
     try {
       chaturbateProxy?.unregisterSession(roomId);
     } catch (e, st) {
-      debugPrint('Error unregistering Chaturbate session for roomId=$roomId: $e\n$st');
+      debugPrint(
+        'Error unregistering Chaturbate session for roomId=$roomId: $e\n$st',
+      );
     }
     try {
       stripchatProxy?.unregisterSession(roomId);
     } catch (e, st) {
-      debugPrint('Error unregistering Stripchat session for roomId=$roomId: $e\n$st');
+      debugPrint(
+        'Error unregistering Stripchat session for roomId=$roomId: $e\n$st',
+      );
     }
     try {
       twitchProxy?.unregisterSession(roomId);
     } catch (e, st) {
-      debugPrint('Error unregistering Twitch session for roomId=$roomId: $e\n$st');
+      debugPrint(
+        'Error unregistering Twitch session for roomId=$roomId: $e\n$st',
+      );
     }
     final release = releaseRuntimeWebPressure;
     if (release != null) {

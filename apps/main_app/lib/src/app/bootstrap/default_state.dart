@@ -147,7 +147,10 @@ Future<void> _writeDefaultSettingIfMissing(
   switch (value) {
     case List<String> typed:
       return _writeDefaultIfMissing<List<String>>(
-          settingsRepository, key, typed);
+        settingsRepository,
+        key,
+        typed,
+      );
     case String typed:
       return _writeDefaultIfMissing<String>(settingsRepository, key, typed);
     case bool typed:

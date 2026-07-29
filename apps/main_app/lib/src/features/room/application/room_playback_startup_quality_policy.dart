@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
+import 'package:nolive_app/src/features/room/application/room_provider_traits.dart';
 
 LivePlayQuality resolveRoomStartupRequestedQuality({
   required ProviderId providerId,
@@ -12,13 +13,13 @@ LivePlayQuality resolveRoomStartupRequestedQuality({
   if (explicitSelection ||
       isWeb ||
       targetPlatform != TargetPlatform.android ||
-      providerId != ProviderId.youtube ||
+      !roomProviderTraitsFor(providerId).promotesAndroidAutoQualityAtStartup ||
       requestedQuality.id != 'auto') {
     return requestedQuality;
   }
   final autoQuality = qualities.cast<LivePlayQuality?>().firstWhere(
-        (item) => item?.id == 'auto',
-        orElse: () => null,
-      );
+    (item) => item?.id == 'auto',
+    orElse: () => null,
+  );
   return autoQuality ?? requestedQuality;
 }

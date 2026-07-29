@@ -25,7 +25,7 @@ abstract interface class ChaturbateSocketClient {
 typedef ChaturbateSocketClientFactory =
     ChaturbateSocketClient Function(Uri uri);
 
-class ChaturbateDanmakuSession implements DanmakuSession {
+class ChaturbateDanmakuSession extends DanmakuSession {
   ChaturbateDanmakuSession({
     required this.roomId,
     required this.broadcasterUid,

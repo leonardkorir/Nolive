@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,7 +12,7 @@ import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/room/application/open_room_danmaku_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_platforms.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_fullscreen.dart';
 import 'package:nolive_app/src/features/room/presentation/widgets/room_fullscreen_overlay.dart';
@@ -22,6 +21,27 @@ import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart
 import 'package:nolive_app/src/shared/presentation/widgets/persisted_network_image.dart';
 
 import 'room_fullscreen_test_fakes.dart';
+
+/// [testWidgets] that lets the room page's detached playback teardown finish.
+///
+/// `RoomPreviewPage.dispose` kicks off `runRoomPreviewHeavyControllerDispose`
+/// without awaiting it, and `serializeRoomTeardown` arms a watchdog so a hung
+/// native `stop()` cannot block the next room open. Both are deliberate, so the
+/// test has to drain them rather than the production code skipping them.
+void testRoomWidgets(
+  String description,
+  Future<void> Function(WidgetTester tester) body, {
+  bool skip = false,
+}) {
+  testWidgets(description, (tester) async {
+    await body(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(
+      PlayerRuntimeController.defaultRoomTeardownTimeout +
+          const Duration(seconds: 1),
+    );
+  }, skip: skip);
+}
 
 void main() {
   test('fullscreen embedded playback hides poster backdrop', () {
@@ -272,7 +292,7 @@ void main() {
     );
   });
 
-  testWidgets('room preview exposes quick actions and settings tab', (
+  testRoomWidgets('room preview exposes quick actions and settings tab', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -431,7 +451,7 @@ void main() {
     expect(panelPhysics, isA<NeverScrollableScrollPhysics>());
   });
 
-  testWidgets(
+  testRoomWidgets(
     'returning from player settings without changes does not reload playback',
     (tester) async {
       final base = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -497,7 +517,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'returning from player settings rebinds same source when playback is errored',
     (tester) async {
       final base = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -570,7 +590,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'manual room refresh rebinds same playback source while already playing',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -632,7 +652,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'manual fullscreen refresh rebinds same playback source while already playing',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -696,7 +716,9 @@ void main() {
     },
   );
 
-  testWidgets('fullscreen danmaku toggle updates immediately', (tester) async {
+  testRoomWidgets('fullscreen danmaku toggle updates immediately', (
+    tester,
+  ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     final openRoomDanmaku = _NullDanmakuUseCase(bootstrap.providerRegistry);
 
@@ -765,113 +787,116 @@ void main() {
     );
   });
 
-  testWidgets('fullscreen exit is not blocked by in-flight playback rebind', (
-    tester,
-  ) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _BlockingSetSourceMdkPlayer();
-    final runtime = _RefreshTrackingMdkPlayerRuntime(player);
-    final openRoomDanmaku = _NullDanmakuUseCase(bootstrap.providerRegistry);
-    addTearDown(player.dispose);
+  testRoomWidgets(
+    'fullscreen exit is not blocked by in-flight playback rebind',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _BlockingSetSourceMdkPlayer();
+      final runtime = _RefreshTrackingMdkPlayerRuntime(player);
+      final openRoomDanmaku = _NullDanmakuUseCase(bootstrap.providerRegistry);
+      addTearDown(player.dispose);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(
-            bootstrap,
-            playerRuntime: runtime,
-            openRoomDanmaku: openRoomDanmaku,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(
+              bootstrap,
+              playerRuntime: runtime,
+              openRoomDanmaku: openRoomDanmaku,
+            ),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
           ),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
         ),
-      ),
-    );
-    await tester.pump();
-    await _pumpRoomPreviewAsyncWork(tester);
-    await _pumpUntilPlayerEventCount(tester, player, 'setSource', 1);
-    await _pumpUntilPlayerEventCount(tester, player, 'play', 1);
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await _pumpUntilPlayerEventCount(tester, player, 'setSource', 1);
+      await _pumpUntilPlayerEventCount(tester, player, 'play', 1);
 
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump(const Duration(milliseconds: 40));
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    player.events.clear();
-    player.blockNextSetSource();
+      player.events.clear();
+      player.blockNextSetSource();
 
-    await tester.tap(find.byKey(const Key('room-fullscreen-refresh-button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 700));
+      await tester.tap(find.byKey(const Key('room-fullscreen-refresh-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 700));
 
-    expect(player.events, contains('refreshBackend'));
-    player.events.clear();
+      expect(player.events, contains('refreshBackend'));
+      player.events.clear();
 
-    await tester.tap(find.byKey(const Key('room-exit-fullscreen-button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.byKey(const Key('room-exit-fullscreen-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.byKey(const Key('room-fullscreen-overlay')), findsNothing);
-    expect(find.byKey(const Key('room-leave-button')), findsOneWidget);
-    expect(player.events.where((event) => event == 'stop'), isEmpty);
+      expect(find.byKey(const Key('room-fullscreen-overlay')), findsNothing);
+      expect(find.byKey(const Key('room-leave-button')), findsOneWidget);
+      expect(player.events.where((event) => event == 'stop'), isEmpty);
 
-    player.completeBlockedSetSource();
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
+      player.completeBlockedSetSource();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
 
-    expect(find.byKey(const Key('room-fullscreen-overlay')), findsNothing);
-    expect(find.byKey(const Key('room-leave-button')), findsOneWidget);
-  });
+      expect(find.byKey(const Key('room-fullscreen-overlay')), findsNothing);
+      expect(find.byKey(const Key('room-leave-button')), findsOneWidget);
+    },
+  );
 
-  testWidgets('room preview mounts player view before initial source binding', (
-    tester,
-  ) async {
-    final base = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = _RecordingPlayer();
-    addTearDown(player.dispose);
-    final dependencies = _roomDependencies(base, player: player);
+  testRoomWidgets(
+    'room preview mounts player view before initial source binding',
+    (tester) async {
+      final base = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = _RecordingPlayer();
+      addTearDown(player.dispose);
+      final dependencies = _roomDependencies(base, player: player);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: dependencies,
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: dependencies,
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await _pumpRoomPreviewAsyncWork(tester);
-    await tester.pump(
-      resolveMdkTextureRecoveryRetryDelay(0) + const Duration(milliseconds: 40),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await tester.pump(
+        resolveMdkTextureRecoveryRetryDelay(0) +
+            const Duration(milliseconds: 40),
+      );
+      await tester.pump();
 
-    final buildIndex = player.events.indexOf('buildView');
-    final setSourceIndex = player.events.indexOf('setSource');
-    final playIndex = player.events.indexOf('play');
+      final buildIndex = player.events.indexOf('buildView');
+      final setSourceIndex = player.events.indexOf('setSource');
+      final playIndex = player.events.indexOf('play');
 
-    expect(buildIndex, isNonNegative);
-    expect(setSourceIndex, isNonNegative);
-    expect(playIndex, isNonNegative);
-    expect(buildIndex, lessThan(setSourceIndex));
-    expect(setSourceIndex, lessThan(playIndex));
-  });
+      expect(buildIndex, isNonNegative);
+      expect(setSourceIndex, isNonNegative);
+      expect(playIndex, isNonNegative);
+      expect(buildIndex, lessThan(setSourceIndex));
+      expect(setSourceIndex, lessThan(playIndex));
+    },
+  );
 
   test('MDK texture init failures trigger staged recovery detection', () {
     expect(
@@ -1112,7 +1137,7 @@ void main() {
     );
   });
 
-  testWidgets(
+  testRoomWidgets(
     'room preview retries source once before refreshing MDK backend',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -1164,7 +1189,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'room preview refreshes MDK backend after second texture init failure',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -1220,7 +1245,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'manual quality switch refreshes MDK backend and retries source after second texture init failure',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -1285,7 +1310,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'room preview stops retries after backend refresh retry is exhausted',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -1345,7 +1370,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'room preview debug sheet renders current diagnostics immediately',
     (tester) async {
       final base = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -1399,7 +1424,7 @@ void main() {
     },
   );
 
-  testWidgets('room preview panels can switch by horizontal swipe', (
+  testRoomWidgets('room preview panels can switch by horizontal swipe', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -1473,99 +1498,102 @@ void main() {
     expect(find.text('关键词屏蔽'), findsOneWidget);
   });
 
-  testWidgets('fullscreen long press on right edge opens live follow drawer', (
-    tester,
-  ) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
-      entries: const [
-        FollowWatchEntry(
-          record: FollowRecord(
+  testRoomWidgets(
+    'fullscreen long press on right edge opens live follow drawer',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      bootstrap.followWatchlistSnapshot.value = FollowWatchlist(
+        entries: const [
+          FollowWatchEntry(
+            record: FollowRecord(
+              providerId: ProviderId.bilibili,
+              roomId: '6',
+              streamerName: '系统演示主播',
+            ),
+            detail: LiveRoomDetail(
+              providerId: ProviderId.bilibili,
+              roomId: '6',
+              title: '系统演示直播间',
+              streamerName: '系统演示主播',
+              isLive: true,
+            ),
+          ),
+          FollowWatchEntry(
+            record: FollowRecord(
+              providerId: ProviderId.douyu,
+              roomId: '3125893',
+              streamerName: '斗鱼样例主播',
+            ),
+            detail: LiveRoomDetail(
+              providerId: ProviderId.douyu,
+              roomId: '3125893',
+              title: '斗鱼样例直播间',
+              streamerName: '斗鱼样例主播',
+              isLive: true,
+            ),
+          ),
+        ],
+      );
+
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap),
             providerId: ProviderId.bilibili,
-            roomId: '6',
-            streamerName: '系统演示主播',
-          ),
-          detail: LiveRoomDetail(
-            providerId: ProviderId.bilibili,
-            roomId: '6',
-            title: '系统演示直播间',
-            streamerName: '系统演示主播',
-            isLive: true,
+            roomId: '66666',
           ),
         ),
-        FollowWatchEntry(
-          record: FollowRecord(
-            providerId: ProviderId.douyu,
-            roomId: '3125893',
-            streamerName: '斗鱼样例主播',
-          ),
-          detail: LiveRoomDetail(
-            providerId: ProviderId.douyu,
-            roomId: '3125893',
-            title: '斗鱼样例直播间',
-            streamerName: '斗鱼样例主播',
-            isLive: true,
-          ),
-        ),
-      ],
-    );
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
-        ),
-      ),
-    );
-    await tester.pump();
-    await _pumpRoomPreviewAsyncWork(tester);
+      final drawerFinder = find.byKey(
+        const Key('room-fullscreen-follow-drawer'),
+      );
+      final hiddenDrawerDx = tester.getTopLeft(drawerFinder).dx;
 
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump(const Duration(milliseconds: 40));
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.longPressAt(const Offset(1040, 960));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
-    final drawerFinder = find.byKey(const Key('room-fullscreen-follow-drawer'));
-    final hiddenDrawerDx = tester.getTopLeft(drawerFinder).dx;
+      expect(drawerFinder, findsOneWidget);
+      expect(tester.getTopLeft(drawerFinder).dx, lessThan(hiddenDrawerDx));
+      expect(
+        find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('room-fullscreen-follow-entry-douyu-3125893')),
+        findsOneWidget,
+      );
 
-    await tester.longPressAt(const Offset(1040, 960));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(
+        find.byKey(const Key('room-fullscreen-follow-close-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
-    expect(drawerFinder, findsOneWidget);
-    expect(tester.getTopLeft(drawerFinder).dx, lessThan(hiddenDrawerDx));
-    expect(
-      find.byKey(const Key('room-fullscreen-follow-entry-bilibili-6')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('room-fullscreen-follow-entry-douyu-3125893')),
-      findsOneWidget,
-    );
+      expect(
+        tester.getTopLeft(drawerFinder).dx,
+        greaterThanOrEqualTo(hiddenDrawerDx),
+      );
+    },
+  );
 
-    await tester.tap(
-      find.byKey(const Key('room-fullscreen-follow-close-button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(
-      tester.getTopLeft(drawerFinder).dx,
-      greaterThanOrEqualTo(hiddenDrawerDx),
-    );
-  });
-
-  testWidgets(
+  testRoomWidgets(
     'fullscreen follow drawer switches room and can exit fullscreen',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -1656,7 +1684,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'fullscreen follow drawer switches room in-place without MDK pre-stop flash',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -1730,7 +1758,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'fullscreen follow-room switch keeps gesture controls and chrome auto-hide working',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -1871,7 +1899,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'fullscreen follow drawer stays in room when in-place switch fails',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -1943,7 +1971,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  testRoomWidgets(
     'fullscreen follow drawer ignores repeated taps while transition is active',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -2026,7 +2054,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Second tap while transitionInFlight is ignored — no double stop storm.
-      expect(player.events.where((event) => event == 'stop').length, lessThan(2));
+      expect(
+        player.events.where((event) => event == 'stop').length,
+        lessThan(2),
+      );
 
       runtime.completeRefresh();
       await tester.pump();
@@ -2037,73 +2068,74 @@ void main() {
     },
   );
 
-  testWidgets('room follow watchlist loads lazily after opening follow tab', (
-    tester,
-  ) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    var detailCalls = 0;
+  testRoomWidgets(
+    'room follow watchlist loads lazily after opening follow tab',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      var detailCalls = 0;
 
-    bootstrap.providerRegistry.register(
-      ProviderRegistration(
-        descriptor: _kWidgetTestFollowDescriptor,
-        builder: () => _WidgetTestFollowProvider(
-          onRoomDetail: (roomId) async {
-            detailCalls += 1;
-            return LiveRoomDetail(
-              providerId: _kWidgetTestFollowProviderId,
-              roomId: roomId,
-              title: '$roomId-title',
-              streamerName: roomId,
-              sourceUrl: 'https://example.com/$roomId',
-              isLive: true,
-            );
-          },
+      bootstrap.providerRegistry.register(
+        ProviderRegistration(
+          descriptor: _kWidgetTestFollowDescriptor,
+          builder: () => _WidgetTestFollowProvider(
+            onRoomDetail: (roomId) async {
+              detailCalls += 1;
+              return LiveRoomDetail(
+                providerId: _kWidgetTestFollowProviderId,
+                roomId: roomId,
+                title: '$roomId-title',
+                streamerName: roomId,
+                sourceUrl: 'https://example.com/$roomId',
+                isLive: true,
+              );
+            },
+          ),
         ),
-      ),
-    );
-    bootstrap.providerRegistry.clearCache();
+      );
+      bootstrap.providerRegistry.clearCache();
 
-    await bootstrap.followRepository.upsert(
-      const FollowRecord(
-        providerId: ProviderId('widget_test_follow'),
-        roomId: 'follow-1',
-        streamerName: '关注主播',
-      ),
-    );
-
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap),
-          providerId: _kWidgetTestFollowProviderId,
-          roomId: 'current-1',
+      await bootstrap.followRepository.upsert(
+        const FollowRecord(
+          providerId: ProviderId('widget_test_follow'),
+          roomId: 'follow-1',
+          streamerName: '关注主播',
         ),
-      ),
-    );
-    await tester.pump();
-    await _pumpRoomPreviewAsyncWork(tester);
+      );
 
-    expect(detailCalls, 1);
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.tap(find.byKey(const Key('room-panel-tab-follow')));
-    await tester.pump();
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap),
+            providerId: _kWidgetTestFollowProviderId,
+            roomId: 'current-1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
 
-    expect(detailCalls, 2);
-    expect(
-      find.byKey(const Key('room-follow-entry-widget_test_follow-follow-1')),
-      findsOneWidget,
-    );
-  });
+      expect(detailCalls, 1);
 
-  testWidgets('following current room updates follow panel snapshot', (
+      await tester.tap(find.byKey(const Key('room-panel-tab-follow')));
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(detailCalls, 2);
+      expect(
+        find.byKey(const Key('room-follow-entry-widget_test_follow-follow-1')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testRoomWidgets('following current room updates follow panel snapshot', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -2170,86 +2202,87 @@ void main() {
     );
   });
 
-  testWidgets('room page confirms before removing current room follow state', (
-    tester,
-  ) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    bootstrap.providerRegistry.register(
-      ProviderRegistration(
-        descriptor: _kWidgetTestFollowDescriptor,
-        builder: () => _WidgetTestFollowProvider(
-          onRoomDetail: (roomId) async {
-            return LiveRoomDetail(
-              providerId: _kWidgetTestFollowProviderId,
-              roomId: roomId,
-              title: '$roomId-title',
-              streamerName: roomId,
-              sourceUrl: 'https://example.com/$roomId',
-              isLive: true,
-            );
-          },
+  testRoomWidgets(
+    'room page confirms before removing current room follow state',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      bootstrap.providerRegistry.register(
+        ProviderRegistration(
+          descriptor: _kWidgetTestFollowDescriptor,
+          builder: () => _WidgetTestFollowProvider(
+            onRoomDetail: (roomId) async {
+              return LiveRoomDetail(
+                providerId: _kWidgetTestFollowProviderId,
+                roomId: roomId,
+                title: '$roomId-title',
+                streamerName: roomId,
+                sourceUrl: 'https://example.com/$roomId',
+                isLive: true,
+              );
+            },
+          ),
         ),
-      ),
-    );
-    bootstrap.providerRegistry.clearCache();
+      );
+      bootstrap.providerRegistry.clearCache();
 
-    await bootstrap.followRepository.upsert(
-      const FollowRecord(
-        providerId: ProviderId('widget_test_follow'),
-        roomId: 'current-1',
-        streamerName: 'current-1',
-      ),
-    );
-
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap),
-          providerId: _kWidgetTestFollowProviderId,
+      await bootstrap.followRepository.upsert(
+        const FollowRecord(
+          providerId: ProviderId('widget_test_follow'),
           roomId: 'current-1',
+          streamerName: 'current-1',
         ),
-      ),
-    );
-    await tester.pump();
-    await _pumpRoomPreviewAsyncWork(tester);
+      );
 
-    expect(find.text('取消关注'), findsOneWidget);
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.tap(find.byKey(const Key('room-follow-toggle-button')));
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap),
+            providerId: _kWidgetTestFollowProviderId,
+            roomId: 'current-1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
 
-    expect(find.text('确认取消'), findsOneWidget);
-    expect(await bootstrap.followRepository.listAll(), hasLength(1));
+      expect(find.text('取消关注'), findsOneWidget);
 
-    await tester.tap(find.text('保留关注'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('room-follow-toggle-button')));
+      await tester.pumpAndSettle();
 
-    expect(find.text('取消关注'), findsOneWidget);
-    expect(await bootstrap.followRepository.listAll(), hasLength(1));
+      expect(find.text('确认取消'), findsOneWidget);
+      expect(await bootstrap.followRepository.listAll(), hasLength(1));
 
-    await tester.tap(find.byKey(const Key('room-follow-toggle-button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('确认取消'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('保留关注'));
+      await tester.pumpAndSettle();
 
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('room-follow-toggle-button')),
-        matching: find.text('关注'),
-      ),
-      findsOneWidget,
-    );
-    expect(await bootstrap.followRepository.listAll(), isEmpty);
-  });
+      expect(find.text('取消关注'), findsOneWidget);
+      expect(await bootstrap.followRepository.listAll(), hasLength(1));
 
-  testWidgets('leaving room stops inline playback', (tester) async {
+      await tester.tap(find.byKey(const Key('room-follow-toggle-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确认取消'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('room-follow-toggle-button')),
+          matching: find.text('关注'),
+        ),
+        findsOneWidget,
+      );
+      expect(await bootstrap.followRepository.listAll(), isEmpty);
+    },
+  );
+
+  testRoomWidgets('leaving room stops inline playback', (tester) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
     await tester.pumpWidget(
@@ -2294,7 +2327,7 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('picture-in-picture failure restores fullscreen UI', (
+  testRoomWidgets('picture-in-picture failure restores fullscreen UI', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -2305,7 +2338,7 @@ void main() {
     final player = TestRecordingPlayer();
     final android = TestRoomAndroidPlaybackBridgeFacade();
     final pipHost = TestRoomPipHostFacade()
-      ..nextEnableStatus = PiPStatus.disabled
+      ..nextEnableStatus = RoomPipStatus.disabled
       ..emitStatusOnEnable = false;
     final platforms = RoomFullscreenSessionPlatforms(
       androidPlaybackBridge: android,
@@ -2363,7 +2396,7 @@ void main() {
     expect(find.byKey(const Key('room-fullscreen-overlay')), findsOneWidget);
   });
 
-  testWidgets('picture-in-picture surface reuses embedded player host', (
+  testRoomWidgets('picture-in-picture surface reuses embedded player host', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -2412,59 +2445,60 @@ void main() {
     );
   });
 
-  testWidgets('lifecycle pause and resume suspends then restores playback', (
-    tester,
-  ) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final player = TestRecordingPlayer();
-    final platforms = RoomFullscreenSessionPlatforms(
-      androidPlaybackBridge: TestRoomAndroidPlaybackBridgeFacade(),
-      pipHost: TestRoomPipHostFacade(),
-      desktopWindow: TestRoomDesktopWindowFacade(),
-      screenAwake: TestRoomScreenAwakeFacade(),
-      systemUi: TestRoomSystemUiFacade(),
-    );
-    addTearDown(() async {
-      await (platforms.pipHost as TestRoomPipHostFacade).dispose();
-      await player.dispose();
-    });
+  testRoomWidgets(
+    'lifecycle pause and resume suspends then restores playback',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final player = TestRecordingPlayer();
+      final platforms = RoomFullscreenSessionPlatforms(
+        androidPlaybackBridge: TestRoomAndroidPlaybackBridgeFacade(),
+        pipHost: TestRoomPipHostFacade(),
+        desktopWindow: TestRoomDesktopWindowFacade(),
+        screenAwake: TestRoomScreenAwakeFacade(),
+        systemUi: TestRoomSystemUiFacade(),
+      );
+      addTearDown(() async {
+        await (platforms.pipHost as TestRoomPipHostFacade).dispose();
+        await player.dispose();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(
-            bootstrap,
-            player: player,
-            platforms: platforms,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(
+              bootstrap,
+              player: player,
+              platforms: platforms,
+            ),
+            providerId: ProviderId.bilibili,
+            roomId: '66666',
           ),
-          providerId: ProviderId.bilibili,
-          roomId: '66666',
         ),
-      ),
-    );
-    await tester.pump();
-    await _pumpRoomPreviewAsyncWork(tester);
-    player.events.clear();
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      player.events.clear();
 
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    await tester.pump();
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-    await tester.pump();
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    await tester.pump();
-    expect(player.events, contains('stop'));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      expect(player.events, contains('stop'));
 
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-    await tester.pump();
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    await tester.pump();
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 120));
-    expect(player.events, contains('play'));
-  });
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(player.events, contains('play'));
+    },
+  );
 
-  testWidgets(
+  testRoomWidgets(
     'leaving room while already in picture-in-picture keeps playback',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -2538,7 +2572,7 @@ void main() {
     },
   );
 
-  testWidgets('chaturbate private show room opens with status marker', (
+  testRoomWidgets('chaturbate private show room opens with status marker', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -2568,7 +2602,7 @@ void main() {
     expect(find.text('暂时打不开这个直播间'), findsNothing);
   });
 
-  testWidgets('super chat empty state is plain text without surface card', (
+  testRoomWidgets('super chat empty state is plain text without surface card', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -2610,80 +2644,81 @@ void main() {
     expect(find.byType(AppSurfaceCard), findsNothing);
   });
 
-  testWidgets('player super chat overlay expires after configured duration', (
-    tester,
-  ) async {
-    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
-    final roomUiPreferences = await bootstrap.loadRoomUiPreferences();
-    await bootstrap.updateRoomUiPreferences(
-      roomUiPreferences.copyWith(playerSuperChatDisplaySeconds: 3),
-    );
+  testRoomWidgets(
+    'player super chat overlay expires after configured duration',
+    (tester) async {
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      final roomUiPreferences = await bootstrap.loadRoomUiPreferences();
+      await bootstrap.updateRoomUiPreferences(
+        roomUiPreferences.copyWith(playerSuperChatDisplaySeconds: 3),
+      );
 
-    bootstrap.providerRegistry.register(
-      ProviderRegistration(
-        descriptor: _kWidgetTestDanmakuDescriptor,
-        builder: () => _WidgetTestDanmakuProvider(
-          createSession: () => _ScriptedDanmakuSession(
-            onConnect: (controller) async {
-              controller.add(
-                LiveMessage(
-                  type: LiveMessageType.superChat,
-                  content: '醒目留言测试',
-                  userName: '测试用户',
-                  timestamp: DateTime.now(),
-                ),
-              );
-            },
+      bootstrap.providerRegistry.register(
+        ProviderRegistration(
+          descriptor: _kWidgetTestDanmakuDescriptor,
+          builder: () => _WidgetTestDanmakuProvider(
+            createSession: () => _ScriptedDanmakuSession(
+              onConnect: (controller) async {
+                controller.add(
+                  LiveMessage(
+                    type: LiveMessageType.superChat,
+                    content: '醒目留言测试',
+                    userName: '测试用户',
+                    timestamp: DateTime.now(),
+                  ),
+                );
+              },
+            ),
           ),
         ),
-      ),
-    );
-    bootstrap.providerRegistry.clearCache();
+      );
+      bootstrap.providerRegistry.clearCache();
 
-    tester.view.physicalSize = const Size(1080, 1920);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RoomPreviewPage(
-          dependencies: _roomDependencies(bootstrap),
-          providerId: _kWidgetTestDanmakuProviderId,
-          roomId: 'super-chat-room',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoomPreviewPage(
+            dependencies: _roomDependencies(bootstrap),
+            providerId: _kWidgetTestDanmakuProviderId,
+            roomId: 'super-chat-room',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await _pumpRoomPreviewAsyncWork(tester);
-    await _pumpUntilFinder(
-      tester,
-      find.byKey(const Key('room-inline-player-tap-target')),
-    );
+      );
+      await tester.pump();
+      await _pumpRoomPreviewAsyncWork(tester);
+      await _pumpUntilFinder(
+        tester,
+        find.byKey(const Key('room-inline-player-tap-target')),
+      );
 
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump(const Duration(milliseconds: 40));
-    await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tap(find.byKey(const Key('room-inline-player-tap-target')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(
-      find.byKey(const Key('room-player-super-chat-overlay')),
-      findsOneWidget,
-    );
+      expect(
+        find.byKey(const Key('room-player-super-chat-overlay')),
+        findsOneWidget,
+      );
 
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pump();
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pump();
 
-    expect(
-      find.byKey(const Key('room-player-super-chat-overlay')),
-      findsNothing,
-    );
-  });
+      expect(
+        find.byKey(const Key('room-player-super-chat-overlay')),
+        findsNothing,
+      );
+    },
+  );
 
-  testWidgets('danmaku reconnects automatically after disconnect notice', (
+  testRoomWidgets('danmaku reconnects automatically after disconnect notice', (
     tester,
   ) async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -2743,7 +2778,7 @@ void main() {
     expect(sessionCreateCount, 2);
   });
 
-  testWidgets(
+  testRoomWidgets(
     'disposed room ignores stale danmaku reconnect completion after replacement',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -2871,7 +2906,7 @@ void main() {
     );
   });
 
-  testWidgets(
+  testRoomWidgets(
     'renders friendly error overlay and retry button when playback has error status',
     (tester) async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
@@ -2921,9 +2956,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byType(RoomFullscreenOverlaySection),
-          matching: find.text(
-            '加载超时，请尝试刷新。',
-          ),
+          matching: find.text('加载超时，请尝试刷新。'),
         ),
         findsOneWidget,
       );
@@ -3119,7 +3152,7 @@ class _WidgetTestDanmakuProvider extends LiveProvider
   }
 }
 
-class _ScriptedDanmakuSession implements DanmakuSession {
+class _ScriptedDanmakuSession extends DanmakuSession {
   _ScriptedDanmakuSession({required this.onConnect});
 
   final Future<void> Function(StreamController<LiveMessage> controller)
@@ -3288,9 +3321,7 @@ class _RecordingPlayer implements BasePlayer {
     // Keep any diagnostics the test already seeded (e.g. debug sheet size).
     if ((_currentDiagnostics.width ?? 0) <= 0 ||
         (_currentDiagnostics.height ?? 0) <= 0) {
-      _emitDiagnostics(
-        _currentDiagnostics.copyWith(width: 1280, height: 720),
-      );
+      _emitDiagnostics(_currentDiagnostics.copyWith(width: 1280, height: 720));
     }
     _emit(
       _currentState.copyWith(

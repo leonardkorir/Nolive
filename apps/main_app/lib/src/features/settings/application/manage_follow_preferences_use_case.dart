@@ -46,8 +46,10 @@ class LoadFollowPreferencesUseCase {
     final displayMode = decodeDisplayMode(
       await settingsRepository.readValue<Object?>('follow_display_mode'),
     );
-    final autoRefreshEnabled = await settingsRepository
-            .readValue<bool>('follow_auto_refresh_enabled') ??
+    final autoRefreshEnabled =
+        await settingsRepository.readValue<bool>(
+          'follow_auto_refresh_enabled',
+        ) ??
         defaults.autoRefreshEnabled;
     final autoRefreshIntervalMinutes = normalizeIntervalMinutes(
       await settingsRepository.readValue<Object?>(

@@ -17,6 +17,7 @@ class PlayerSettingsPage extends StatefulWidget {
 
 class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
   late Future<PlayerPreferences> _future;
+
   /// Optimistic UI copy so toggles (especially custom output) feel instant
   /// and do not snap back to [_fallbackPreferences] while Future reloads.
   PlayerPreferences? _preferences;
@@ -166,9 +167,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                       onChanged: (value) {
                         _update(
                           current: preferences,
-                          next: preferences.copyWith(
-                            autoQualityEnabled: value,
-                          ),
+                          next: preferences.copyWith(autoQualityEnabled: value),
                         );
                       },
                     ),
@@ -199,8 +198,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                             key: Key('player-wifi-quality-${preference.name}'),
                             label: Text(_labelOfQuality(preference)),
                             selected:
-                                preferences.wifiQualityPreference ==
-                                preference,
+                                preferences.wifiQualityPreference == preference,
                             onSelected: !qualityPreferenceEnabled
                                 ? null
                                 : (_) {
@@ -524,8 +522,9 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 next: preferences.copyWith(
                   mpvAllowExternalNativeWindow: value,
                   // External path needs an explicit VO; keep embed-safe when off.
-                  mpvCustomOutputEnabled:
-                      value ? true : preferences.mpvCustomOutputEnabled,
+                  mpvCustomOutputEnabled: value
+                      ? true
+                      : preferences.mpvCustomOutputEnabled,
                   mpvVideoOutputDriver: nextVo,
                 ),
               );
@@ -599,10 +598,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            '音频输出驱动 (--ao)',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
+          Text('音频输出驱动 (--ao)', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             key: ValueKey(
@@ -637,7 +633,10 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
             ),
           ),
           const SizedBox(height: 12),
-          Text('硬件解码器 (--hwdec)', style: Theme.of(context).textTheme.titleSmall),
+          Text(
+            '硬件解码器 (--hwdec)',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             key: ValueKey(
@@ -783,4 +782,3 @@ const PlayerPreferences _fallbackPreferences = PlayerPreferences(
   androidPipHideDanmakuEnabled: true,
   scaleMode: PlayerScaleMode.contain,
 );
-

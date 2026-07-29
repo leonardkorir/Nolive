@@ -7,6 +7,7 @@ import 'douyu_live_data_source.dart';
 import 'douyu_preview_data_source.dart';
 import 'douyu_sign_service.dart';
 import 'douyu_transport.dart';
+import 'douyu_danmaku_token.dart';
 
 class DouyuProvider extends LiveProvider
     implements
@@ -34,10 +35,7 @@ class DouyuProvider extends LiveProvider
     final ownedTransport = transport == null ? HttpDouyuTransport() : null;
     final resolvedTransport = transport ?? ownedTransport!;
     final ownedSignService = signService == null
-        ? HttpDouyuSignService(
-            transport: resolvedTransport,
-            deviceId: deviceId,
-          )
+        ? HttpDouyuSignService(transport: resolvedTransport, deviceId: deviceId)
         : null;
     final resolvedSignService = signService ?? ownedSignService!;
     return DouyuProvider(

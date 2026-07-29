@@ -3,7 +3,6 @@ import 'dart:math';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
-import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
 
@@ -127,14 +126,12 @@ class CredentialMigrationBundleCodec {
       combinedCipherText.sublist(0, combinedCipherText.length - _macLength),
       nonce: nonce,
       mac: Mac(
-          combinedCipherText.sublist(combinedCipherText.length - _macLength)),
+        combinedCipherText.sublist(combinedCipherText.length - _macLength),
+      ),
     );
 
     try {
-      final clearText = await _cipher.decrypt(
-        secretBox,
-        secretKey: secretKey,
-      );
+      final clearText = await _cipher.decrypt(secretBox, secretKey: secretKey);
       final payload = jsonDecode(utf8.decode(clearText));
       if (payload is! Map<String, dynamic>) {
         throw const FormatException('迁移包明文结构无效。');
@@ -143,9 +140,8 @@ class CredentialMigrationBundleCodec {
       if (rawCredentials is! Map) {
         throw const FormatException('迁移包缺少 credentials。');
       }
-      final createdAt = DateTime.tryParse(
-            payload['created_at']?.toString() ?? '',
-          ) ??
+      final createdAt =
+          DateTime.tryParse(payload['created_at']?.toString() ?? '') ??
           DateTime.tryParse(decoded['created_at']?.toString() ?? '') ??
           DateTime.now();
       final credentials = <String, String>{};
@@ -171,10 +167,7 @@ class CredentialMigrationBundleCodec {
     }
   }
 
-  static Uint8List _decodeBytes(
-    Object? raw, {
-    required String fieldName,
-  }) {
+  static Uint8List _decodeBytes(Object? raw, {required String fieldName}) {
     final encoded = raw?.toString().trim() ?? '';
     if (encoded.isEmpty) {
       throw FormatException('迁移包缺少 $fieldName。');
@@ -208,9 +201,7 @@ class ExportCredentialMigrationBundleUseCase {
 
   final SecureCredentialStore secureCredentialStore;
 
-  Future<String> call({
-    required String password,
-  }) async {
+  Future<String> call({required String password}) async {
     final credentials = await secureCredentialStore.readAll();
     final exportable = <String, String>{
       for (final entry in credentials.entries)
@@ -263,11 +254,11 @@ class ImportCredentialMigrationBundleUseCase {
   }
 
   void _invalidateProviderCaches() {
-    providerRegistry?.invalidate(ProviderId.bilibili);
-    providerRegistry?.invalidate(ProviderId.chaturbate);
-    providerRegistry?.invalidate(ProviderId.douyin);
-    providerRegistry?.invalidate(ProviderId.twitch);
-    providerRegistry?.invalidate(ProviderId.youtube);
+    // Clear everything rather than naming providers: the hand-written list
+    // silently omitted Stripchat, whose cookie and Mouflon keys are both
+    // secure credentials, so a cached Stripchat provider kept using values
+    // this migration had already moved or removed.
+    providerRegistry?.clearCache();
     if (providerCatalogRevision != null) {
       providerCatalogRevision!.value += 1;
     }
@@ -294,11 +285,10 @@ class ClearSensitiveCredentialsUseCase {
     for (final key in SensitiveSettingKeys.secureCredentialKeys) {
       await settingsRepository.remove(key);
     }
-    providerRegistry?.invalidate(ProviderId.bilibili);
-    providerRegistry?.invalidate(ProviderId.chaturbate);
-    providerRegistry?.invalidate(ProviderId.douyin);
-    providerRegistry?.invalidate(ProviderId.twitch);
-    providerRegistry?.invalidate(ProviderId.youtube);
+    // Same reason as the migration path: a named list cannot be trusted to
+    // cover every provider holding a secure credential, and this one is the
+    // "forget my credentials" action.
+    providerRegistry?.clearCache();
     if (providerCatalogRevision != null) {
       providerCatalogRevision!.value += 1;
     }

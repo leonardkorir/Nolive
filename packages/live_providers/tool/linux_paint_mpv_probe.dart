@@ -20,21 +20,19 @@ Future<int> mpvDecode(LivePlayUrl play, {int frames = 20}) async {
     args.add('--http-header-fields=${e.key}: ${e.value}');
   }
   args.add(play.url);
-  final r = await Process.run(
-    'mpv',
-    args,
-    environment: Platform.environment,
-  );
+  final r = await Process.run('mpv', args, environment: Platform.environment);
   final err = r.stderr.toString();
   final out = r.stdout.toString();
-  final ok = r.exitCode == 0 ||
+  final ok =
+      r.exitCode == 0 ||
       err.contains('Exiting... (End of file)') ||
       out.contains('VO:') ||
       err.contains('VO:');
   stdout.writeln(
     'mpv_exit=${r.exitCode} ok=$ok headers=${play.headers.length}',
   );
-  for (final line in '$err\n$out'.split('\n').where((l) => l.trim().isNotEmpty).take(12)) {
+  for (final line
+      in '$err\n$out'.split('\n').where((l) => l.trim().isNotEmpty).take(12)) {
     stdout.writeln('  $line');
   }
   return ok ? 0 : r.exitCode;

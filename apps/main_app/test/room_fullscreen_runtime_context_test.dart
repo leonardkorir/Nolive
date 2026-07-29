@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_runtime_context.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_runtime_context.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 import 'room_fullscreen_test_fakes.dart';

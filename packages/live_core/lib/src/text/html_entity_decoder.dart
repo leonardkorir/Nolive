@@ -26,13 +26,11 @@ class HtmlEntityDecoder {
     'rsquo': '’',
   };
 
-  static final RegExp _entityPattern =
-      RegExp(r'&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);');
+  static final RegExp _entityPattern = RegExp(
+    r'&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);',
+  );
 
-  static String decode(
-    String value, {
-    int maxPasses = defaultMaxPasses,
-  }) {
+  static String decode(String value, {int maxPasses = defaultMaxPasses}) {
     if (!value.contains('&') || maxPasses <= 0) {
       return value;
     }

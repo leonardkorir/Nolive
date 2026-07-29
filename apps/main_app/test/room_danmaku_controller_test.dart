@@ -4,35 +4,40 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
+import 'package:live_providers/live_providers.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
+import 'package:nolive_app/src/features/room/application/open_room_danmaku_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
-import 'package:nolive_app/src/features/room/presentation/room_danmaku_controller.dart';
+import 'package:nolive_app/src/features/room/application/room_danmaku_controller.dart';
 
 void main() {
-  test('danmaku chrome state gate skips no-op and fires on session/reconnect', () {
-    const initial = RoomDanmakuState.initial();
-    expect(
-      shouldScheduleFullRoomPageRebuildForDanmakuState(
-        previous: initial,
-        next: initial,
-      ),
-      isFalse,
-    );
-    expect(
-      shouldScheduleFullRoomPageRebuildForDanmakuState(
-        previous: initial,
-        next: initial.copyWith(reconnectScheduled: true),
-      ),
-      isTrue,
-    );
-    expect(
-      shouldScheduleFullRoomPageRebuildForDanmakuState(
-        previous: initial,
-        next: initial.copyWith(reconnectInFlight: true),
-      ),
-      isTrue,
-    );
-  });
+  test(
+    'danmaku chrome state gate skips no-op and fires on session/reconnect',
+    () {
+      const initial = RoomDanmakuState.initial();
+      expect(
+        shouldScheduleFullRoomPageRebuildForDanmakuState(
+          previous: initial,
+          next: initial,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldScheduleFullRoomPageRebuildForDanmakuState(
+          previous: initial,
+          next: initial.copyWith(reconnectScheduled: true),
+        ),
+        isTrue,
+      );
+      expect(
+        shouldScheduleFullRoomPageRebuildForDanmakuState(
+          previous: initial,
+          next: initial.copyWith(reconnectInFlight: true),
+        ),
+        isTrue,
+      );
+    },
+  );
 
   test(
     'danmaku connect error retry logic (stripchat timeout + chaturbate non-retryable)',
@@ -122,6 +127,202 @@ void main() {
     },
   );
 
+  test('danmaku diagnostics report the provider session, not the lease', () {
+    // The lease wrapper must stay transparent: room traces print the session
+    // runtimeType to explain *why* danmaku is or is not flowing, and a room
+    // that fell back to ProviderUnavailableDanmakuSession has to be
+    // distinguishable from one with a real connection.
+    final inner = _ScriptedDanmakuSession(onConnect: (_) async {});
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: _kRoomDanmakuTestDescriptor,
+          builder: () => _RoomDanmakuTestProvider(createSession: () => inner),
+        ),
+      );
+    final leased = LeasedDanmakuSession(
+      inner,
+      registry.lease(_kRoomDanmakuTestProviderId),
+    );
+
+    expect(identical(unwrapDanmakuSession(leased), inner), isTrue);
+    expect(identical(unwrapDanmakuSession(inner), inner), isTrue);
+    expect(unwrapDanmakuSession(null), isNull);
+  });
+
+  test('blocked keywords are counted so the panel can report them', () async {
+    // Without a published count, an over-broad keyword rule is
+    // indistinguishable from a dead danmaku connection: a device capture had
+    // 87 of 93 douyu messages dropped while the panel read "等待新消息".
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+    bootstrap.providerRegistry.register(
+      ProviderRegistration(
+        descriptor: _kRoomDanmakuTestDescriptor,
+        builder: () => _RoomDanmakuTestProvider(
+          createSession: () => _ScriptedDanmakuSession(
+            onConnect: (controller) async {
+              for (final content in const ['spam one', 'keep me', 'spam two']) {
+                controller.add(
+                  LiveMessage(
+                    type: LiveMessageType.chat,
+                    content: content,
+                    userName: 'tester',
+                    timestamp: DateTime.now(),
+                  ),
+                );
+              }
+            },
+          ),
+        ),
+      ),
+    );
+    bootstrap.providerRegistry.clearCache();
+
+    final dependencies = RoomPreviewDependencies.fromBootstrap(bootstrap);
+    final controller = RoomDanmakuController(
+      dependencies: RoomDanmakuDependencies.fromPreviewDependencies(
+        dependencies,
+      ),
+      providerId: _kRoomDanmakuTestProviderId,
+    );
+
+    expect(controller.filteredDropped.value, 0);
+
+    final snapshot = await bootstrap.loadRoom(
+      providerId: _kRoomDanmakuTestProviderId,
+      roomId: 'room-1',
+    );
+    controller.configure(
+      blockedKeywords: const <String>['spam'],
+      preferNativeBatchMask: false,
+      playerSuperChatDisplaySeconds: 3,
+    );
+    final session = await dependencies.openRoomDanmaku(
+      providerId: _kRoomDanmakuTestProviderId,
+      detail: snapshot.detail,
+    );
+    await controller.bindSession(
+      activeRoomDetail: snapshot.detail,
+      session: session,
+    );
+    // The feed flushes on a 120ms periodic timer; wait past two windows so a
+    // message split across batches is counted too.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    expect(controller.filteredDropped.value, 2);
+    expect(
+      controller.messages.value.map((item) => item.content),
+      contains('keep me'),
+    );
+    expect(
+      controller.messages.value.any((item) => item.content.contains('spam')),
+      isFalse,
+    );
+
+    await controller.current.session?.disconnect();
+    controller.dispose();
+    await Future<void>.delayed(Duration.zero);
+  });
+
+  test(
+    'filteredDropped resets on null-session bind and on closeSession',
+    () async {
+      // Room A drops messages, then room B has no danmaku session. Without a
+      // boundary reset the panel still showed A's "已隐藏 N 条" on B.
+      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+      bootstrap.providerRegistry.register(
+        ProviderRegistration(
+          descriptor: _kRoomDanmakuTestDescriptor,
+          builder: () => _RoomDanmakuTestProvider(
+            createSession: () => _ScriptedDanmakuSession(
+              onConnect: (controller) async {
+                for (final content in const [
+                  'spam one',
+                  'keep me',
+                  'spam two',
+                ]) {
+                  controller.add(
+                    LiveMessage(
+                      type: LiveMessageType.chat,
+                      content: content,
+                      userName: 'tester',
+                      timestamp: DateTime.now(),
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+      );
+      bootstrap.providerRegistry.clearCache();
+
+      final dependencies = RoomPreviewDependencies.fromBootstrap(bootstrap);
+      final controller = RoomDanmakuController(
+        dependencies: RoomDanmakuDependencies.fromPreviewDependencies(
+          dependencies,
+        ),
+        providerId: _kRoomDanmakuTestProviderId,
+      );
+
+      final roomA = await bootstrap.loadRoom(
+        providerId: _kRoomDanmakuTestProviderId,
+        roomId: 'room-a',
+      );
+      controller.configure(
+        blockedKeywords: const <String>['spam'],
+        preferNativeBatchMask: false,
+        playerSuperChatDisplaySeconds: 3,
+      );
+      final sessionA = await dependencies.openRoomDanmaku(
+        providerId: _kRoomDanmakuTestProviderId,
+        detail: roomA.detail,
+      );
+      await controller.bindSession(
+        activeRoomDetail: roomA.detail,
+        session: sessionA,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(controller.filteredDropped.value, 2);
+
+      final roomB = await bootstrap.loadRoom(
+        providerId: _kRoomDanmakuTestProviderId,
+        roomId: 'room-b',
+      );
+      await controller.bindSession(
+        activeRoomDetail: roomB.detail,
+        session: null,
+      );
+      expect(
+        controller.filteredDropped.value,
+        0,
+        reason: 'a room with no session must not inherit the prior drop count',
+      );
+
+      // Bind again with drops, then close: the listenable must return to zero
+      // even though close never starts telemetry.
+      final sessionA2 = await dependencies.openRoomDanmaku(
+        providerId: _kRoomDanmakuTestProviderId,
+        detail: roomA.detail,
+      );
+      await controller.bindSession(
+        activeRoomDetail: roomA.detail,
+        session: sessionA2,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(controller.filteredDropped.value, greaterThan(0));
+      await controller.closeSession();
+      expect(
+        controller.filteredDropped.value,
+        0,
+        reason: 'closeSession is a room boundary for the chat panel count',
+      );
+
+      controller.dispose();
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
+
   test('room danmaku controller exposes messages and clears feed', () async {
     final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
     bootstrap.providerRegistry.register(
@@ -162,12 +363,10 @@ void main() {
       preferNativeBatchMask: false,
       playerSuperChatDisplaySeconds: 3,
     );
-    final session =
-        (await dependencies.openRoomDanmaku(
-              providerId: _kRoomDanmakuTestProviderId,
-              detail: snapshot.detail,
-            ))
-            as _ScriptedDanmakuSession?;
+    final session = (await dependencies.openRoomDanmaku(
+      providerId: _kRoomDanmakuTestProviderId,
+      detail: snapshot.detail,
+    ));
     await controller.bindSession(
       activeRoomDetail: snapshot.detail,
       session: session,
@@ -292,12 +491,10 @@ void main() {
       preferNativeBatchMask: false,
       playerSuperChatDisplaySeconds: 3,
     );
-    final session =
-        await dependencies.openRoomDanmaku(
-              providerId: _kRoomDanmakuTestProviderId,
-              detail: snapshot.detail,
-            )
-            as _ScriptedDanmakuSession?;
+    final session = await dependencies.openRoomDanmaku(
+      providerId: _kRoomDanmakuTestProviderId,
+      detail: snapshot.detail,
+    );
     await controller.bindSession(
       activeRoomDetail: snapshot.detail,
       session: session,
@@ -373,12 +570,10 @@ void main() {
         preferNativeBatchMask: false,
         playerSuperChatDisplaySeconds: 3,
       );
-      final session =
-          await dependencies.openRoomDanmaku(
-                providerId: _kRoomDanmakuTestProviderId,
-                detail: snapshot.detail,
-              )
-              as _ScriptedDanmakuSession?;
+      final session = await dependencies.openRoomDanmaku(
+        providerId: _kRoomDanmakuTestProviderId,
+        detail: snapshot.detail,
+      );
       await controller.bindSession(
         activeRoomDetail: snapshot.detail,
         session: session,
@@ -454,12 +649,10 @@ void main() {
         preferNativeBatchMask: false,
         playerSuperChatDisplaySeconds: 3,
       );
-      final session =
-          (await dependencies.openRoomDanmaku(
-                providerId: _kRoomDanmakuTestProviderId,
-                detail: snapshot.detail,
-              ))
-              as _ScriptedDanmakuSession?;
+      final session = (await dependencies.openRoomDanmaku(
+        providerId: _kRoomDanmakuTestProviderId,
+        detail: snapshot.detail,
+      ));
       await controller.bindSession(
         activeRoomDetail: snapshot.detail,
         session: session,
@@ -724,6 +917,7 @@ void main() {
     () async {
       final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
       var sessionCreateCount = 0;
+      final createdSessions = <_ScriptedDanmakuSession>[];
       final traces = <String>[];
 
       bootstrap.providerRegistry.register(
@@ -732,7 +926,7 @@ void main() {
           builder: () => _RoomDanmakuTestProvider(
             createSession: () {
               sessionCreateCount += 1;
-              return _ScriptedDanmakuSession(
+              final created = _ScriptedDanmakuSession(
                 onConnect: (controller) async {
                   controller.add(
                     LiveMessage(
@@ -744,6 +938,8 @@ void main() {
                   );
                 },
               );
+              createdSessions.add(created);
+              return created;
             },
           ),
         ),
@@ -768,12 +964,10 @@ void main() {
         preferNativeBatchMask: false,
         playerSuperChatDisplaySeconds: 3,
       );
-      final session =
-          (await dependencies.openRoomDanmaku(
-                providerId: _kRoomDanmakuTestProviderId,
-                detail: snapshot.detail,
-              ))
-              as _ScriptedDanmakuSession?;
+      final session = (await dependencies.openRoomDanmaku(
+        providerId: _kRoomDanmakuTestProviderId,
+        detail: snapshot.detail,
+      ));
       await controller.bindSession(
         activeRoomDetail: snapshot.detail,
         session: session,
@@ -788,7 +982,7 @@ void main() {
 
       expect(controller.current.session, isNull);
       expect(sessionCreateCount, 1);
-      expect(session?.didDisconnect, isTrue);
+      expect(createdSessions.single.didDisconnect, isTrue);
 
       await controller.handleLifecycleState(
         state: AppLifecycleState.resumed,
@@ -1095,7 +1289,7 @@ class _RoomDanmakuTestProvider extends LiveProvider
   }
 }
 
-class _ScriptedDanmakuSession implements DanmakuSession {
+class _ScriptedDanmakuSession extends DanmakuSession {
   _ScriptedDanmakuSession({required this.onConnect});
 
   final Future<void> Function(StreamController<LiveMessage> controller)
@@ -1119,7 +1313,7 @@ class _ScriptedDanmakuSession implements DanmakuSession {
   }
 }
 
-class _BlockingDisconnectDanmakuSession implements DanmakuSession {
+class _BlockingDisconnectDanmakuSession extends DanmakuSession {
   _BlockingDisconnectDanmakuSession(this._disconnectCompleter);
 
   final Completer<void> _disconnectCompleter;
@@ -1143,7 +1337,7 @@ class _BlockingDisconnectDanmakuSession implements DanmakuSession {
   }
 }
 
-class _LingeringDanmakuSession implements DanmakuSession {
+class _LingeringDanmakuSession extends DanmakuSession {
   _LingeringDanmakuSession({required this.onConnect});
 
   final Future<void> Function(StreamController<LiveMessage> controller)

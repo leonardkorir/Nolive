@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_presentation_helpers.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_view_data.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_view_data.dart';
 
 bool isRoomAutoCloseOptionSelected({
   required int minutes,
@@ -14,8 +14,9 @@ bool isRoomAutoCloseOptionSelected({
   if (scheduledCloseAt == null) {
     return false;
   }
-  final remainingMinutes =
-      scheduledCloseAt.difference(now ?? DateTime.now()).inMinutes;
+  final remainingMinutes = scheduledCloseAt
+      .difference(now ?? DateTime.now())
+      .inMinutes;
   return (remainingMinutes - minutes).abs() <= 1;
 }
 
@@ -114,10 +115,8 @@ Future<void> showRoomPlayerDebugSheet({
             );
             children.addAll(
               diagnostics.videoParams.entries.map(
-                (entry) => _RoomDebugMetadataRow(
-                  label: entry.key,
-                  value: entry.value,
-                ),
+                (entry) =>
+                    _RoomDebugMetadataRow(label: entry.key, value: entry.value),
               ),
             );
           }
@@ -131,10 +130,8 @@ Future<void> showRoomPlayerDebugSheet({
             );
             children.addAll(
               diagnostics.audioParams.entries.map(
-                (entry) => _RoomDebugMetadataRow(
-                  label: entry.key,
-                  value: entry.value,
-                ),
+                (entry) =>
+                    _RoomDebugMetadataRow(label: entry.key, value: entry.value),
               ),
             );
           }
@@ -205,10 +202,11 @@ Future<void> showRoomAutoCloseSheet({
               for (final minutes in const [15, 30, 60, 120])
                 ListTile(
                   title: Text('$minutes 分钟后关闭'),
-                  trailing: isRoomAutoCloseOptionSelected(
-                    minutes: minutes,
-                    scheduledCloseAt: scheduledCloseAt,
-                  )
+                  trailing:
+                      isRoomAutoCloseOptionSelected(
+                        minutes: minutes,
+                        scheduledCloseAt: scheduledCloseAt,
+                      )
                       ? const Icon(Icons.check_rounded)
                       : null,
                   onTap: () {
@@ -313,8 +311,9 @@ Future<void> showRoomQuickActionsSheet({
                     ListTile(
                       key: const Key('room-quick-pip-button'),
                       contentPadding: EdgeInsets.zero,
-                      leading:
-                          const Icon(Icons.picture_in_picture_alt_outlined),
+                      leading: const Icon(
+                        Icons.picture_in_picture_alt_outlined,
+                      ),
                       title: const Text('小窗播放'),
                       subtitle: currentViewData.hasPlayback
                           ? null
@@ -490,10 +489,7 @@ Future<void> showRoomLineSheet({
 }
 
 class _RoomDebugMetadataRow extends StatelessWidget {
-  const _RoomDebugMetadataRow({
-    required this.label,
-    required this.value,
-  });
+  const _RoomDebugMetadataRow({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -510,16 +506,13 @@ class _RoomDebugMetadataRow extends StatelessWidget {
             child: Text(
               label,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              value,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            child: Text(value, style: Theme.of(context).textTheme.bodyMedium),
           ),
         ],
       ),

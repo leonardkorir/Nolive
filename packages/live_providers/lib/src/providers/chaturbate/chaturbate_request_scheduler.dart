@@ -24,13 +24,17 @@ enum ChaturbateRequestPriority {
 class ChaturbateRequestScheduler {
   ChaturbateRequestScheduler({
     this.maxConcurrent = 1,
+
     /// Spacing for home list / enter-room (high + normal).
     this.minSpacing = const Duration(milliseconds: 350),
+
     /// Stricter spacing only for follow / low-priority work.
     /// Keep ≥2s so follow crawl rarely trips CF 429 at all.
     this.lowMinSpacing = const Duration(seconds: 2),
+
     /// Short cooldown after 429 on high/normal (user-facing paths).
     this.rateLimitCooldown = const Duration(seconds: 3),
+
     /// Base cooldown after 429 on low (follow) only; escalates while low keeps
     /// hitting 429. Does not block high/normal. Prefer not to hit this path —
     /// follow use case aborts the batch on first 429.
@@ -60,8 +64,7 @@ class ChaturbateRequestScheduler {
   final Duration lowRateLimitCooldown;
   final Duration maxLowRateLimitCooldown;
 
-  final Queue<_ChaturbateScheduledJob> _high =
-      Queue<_ChaturbateScheduledJob>();
+  final Queue<_ChaturbateScheduledJob> _high = Queue<_ChaturbateScheduledJob>();
   final Queue<_ChaturbateScheduledJob> _normal =
       Queue<_ChaturbateScheduledJob>();
   final Queue<_ChaturbateScheduledJob> _low = Queue<_ChaturbateScheduledJob>();
@@ -252,10 +255,7 @@ class ChaturbateRequestScheduler {
 }
 
 class _ChaturbateScheduledJob {
-  _ChaturbateScheduledJob({
-    required this.priority,
-    required this.run,
-  });
+  _ChaturbateScheduledJob({required this.priority, required this.run});
 
   final ChaturbateRequestPriority priority;
   final Future<void> Function() run;

@@ -18,16 +18,28 @@ scripts:
       done
     description: Run static analysis for the app and all packages.
 
+  # --reporter=expanded on purpose. The default compact reporter rewrites one
+  # status line in place, so a failure's name and stack are easy to lose when
+  # the output is piped, tailed, or read back from a CI log — which is exactly
+  # how one flaky failure went unidentified. Expanded prints a line per test.
   test:
     run: |
-      (cd apps/main_app && flutter test) && \
+      (cd apps/main_app && flutter test --reporter=expanded) && \
       find packages -mindepth 2 -maxdepth 2 -name pubspec.yaml -print | sort | while IFS= read -r pubspec; do \
         pkg="$(dirname "$pubspec")"; \
         echo "==> testing $pkg"; \
-        (cd "$pkg" && if grep -q 'sdk:.*flutter' pubspec.yaml 2>/dev/null; then flutter test; else dart test; fi) || exit 1; \
+        (cd "$pkg" && if grep -q 'sdk:.*flutter' pubspec.yaml 2>/dev/null; then flutter test --reporter=expanded; else dart test --reporter=expanded; fi) || exit 1; \
       done
     description: Run app and package tests.
 
   format:
     run: dart format apps packages
     description: Format all Dart sources in the workspace.
+
+  # `melos run format -- --set-exit-if-changed` does not work: melos 6.3.3
+  # rejects the flag before it reaches dart format, so a CI step written that
+  # way fails on argument parsing rather than on formatting. Keep the check as
+  # its own script so it means what it says.
+  format-check:
+    run: dart format --output=none --set-exit-if-changed apps packages
+    description: Fail when workspace Dart sources are not formatted.

@@ -30,8 +30,8 @@ class RoomSuperChatPanel extends StatelessWidget {
               child: Text(
                 hasDanmakuSession ? '暂时还没有 SC 消息。' : '当前没有 SC 会话。',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           );
@@ -63,9 +63,11 @@ class RoomSuperChatPanel extends StatelessWidget {
 class RoomChatPanel extends StatelessWidget {
   const RoomChatPanel({
     required this.messagesListenable,
+    required this.filteredDroppedListenable,
     required this.statusListenable,
     required this.resolveAncillaryLoading,
     required this.resolveHasDanmakuSession,
+    required this.resolveDanmakuUnavailableReason,
     required this.room,
     required this.scrollController,
     required this.chatTextSize,
@@ -76,9 +78,16 @@ class RoomChatPanel extends StatelessWidget {
   });
 
   final ValueListenable<List<LiveMessage>> messagesListenable;
+
+  /// How many messages the user's blocked keywords have hidden this session.
+  final ValueListenable<int> filteredDroppedListenable;
   final Listenable statusListenable;
   final bool Function() resolveAncillaryLoading;
   final bool Function() resolveHasDanmakuSession;
+
+  /// Why chat can never arrive, or null for a real connection. A placeholder
+  /// session must not be shown as established.
+  final String? Function() resolveDanmakuUnavailableReason;
   final LiveRoomDetail room;
   final ScrollController scrollController;
   final double chatTextSize;
@@ -89,15 +98,25 @@ class RoomChatPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([messagesListenable, statusListenable]),
+      listenable: Listenable.merge([
+        messagesListenable,
+        filteredDroppedListenable,
+        statusListenable,
+      ]),
       builder: (context, _) {
         final messages = messagesListenable.value;
+        final filteredDropped = filteredDroppedListenable.value;
         final ancillaryLoading = resolveAncillaryLoading();
         final hasDanmakuSession = resolveHasDanmakuSession();
+        final unavailableReason = resolveDanmakuUnavailableReason();
+        // A placeholder session exists but will never deliver a message, so it
+        // must not be presented as an established connection.
+        final danmakuConnected = hasDanmakuSession && unavailableReason == null;
         final showLoadingState = ancillaryLoading && !hasDanmakuSession;
         final theme = Theme.of(context);
-        final statusPresentation =
-            resolveRoomChaturbateStatusPresentation(room);
+        final statusPresentation = resolveRoomChaturbateStatusPresentation(
+          room,
+        );
         if (!hasDanmakuSession || messages.isEmpty) {
           if (statusPresentation != null) {
             return AppSurfaceCard(
@@ -136,7 +155,13 @@ class RoomChatPanel extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      showLoadingState ? '房间页已进入，正在补齐聊天数据' : '当前还没有聊天消息',
+                      showLoadingState
+                          ? '房间页已进入，正在补齐聊天数据'
+                          : unavailableReason != null
+                          ? '当前房间无法接收弹幕'
+                          : filteredDropped > 0
+                          ? '消息已全部被屏蔽词过滤'
+                          : '当前还没有聊天消息',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontSize: chatTextSize,
                         height: 1.28,
@@ -146,9 +171,12 @@ class RoomChatPanel extends StatelessWidget {
                     Text(
                       showLoadingState
                           ? '正在连接弹幕服务器'
-                          : hasDanmakuSession
-                              ? '弹幕连接已建立，等待新消息'
-                              : '可以稍后手动刷新房间状态',
+                          : unavailableReason ??
+                                (filteredDropped > 0
+                                    ? '本次已隐藏 $filteredDropped 条，弹幕连接正常'
+                                    : danmakuConnected
+                                    ? '弹幕连接已建立，等待新消息'
+                                    : '可以稍后手动刷新房间状态'),
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontSize: chatTextSize,
                         height: 1.28,
@@ -158,9 +186,11 @@ class RoomChatPanel extends StatelessWidget {
                     Text(
                       showLoadingState
                           ? '视频和关注状态会继续在后台加载'
-                          : hasDanmakuSession
-                              ? '新消息到达后会在这里继续滚动'
-                              : '弹幕建立后会在这里继续滚动',
+                          : filteredDropped > 0
+                          ? '可在「设置 → 弹幕」调整屏蔽关键词'
+                          : danmakuConnected
+                          ? '新消息到达后会在这里继续滚动'
+                          : '弹幕建立后会在这里继续滚动',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontSize: chatTextSize,
                         height: 1.28,
@@ -173,35 +203,59 @@ class RoomChatPanel extends StatelessWidget {
           );
         }
 
-        final visibleMessages = messages
-            .skip(math.max(0, messages.length - 36))
-            .toList(growable: true)
-          ..sort((left, right) {
-            final leftTime =
-                left.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final rightTime =
-                right.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return leftTime.compareTo(rightTime);
-          });
+        final visibleMessages =
+            messages
+                .skip(math.max(0, messages.length - 36))
+                .toList(growable: true)
+              ..sort((left, right) {
+                final leftTime =
+                    left.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+                final rightTime =
+                    right.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+                return leftTime.compareTo(rightTime);
+              });
+        // Messages are showing, but a wide keyword rule can still be swallowing
+        // most of the room. Say so, quietly, instead of letting a thin chat
+        // look like a weak stream.
+        final hiddenNotice = filteredDropped > 0
+            ? Padding(
+                padding: EdgeInsets.only(bottom: chatTextGap),
+                child: Text(
+                  '已按屏蔽词隐藏 $filteredDropped 条',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              )
+            : null;
+        final chatList = ListView.separated(
+          controller: scrollController,
+          padding: EdgeInsets.zero,
+          physics: const BouncingScrollPhysics(),
+          itemCount: visibleMessages.length,
+          separatorBuilder: (_, __) => SizedBox(height: chatTextGap),
+          itemBuilder: (context, index) {
+            return RoomChatMessageTile(
+              message: visibleMessages[index],
+              fontSize: chatTextSize,
+              gap: 0,
+              bubbleStyle: chatBubbleStyle,
+            );
+          },
+        );
         return Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
             width: double.infinity,
-            child: ListView.separated(
-              controller: scrollController,
-              padding: EdgeInsets.zero,
-              physics: const BouncingScrollPhysics(),
-              itemCount: visibleMessages.length,
-              separatorBuilder: (_, __) => SizedBox(height: chatTextGap),
-              itemBuilder: (context, index) {
-                return RoomChatMessageTile(
-                  message: visibleMessages[index],
-                  fontSize: chatTextSize,
-                  gap: 0,
-                  bubbleStyle: chatBubbleStyle,
-                );
-              },
-            ),
+            child: hiddenNotice == null
+                ? chatList
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      hiddenNotice,
+                      Expanded(child: chatList),
+                    ],
+                  ),
           ),
         );
       },

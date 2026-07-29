@@ -15,10 +15,10 @@ class RoomFollowWatchlistState {
   });
 
   const RoomFollowWatchlistState.initial()
-      : watchlist = null,
-        hydrated = false,
-        isLoading = false,
-        error = null;
+    : watchlist = null,
+      hydrated = false,
+      isLoading = false,
+      error = null;
 
   factory RoomFollowWatchlistState.fromSnapshot(FollowWatchlist? snapshot) {
     return RoomFollowWatchlistState(
@@ -44,8 +44,9 @@ class RoomFollowWatchlistState {
       watchlist: watchlist ?? this.watchlist,
       hydrated: hydrated ?? this.hydrated,
       isLoading: isLoading ?? this.isLoading,
-      error:
-          identical(error, _roomFollowWatchlistSentinel) ? this.error : error,
+      error: identical(error, _roomFollowWatchlistSentinel)
+          ? this.error
+          : error,
     );
   }
 }
@@ -53,14 +54,12 @@ class RoomFollowWatchlistState {
 const Object _roomFollowWatchlistSentinel = Object();
 
 class RoomFollowWatchlistController {
-  RoomFollowWatchlistController({
-    required this.dependencies,
-    this.trace,
-  }) : _state = ValueNotifier<RoomFollowWatchlistState>(
-          RoomFollowWatchlistState.fromSnapshot(
-            dependencies.followWatchlistSnapshot.value,
-          ),
-        ) {
+  RoomFollowWatchlistController({required this.dependencies, this.trace})
+    : _state = ValueNotifier<RoomFollowWatchlistState>(
+        RoomFollowWatchlistState.fromSnapshot(
+          dependencies.followWatchlistSnapshot.value,
+        ),
+      ) {
     dependencies.followWatchlistSnapshot.addListener(_handleSnapshotChanged);
   }
 
@@ -80,12 +79,7 @@ class RoomFollowWatchlistController {
       return;
     }
     final requestId = ++_requestId;
-    _emit(
-      currentState.copyWith(
-        isLoading: true,
-        error: null,
-      ),
-    );
+    _emit(currentState.copyWith(isLoading: true, error: null));
     _trace('follow watchlist load start force=$force');
     try {
       // Full refresh; CB HTTP is paced + priority-queued so list can interleave.
@@ -101,19 +95,11 @@ class RoomFollowWatchlistController {
         return;
       }
       _trace('follow watchlist load failed: $error');
-      _emit(
-        current.copyWith(
-          isLoading: false,
-          error: error,
-        ),
-      );
+      _emit(current.copyWith(isLoading: false, error: error));
     }
   }
 
-  void replaceSnapshot(
-    FollowWatchlist? watchlist, {
-    required bool hydrated,
-  }) {
+  void replaceSnapshot(FollowWatchlist? watchlist, {required bool hydrated}) {
     _requestId += 1;
     if (dependencies.followWatchlistSnapshot.value != watchlist) {
       dependencies.followWatchlistSnapshot.value = watchlist;

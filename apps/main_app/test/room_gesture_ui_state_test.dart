@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nolive_app/src/features/room/presentation/room_gesture_ui_state.dart';
+import 'package:nolive_app/src/features/room/application/room_gesture_ui_state.dart';
 
 void main() {
   test('room gesture ui state exposes stable defaults', () {

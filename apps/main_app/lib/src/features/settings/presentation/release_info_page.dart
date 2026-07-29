@@ -119,6 +119,11 @@ class ReleaseInfoPage extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           const _ReleaseInfoSection(
+            title: '源码构建平台',
+            items: ReleaseInfoManifest.sourceBuildPlatforms,
+          ),
+          const SizedBox(height: 16),
+          const _ReleaseInfoSection(
             title: '延后平台',
             items: ReleaseInfoManifest.deferredPlatforms,
           ),
@@ -129,10 +134,7 @@ class ReleaseInfoPage extends StatelessWidget {
 }
 
 class _ReleaseInfoSection extends StatelessWidget {
-  const _ReleaseInfoSection({
-    required this.title,
-    required this.items,
-  });
+  const _ReleaseInfoSection({required this.title, required this.items});
 
   final String title;
   final List<String> items;
@@ -185,10 +187,7 @@ class _ReleaseInfoSection extends StatelessWidget {
 }
 
 class _ReleaseInfoFactRow extends StatelessWidget {
-  const _ReleaseInfoFactRow({
-    required this.label,
-    required this.value,
-  });
+  const _ReleaseInfoFactRow({required this.label, required this.value});
 
   final String label;
   final String value;

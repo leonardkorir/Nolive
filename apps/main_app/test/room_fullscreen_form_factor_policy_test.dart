@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_form_factor_policy.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_form_factor_policy.dart';
 
 void main() {
   group('resolveRoomFullscreenVideoOrientationMode', () {
@@ -88,7 +88,10 @@ void main() {
   group('looksLikeArcChromeOsVersion', () {
     test('matches ChromeOS ARC version strings', () {
       expect(looksLikeArcChromeOsVersion('R149-16667.55.0'), isTrue);
-      expect(looksLikeArcChromeOsVersion('R149-16667.61.0 release-keys'), isTrue);
+      expect(
+        looksLikeArcChromeOsVersion('R149-16667.61.0 release-keys'),
+        isTrue,
+      );
     });
 
     test('rejects ordinary Android versions', () {

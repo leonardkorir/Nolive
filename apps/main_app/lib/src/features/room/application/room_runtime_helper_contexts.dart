@@ -59,7 +59,8 @@ class RoomRuntimeControlContext {
     return RoomRuntimeControlContext(
       readCurrentState: () => runtime.currentState,
       resolveBackend: () => runtime.backend,
-      ensureBackendWithoutPlaybackState: runtime.ensureBackendWithoutPlaybackState,
+      ensureBackendWithoutPlaybackState:
+          runtime.ensureBackendWithoutPlaybackState,
       resolveSupportsScreenshot: () => runtime.supportsScreenshot,
       captureScreenshot: runtime.captureScreenshot,
     );
@@ -68,7 +69,7 @@ class RoomRuntimeControlContext {
   final PlayerState Function() readCurrentState;
   final PlayerBackend Function() resolveBackend;
   final Future<void> Function(PlayerBackend backend)
-      ensureBackendWithoutPlaybackState;
+  ensureBackendWithoutPlaybackState;
   final bool Function() resolveSupportsScreenshot;
   final Future<Uint8List?> Function() captureScreenshot;
 

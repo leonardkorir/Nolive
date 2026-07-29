@@ -238,9 +238,8 @@ Future<AppBootstrap> createPersistentAppBootstrap({
     // Persist Douyu per-install did before live registry construction.
     final existingDouyuDid =
         (await repositories.settingsRepository.readValue<String>(
-              'provider_douyu_device_id',
-            ))
-            ?.trim() ??
+          'provider_douyu_device_id',
+        ))?.trim() ??
         '';
     final douyuDid = DouyuDeviceId.resolve(
       existingDouyuDid.isEmpty ? null : existingDouyuDid,

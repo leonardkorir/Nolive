@@ -269,7 +269,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                   );
                   Navigator.of(context).pop(parsed);
                 } catch (error) {
-                        showAppErrorSnackBar(context, error);
+                  showAppErrorSnackBar(context, error);
                 }
               },
               child: const Text('导入'),

@@ -19,7 +19,7 @@ abstract interface class TwitchSocketClient {
 
 typedef TwitchSocketClientFactory = TwitchSocketClient Function(Uri uri);
 
-class TwitchDanmakuSession implements DanmakuSession {
+class TwitchDanmakuSession extends DanmakuSession {
   TwitchDanmakuSession({
     required this.roomId,
     TwitchSocketClientFactory? socketClientFactory,

@@ -56,10 +56,8 @@ int modelMapHash(Map<Object?, Object?>? value) {
     value.length,
     Object.hashAllUnordered(
       value.entries.map(
-        (entry) => Object.hash(
-          modelValueHash(entry.key),
-          modelValueHash(entry.value),
-        ),
+        (entry) =>
+            Object.hash(modelValueHash(entry.key), modelValueHash(entry.value)),
       ),
     ),
   );

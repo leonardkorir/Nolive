@@ -38,8 +38,8 @@ abstract class LocalSyncClient {
 
 class HttpLocalSyncClient implements LocalSyncClient {
   HttpLocalSyncClient({HttpClient? client})
-      : _client = client ?? HttpClient(),
-        _ownsClient = client == null {
+    : _client = client ?? HttpClient(),
+      _ownsClient = client == null {
     if (_ownsClient) {
       _client.connectionTimeout = _kConnectTimeout;
       _client.idleTimeout = _kTransferTimeout;
@@ -69,11 +69,7 @@ class HttpLocalSyncClient implements LocalSyncClient {
   @override
   Future<LocalSyncPeerInfo> fetchInfo({required DiscoveredPeer peer}) async {
     final uri = _peerUri(peer, '/info');
-    final response = await _send(
-      method: 'GET',
-      uri: uri,
-      peer: peer,
-    );
+    final response = await _send(method: 'GET', uri: uri, peer: peer);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException(
         'Local sync info failed with status ${response.statusCode}.',
@@ -111,11 +107,7 @@ class HttpLocalSyncClient implements LocalSyncClient {
   @override
   Future<SyncSnapshot> fetchSnapshot({required DiscoveredPeer peer}) async {
     final uri = _peerUri(peer, '/snapshot');
-    final response = await _send(
-      method: 'GET',
-      uri: uri,
-      peer: peer,
-    );
+    final response = await _send(method: 'GET', uri: uri, peer: peer);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException(
         'Local sync snapshot fetch failed with status ${response.statusCode}.',
@@ -164,9 +156,9 @@ class HttpLocalSyncClient implements LocalSyncClient {
       body: jsonEncode(<String, Object?>{
         'categories': {
           for (final entry in snapshots.entries)
-            entry.key.apiValue: jsonDecode(SyncSnapshotJsonCodec.encode(
-              entry.value,
-            )),
+            entry.key.apiValue: jsonDecode(
+              SyncSnapshotJsonCodec.encode(entry.value),
+            ),
         },
       }),
     );
@@ -186,8 +178,9 @@ class HttpLocalSyncClient implements LocalSyncClient {
     String? body,
   }) async {
     try {
-      final request =
-          await _client.openUrl(method, uri).timeout(_kConnectTimeout);
+      final request = await _client
+          .openUrl(method, uri)
+          .timeout(_kConnectTimeout);
       if (contentType != null) {
         request.headers.contentType = contentType;
       }
@@ -234,14 +227,15 @@ class HttpLocalSyncClient implements LocalSyncClient {
     required String path,
     required String body,
   }) {
-    final timestamp =
-        (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000).toString();
+    final timestamp = (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000)
+        .toString();
     final nonce = _generateNonce();
     final bodySha256 = sha256.convert(utf8.encode(body)).toString();
     final payload = '${method.toUpperCase()}$path$timestamp$nonce$bodySha256';
-    final signature = Hmac(sha256, utf8.encode(secret))
-        .convert(utf8.encode(payload))
-        .toString();
+    final signature = Hmac(
+      sha256,
+      utf8.encode(secret),
+    ).convert(utf8.encode(payload)).toString();
     return {
       _timestampHeader: timestamp,
       _nonceHeader: nonce,

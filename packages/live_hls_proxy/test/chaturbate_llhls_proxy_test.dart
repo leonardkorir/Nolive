@@ -2757,30 +2757,32 @@ void main() {
     },
   );
   group('ensureStarted lifecycle', () {
-    test('concurrent ensureStarted single-flight and post-dispose fails closed',
-        () async {
-      final proxy = ChaturbateLlHlsProxy(
-        platformAdapter: _FakePlatformAdapter(),
-        enabledOverride: true,
-      );
-      await Future.wait([
-        proxy.ensureStarted(),
-        proxy.ensureStarted(),
-        proxy.ensureStarted(),
-      ]);
-      await proxy.ensureStarted();
-      await proxy.dispose();
-      await expectLater(
-        proxy.ensureStarted(),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains('disposed'),
+    test(
+      'concurrent ensureStarted single-flight and post-dispose fails closed',
+      () async {
+        final proxy = ChaturbateLlHlsProxy(
+          platformAdapter: _FakePlatformAdapter(),
+          enabledOverride: true,
+        );
+        await Future.wait([
+          proxy.ensureStarted(),
+          proxy.ensureStarted(),
+          proxy.ensureStarted(),
+        ]);
+        await proxy.ensureStarted();
+        await proxy.dispose();
+        await expectLater(
+          proxy.ensureStarted(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('disposed'),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     test('dispose during ensureStarted fails closed', () async {
       final proxy = ChaturbateLlHlsProxy(

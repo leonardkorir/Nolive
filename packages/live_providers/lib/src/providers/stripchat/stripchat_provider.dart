@@ -7,6 +7,7 @@ import 'stripchat_api_client.dart';
 import 'stripchat_data_source.dart';
 import 'stripchat_live_data_source.dart';
 import 'stripchat_preview_data_source.dart';
+import 'stripchat_danmaku_token.dart';
 
 class StripchatProvider extends LiveProvider
     implements

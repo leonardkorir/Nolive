@@ -27,9 +27,15 @@ class NoliveApp extends StatelessWidget {
           locale: kZhHansCnLocale,
           supportedLocales: const [
             Locale.fromSubtags(
-                languageCode: 'zh', scriptCode: 'Hans', countryCode: 'CN'),
+              languageCode: 'zh',
+              scriptCode: 'Hans',
+              countryCode: 'CN',
+            ),
             Locale.fromSubtags(
-                languageCode: 'zh', scriptCode: 'Hant', countryCode: 'TW'),
+              languageCode: 'zh',
+              scriptCode: 'Hant',
+              countryCode: 'TW',
+            ),
             Locale('en'),
             Locale('ja', 'JP'),
           ],
@@ -37,13 +43,14 @@ class NoliveApp extends StatelessWidget {
           builder: (context, child) {
             final mediaQuery = MediaQuery.of(context);
             final isDark = Theme.of(context).brightness == Brightness.dark;
-            final overlayStyle = (isDark
-                    ? SystemUiOverlayStyle.light
-                    : SystemUiOverlayStyle.dark)
-                .copyWith(
-              statusBarColor: Colors.transparent,
-              systemNavigationBarColor: Colors.transparent,
-            );
+            final overlayStyle =
+                (isDark
+                        ? SystemUiOverlayStyle.light
+                        : SystemUiOverlayStyle.dark)
+                    .copyWith(
+                      statusBarColor: Colors.transparent,
+                      systemNavigationBarColor: Colors.transparent,
+                    );
             return AnnotatedRegion<SystemUiOverlayStyle>(
               value: overlayStyle,
               child: MediaQuery(

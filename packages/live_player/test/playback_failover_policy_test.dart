@@ -108,10 +108,7 @@ void main() {
       PlaybackFailoverPolicy.isHardOpenFailure('HTTP 404 Not Found'),
       isTrue,
     );
-    expect(
-      PlaybackFailoverPolicy.isHardOpenFailure('status code 403'),
-      isTrue,
-    );
+    expect(PlaybackFailoverPolicy.isHardOpenFailure('status code 403'), isTrue);
     expect(
       PlaybackFailoverPolicy.isHardOpenFailure(
         'Failed to open: connection timed out',

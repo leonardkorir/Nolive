@@ -23,10 +23,10 @@ SliverGridDelegate buildLiveRoomGridDelegate(BuildContext context) {
   final crossAxisCount = width >= 1280
       ? 5
       : width >= 960
-          ? 4
-          : width >= 620
-              ? 3
-              : 2;
+      ? 4
+      : width >= 620
+      ? 3
+      : 2;
 
   return SliverGridDelegateWithFixedCrossAxisCount(
     crossAxisCount: crossAxisCount,
@@ -41,6 +41,7 @@ class LiveRoomGridCard extends StatelessWidget {
     required this.room,
     required this.descriptor,
     this.onTap,
+
     /// When set (e.g. follow password lock), replaces the live/offline/viewer chip.
     this.statusLabel,
     super.key,
@@ -77,8 +78,9 @@ class LiveRoomGridCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(cardRadius)),
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(cardRadius),
+              ),
               child: AspectRatio(
                 aspectRatio: 16 / 9,
                 child: Stack(
@@ -96,9 +98,7 @@ class LiveRoomGridCard extends StatelessWidget {
                     Positioned(
                       left: 6,
                       top: 6,
-                      child: _ProviderCornerBadge(
-                        descriptor: descriptor,
-                      ),
+                      child: _ProviderCornerBadge(descriptor: descriptor),
                     ),
                     Positioned(
                       left: 0,
@@ -244,9 +244,7 @@ class LiveRoomGridCard extends StatelessWidget {
 }
 
 class _ProviderCornerBadge extends StatelessWidget {
-  const _ProviderCornerBadge({
-    required this.descriptor,
-  });
+  const _ProviderCornerBadge({required this.descriptor});
 
   final ProviderDescriptor descriptor;
 
@@ -293,16 +291,12 @@ class _Placeholder extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [
             accent.withValues(alpha: 0.84),
-            accent.withValues(alpha: 0.38)
+            accent.withValues(alpha: 0.38),
           ],
         ),
       ),
       child: const Center(
-        child: Icon(
-          Icons.live_tv_rounded,
-          color: Colors.white,
-          size: 30,
-        ),
+        child: Icon(Icons.live_tv_rounded, color: Colors.white, size: 30),
       ),
     );
   }

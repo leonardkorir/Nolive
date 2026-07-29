@@ -29,7 +29,10 @@ Future<void> main() async {
     for (var i = 0; i < segs.length - 1; i++) {
       if (segs[i] == 'n') pathN = true;
     }
-    if ((n != null && n.isNotEmpty) || pathN || u.contains('signature') || u.contains('s=')) {
+    if ((n != null && n.isNotEmpty) ||
+        pathN ||
+        u.contains('signature') ||
+        u.contains('s=')) {
       withN.add(u.length > 140 ? '${u.substring(0, 140)}...' : u);
     }
   }

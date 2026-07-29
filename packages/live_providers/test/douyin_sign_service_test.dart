@@ -108,7 +108,10 @@ void main() {
   );
 
   test('defaultCookie is a fixed legal constant, not timestamped fake', () {
-    expect(HttpDouyinSignService.defaultCookie, isNot(contains('local-fallback')));
+    expect(
+      HttpDouyinSignService.defaultCookie,
+      isNot(contains('local-fallback')),
+    );
     expect(
       HttpDouyinSignService.defaultCookie,
       'ttwid=1%7CB1qls3GdnZhUov9o2NxOMxxYS2ff6OSvEWbv0ytbES4%7C1680522049%7C280d802d6d478e3e78d0c807f7c487e7ffec0ae4e5fdd6a0fe74c3c6af149511',

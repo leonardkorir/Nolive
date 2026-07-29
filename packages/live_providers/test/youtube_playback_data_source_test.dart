@@ -729,9 +729,7 @@ class _ManifestOnlyYouTubeApiClient implements YouTubeApiClient {
 }
 
 class _PlaybackBundleYouTubeApiClient implements YouTubeApiClient {
-  _PlaybackBundleYouTubeApiClient({
-    this.playerResponses = const {},
-  });
+  _PlaybackBundleYouTubeApiClient({this.playerResponses = const {}});
 
   final Map<YouTubePlayerClientProfile, Map<String, dynamic>> playerResponses;
   final List<YouTubePlayerClientProfile> playerProfiles =

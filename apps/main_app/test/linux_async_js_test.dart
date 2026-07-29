@@ -21,18 +21,18 @@ void main() {
       );
     });
 
-    test('parsePollPayload returns null while pending (no false completion)', () {
-      expect(LinuxAsyncJsJobCodec.parsePollPayload(null), isNull);
-      expect(
-        LinuxAsyncJsJobCodec.parsePollPayload('{"done":false}'),
-        isNull,
-      );
-      expect(
-        LinuxAsyncJsJobCodec.parsePollPayload('{"done":false,"value":99}'),
-        isNull,
-        reason: 'value must be ignored until done=true',
-      );
-    });
+    test(
+      'parsePollPayload returns null while pending (no false completion)',
+      () {
+        expect(LinuxAsyncJsJobCodec.parsePollPayload(null), isNull);
+        expect(LinuxAsyncJsJobCodec.parsePollPayload('{"done":false}'), isNull);
+        expect(
+          LinuxAsyncJsJobCodec.parsePollPayload('{"done":false,"value":99}'),
+          isNull,
+          reason: 'value must be ignored until done=true',
+        );
+      },
+    );
 
     test('parsePollPayload returns value only after done:true', () {
       final result = LinuxAsyncJsJobCodec.parsePollPayload(

@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_page_rebuild_scope.dart';
-import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
+import 'package:nolive_app/src/features/room/application/room_page_rebuild_scope.dart';
+import 'package:nolive_app/src/features/room/application/room_runtime_helper_contexts.dart';
 import 'package:nolive_app/src/shared/application/app_log.dart';
 
 String formatPlayerDiagnosticsSummary({
@@ -99,7 +99,8 @@ class RoomPlayerRuntimeObserverContext {
 
   /// Optional per-state delay. When null, [unexpectedStopRecoveryDelay] is used.
   /// Hard open failures (Douyu/mpv `Failed to open`) should use near-zero delay.
-  final Duration Function(PlayerState state)? resolveUnexpectedStopRecoveryDelay;
+  final Duration Function(PlayerState state)?
+  resolveUnexpectedStopRecoveryDelay;
 
   Duration recoveryDelayFor(PlayerState state) {
     return resolveUnexpectedStopRecoveryDelay?.call(state) ??
@@ -210,12 +211,9 @@ class RoomPlayerRuntimeObserver {
     _unexpectedStopRecoveryTimer?.cancel();
     _unexpectedStopRecoverySignature = signature;
     final delay = context.recoveryDelayFor(state);
-    _unexpectedStopRecoveryTimer = Timer(
-      delay,
-      () {
-        unawaited(_runUnexpectedStopRecovery(signature));
-      },
-    );
+    _unexpectedStopRecoveryTimer = Timer(delay, () {
+      unawaited(_runUnexpectedStopRecovery(signature));
+    });
     context.trace(
       'player unexpected stop recovery scheduled status=${state.status.name} '
       'delayMs=${delay.inMilliseconds}',

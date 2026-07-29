@@ -1,6 +1,1 @@
-enum ProviderMaturity {
-  planned,
-  inMigration,
-  ready,
-  experimental,
-}
+enum ProviderMaturity { planned, inMigration, ready, experimental }

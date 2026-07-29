@@ -80,42 +80,43 @@ void main() {
     expect(find.text('分区'), findsOneWidget);
   });
 
-  testWidgets('live room grid card shows statusLabel override (password lock)', (
-    tester,
-  ) async {
-    const room = LiveRoom(
-      providerId: ProviderId.chaturbate,
-      roomId: 'locked',
-      title: 'locked room',
-      streamerName: 'locked host',
-      isLive: false,
-    );
+  testWidgets(
+    'live room grid card shows statusLabel override (password lock)',
+    (tester) async {
+      const room = LiveRoom(
+        providerId: ProviderId.chaturbate,
+        roomId: 'locked',
+        title: 'locked room',
+        streamerName: 'locked host',
+        isLive: false,
+      );
 
-    const descriptor = ProviderDescriptor(
-      id: ProviderId.chaturbate,
-      displayName: 'Chaturbate',
-      capabilities: {},
-      supportedPlatforms: {ProviderPlatform.android},
-    );
+      const descriptor = ProviderDescriptor(
+        id: ProviderId.chaturbate,
+        displayName: 'Chaturbate',
+        capabilities: {},
+        supportedPlatforms: {ProviderPlatform.android},
+      );
 
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: SizedBox(
-            width: 220,
-            height: 180,
-            child: LiveRoomGridCard(
-              room: room,
-              descriptor: descriptor,
-              statusLabel: '加锁',
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 220,
+              height: 180,
+              child: LiveRoomGridCard(
+                room: room,
+                descriptor: descriptor,
+                statusLabel: '加锁',
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('加锁'), findsOneWidget);
-    expect(find.text('未开播'), findsNothing);
-    expect(find.text('直播中'), findsNothing);
-  });
+      expect(find.text('加锁'), findsOneWidget);
+      expect(find.text('未开播'), findsNothing);
+      expect(find.text('直播中'), findsNothing);
+    },
+  );
 }

@@ -1,9 +1,8 @@
 import 'dart:async';
-import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_platforms.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
 
 class TestRecordingPlayer implements BasePlayer {
   TestRecordingPlayer({
@@ -70,9 +69,7 @@ class TestRecordingPlayer implements BasePlayer {
     // Keep any diagnostics the test already seeded.
     if ((_currentDiagnostics.width ?? 0) <= 0 ||
         (_currentDiagnostics.height ?? 0) <= 0) {
-      emitDiagnostics(
-        _currentDiagnostics.copyWith(width: 1280, height: 720),
-      );
+      emitDiagnostics(_currentDiagnostics.copyWith(width: 1280, height: 720));
     }
     emit(
       _currentState.copyWith(
@@ -239,17 +236,19 @@ class TestRoomAndroidPlaybackBridgeFacade
 }
 
 class TestRoomPipHostFacade implements RoomPipHostFacade {
-  final StreamController<PiPStatus> _status =
-      StreamController<PiPStatus>.broadcast();
+  final StreamController<RoomPipStatus> _status =
+      StreamController<RoomPipStatus>.broadcast();
   bool pipAvailable = true;
   bool switcherEnabled = false;
-  PiPStatus nextEnableStatus = PiPStatus.enabled;
-  Completer<PiPStatus>? enablePipCompleter;
+  RoomPipStatus nextEnableStatus = RoomPipStatus.enabled;
+  Completer<RoomPipStatus>? enablePipCompleter;
   bool emitStatusOnEnable = true;
-  Rational? lastAspectRatio;
+  RoomPipAspectRatio? lastAspectRatio;
 
   @override
-  Future<PiPStatus> enablePip({required Rational aspectRatio}) async {
+  Future<RoomPipStatus> enablePip({
+    required RoomPipAspectRatio aspectRatio,
+  }) async {
     lastAspectRatio = aspectRatio;
     final status = enablePipCompleter != null
         ? await enablePipCompleter!.future
@@ -260,7 +259,7 @@ class TestRoomPipHostFacade implements RoomPipHostFacade {
     return status;
   }
 
-  void emitStatus(PiPStatus status) {
+  void emitStatus(RoomPipStatus status) {
     _status.add(status);
   }
 
@@ -268,9 +267,10 @@ class TestRoomPipHostFacade implements RoomPipHostFacade {
   Future<bool> isPipAvailable() async => pipAvailable;
 
   @override
-  Stream<PiPStatus> get statusStream => _status.stream;
+  Stream<RoomPipStatus> get statusStream => _status.stream;
 
-  @override
+  /// Not part of [RoomPipHostFacade] any more — the switcher is a widget-layer
+  /// concern. Kept so tests that drive the fake directly still read naturally.
   Widget wrapSwitcher({
     required Widget childWhenDisabled,
     required Widget childWhenEnabled,

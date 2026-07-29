@@ -7,6 +7,7 @@ import 'douyin_live_data_source.dart';
 import 'douyin_preview_data_source.dart';
 import 'douyin_sign_service.dart';
 import 'douyin_transport.dart';
+import 'douyin_danmaku_token.dart';
 
 class DouyinProvider extends LiveProvider
     implements

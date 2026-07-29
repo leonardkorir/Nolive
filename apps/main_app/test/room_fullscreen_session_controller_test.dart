@@ -1,15 +1,14 @@
 import 'dart:async';
 
-import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_runtime_context.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_form_factor_policy.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_runtime_context.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_form_factor_policy.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_platforms.dart';
-import 'package:nolive_app/src/features/room/presentation/room_view_ui_state.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
+import 'package:nolive_app/src/features/room/application/room_view_ui_state.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 import 'room_fullscreen_test_fakes.dart';
@@ -50,9 +49,7 @@ void main() {
         ]),
       );
       expect(
-        harness.traces.any(
-          (line) => line.contains('mode=longEdgeLandscape'),
-        ),
+        harness.traces.any((line) => line.contains('mode=longEdgeLandscape')),
         isTrue,
       );
 
@@ -132,30 +129,29 @@ void main() {
     },
   );
 
-  testWidgets(
-    'fullscreen chrome unlock restores sensor landscape session',
-    (tester) async {
-      final harness = _ControllerHarness();
-      addTearDown(harness.dispose);
+  testWidgets('fullscreen chrome unlock restores sensor landscape session', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness();
+    addTearDown(harness.dispose);
 
-      await harness.controller.enterFullscreen();
-      harness.controller.toggleFullscreenLock();
-      await tester.pump(const Duration(milliseconds: 20));
-      harness.android.events.clear();
+    await harness.controller.enterFullscreen();
+    harness.controller.toggleFullscreenLock();
+    await tester.pump(const Duration(milliseconds: 20));
+    harness.android.events.clear();
 
-      harness.controller.toggleFullscreenLock();
-      await tester.pump(const Duration(milliseconds: 20));
+    harness.controller.toggleFullscreenLock();
+    await tester.pump(const Duration(milliseconds: 20));
 
-      expect(harness.controller.viewUiState.lockFullscreenControls, isFalse);
-      expect(harness.android.events, contains('lockLandscape'));
-      expect(
-        harness.android.events,
-        isNot(contains('freezeFullscreenOrientation')),
-      );
+    expect(harness.controller.viewUiState.lockFullscreenControls, isFalse);
+    expect(harness.android.events, contains('lockLandscape'));
+    expect(
+      harness.android.events,
+      isNot(contains('freezeFullscreenOrientation')),
+    );
 
-      await harness.dispose();
-    },
-  );
+    await harness.dispose();
+  });
 
   testWidgets('phone vertical video locks portrait orientation on Android', (
     tester,
@@ -179,34 +175,34 @@ void main() {
     await harness.dispose();
   });
 
-  testWidgets(
-    'ARC vertical video stays long-edge landscape (no portrait)',
-    (tester) async {
-      final harness = _ControllerHarness(
-        verticalVideo: true,
-        screenSize: const Size(1280, 800),
-        isArcChromeOs: true,
-      );
-      addTearDown(harness.dispose);
+  testWidgets('ARC vertical video stays long-edge landscape (no portrait)', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness(
+      verticalVideo: true,
+      screenSize: const Size(1280, 800),
+      isArcChromeOs: true,
+    );
+    addTearDown(harness.dispose);
 
-      await harness.controller.enterFullscreen();
+    await harness.controller.enterFullscreen();
 
-      // Product decision: Chromebook never portrait — letterbox vertical sources.
-      // Single ARC authority: native lockLandscape only, no Flutter orient lists.
-      expect(harness.android.events, contains('lockLandscape'));
-      expect(harness.android.events, isNot(contains('lockPortraitFullscreen')));
-      expect(harness.systemUi.lastOrientations, isNull);
-      expect(
-        harness.traces.any(
-          (line) =>
-              line.contains('mode=longEdgeLandscape') && line.contains('arc=true'),
-        ),
-        isTrue,
-      );
+    // Product decision: Chromebook never portrait — letterbox vertical sources.
+    // Single ARC authority: native lockLandscape only, no Flutter orient lists.
+    expect(harness.android.events, contains('lockLandscape'));
+    expect(harness.android.events, isNot(contains('lockPortraitFullscreen')));
+    expect(harness.systemUi.lastOrientations, isNull);
+    expect(
+      harness.traces.any(
+        (line) =>
+            line.contains('mode=longEdgeLandscape') &&
+            line.contains('arc=true'),
+      ),
+      isTrue,
+    );
 
-      await harness.dispose();
-    },
-  );
+    await harness.dispose();
+  });
 
   testWidgets(
     'ARC enter/exit fullscreen never dual-writes Flutter orientations',
@@ -239,31 +235,30 @@ void main() {
     },
   );
 
-  testWidgets(
-    'fullscreen chrome lock rolls back UI when freeze fails',
-    (tester) async {
-      final harness = _ControllerHarness(screenSize: const Size(1280, 800));
-      addTearDown(harness.dispose);
+  testWidgets('fullscreen chrome lock rolls back UI when freeze fails', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness(screenSize: const Size(1280, 800));
+    addTearDown(harness.dispose);
 
-      await harness.controller.enterFullscreen();
-      harness.android.freezeFullscreenOrientationResult = false;
-      harness.android.events.clear();
+    await harness.controller.enterFullscreen();
+    harness.android.freezeFullscreenOrientationResult = false;
+    harness.android.events.clear();
 
-      harness.controller.toggleFullscreenLock();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 20));
+    harness.controller.toggleFullscreenLock();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
 
-      expect(harness.android.events, contains('freezeFullscreenOrientation'));
-      expect(harness.controller.viewUiState.lockFullscreenControls, isFalse);
-      expect(harness.controller.viewUiState.showFullscreenChrome, isTrue);
-      expect(
-        harness.traces.any((line) => line.contains('freeze returned false')),
-        isTrue,
-      );
+    expect(harness.android.events, contains('freezeFullscreenOrientation'));
+    expect(harness.controller.viewUiState.lockFullscreenControls, isFalse);
+    expect(harness.controller.viewUiState.showFullscreenChrome, isTrue);
+    expect(
+      harness.traces.any((line) => line.contains('freeze returned false')),
+      isTrue,
+    );
 
-      await harness.dispose();
-    },
-  );
+    await harness.dispose();
+  });
 
   testWidgets(
     'phone vertical chrome lock freezes portrait pose not landscape',
@@ -437,8 +432,7 @@ void main() {
       expect(harness.android.events, isNot(contains('lockPortraitFullscreen')));
       expect(
         harness.traces.any(
-          (line) =>
-              line.contains('re-apply mode=userHoldPortraitOrLandscape'),
+          (line) => line.contains('re-apply mode=userHoldPortraitOrLandscape'),
         ),
         isTrue,
       );
@@ -447,59 +441,65 @@ void main() {
     },
   );
 
+  testWidgets('ARC does not re-apply portrait when video becomes vertical', (
+    tester,
+  ) async {
+    final harness = _ControllerHarness(
+      verticalVideo: false,
+      screenSize: const Size(1280, 800),
+      isArcChromeOs: true,
+    );
+    addTearDown(harness.dispose);
+
+    await harness.controller.enterFullscreen();
+    expect(harness.android.events, contains('lockLandscape'));
+    harness.android.events.clear();
+
+    harness.verticalVideo = true;
+    harness.controller.handlePlayerStateChanged(
+      const PlayerState(
+        backend: PlayerBackend.mpv,
+        status: PlaybackStatus.playing,
+      ),
+      playbackAvailable: true,
+      autoFullscreenEnabled: false,
+      videoAspectMayHaveChanged: true,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+
+    // Mode stays longEdgeLandscape — no re-apply needed / no portrait lock.
+    expect(harness.android.events, isEmpty);
+    expect(
+      harness.traces.any((line) => line.contains('re-apply mode=hardPortrait')),
+      isFalse,
+    );
+
+    await harness.dispose();
+  });
+
   testWidgets(
-    'ARC does not re-apply portrait when video becomes vertical',
+    'enter fullscreen with vertical video sets preferred orientations on non-Android',
     (tester) async {
-      final harness = _ControllerHarness(
-        verticalVideo: false,
-        screenSize: const Size(1280, 800),
-        isArcChromeOs: true,
-      );
+      final harness = _ControllerHarness(verticalVideo: true);
+      harness.android.supported = false;
       addTearDown(harness.dispose);
 
       await harness.controller.enterFullscreen();
-      expect(harness.android.events, contains('lockLandscape'));
-      harness.android.events.clear();
 
-      harness.verticalVideo = true;
-      harness.controller.handlePlayerStateChanged(
-        const PlayerState(
-          backend: PlayerBackend.mpv,
-          status: PlaybackStatus.playing,
-        ),
-        playbackAvailable: true,
-        autoFullscreenEnabled: false,
-        videoAspectMayHaveChanged: true,
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 20));
-
-      // Mode stays longEdgeLandscape — no re-apply needed / no portrait lock.
-      expect(harness.android.events, isEmpty);
+      expect(harness.controller.viewUiState.isFullscreen, isTrue);
       expect(
-        harness.traces.any((line) => line.contains('re-apply mode=hardPortrait')),
-        isFalse,
+        harness.systemUi.lastOrientations,
+        contains(DeviceOrientation.portraitUp),
+      );
+      expect(
+        harness.systemUi.lastOrientations,
+        isNot(contains(DeviceOrientation.landscapeLeft)),
       );
 
       await harness.dispose();
     },
   );
-
-  testWidgets('enter fullscreen with vertical video sets preferred orientations on non-Android', (
-    tester,
-  ) async {
-    final harness = _ControllerHarness(verticalVideo: true);
-    harness.android.supported = false;
-    addTearDown(harness.dispose);
-
-    await harness.controller.enterFullscreen();
-
-    expect(harness.controller.viewUiState.isFullscreen, isTrue);
-    expect(harness.systemUi.lastOrientations, contains(DeviceOrientation.portraitUp));
-    expect(harness.systemUi.lastOrientations, isNot(contains(DeviceOrientation.landscapeLeft)));
-
-    await harness.dispose();
-  });
 
   testWidgets('enter fullscreen clears stale fullscreen lock state', (
     tester,
@@ -541,32 +541,36 @@ void main() {
     await harness.dispose();
   });
 
-  testWidgets('cancel pending fullscreen bootstrap restores tablet orientation', (
-    tester,
-  ) async {
-    final harness = _ControllerHarness(screenSize: const Size(800, 1280));
-    addTearDown(harness.dispose);
+  testWidgets(
+    'cancel pending fullscreen bootstrap restores tablet orientation',
+    (tester) async {
+      final harness = _ControllerHarness(screenSize: const Size(800, 1280));
+      addTearDown(harness.dispose);
 
-    await harness.controller.initialize(startInFullscreen: true);
-    await harness.controller.cancelPendingFullscreenBootstrap(
-      scheduleInlineChrome: true,
-    );
+      await harness.controller.initialize(startInFullscreen: true);
+      await harness.controller.cancelPendingFullscreenBootstrap(
+        scheduleInlineChrome: true,
+      );
 
-    expect(harness.controller.viewUiState.isFullscreen, isFalse);
-    expect(harness.controller.viewUiState.fullscreenBootstrapPending, isFalse);
-    expect(harness.controller.viewUiState.showInlinePlayerChrome, isTrue);
-    expect(harness.android.events, contains('lockPortrait'));
-    expect(
-      harness.systemUi.lastOrientations,
-      containsAll(kRoomAppPreferredOrientations),
-    );
-    expect(
-      harness.systemUi.lastOrientations,
-      isNot(contains(DeviceOrientation.portraitDown)),
-    );
+      expect(harness.controller.viewUiState.isFullscreen, isFalse);
+      expect(
+        harness.controller.viewUiState.fullscreenBootstrapPending,
+        isFalse,
+      );
+      expect(harness.controller.viewUiState.showInlinePlayerChrome, isTrue);
+      expect(harness.android.events, contains('lockPortrait'));
+      expect(
+        harness.systemUi.lastOrientations,
+        containsAll(kRoomAppPreferredOrientations),
+      );
+      expect(
+        harness.systemUi.lastOrientations,
+        isNot(contains(DeviceOrientation.portraitDown)),
+      );
 
-    await harness.dispose();
-  });
+      await harness.dispose();
+    },
+  );
 
   testWidgets('enter fullscreen swallows platform failures and reports them', (
     tester,
@@ -679,7 +683,7 @@ void main() {
   ) async {
     final harness = _ControllerHarness();
     addTearDown(harness.dispose);
-    harness.pipHost.nextEnableStatus = PiPStatus.disabled;
+    harness.pipHost.nextEnableStatus = RoomPipStatus.disabled;
     harness.pipHost.emitStatusOnEnable = false;
     harness.danmakuVisible = true;
     harness.controller.replaceViewUiState(
@@ -708,7 +712,7 @@ void main() {
   ) async {
     final harness = _ControllerHarness();
     addTearDown(harness.dispose);
-    harness.pipHost.nextEnableStatus = PiPStatus.disabled;
+    harness.pipHost.nextEnableStatus = RoomPipStatus.disabled;
     harness.pipHost.emitStatusOnEnable = false;
     harness.controller.replaceViewUiState(
       const RoomViewUiState(isFullscreen: true),
@@ -844,7 +848,7 @@ void main() {
     (tester) async {
       final harness = _ControllerHarness();
       addTearDown(harness.dispose);
-      harness.pipHost.enablePipCompleter = Completer<PiPStatus>();
+      harness.pipHost.enablePipCompleter = Completer<RoomPipStatus>();
       harness.pipHost.emitStatusOnEnable = false;
       harness.controller.replaceViewUiState(
         const RoomViewUiState(isFullscreen: true),
@@ -852,7 +856,7 @@ void main() {
 
       final enterFuture = harness.controller.enterPictureInPicture();
       harness.disposeController();
-      harness.pipHost.enablePipCompleter!.complete(PiPStatus.disabled);
+      harness.pipHost.enablePipCompleter!.complete(RoomPipStatus.disabled);
       await enterFuture;
 
       expect(harness.messages, isEmpty);
@@ -1112,7 +1116,7 @@ class _ControllerHarness {
         updateVolume: (value) {
           volume = value;
         },
-        resolvePipAspectRatio: () => Rational(16, 9),
+        resolvePipAspectRatio: () => RoomPipAspectRatio(width: 16, height: 9),
         resolveScreenSize: () => screenSize,
         resolvePlaybackSourceForLifecycleRestore: () async {
           resolvePlaybackSourceForLifecycleRestoreCalls += 1;

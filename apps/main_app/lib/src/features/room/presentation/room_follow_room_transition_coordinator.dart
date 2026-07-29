@@ -6,15 +6,14 @@ import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/shared/application/app_log.dart';
 
 import 'room_fullscreen_session_controller.dart';
-import 'room_playback_controller.dart';
-import 'room_runtime_helper_contexts.dart';
+import '../application/room_playback_controller.dart';
+import '../application/room_runtime_helper_contexts.dart';
 
 typedef RoomFollowRoomTransitionMountCheck = bool Function();
 typedef RoomFollowRoomTransitionTrace = void Function(String message);
 typedef RoomFollowRoomTransitionEndOfFrame = Future<void> Function();
-typedef RoomFollowRoomTransitionNavigation = FutureOr<void> Function(
-  bool preserveFullscreen,
-);
+typedef RoomFollowRoomTransitionNavigation =
+    FutureOr<void> Function(bool preserveFullscreen);
 typedef RoomFollowRoomTransitionShowMessage = void Function(String message);
 
 @visibleForTesting
@@ -38,7 +37,7 @@ class RoomFollowRoomTransitionCoordinator extends ChangeNotifier {
     required this.isMounted,
     RoomFollowRoomTransitionEndOfFrame? waitForEndOfFrame,
   }) : _waitForEndOfFrame =
-            waitForEndOfFrame ?? (() => WidgetsBinding.instance.endOfFrame);
+           waitForEndOfFrame ?? (() => WidgetsBinding.instance.endOfFrame);
 
   final ProviderId currentProviderId;
   final String currentRoomId;
@@ -176,16 +175,10 @@ class RoomFollowRoomTransitionCoordinator extends ChangeNotifier {
     if (_transitionGeneration != generation) {
       return;
     }
-    _replaceState(
-      inFlight: false,
-      suspendEmbedded: false,
-    );
+    _replaceState(inFlight: false, suspendEmbedded: false);
   }
 
-  void _replaceState({
-    bool? inFlight,
-    bool? suspendEmbedded,
-  }) {
+  void _replaceState({bool? inFlight, bool? suspendEmbedded}) {
     final nextInFlight = inFlight ?? _transitionInFlight;
     final nextSuspend = suspendEmbedded ?? _suspendEmbeddedPlayerForTransition;
     if (_transitionInFlight == nextInFlight &&

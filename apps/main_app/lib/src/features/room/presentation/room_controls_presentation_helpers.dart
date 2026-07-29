@@ -42,7 +42,8 @@ String roomLineLabelOfPlayback(
   if (playUrls.isEmpty) {
     return '线路';
   }
-  final resolved = playUrls
+  final resolved =
+      playUrls
           .firstWhere(
             (item) => item.url == playbackSource.url.toString(),
             orElse: () => playUrls.first,

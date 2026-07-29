@@ -58,11 +58,7 @@ bool isChaturbatePasswordProtectedDetail(LiveRoomDetail detail) {
   if (metadata == null) {
     return false;
   }
-  for (final key in const [
-    'passwordProtected',
-    'hasPassword',
-    'locked',
-  ]) {
+  for (final key in const ['passwordProtected', 'hasPassword', 'locked']) {
     final value = metadata[key];
     if (value == true) {
       return true;

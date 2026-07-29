@@ -25,10 +25,10 @@ double resolveResponsivePageTarget({
           ? basePage
           : basePage + 1.0,
     ScrollDirection.idle => _resolveIdlePageTarget(
-        basePage: basePage,
-        fractionalPage: fractionalPage,
-        settlePageThresholdFraction: settlePageThresholdFraction,
-      ),
+      basePage: basePage,
+      fractionalPage: fractionalPage,
+      settlePageThresholdFraction: settlePageThresholdFraction,
+    ),
   };
 }
 
@@ -68,10 +68,10 @@ class ResponsivePageSwipePhysics extends PageScrollPhysics {
   const ResponsivePageSwipePhysics.topLevel({
     super.parent,
     this.resolveUserScrollDirection,
-  })  : dragStartThreshold = 1,
-        flingDistanceThreshold = 4,
-        flingVelocityThreshold = 80,
-        settlePageThresholdFraction = 0.12;
+  }) : dragStartThreshold = 1,
+       flingDistanceThreshold = 4,
+       flingVelocityThreshold = 80,
+       settlePageThresholdFraction = 0.12;
 
   final double dragStartThreshold;
   final double flingDistanceThreshold;
@@ -126,7 +126,9 @@ class ResponsivePageSwipePhysics extends PageScrollPhysics {
 
   @override
   Simulation? createBallisticSimulation(
-      ScrollMetrics position, double velocity) {
+    ScrollMetrics position,
+    double velocity,
+  ) {
     if ((velocity <= 0.0 && position.pixels <= position.minScrollExtent) ||
         (velocity >= 0.0 && position.pixels >= position.maxScrollExtent)) {
       return super.createBallisticSimulation(position, velocity);
@@ -135,8 +137,8 @@ class ResponsivePageSwipePhysics extends PageScrollPhysics {
     final effectiveVelocityThreshold = velocity == 0
         ? flingVelocityThreshold
         : flingVelocityThreshold > tolerance.velocity
-            ? flingVelocityThreshold
-            : tolerance.velocity;
+        ? flingVelocityThreshold
+        : tolerance.velocity;
     final targetPage = resolveResponsivePageTarget(
       page: _getPage(position),
       velocity: velocity,

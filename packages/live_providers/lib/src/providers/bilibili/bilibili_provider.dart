@@ -9,6 +9,7 @@ import 'bilibili_live_data_source.dart';
 import 'bilibili_preview_data_source.dart';
 import 'bilibili_sign_service.dart';
 import 'bilibili_transport.dart';
+import 'bilibili_danmaku_token.dart';
 
 class BilibiliProvider extends LiveProvider
     implements

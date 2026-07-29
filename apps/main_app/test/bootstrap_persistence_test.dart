@@ -340,9 +340,7 @@ void main() {
         );
         await storageFile.writeAsString(
           jsonEncode({
-            'settings': {
-              'account_bilibili_user_id': 12345,
-            },
+            'settings': {'account_bilibili_user_id': 12345},
             'history': const [],
             'follows': const [],
             'tags': const [],

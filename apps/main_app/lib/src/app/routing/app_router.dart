@@ -64,8 +64,8 @@ class AppRouter {
             roomId: arguments.roomId,
             startInFullscreen: arguments.startInFullscreen,
           ),
-          seamlessTransition: arguments.seamlessTransition ||
-              arguments.startInFullscreen,
+          seamlessTransition:
+              arguments.seamlessTransition || arguments.startInFullscreen,
         );
       case AppRoutes.providerCategories:
         final arguments = settings.arguments;

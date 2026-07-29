@@ -1,7 +1,7 @@
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/application/room_playback_backend_policy.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_action_context.dart';
-import 'package:nolive_app/src/features/room/presentation/room_playback_controller.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_action_context.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_controller.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 
 class RoomControlsSettingsReturnActions {
@@ -29,9 +29,7 @@ class RoomControlsSettingsReturnActions {
         'player settings return enforce backend '
         '${context.runtime.resolveBackend().name} -> ${runtimeBackend.name}',
       );
-      await context.runtime.ensureBackendWithoutPlaybackState(
-        runtimeBackend,
-      );
+      await context.runtime.ensureBackendWithoutPlaybackState(runtimeBackend);
     }
     if (!context.isMounted()) {
       return;

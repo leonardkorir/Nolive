@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap_host_app.dart';
 import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_form_factor_policy.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_form_factor_policy.dart';
 import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:nolive_app/src/shared/application/nfr_frame_timing_telemetry.dart';
 import 'package:window_manager/window_manager.dart';

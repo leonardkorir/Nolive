@@ -7,7 +7,7 @@ import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_action_context.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_action_context.dart';
 import 'package:path_provider/path_provider.dart';
 
 typedef RoomPickScreenshotSavePath =

@@ -118,18 +118,15 @@ void main() {
     expect(message.payload?['gift'], {'id': 'rose'});
   });
 
-  test('LiveRoomDetail compares typed danmaku tokens by value', () {
+  test('LiveRoomDetail compares an out-of-package token by value', () {
     final first = LiveRoomDetail(
       providerId: ProviderId.douyin,
       roomId: '2000',
       title: 'Room',
       streamerName: 'Anchor',
-      danmakuToken: DouyinDanmakuToken(
-        webRid: 'anchor',
+      danmakuToken: _ExternalDanmakuToken(
         roomId: '2000',
-        cookie: 'ttwid=demo',
-        userUniqueId: 'user-1',
-        websocketUris: [
+        endpoints: [
           Uri.parse('wss://webcast3-ws-web-lq.douyin.com/webcast/im/push/v2/'),
         ],
       ),
@@ -139,12 +136,9 @@ void main() {
       roomId: '2000',
       title: 'Room',
       streamerName: 'Anchor',
-      danmakuToken: DouyinDanmakuToken(
-        webRid: 'anchor',
+      danmakuToken: _ExternalDanmakuToken(
         roomId: '2000',
-        cookie: 'ttwid=demo',
-        userUniqueId: 'user-1',
-        websocketUris: [
+        endpoints: [
           Uri.parse('wss://webcast3-ws-web-lq.douyin.com/webcast/im/push/v2/'),
         ],
       ),
@@ -152,28 +146,6 @@ void main() {
 
     expect(first, second);
     expect(first.hashCode, second.hashCode);
-  });
-
-  test('StripchatDanmakuToken compares by value', () {
-    const first = StripchatDanmakuToken(
-      modelId: '12345',
-      websocketUrl: 'wss://ws.stripchat.com/connection/websocket',
-      jwt: 'mock-jwt-token',
-    );
-    const second = StripchatDanmakuToken(
-      modelId: '12345',
-      websocketUrl: 'wss://ws.stripchat.com/connection/websocket',
-      jwt: 'mock-jwt-token',
-    );
-    const different = StripchatDanmakuToken(
-      modelId: '99999',
-      websocketUrl: 'wss://ws.stripchat.com/connection/websocket',
-      jwt: 'mock-jwt-token',
-    );
-
-    expect(first, second);
-    expect(first.hashCode, second.hashCode);
-    expect(first, isNot(different));
   });
 
   test(
@@ -263,4 +235,20 @@ void main() {
       expect(message.userName, expected);
     },
   );
+}
+
+/// A [DanmakuToken] declared outside `live_core`, the way every real provider
+/// declares its own. Its presence here is the point: the core contract must not
+/// need to know the concrete type.
+final class _ExternalDanmakuToken extends DanmakuToken {
+  const _ExternalDanmakuToken({
+    required this.roomId,
+    this.endpoints = const [],
+  });
+
+  final String roomId;
+  final List<Uri> endpoints;
+
+  @override
+  List<Object?> get props => [roomId, endpoints];
 }

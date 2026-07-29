@@ -8,6 +8,7 @@ import 'package:live_providers/src/providers/chaturbate/chaturbate_room_page_par
 import 'package:test/test.dart';
 
 import 'support/chaturbate_fixture_loader.dart';
+import 'package:live_providers/src/providers/chaturbate/chaturbate_danmaku_token.dart';
 
 void main() {
   group(

@@ -562,7 +562,10 @@ void main() {
 
       expect(localSyncClient.pushedSnapshots, hasLength(1));
       final settings = localSyncClient.pushedSnapshots.single.snapshot.settings;
-      expect(settings[SensitiveSettingKeys.syncWebDavPassword], 'webdav-secret');
+      expect(
+        settings[SensitiveSettingKeys.syncWebDavPassword],
+        'webdav-secret',
+      );
       expect(
         settings[SensitiveSettingKeys.accountBilibiliCookie],
         'bili-cookie',

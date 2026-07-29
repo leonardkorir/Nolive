@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:meta/meta.dart';
 
-typedef TwitchWebPlaybackScheduleTimer = Timer Function(
-    Duration duration, void Function() callback);
+typedef TwitchWebPlaybackScheduleTimer =
+    Timer Function(Duration duration, void Function() callback);
 typedef TwitchWebPlaybackIdleDispose = Future<void> Function(String reason);
 
 class TwitchWebPlaybackLifecycle {
@@ -11,9 +11,9 @@ class TwitchWebPlaybackLifecycle {
     required Duration idleDisposeDelay,
     required TwitchWebPlaybackIdleDispose onIdleDispose,
     TwitchWebPlaybackScheduleTimer? scheduleTimer,
-  })  : _idleDisposeDelay = idleDisposeDelay,
-        _onIdleDispose = onIdleDispose,
-        _scheduleTimer = scheduleTimer ?? _defaultScheduleTimer;
+  }) : _idleDisposeDelay = idleDisposeDelay,
+       _onIdleDispose = onIdleDispose,
+       _scheduleTimer = scheduleTimer ?? _defaultScheduleTimer;
 
   final Duration _idleDisposeDelay;
   final TwitchWebPlaybackIdleDispose _onIdleDispose;
@@ -41,20 +41,14 @@ class TwitchWebPlaybackLifecycle {
     return _epoch;
   }
 
-  void endUse(
-    int leaseEpoch, {
-    String? idleReason,
-  }) {
+  void endUse(int leaseEpoch, {String? idleReason}) {
     if (_activeUseCount > 0) {
       _activeUseCount -= 1;
     }
     if (leaseEpoch != _epoch || _activeUseCount != 0 || idleReason == null) {
       return;
     }
-    _scheduleIdleDispose(
-      reason: idleReason,
-      expectedEpoch: leaseEpoch,
-    );
+    _scheduleIdleDispose(reason: idleReason, expectedEpoch: leaseEpoch);
   }
 
   void invalidate() {

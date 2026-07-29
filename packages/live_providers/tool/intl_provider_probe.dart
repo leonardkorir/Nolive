@@ -3,8 +3,16 @@ import 'package:live_providers/src/tooling/provider_smoke.dart';
 
 Future<void> main() async {
   final cases = <ProviderSmokeCase>[
-    ProviderSmokeCase(name: 'twitch', provider: TwitchProvider.live(), query: ''),
-    ProviderSmokeCase(name: 'youtube', provider: YouTubeProvider.live(), query: ''),
+    ProviderSmokeCase(
+      name: 'twitch',
+      provider: TwitchProvider.live(),
+      query: '',
+    ),
+    ProviderSmokeCase(
+      name: 'youtube',
+      provider: YouTubeProvider.live(),
+      query: '',
+    ),
     ProviderSmokeCase(
       name: 'chaturbate',
       provider: ChaturbateProvider.live(),
@@ -22,9 +30,7 @@ Future<void> main() async {
       final r = await runProviderSmokeCase(c);
       print('rooms=${r.rooms.items.length}');
       if (r.selectedRoom != null) {
-        print(
-          'room=${r.selectedRoom!.roomId} title=${r.selectedRoom!.title}',
-        );
+        print('room=${r.selectedRoom!.roomId} title=${r.selectedRoom!.title}');
       }
       if (r.detail != null) {
         print('detail live=${r.detail!.isLive}');

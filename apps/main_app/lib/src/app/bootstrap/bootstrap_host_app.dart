@@ -55,19 +55,19 @@ class _BootstrapHostAppState extends State<BootstrapHostApp> {
   }
 
   Future<void> _disposeBootstrap(AppBootstrap bootstrap) async {
-     try {
-       await bootstrap.dispose();
-     } catch (error, stackTrace) {
-       // Best-effort cleanup for stale bootstrap results.
-       AppLog.instance.error(
-         'bootstrap',
-         'dispose stale bootstrap failed: $error',
-         error: error,
-         stackTrace: stackTrace,
-       );
-       debugPrint('dispose stale bootstrap failed error=$error');
-     }
-   }
+    try {
+      await bootstrap.dispose();
+    } catch (error, stackTrace) {
+      // Best-effort cleanup for stale bootstrap results.
+      AppLog.instance.error(
+        'bootstrap',
+        'dispose stale bootstrap failed: $error',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      debugPrint('dispose stale bootstrap failed error=$error');
+    }
+  }
 
   void _ensureSecureCredentialsReady(AppBootstrap bootstrap) {
     if (identical(_warmedBootstrap, bootstrap)) {

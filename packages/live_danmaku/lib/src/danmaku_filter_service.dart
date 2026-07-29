@@ -6,8 +6,8 @@ import 'danmaku_filter_config.dart';
 
 class DanmakuFilterService {
   DanmakuFilterService({required this.config})
-      : _textRules = _buildTextRules(config),
-        _regexRules = _buildRegexRules(config);
+    : _textRules = _buildTextRules(config),
+      _regexRules = _buildRegexRules(config);
 
   final DanmakuFilterConfig config;
   final List<String> _textRules;
@@ -18,8 +18,19 @@ class DanmakuFilterService {
   }
 
   bool _allow(LiveMessage message) {
-    final haystack =
-        config.caseSensitive ? message.content : message.content.toLowerCase();
+    // App-authored notices are not chat, and they are usually the only thing
+    // explaining why chat is empty (no danmaku token, connection lost). Running
+    // them through the user's blocked keywords meant the explanation could be
+    // silently dropped, leaving an empty panel claiming it was connected.
+    // Provider notices that merely relay upstream content are not exempt: they
+    // do not carry this sender.
+    if (message.userName == kLiveSystemMessageUserName) {
+      return true;
+    }
+
+    final haystack = config.caseSensitive
+        ? message.content
+        : message.content.toLowerCase();
 
     for (final pattern in _regexRules) {
       if (pattern.hasMatch(message.content)) {
@@ -43,9 +54,7 @@ class DanmakuFilterService {
       if (normalized.isEmpty || normalized.startsWith('re:')) {
         continue;
       }
-      rules.add(
-        config.caseSensitive ? normalized : normalized.toLowerCase(),
-      );
+      rules.add(config.caseSensitive ? normalized : normalized.toLowerCase());
     }
     return List<String>.unmodifiable(rules);
   }

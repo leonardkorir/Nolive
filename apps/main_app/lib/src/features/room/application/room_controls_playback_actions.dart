@@ -3,9 +3,10 @@ import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/resolve_play_source_use_case.dart';
 import 'package:nolive_app/src/features/room/application/twitch_playback_recovery.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_action_context.dart';
-import 'package:nolive_app/src/features/room/presentation/room_playback_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_playback_source_helpers.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_action_context.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_controller.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_source_helpers.dart';
+import 'package:nolive_app/src/features/room/application/room_provider_traits.dart';
 
 class RoomControlsPlaybackActions {
   const RoomControlsPlaybackActions({required this.context});
@@ -111,7 +112,8 @@ class RoomControlsPlaybackActions {
       'playerType=${playUrl.metadata?['playerType'] ?? '-'} '
       'playback=${summarizePlaybackSource(source)}',
     );
-    if (context.providerId == ProviderId.twitch) {
+    final traits = roomProviderTraitsFor(context.providerId);
+    if (traits.resetsRecoveryOnManualLineSwitch) {
       context.prepareTwitchForLineSwitch(
         resetAttempts: resetTwitchRecoveryAttempts,
       );
@@ -120,9 +122,7 @@ class RoomControlsPlaybackActions {
       playbackSource: source,
       label: 'manual switch line',
       autoPlay: context.resolveAutoPlayEnabled(),
-      autoPlayDelay: context.providerId == ProviderId.twitch
-          ? const Duration(milliseconds: 120)
-          : Duration.zero,
+      autoPlayDelay: traits.playbackRebindSettleDelay,
       preferFreshBackendBeforeFirstSetSource:
           shouldPreRefreshMdkBackendBeforeSameSourceRebind(
             state: context.runtime.readCurrentState(),
@@ -163,8 +163,8 @@ class RoomControlsPlaybackActions {
     LivePlayQuality? twitchStartupPromotionQuality,
     bool resetTwitchRecoveryAttempts = true,
   }) async {
-    if (context.providerId == ProviderId.twitch ||
-        context.providerId == ProviderId.stripchat) {
+    final traits = roomProviderTraitsFor(context.providerId);
+    if (traits.usesHeadlessStartupPromotion) {
       context.prepareTwitchForResolvedPlayback(
         startupPromotionQuality: twitchStartupPromotionQuality,
         resetAttempts: resetTwitchRecoveryAttempts,
@@ -187,9 +187,7 @@ class RoomControlsPlaybackActions {
         playbackSource: resolved.playbackSource,
         label: 'manual apply source',
         autoPlay: context.resolveAutoPlayEnabled(),
-        autoPlayDelay: context.providerId == ProviderId.twitch
-            ? const Duration(milliseconds: 120)
-            : Duration.zero,
+        autoPlayDelay: traits.playbackRebindSettleDelay,
         preferFreshBackendBeforeFirstSetSource:
             shouldPreRefreshMdkBackendBeforeSameSourceRebind(
               state: currentState,
@@ -227,7 +225,7 @@ class RoomControlsPlaybackActions {
     required ResolvedPlaySource resolved,
     LivePlayQuality? selectedQuality,
   }) {
-    if (context.providerId != ProviderId.chaturbate) {
+    if (!roomProviderTraitsFor(context.providerId).skipsEquivalentProxyRebind) {
       return false;
     }
     final currentSource = currentState.source;

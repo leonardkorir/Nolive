@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_playback_session_state.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_session_state.dart';
 
 void main() {
   test('room playback session state exposes stable defaults', () {

@@ -24,7 +24,7 @@ typedef DouyuSocketClientConnector =
       required Duration connectTimeout,
     });
 
-class DouyuDanmakuSession implements DanmakuSession {
+class DouyuDanmakuSession extends DanmakuSession {
   DouyuDanmakuSession({
     required this.roomId,
     List<String>? socketUrls,

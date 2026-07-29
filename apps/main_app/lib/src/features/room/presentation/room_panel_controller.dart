@@ -2,12 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
-enum RoomPanel {
-  chat,
-  superChat,
-  follow,
-  settings,
-}
+enum RoomPanel { chat, superChat, follow, settings }
 
 @visibleForTesting
 bool shouldSynchronizeRoomPanelPage({

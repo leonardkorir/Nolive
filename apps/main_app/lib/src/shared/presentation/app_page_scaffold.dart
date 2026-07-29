@@ -28,11 +28,7 @@ class AppPageScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       resizeToAvoidBottomInset: resizeToAvoidBottomInset,
-      appBar: AppBar(
-        title: Text(title),
-        leading: leading,
-        actions: actions,
-      ),
+      appBar: AppBar(title: Text(title), leading: leading, actions: actions),
       floatingActionButton: floatingActionButton,
       body: body,
     );

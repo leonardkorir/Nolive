@@ -84,39 +84,41 @@ void main() {
     );
   });
 
-  testWidgets(
-    'immersive loading shell hides landscape side panel chrome',
-    (tester) async {
-      tester.view.physicalSize = const Size(1280, 800);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+  testWidgets('immersive loading shell hides landscape side panel chrome', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
 
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: RoomLoadingRoomShell(
-              immersive: true,
-              data: RoomLoadingShellViewData(
-                providerLabel: 'Bilibili',
-                roomTitle: '房间号 3000',
-                streamerName: '测试主播',
-                avatarLabel: '测',
-                posterUrl: null,
-              ),
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: RoomLoadingRoomShell(
+            immersive: true,
+            data: RoomLoadingShellViewData(
+              providerLabel: 'Bilibili',
+              roomTitle: '房间号 3000',
+              streamerName: '测试主播',
+              avatarLabel: '测',
+              posterUrl: null,
             ),
           ),
         ),
-      );
+      ),
+    );
 
-      expect(find.byKey(const Key('room-loading-shell-immersive')), findsOneWidget);
-      expect(find.byKey(const Key('room-loading-shell')), findsOneWidget);
-      expect(find.byKey(const Key('room-panel-tab-chat')), findsNothing);
-      expect(find.text('房间已经进入，后台继续加载播放和聊天数据'), findsNothing);
-    },
-  );
+    expect(
+      find.byKey(const Key('room-loading-shell-immersive')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('room-loading-shell')), findsOneWidget);
+    expect(find.byKey(const Key('room-panel-tab-chat')), findsNothing);
+    expect(find.text('房间已经进入，后台继续加载播放和聊天数据'), findsNothing);
+  });
 
   testWidgets(
     'room preview sections renders surface, pager and bottom actions',

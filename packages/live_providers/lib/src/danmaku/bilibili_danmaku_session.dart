@@ -8,6 +8,7 @@ import 'package:web_socket_channel/io.dart';
 import 'danmaku_activity_watchdog.dart';
 import 'danmaku_web_socket.dart';
 import 'isolate_danmaku_session.dart';
+import '../providers/bilibili/bilibili_danmaku_token.dart';
 
 typedef BilibiliDanmakuSocketConnector =
     Future<IOWebSocketChannel> Function(

@@ -584,6 +584,8 @@ class HttpChaturbateApiClient implements ChaturbateApiClient {
   String _buildCloudflareChallengeMessage(String context) {
     // Do not claim "cookie expired" here — many CF challenges are path-specific
     // (e.g. room page shell) while play/context still works with the same jar.
+    // The wording embeds kChaturbateCloudflareChallengeMarker so callers can
+    // branch on the failure kind without matching the rest of the prose.
     return 'Chaturbate $context received a Cloudflare challenge page. '
         'If the room still opens, you can ignore this; only update Cookie when '
         'playback or room open fully fails.';

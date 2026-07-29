@@ -10,9 +10,7 @@ void main() {
         ProviderCapability.searchRooms,
         ProviderCapability.playUrls,
       },
-      supportedPlatforms: {
-        ProviderPlatform.android,
-      },
+      supportedPlatforms: {ProviderPlatform.android},
     );
 
     expect(descriptor.supports(ProviderCapability.searchRooms), isTrue);

@@ -7,8 +7,8 @@ class AndroidPlaybackBridge {
   AndroidPlaybackBridge({
     MethodChannel? channel,
     bool Function()? isAndroidPlatform,
-  })  : _channel = channel ?? const MethodChannel(channelName),
-        _isAndroidPlatform = isAndroidPlatform ?? _defaultIsAndroidPlatform;
+  }) : _channel = channel ?? const MethodChannel(channelName),
+       _isAndroidPlatform = isAndroidPlatform ?? _defaultIsAndroidPlatform;
 
   static final AndroidPlaybackBridge instance = AndroidPlaybackBridge();
   static const String channelName = 'nolive/android_playback';
@@ -47,13 +47,10 @@ class AndroidPlaybackBridge {
     required int width,
     required int height,
   }) async {
-    final entered = await _invokeBool(
-      'enterPictureInPicture',
-      {
-        'width': width.clamp(1, 1 << 20),
-        'height': height.clamp(1, 1 << 20),
-      },
-    );
+    final entered = await _invokeBool('enterPictureInPicture', {
+      'width': width.clamp(1, 1 << 20),
+      'height': height.clamp(1, 1 << 20),
+    });
     return entered ?? false;
   }
 

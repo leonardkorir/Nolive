@@ -1,14 +1,16 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'dart:ui' show AppLifecycleState;
+
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_danmaku/live_danmaku.dart';
+import 'package:nolive_app/src/features/room/application/open_room_danmaku_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 import 'package:nolive_app/src/rust/danmaku_batch_mask.dart';
 
-import 'room_danmaku_batch.dart';
+import '../application/room_danmaku_batch.dart';
 
 @immutable
 class RoomDanmakuState {
@@ -188,6 +190,7 @@ class RoomDanmakuController {
   void retargetRoom({required ProviderId providerId}) {
     this.providerId = providerId;
   }
+
   final Duration connectTimeout;
   final Duration danmakuTelemetryInterval;
   final Duration Function(int attempt)? reconnectDelayBuilder;
@@ -195,6 +198,13 @@ class RoomDanmakuController {
   final ValueNotifier<List<LiveMessage>> _messages;
   final ValueNotifier<List<LiveMessage>> _superChats;
   final ValueNotifier<List<LiveMessage>> _playerSuperChats;
+
+  /// Messages this room's blocked keywords removed before display.
+  ///
+  /// Surfaced so an over-broad filter cannot masquerade as "danmaku is broken":
+  /// device captures showed rooms where 87 of 93 messages were dropped while
+  /// the panel still read "弹幕连接已建立，等待新消息".
+  final ValueNotifier<int> _filteredDropped = ValueNotifier<int>(0);
   Future<void>? _disposeFuture;
 
   final List<LiveMessage> _pendingDanmakuMessages = <LiveMessage>[];
@@ -234,6 +244,9 @@ class RoomDanmakuController {
   ValueListenable<List<LiveMessage>> get superChats => _superChats;
 
   ValueListenable<List<LiveMessage>> get playerSuperChats => _playerSuperChats;
+
+  /// Running count of messages hidden by the user's blocked keywords.
+  ValueListenable<int> get filteredDropped => _filteredDropped;
 
   RoomDanmakuState get current => _state.value;
 
@@ -289,6 +302,11 @@ class RoomDanmakuController {
       'bind=$bindGeneration session=${_describeSession(session)}',
     );
     await _disposeSessionInternal(clearSession: true, reason: 'bind start');
+    // Always clear the published drop count at a room boundary. Successful
+    // non-null binds also reset via telemetry start; null-session binds and
+    // abandoned binds must not leave the previous room's total on the panel
+    // ("已隐藏 N 条" for a room that never received those messages).
+    _clearFilteredDroppedListenable();
     if (_disposed || bindGeneration != _bindGeneration) {
       _trace(
         'danmaku bind abandoned room=${activeRoomDetail.roomId} '
@@ -440,6 +458,7 @@ class RoomDanmakuController {
     );
     resetReconnectState();
     await _disposeSessionInternal(clearSession: true, reason: 'close session');
+    _clearFilteredDroppedListenable();
   }
 
   Future<void> handleLifecycleState({
@@ -597,6 +616,7 @@ class RoomDanmakuController {
     _messages.dispose();
     _superChats.dispose();
     _playerSuperChats.dispose();
+    _filteredDropped.dispose();
   }
 
   bool _updateBatchMask({required bool preferNative}) {
@@ -915,6 +935,19 @@ class RoomDanmakuController {
     _danmakuTotalDisplayed = 0;
     _danmakuTotalFilteredDropped = 0;
     _danmakuTotalBatchMaskDropped = 0;
+    _clearFilteredDroppedListenable();
+  }
+
+  /// Zero the UI-facing drop count without requiring a telemetry restart.
+  ///
+  /// Bind with a null session and closeSession never call
+  /// [_startDanmakuTelemetry], so relying only on that path left the previous
+  /// room's total visible as "已隐藏 N 条 / 消息已全部被屏蔽词过滤".
+  void _clearFilteredDroppedListenable() {
+    _danmakuTotalFilteredDropped = 0;
+    if (_filteredDropped.value != 0) {
+      _filteredDropped.value = 0;
+    }
   }
 
   void _recordDanmakuMessageReceived() {
@@ -936,6 +969,9 @@ class RoomDanmakuController {
     }
     _danmakuWindowFilteredDropped += count;
     _danmakuTotalFilteredDropped += count;
+    // Batch-scoped, so this notifies once per incoming batch rather than once
+    // per message.
+    _filteredDropped.value = _danmakuTotalFilteredDropped;
   }
 
   void _recordDanmakuBatchMaskDropped(int count) {
@@ -1002,7 +1038,7 @@ class RoomDanmakuController {
   }
 
   String _describeSession(DanmakuSession? session) {
-    return session?.runtimeType.toString() ?? '-';
+    return unwrapDanmakuSession(session)?.runtimeType.toString() ?? '-';
   }
 
   String _describeRoom(LiveRoomDetail? detail) {

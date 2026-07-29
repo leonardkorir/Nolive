@@ -1,6 +1,7 @@
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/src/providers/stripchat/stripchat_mapper.dart';
 import 'package:test/test.dart';
+import 'package:live_providers/src/providers/stripchat/stripchat_danmaku_token.dart';
 
 void main() {
   group('mapCategories', () {

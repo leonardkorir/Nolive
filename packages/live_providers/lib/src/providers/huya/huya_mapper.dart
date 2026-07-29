@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:live_core/live_core.dart';
 
 import '../provider_json.dart';
+import 'huya_danmaku_token.dart';
 
 class HuyaMapper {
   const HuyaMapper._();
@@ -63,8 +64,7 @@ class HuyaMapper {
     }
 
     final roomData = _decodeMap(roomDataJson, context: 'room data');
-    final isLive =
-        roomData['state'] == 'ON' && roomData['isReplay'] != true;
+    final isLive = roomData['state'] == 'ON' && roomData['isReplay'] != true;
     final streamJsonRaw = _extractJsonObject(html, 'stream:');
 
     Map<String, dynamic> liveInfo = const {};
@@ -143,17 +143,19 @@ class HuyaMapper {
     }
 
     // Prefer stream liveInfo when present; offline may only have roomData.
-    final nick = liveInfo['nick']?.toString() ??
-        roomData['nick']?.toString() ??
-        '';
-    final introduction = liveInfo['introduction']?.toString() ??
+    final nick =
+        liveInfo['nick']?.toString() ?? roomData['nick']?.toString() ?? '';
+    final introduction =
+        liveInfo['introduction']?.toString() ??
         roomData['introduction']?.toString() ??
         '';
-    final screenshot = liveInfo['screenshot']?.toString() ??
+    final screenshot =
+        liveInfo['screenshot']?.toString() ??
         roomData['screenshot']?.toString();
-    final avatar = liveInfo['avatar180']?.toString() ??
-        roomData['avatar180']?.toString();
-    final gameName = liveInfo['gameFullName']?.toString() ??
+    final avatar =
+        liveInfo['avatar180']?.toString() ?? roomData['avatar180']?.toString();
+    final gameName =
+        liveInfo['gameFullName']?.toString() ??
         roomData['gameFullName']?.toString() ??
         '';
 

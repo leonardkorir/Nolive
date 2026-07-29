@@ -7,36 +7,37 @@ class LoadReferenceRoomPreviewUseCase {
   final ProviderRegistry registry;
 
   Future<ReferenceRoomPreview> call() async {
-    final provider = registry.create(ProviderId.bilibili);
-    final roomSearch = provider.requireContract<SupportsRoomSearch>(
-      ProviderCapability.searchRooms,
-    );
-    final roomDetail = provider.requireContract<SupportsRoomDetail>(
-      ProviderCapability.roomDetail,
-    );
-    final playQualities = provider.requireContract<SupportsPlayQualities>(
-      ProviderCapability.playQualities,
-    );
-    final playUrls = provider.requireContract<SupportsPlayUrls>(
-      ProviderCapability.playUrls,
-    );
+    return registry.use(ProviderId.bilibili, (provider) async {
+      final roomSearch = provider.requireContract<SupportsRoomSearch>(
+        ProviderCapability.searchRooms,
+      );
+      final roomDetail = provider.requireContract<SupportsRoomDetail>(
+        ProviderCapability.roomDetail,
+      );
+      final playQualities = provider.requireContract<SupportsPlayQualities>(
+        ProviderCapability.playQualities,
+      );
+      final playUrls = provider.requireContract<SupportsPlayUrls>(
+        ProviderCapability.playUrls,
+      );
 
-    final rooms = await roomSearch.searchRooms('架构');
-    final room = rooms.items.first;
-    final detail = await roomDetail.fetchRoomDetail(room.roomId);
-    final qualities = await playQualities.fetchPlayQualities(detail);
-    final urls = await playUrls.fetchPlayUrls(
-      detail: detail,
-      quality: qualities.first,
-    );
+      final rooms = await roomSearch.searchRooms('架构');
+      final room = rooms.items.first;
+      final detail = await roomDetail.fetchRoomDetail(room.roomId);
+      final qualities = await playQualities.fetchPlayQualities(detail);
+      final urls = await playUrls.fetchPlayUrls(
+        detail: detail,
+        quality: qualities.first,
+      );
 
-    return ReferenceRoomPreview(
-      providerName: provider.descriptor.displayName,
-      roomTitle: detail.title,
-      streamerName: detail.streamerName,
-      defaultQualityLabel: qualities.first.label,
-      playableUrlCount: urls.length,
-    );
+      return ReferenceRoomPreview(
+        providerName: provider.descriptor.displayName,
+        roomTitle: detail.title,
+        streamerName: detail.streamerName,
+        defaultQualityLabel: qualities.first.label,
+        playableUrlCount: urls.length,
+      );
+    });
   }
 }
 

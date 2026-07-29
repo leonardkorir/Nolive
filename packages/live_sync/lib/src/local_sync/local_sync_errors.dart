@@ -31,7 +31,8 @@ String describeLocalSyncError(Object error) {
         message.contains('failed host lookup')) {
       return '无法连接目标设备：请确认对方已启动同步服务，且地址端口正确。';
     }
-    if (message.contains('status 400') || message.contains('invalid_snapshot')) {
+    if (message.contains('status 400') ||
+        message.contains('invalid_snapshot')) {
       return '同步数据格式无效，请升级双方应用后重试。';
     }
     return '局域网同步失败：${error.message}';

@@ -98,8 +98,9 @@ class FollowRecord {
       updatedAt: clearUpdatedAt ? null : (updatedAt ?? this.updatedAt),
       watchDurationSec: watchDurationSec ?? this.watchDurationSec,
       syncDurationSec: syncDurationSec ?? this.syncDurationSec,
-      lastLiveStatus:
-          clearLastLiveStatus ? null : (lastLiveStatus ?? this.lastLiveStatus),
+      lastLiveStatus: clearLastLiveStatus
+          ? null
+          : (lastLiveStatus ?? this.lastLiveStatus),
       lastOnline: clearLastOnline ? null : (lastOnline ?? this.lastOnline),
     );
   }

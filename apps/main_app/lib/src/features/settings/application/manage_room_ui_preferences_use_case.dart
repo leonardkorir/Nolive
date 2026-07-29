@@ -63,13 +63,16 @@ class LoadRoomUiPreferencesUseCase {
       ),
       chatBubbleStyle:
           await settingsRepository.readValue<bool>('room_chat_bubble_style') ??
-              defaults.chatBubbleStyle,
-      showPlayerSuperChat: await settingsRepository
-              .readValue<bool>('room_show_player_super_chat') ??
+          defaults.chatBubbleStyle,
+      showPlayerSuperChat:
+          await settingsRepository.readValue<bool>(
+            'room_show_player_super_chat',
+          ) ??
           defaults.showPlayerSuperChat,
       playerSuperChatDisplaySeconds: _clampInt(
-        await settingsRepository
-            .readValue<int>('room_player_super_chat_display_seconds'),
+        await settingsRepository.readValue<int>(
+          'room_player_super_chat_display_seconds',
+        ),
         min: 3,
         max: 30,
         fallback: defaults.playerSuperChatDisplaySeconds,

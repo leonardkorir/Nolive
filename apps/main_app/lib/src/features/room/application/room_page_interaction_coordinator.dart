@@ -4,7 +4,7 @@ import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_session_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_view_data.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_view_data.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 
 typedef RoomPresentRoute =

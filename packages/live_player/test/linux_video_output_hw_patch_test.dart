@@ -12,7 +12,9 @@ void main() {
     final repoRoot = packageRoot.parent.parent; // simplelive
     final candidates = <File>[
       File.fromUri(
-        repoRoot.uri.resolve('third_party/media_kit_video/linux/video_output.cc'),
+        repoRoot.uri.resolve(
+          'third_party/media_kit_video/linux/video_output.cc',
+        ),
       ),
       File(
         '${Directory.current.path}/../../third_party/media_kit_video/linux/video_output.cc',

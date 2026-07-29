@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_page_rebuild_scope.dart';
-import 'package:nolive_app/src/features/room/presentation/room_player_runtime_observer.dart';
-import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
+import 'package:nolive_app/src/features/room/application/room_page_rebuild_scope.dart';
+import 'package:nolive_app/src/features/room/application/room_player_runtime_observer.dart';
+import 'package:nolive_app/src/features/room/application/room_runtime_helper_contexts.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 import 'room_fullscreen_test_fakes.dart';
@@ -30,11 +30,11 @@ void main() {
         resolvePlaybackAvailable: () => true,
         onPlayerStateChanged:
             (state, {required playbackAvailable, forceRebuild = false}) {
-          forwarded.add((
-            status: state.status,
-            playbackAvailable: playbackAvailable,
-          ));
-        },
+              forwarded.add((
+                status: state.status,
+                playbackAvailable: playbackAvailable,
+              ));
+            },
       ),
     );
     addTearDown(observer.dispose);
@@ -305,15 +305,15 @@ void main() {
           resolvePlaybackAvailable: () => true,
           onPlayerStateChanged:
               (state, {required playbackAvailable, forceRebuild = false}) {
-            final shouldRebuild =
-                shouldScheduleFullRoomPageRebuildForPlayerState(
-                  previous: previousForwarded,
-                  next: state,
-                  forceRebuild: forceRebuild,
-                );
-            forces.add(shouldRebuild);
-            previousForwarded = state;
-          },
+                final shouldRebuild =
+                    shouldScheduleFullRoomPageRebuildForPlayerState(
+                      previous: previousForwarded,
+                      next: state,
+                      forceRebuild: forceRebuild,
+                    );
+                forces.add(shouldRebuild);
+                previousForwarded = state;
+              },
         ),
       );
       addTearDown(observer.dispose);
@@ -390,8 +390,8 @@ void main() {
         resolvePlaybackAvailable: () => true,
         onPlayerStateChanged:
             (_, {required playbackAvailable, forceRebuild = false}) {
-          forwardCount += 1;
-        },
+              forwardCount += 1;
+            },
       ),
     );
     addTearDown(player.dispose);

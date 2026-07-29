@@ -26,15 +26,19 @@ class LoadFollowWatchlistUseCase {
     required this.followRepository,
     required this.registry,
     this.detailTimeout = const Duration(seconds: 12),
+
     /// Extra attempts after the first detail fetch (timeouts / network blips).
     /// Default 2 → up to 3 tries. Tests can pass 0 for a single attempt.
     this.detailRetryCount = 2,
     this.detailRetryBaseDelay = const Duration(milliseconds: 350),
     this.maxConcurrent = 6,
+
     /// Cap concurrent Chaturbate detail fetches (only when scope includes CB).
     this.maxConcurrentChaturbate = 1,
+
     /// Hard cap per refresh — crawl CB slowly across cycles, never stampede.
     this.maxChaturbatePerRefresh = 8,
+
     /// Extra gap between CB follow detail calls (in addition to scheduler).
     /// Goal: stay under CF limits so we rarely see 429 at all.
     this.chaturbateSpacing = const Duration(seconds: 2),
@@ -61,15 +65,19 @@ class LoadFollowWatchlistUseCase {
   final void Function(String message, {Object? error})? onDiagnostic;
 
   Future<FollowWatchlist> call({
-    FollowWatchlistRefreshScope scope = FollowWatchlistRefreshScope.allProviders,
+    FollowWatchlistRefreshScope scope =
+        FollowWatchlistRefreshScope.allProviders,
     void Function(int index, FollowWatchEntry entry)? onEntryResolved,
+
     /// Fires after non-Chaturbate remote work finishes (before CB phase).
     /// Lets the follow tab drop the spinner without waiting on CF-paced CB.
     void Function()? onNonChaturbateComplete,
+
     /// Cycle for *background* large-list sweeps and CB crawl
     /// rotation. CB is always batched — [fullRefresh] only affects non-CB.
     int refreshCycle = 0,
     int largeListThreshold = 100,
+
     /// Non-CB: refresh every row when true. CB is always rate-limited batches.
     bool fullRefresh = true,
   }) async {
@@ -102,8 +110,7 @@ class LoadFollowWatchlistUseCase {
       onEntryResolved?.call(index, localEntry);
     }
 
-    final refreshChaturbate =
-        scope == FollowWatchlistRefreshScope.allProviders;
+    final refreshChaturbate = scope == FollowWatchlistRefreshScope.allProviders;
     final nonChaturbateIndexes = <int>[];
     final chaturbateIndexes = <int>[];
     for (var index = 0; index < follows.length; index += 1) {
@@ -224,8 +231,7 @@ class LoadFollowWatchlistUseCase {
     Object? lastError;
     for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        final provider = registry.create(record.providerId);
-        final detailFuture = () async {
+        final detailFuture = registry.use(record.providerId, (provider) async {
           Object? providerError;
           StackTrace? providerStackTrace;
           try {
@@ -248,11 +254,8 @@ class LoadFollowWatchlistUseCase {
               return overridden;
             }
           }
-          Error.throwWithStackTrace(
-            providerError,
-            providerStackTrace,
-          );
-        }();
+          Error.throwWithStackTrace(providerError, providerStackTrace);
+        });
         final detail = await detailFuture.timeout(detailTimeout);
         final syncedRecord = _buildSyncedRecord(record, detail);
         if (attempt > 1) {
@@ -415,47 +418,24 @@ bool isChaturbateFollowRateLimitError(Object? error) {
 
 /// Transient network / timeout failures worth a short follow-detail retry.
 ///
-/// Includes cold-start transport races seen on device logs:
-/// - `Client is already closed`
-/// - `request failed before response`
+/// Decided structurally via [isTransientTransportFailure] — provider
+/// transports tag transport blips with [ProviderException.transient] and keep
+/// the raw socket / client error as `cause`. Message text is deliberately not
+/// consulted: it is diagnostic output, and matching on it meant a reworded or
+/// localized message silently disabled retries.
+///
+/// Covers the cold-start transport races seen on device logs (`Client is
+/// already closed`, `request failed before response`), which now arrive as a
+/// transient-tagged [ProviderParseException] wrapping a `ClientException`.
 @visibleForTesting
 bool isTransientFollowDetailError(Object? error) {
-  if (error == null) {
+  if (error is ProviderCapabilityException ||
+      error is ProviderContractException ||
+      error is ProviderNotImplementedException) {
+    // Definitive contract answers — the next attempt returns the same thing.
     return false;
   }
-  if (error is TimeoutException) {
-    return true;
-  }
-  final text = error.toString().toLowerCase();
-  // Parse/auth/CF/password lock are not transient network blips.
-  if (text.contains('cloudflare') ||
-      text.contains('challenge page') ||
-      text.contains('requires a password') ||
-      text.contains('room requires a password') ||
-      text.contains('status 401') ||
-      text.contains('status 403') ||
-      text.contains('status 404')) {
-    return false;
-  }
-  return text.contains('timeout') ||
-      text.contains('timed out') ||
-      text.contains('超时') ||
-      text.contains('connection') ||
-      text.contains('socket') ||
-      text.contains('network') ||
-      text.contains('failed host lookup') ||
-      text.contains('connection closed') ||
-      text.contains('connection reset') ||
-      text.contains('already closed') ||
-      text.contains('client is already closed') ||
-      text.contains('failed before response') ||
-      text.contains('before response') ||
-      text.contains('clientexception') ||
-      text.contains('http request failed') ||
-      text.contains('connection refused') ||
-      text.contains('connection aborted') ||
-      text.contains('broken pipe') ||
-      text.contains('software caused connection abort');
+  return isTransientTransportFailure(error);
 }
 
 double _followPriorityScore(FollowRecord record) {

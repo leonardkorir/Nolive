@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_runtime_context.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_runtime_context.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_playback_leave_cleanup_coordinator.dart';
-import 'package:nolive_app/src/features/room/presentation/room_view_ui_state.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_leave_cleanup_coordinator.dart';
+import 'package:nolive_app/src/features/room/application/room_view_ui_state.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 import 'room_fullscreen_test_fakes.dart';
@@ -117,9 +117,9 @@ void main() {
     );
 
     final sw = Stopwatch()..start();
-    await harness.coordinator
-        .cleanupPlaybackOnLeave()
-        .timeout(const Duration(milliseconds: 400));
+    await harness.coordinator.cleanupPlaybackOnLeave().timeout(
+      const Duration(milliseconds: 400),
+    );
     sw.stop();
 
     expect(sw.elapsedMilliseconds, lessThan(350));
@@ -127,10 +127,7 @@ void main() {
       harness.traces.any((line) => line.contains('stop timed out')),
       isTrue,
     );
-    expect(
-      harness.traces,
-      contains('cleanup playback complete backend=mpv'),
-    );
+    expect(harness.traces, contains('cleanup playback complete backend=mpv'));
   });
 }
 
@@ -144,8 +141,9 @@ class _CleanupHarness {
     final playerRuntime = refreshableRuntime
         ? (_refreshRuntime = _RefreshTrackingPlayerRuntime(player))
         : PlayerRuntimeController(player);
-    final baseRuntime =
-        RoomFullscreenRuntimeContext.fromPlayerRuntime(playerRuntime);
+    final baseRuntime = RoomFullscreenRuntimeContext.fromPlayerRuntime(
+      playerRuntime,
+    );
     final hangGate = stopHangGate;
     final runtime = hangGate == null
         ? baseRuntime

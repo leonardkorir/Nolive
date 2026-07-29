@@ -3,7 +3,7 @@ import 'package:live_core/live_core.dart';
 import 'package:nolive_app/src/features/room/application/room_ancillary_controller.dart';
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 import 'package:nolive_app/src/features/room/application/room_session_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_danmaku_controller.dart';
+import 'package:nolive_app/src/features/room/application/room_danmaku_controller.dart';
 
 /// Owns core room session / danmaku / ancillary façades.
 ///
@@ -53,10 +53,7 @@ class RoomPreviewRuntime {
   final RoomDanmakuController danmaku;
   final RoomAncillaryController ancillary;
 
-  void retargetRoom({
-    required ProviderId providerId,
-    required String roomId,
-  }) {
+  void retargetRoom({required ProviderId providerId, required String roomId}) {
     this.providerId = providerId;
     this.roomId = roomId;
     session.retargetRoom(providerId: providerId, roomId: roomId);

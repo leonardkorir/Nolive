@@ -12,12 +12,7 @@ class FollowWatchlist {
 }
 
 /// User-facing follow list order modes (multi-key sorts).
-enum FollowWatchSortMode {
-  liveFirst,
-  alphabetical,
-  watchDuration,
-  recency,
-}
+enum FollowWatchSortMode { liveFirst, alphabetical, watchDuration, recency }
 
 List<FollowWatchEntry> sortFollowWatchEntries(
   List<FollowWatchEntry> input, {
@@ -77,11 +72,7 @@ List<FollowWatchEntry> sortFollowWatchEntries(
 }
 
 class FollowWatchEntry {
-  const FollowWatchEntry({
-    required this.record,
-    this.detail,
-    this.error,
-  });
+  const FollowWatchEntry({required this.record, this.detail, this.error});
 
   final FollowRecord record;
   final LiveRoomDetail? detail;

@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
 import 'package:live_storage/live_storage.dart';
@@ -535,24 +538,21 @@ void main() {
         ..register(
           ProviderRegistration(
             descriptor: cbDescriptor,
-            builder: () => _FakeDetailProvider(
-              (roomId) async {
-                inFlight += 1;
-                if (inFlight > peakInFlight) {
-                  peakInFlight = inFlight;
-                }
-                await Future<void>.delayed(const Duration(milliseconds: 40));
-                inFlight -= 1;
-                return LiveRoomDetail(
-                  providerId: ProviderId.chaturbate,
-                  roomId: roomId,
-                  title: roomId,
-                  streamerName: roomId,
-                  isLive: true,
-                );
-              },
-              descriptor: cbDescriptor,
-            ),
+            builder: () => _FakeDetailProvider((roomId) async {
+              inFlight += 1;
+              if (inFlight > peakInFlight) {
+                peakInFlight = inFlight;
+              }
+              await Future<void>.delayed(const Duration(milliseconds: 40));
+              inFlight -= 1;
+              return LiveRoomDetail(
+                providerId: ProviderId.chaturbate,
+                roomId: roomId,
+                title: roomId,
+                streamerName: roomId,
+                isLive: true,
+              );
+            }, descriptor: cbDescriptor),
           ),
         );
 
@@ -627,79 +627,71 @@ void main() {
         ..register(
           ProviderRegistration(
             descriptor: biliDescriptor,
-            builder: () => _FakeDetailProvider(
-              (roomId) async {
-                order.add('bili');
-                return LiveRoomDetail(
-                  providerId: ProviderId.bilibili,
-                  roomId: roomId,
-                  title: roomId,
-                  streamerName: roomId,
-                  isLive: true,
-                );
-              },
-              descriptor: biliDescriptor,
-            ),
+            builder: () => _FakeDetailProvider((roomId) async {
+              order.add('bili');
+              return LiveRoomDetail(
+                providerId: ProviderId.bilibili,
+                roomId: roomId,
+                title: roomId,
+                streamerName: roomId,
+                isLive: true,
+              );
+            }, descriptor: biliDescriptor),
           ),
         )
         ..register(
           ProviderRegistration(
             descriptor: douyuDescriptor,
-            builder: () => _FakeDetailProvider(
-              (roomId) async {
-                order.add('douyu');
-                return LiveRoomDetail(
-                  providerId: ProviderId.douyu,
-                  roomId: roomId,
-                  title: roomId,
-                  streamerName: roomId,
-                  isLive: true,
-                );
-              },
-              descriptor: douyuDescriptor,
-            ),
+            builder: () => _FakeDetailProvider((roomId) async {
+              order.add('douyu');
+              return LiveRoomDetail(
+                providerId: ProviderId.douyu,
+                roomId: roomId,
+                title: roomId,
+                streamerName: roomId,
+                isLive: true,
+              );
+            }, descriptor: douyuDescriptor),
           ),
         )
         ..register(
           ProviderRegistration(
             descriptor: cbDescriptor,
-            builder: () => _FakeDetailProvider(
-              (roomId) async {
-                expect(
-                  nonCbPhaseDone,
-                  isTrue,
-                  reason: 'Chaturbate must not run before non-CB phase completes',
-                );
-                order.add('cb');
-                await Future<void>.delayed(const Duration(milliseconds: 20));
-                return LiveRoomDetail(
-                  providerId: ProviderId.chaturbate,
-                  roomId: roomId,
-                  title: roomId,
-                  streamerName: roomId,
-                  isLive: true,
-                );
-              },
-              descriptor: cbDescriptor,
-            ),
+            builder: () => _FakeDetailProvider((roomId) async {
+              expect(
+                nonCbPhaseDone,
+                isTrue,
+                reason: 'Chaturbate must not run before non-CB phase completes',
+              );
+              order.add('cb');
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+              return LiveRoomDetail(
+                providerId: ProviderId.chaturbate,
+                roomId: roomId,
+                title: roomId,
+                streamerName: roomId,
+                isLive: true,
+              );
+            }, descriptor: cbDescriptor),
           ),
         );
 
-      final watchlist = await LoadFollowWatchlistUseCase(
-        followRepository: followRepository,
-        registry: registry,
-        maxConcurrent: 4,
-        maxConcurrentChaturbate: 1,
-        maxChaturbatePerRefresh: 20,
-        chaturbateSpacing: Duration.zero,
-      ).call(
-        scope: FollowWatchlistRefreshScope.allProviders,
-        onNonChaturbateComplete: () {
-          nonCbPhaseDone = true;
-          expect(order, containsAll(<String>['bili', 'douyu']));
-          expect(order.where((item) => item == 'cb'), isEmpty);
-        },
-      );
+      final watchlist =
+          await LoadFollowWatchlistUseCase(
+            followRepository: followRepository,
+            registry: registry,
+            maxConcurrent: 4,
+            maxConcurrentChaturbate: 1,
+            maxChaturbatePerRefresh: 20,
+            chaturbateSpacing: Duration.zero,
+          ).call(
+            scope: FollowWatchlistRefreshScope.allProviders,
+            onNonChaturbateComplete: () {
+              nonCbPhaseDone = true;
+              expect(order, containsAll(<String>['bili', 'douyu']));
+              expect(order.where((item) => item == 'cb'), isEmpty);
+            },
+          );
 
       expect(nonCbPhaseDone, isTrue);
       expect(order.where((item) => item == 'cb'), hasLength(3));
@@ -707,31 +699,32 @@ void main() {
     },
   );
 
-  test('Chaturbate follow crawl caps batch size and rotates by cycle', () async {
-    final followRepository = InMemoryFollowRepository();
-    for (var i = 0; i < 12; i += 1) {
-      await followRepository.upsert(
-        FollowRecord(
-          providerId: ProviderId.chaturbate,
-          roomId: 'cb-$i',
-          streamerName: 'CB $i',
-        ),
+  test(
+    'Chaturbate follow crawl caps batch size and rotates by cycle',
+    () async {
+      final followRepository = InMemoryFollowRepository();
+      for (var i = 0; i < 12; i += 1) {
+        await followRepository.upsert(
+          FollowRecord(
+            providerId: ProviderId.chaturbate,
+            roomId: 'cb-$i',
+            streamerName: 'CB $i',
+          ),
+        );
+      }
+      const cbDescriptor = ProviderDescriptor(
+        id: ProviderId.chaturbate,
+        displayName: 'Chaturbate',
+        capabilities: {ProviderCapability.roomDetail},
+        supportedPlatforms: {ProviderPlatform.android},
+        maturity: ProviderMaturity.ready,
       );
-    }
-    const cbDescriptor = ProviderDescriptor(
-      id: ProviderId.chaturbate,
-      displayName: 'Chaturbate',
-      capabilities: {ProviderCapability.roomDetail},
-      supportedPlatforms: {ProviderPlatform.android},
-      maturity: ProviderMaturity.ready,
-    );
-    final fetched = <String>[];
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: cbDescriptor,
-          builder: () => _FakeDetailProvider(
-            (roomId) async {
+      final fetched = <String>[];
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: cbDescriptor,
+            builder: () => _FakeDetailProvider((roomId) async {
               fetched.add(roomId);
               return LiveRoomDetail(
                 providerId: ProviderId.chaturbate,
@@ -740,34 +733,33 @@ void main() {
                 streamerName: roomId,
                 isLive: true,
               );
-            },
-            descriptor: cbDescriptor,
+            }, descriptor: cbDescriptor),
           ),
-        ),
+        );
+
+      final useCase = LoadFollowWatchlistUseCase(
+        followRepository: followRepository,
+        registry: registry,
+        maxChaturbatePerRefresh: 4,
+        chaturbateSpacing: Duration.zero,
       );
+      await useCase.call(
+        scope: FollowWatchlistRefreshScope.allProviders,
+        refreshCycle: 0,
+      );
+      expect(fetched, hasLength(4));
+      final firstBatch = List<String>.from(fetched);
 
-    final useCase = LoadFollowWatchlistUseCase(
-      followRepository: followRepository,
-      registry: registry,
-      maxChaturbatePerRefresh: 4,
-      chaturbateSpacing: Duration.zero,
-    );
-    await useCase.call(
-      scope: FollowWatchlistRefreshScope.allProviders,
-      refreshCycle: 0,
-    );
-    expect(fetched, hasLength(4));
-    final firstBatch = List<String>.from(fetched);
-
-    fetched.clear();
-    await useCase.call(
-      scope: FollowWatchlistRefreshScope.allProviders,
-      refreshCycle: 1,
-    );
-    expect(fetched, hasLength(4));
-    // Rotating batches should not be identical for a 12-item list.
-    expect(fetched, isNot(orderedEquals(firstBatch)));
-  });
+      fetched.clear();
+      await useCase.call(
+        scope: FollowWatchlistRefreshScope.allProviders,
+        refreshCycle: 1,
+      );
+      expect(fetched, hasLength(4));
+      // Rotating batches should not be identical for a 12-item list.
+      expect(fetched, isNot(orderedEquals(firstBatch)));
+    },
+  );
 
   test('Chaturbate follow crawl stops after first 429-like error', () async {
     final followRepository = InMemoryFollowRepository();
@@ -792,22 +784,19 @@ void main() {
       ..register(
         ProviderRegistration(
           descriptor: cbDescriptor,
-          builder: () => _FakeDetailProvider(
-            (roomId) async {
-              calls += 1;
-              if (calls == 1) {
-                throw Exception('Chaturbate context failed with status 429.');
-              }
-              return LiveRoomDetail(
-                providerId: ProviderId.chaturbate,
-                roomId: roomId,
-                title: roomId,
-                streamerName: roomId,
-                isLive: true,
-              );
-            },
-            descriptor: cbDescriptor,
-          ),
+          builder: () => _FakeDetailProvider((roomId) async {
+            calls += 1;
+            if (calls == 1) {
+              throw Exception('Chaturbate context failed with status 429.');
+            }
+            return LiveRoomDetail(
+              providerId: ProviderId.chaturbate,
+              roomId: roomId,
+              title: roomId,
+              streamerName: roomId,
+              isLive: true,
+            );
+          }, descriptor: cbDescriptor),
         ),
       );
 
@@ -823,18 +812,21 @@ void main() {
   });
 
   test('takeRotatingFollowBatch wraps around ranked list', () {
-    expect(
-      takeRotatingFollowBatch([0, 1, 2, 3, 4, 5], cycle: 0, maxTake: 3),
-      [0, 1, 2],
-    );
-    expect(
-      takeRotatingFollowBatch([0, 1, 2, 3, 4, 5], cycle: 1, maxTake: 3),
-      [3, 4, 5],
-    );
-    expect(
-      takeRotatingFollowBatch([0, 1, 2, 3, 4, 5], cycle: 2, maxTake: 3),
-      [0, 1, 2],
-    );
+    expect(takeRotatingFollowBatch([0, 1, 2, 3, 4, 5], cycle: 0, maxTake: 3), [
+      0,
+      1,
+      2,
+    ]);
+    expect(takeRotatingFollowBatch([0, 1, 2, 3, 4, 5], cycle: 1, maxTake: 3), [
+      3,
+      4,
+      5,
+    ]);
+    expect(takeRotatingFollowBatch([0, 1, 2, 3, 4, 5], cycle: 2, maxTake: 3), [
+      0,
+      1,
+      2,
+    ]);
   });
 
   test('isChaturbateFollowRateLimitError detects 429 wording', () {
@@ -847,88 +839,82 @@ void main() {
     expect(isChaturbateFollowRateLimitError(Exception('timeout')), isFalse);
   });
 
-  test(
-    'excludeChaturbate scope never calls Chaturbate room detail',
-    () async {
-      final followRepository = InMemoryFollowRepository();
-      await followRepository.upsert(
-        const FollowRecord(
-          providerId: ProviderId.chaturbate,
-          roomId: 'cb-1',
-          streamerName: '本地CB',
-          lastTitle: '缓存标题',
+  test('excludeChaturbate scope never calls Chaturbate room detail', () async {
+    final followRepository = InMemoryFollowRepository();
+    await followRepository.upsert(
+      const FollowRecord(
+        providerId: ProviderId.chaturbate,
+        roomId: 'cb-1',
+        streamerName: '本地CB',
+        lastTitle: '缓存标题',
+      ),
+    );
+    await followRepository.upsert(
+      const FollowRecord(
+        providerId: ProviderId.bilibili,
+        roomId: '6',
+        streamerName: 'B站',
+      ),
+    );
+
+    var cbDetailCalls = 0;
+    var biliDetailCalls = 0;
+    const cbDescriptor = ProviderDescriptor(
+      id: ProviderId.chaturbate,
+      displayName: 'Chaturbate',
+      capabilities: {ProviderCapability.roomDetail},
+      supportedPlatforms: {ProviderPlatform.android},
+      maturity: ProviderMaturity.ready,
+    );
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: cbDescriptor,
+          builder: () => _FakeDetailProvider((roomId) async {
+            cbDetailCalls += 1;
+            return LiveRoomDetail(
+              providerId: ProviderId.chaturbate,
+              roomId: roomId,
+              title: '远程CB',
+              streamerName: '远程CB',
+              isLive: true,
+            );
+          }, descriptor: cbDescriptor),
+        ),
+      )
+      ..register(
+        ProviderRegistration(
+          descriptor: _kTestDescriptor,
+          builder: () => _FakeDetailProvider((roomId) async {
+            biliDetailCalls += 1;
+            return LiveRoomDetail(
+              providerId: ProviderId.bilibili,
+              roomId: roomId,
+              title: '远程B站',
+              streamerName: '远程B站',
+              isLive: true,
+            );
+          }),
         ),
       );
-      await followRepository.upsert(
-        const FollowRecord(
-          providerId: ProviderId.bilibili,
-          roomId: '6',
-          streamerName: 'B站',
-        ),
-      );
 
-      var cbDetailCalls = 0;
-      var biliDetailCalls = 0;
-      const cbDescriptor = ProviderDescriptor(
-        id: ProviderId.chaturbate,
-        displayName: 'Chaturbate',
-        capabilities: {ProviderCapability.roomDetail},
-        supportedPlatforms: {ProviderPlatform.android},
-        maturity: ProviderMaturity.ready,
-      );
-      final registry = ProviderRegistry()
-        ..register(
-          ProviderRegistration(
-            descriptor: cbDescriptor,
-            builder: () => _FakeDetailProvider(
-              (roomId) async {
-                cbDetailCalls += 1;
-                return LiveRoomDetail(
-                  providerId: ProviderId.chaturbate,
-                  roomId: roomId,
-                  title: '远程CB',
-                  streamerName: '远程CB',
-                  isLive: true,
-                );
-              },
-              descriptor: cbDescriptor,
-            ),
-          ),
-        )
-        ..register(
-          ProviderRegistration(
-            descriptor: _kTestDescriptor,
-            builder: () => _FakeDetailProvider((roomId) async {
-              biliDetailCalls += 1;
-              return LiveRoomDetail(
-                providerId: ProviderId.bilibili,
-                roomId: roomId,
-                title: '远程B站',
-                streamerName: '远程B站',
-                isLive: true,
-              );
-            }),
-          ),
-        );
+    final watchlist = await LoadFollowWatchlistUseCase(
+      followRepository: followRepository,
+      registry: registry,
+    ).call(scope: FollowWatchlistRefreshScope.excludeChaturbate);
 
-      final watchlist = await LoadFollowWatchlistUseCase(
-        followRepository: followRepository,
-        registry: registry,
-      ).call(scope: FollowWatchlistRefreshScope.excludeChaturbate);
-
-      expect(cbDetailCalls, 0);
-      expect(biliDetailCalls, 1);
-      final cbEntry = watchlist.entries.singleWhere(
-        (e) => e.record.providerId == ProviderId.chaturbate,
-      );
-      expect(cbEntry.detail, isNull);
-      expect(cbEntry.record.streamerName, '本地CB');
-      final biliEntry = watchlist.entries.singleWhere(
-        (e) => e.record.providerId == ProviderId.bilibili,
-      );
-      expect(biliEntry.detail?.title, '远程B站');
-    },
-  );
+    expect(cbDetailCalls, 0);
+    expect(biliDetailCalls, 1);
+    final cbEntry = watchlist.entries.singleWhere(
+      (e) => e.record.providerId == ProviderId.chaturbate,
+    );
+    expect(cbEntry.detail, isNull);
+    expect(cbEntry.record.streamerName, '本地CB');
+    final biliEntry = watchlist.entries.singleWhere(
+      (e) => e.record.providerId == ProviderId.bilibili,
+    );
+    expect(biliEntry.detail?.title, '远程B站');
+  });
 
   test('follow detail retries transient timeout then succeeds', () async {
     final followRepository = InMemoryFollowRepository();
@@ -992,34 +978,105 @@ void main() {
     expect(watchlist.entries.single.detail?.isLive, isTrue);
   });
 
-  test('isTransientFollowDetailError detects timeouts and cold-start races', () {
+  test('isTransientFollowDetailError classifies by type, not message', () {
     expect(isTransientFollowDetailError(TimeoutException('x')), isTrue);
-    expect(isTransientFollowDetailError(Exception('socket hang up')), isTrue);
     expect(
-      isTransientFollowDetailError(
-        Exception('Huya request failed before response: https://www.huya.com/998'),
-      ),
+      isTransientFollowDetailError(const SocketException('connection reset')),
       isTrue,
     );
     expect(
       isTransientFollowDetailError(
-        Exception('ClientException: HTTP request failed. Client is already closed.'),
+        http.ClientException('HTTP request failed. Client is already closed.'),
       ),
       isTrue,
     );
+
+    // Transports tag exhausted-retry transport blips explicitly.
     expect(
       isTransientFollowDetailError(
-        Exception('Twitch GraphQL request failed before response.'),
+        ProviderParseException(
+          providerId: ProviderId.huya,
+          message: 'Huya request failed before response.',
+          transient: true,
+        ),
       ),
       isTrue,
     );
-    expect(isTransientFollowDetailError(Exception('parse boom')), isFalse);
+    // A provider that has not been migrated to the flag still classifies via
+    // the wrapped cause.
     expect(
       isTransientFollowDetailError(
-        Exception('Chaturbate received a Cloudflare challenge page'),
+        ProviderParseException(
+          providerId: ProviderId.twitch,
+          message: 'Twitch GraphQL request failed before response.',
+          cause: http.ClientException('Client is already closed.'),
+        ),
+      ),
+      isTrue,
+    );
+
+    // Definitive answers are not retried, and no longer depend on wording.
+    expect(
+      isTransientFollowDetailError(
+        ProviderParseException(
+          providerId: ProviderId.bilibili,
+          message: 'parse boom',
+        ),
       ),
       isFalse,
     );
+    expect(
+      isTransientFollowDetailError(
+        ProviderParseException(
+          providerId: ProviderId.chaturbate,
+          message: 'Chaturbate received a Cloudflare challenge page.',
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      isTransientFollowDetailError(
+        ProviderCapabilityException.unsupported(
+          providerId: ProviderId.bilibili,
+          capability: ProviderCapability.roomDetail,
+        ),
+      ),
+      isFalse,
+    );
+    expect(isTransientFollowDetailError(null), isFalse);
+    expect(isTransientFollowDetailError(Exception('anything at all')), isFalse);
+  });
+
+  test('exhausted provider retries surface as transient failures', () async {
+    var attempts = 0;
+    await expectLater(
+      runProviderRequestWithRetry<String>(
+        providerId: ProviderId.huya,
+        operation: 'huya transport GET',
+        policy: const ProviderRetryPolicy(
+          maxAttempts: 2,
+          baseBackoff: Duration.zero,
+        ),
+        action: (_) async {
+          attempts += 1;
+          throw ProviderRetryableException(
+            ProviderParseException(
+              providerId: ProviderId.huya,
+              message: 'Huya request failed before response.',
+              cause: http.ClientException('Client is already closed.'),
+            ),
+          );
+        },
+      ),
+      throwsA(
+        isA<ProviderParseException>().having(
+          (error) => error.transient,
+          'transient',
+          isTrue,
+        ),
+      ),
+    );
+    expect(attempts, 2);
   });
 
   test('localOnly scope never hits any provider network', () async {
@@ -1043,18 +1100,15 @@ void main() {
       ..register(
         ProviderRegistration(
           descriptor: cbDescriptor,
-          builder: () => _FakeDetailProvider(
-            (roomId) async {
-              calls += 1;
-              return LiveRoomDetail(
-                providerId: ProviderId.chaturbate,
-                roomId: roomId,
-                title: '远程',
-                streamerName: '远程',
-              );
-            },
-            descriptor: cbDescriptor,
-          ),
+          builder: () => _FakeDetailProvider((roomId) async {
+            calls += 1;
+            return LiveRoomDetail(
+              providerId: ProviderId.chaturbate,
+              roomId: roomId,
+              title: '远程',
+              streamerName: '远程',
+            );
+          }, descriptor: cbDescriptor),
         ),
       );
 

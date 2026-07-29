@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nolive_app/src/features/room/presentation/room_danmaku_controller.dart';
+import 'package:nolive_app/src/features/room/application/room_danmaku_controller.dart';
 
 void main() {
   test('defaultDanmakuReconnectDelay grows exponentially and caps', () {
@@ -16,13 +16,13 @@ void main() {
     );
     expect(delays.every((d) => d > Duration.zero), isTrue);
     expect(delays[2].inMilliseconds, greaterThan(delays[0].inMilliseconds));
-    expect(delays[4].inMilliseconds, greaterThanOrEqualTo(delays[3].inMilliseconds));
+    expect(
+      delays[4].inMilliseconds,
+      greaterThanOrEqualTo(delays[3].inMilliseconds),
+    );
   });
 
   test('healthy reset window is multi-second to stop thrash', () {
-    expect(
-      kDanmakuReconnectHealthyReset.inSeconds,
-      greaterThanOrEqualTo(30),
-    );
+    expect(kDanmakuReconnectHealthyReset.inSeconds, greaterThanOrEqualTo(30));
   });
 }

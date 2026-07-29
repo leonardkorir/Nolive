@@ -255,6 +255,124 @@ void main() {
     },
   );
 
+  test('invalidate defers dispose until the last lease is released', () async {
+    final provider = _DisposableTestProvider(BilibiliProvider.kDescriptor);
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: BilibiliProvider.kDescriptor,
+          builder: () => provider,
+        ),
+      );
+
+    final lease = registry.lease(ProviderId.bilibili);
+    registry.invalidate(ProviderId.bilibili);
+
+    expect(
+      provider.disposeCalls,
+      0,
+      reason: 'an in-flight borrower must keep the http client open',
+    );
+
+    lease.release();
+    expect(provider.disposeCalls, 1);
+
+    // Releasing twice must not double-dispose.
+    lease.release();
+    expect(provider.disposeCalls, 1);
+  });
+
+  test('clearCache defers dispose until the last lease is released', () async {
+    final provider = _DisposableTestProvider(BilibiliProvider.kDescriptor);
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: BilibiliProvider.kDescriptor,
+          builder: () => provider,
+        ),
+      );
+
+    final first = registry.lease(ProviderId.bilibili);
+    final second = registry.lease(ProviderId.bilibili);
+    registry.clearCache();
+
+    expect(provider.disposeCalls, 0);
+    first.release();
+    expect(provider.disposeCalls, 0, reason: 'second lease is still open');
+    second.release();
+    expect(provider.disposeCalls, 1);
+  });
+
+  test('use keeps the provider alive across a concurrent clearCache', () async {
+    final built = <_DisposableTestProvider>[];
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: BilibiliProvider.kDescriptor,
+          builder: () {
+            final provider = _DisposableTestProvider(
+              BilibiliProvider.kDescriptor,
+            );
+            built.add(provider);
+            return provider;
+          },
+        ),
+      );
+
+    final gate = Completer<void>();
+    LiveProvider? borrowedProvider;
+    var disposeCallsDuringAction = -1;
+    final inFlight = registry.use(ProviderId.bilibili, (provider) async {
+      borrowedProvider = provider;
+      await gate.future;
+      disposeCallsDuringAction = built.first.disposeCalls;
+      return provider.descriptor.id;
+    });
+    await Future<void>.value();
+
+    registry.clearCache();
+    // The next caller already gets a fresh instance...
+    expect(
+      identical(registry.create(ProviderId.bilibili), built.first),
+      isFalse,
+    );
+    expect(built, hasLength(2));
+    // ...while the in-flight borrower still holds the retired one.
+    expect(identical(borrowedProvider, built.first), isTrue);
+    expect(built.first.disposeCalls, 0);
+
+    gate.complete();
+    expect(await inFlight, ProviderId.bilibili);
+    expect(
+      disposeCallsDuringAction,
+      0,
+      reason: 'the borrowed instance must stay usable for the whole action',
+    );
+    expect(built.first.disposeCalls, 1);
+  });
+
+  test('use releases the lease when the action throws', () async {
+    final provider = _DisposableTestProvider(BilibiliProvider.kDescriptor);
+    final registry = ProviderRegistry()
+      ..register(
+        ProviderRegistration(
+          descriptor: BilibiliProvider.kDescriptor,
+          builder: () => provider,
+        ),
+      );
+
+    registry.invalidate(ProviderId.bilibili);
+    expect(provider.disposeCalls, 0, reason: 'nothing was cached yet');
+
+    await expectLater(
+      registry.use(ProviderId.bilibili, (_) async => throw StateError('boom')),
+      throwsStateError,
+    );
+
+    registry.clearCache();
+    expect(provider.disposeCalls, 1);
+  });
+
   test(
     'invalidating a youtube provider does not close active danmaku client',
     () async {

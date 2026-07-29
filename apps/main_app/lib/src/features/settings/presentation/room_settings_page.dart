@@ -76,10 +76,7 @@ class _RoomSettingsPageState extends State<RoomSettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '播放器',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text('播放器', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
@@ -160,10 +157,7 @@ class _RoomSettingsPageState extends State<RoomSettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '聊天区',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text('聊天区', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 _StepperTile(
                   title: '文字大小',
@@ -231,36 +225,31 @@ class _RoomSettingsPageState extends State<RoomSettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '更多设置',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text('更多设置', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('关键词屏蔽'),
                   trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => Navigator.of(context).pushNamed(
-                    AppRoutes.danmakuShield,
-                  ),
+                  onTap: () =>
+                      Navigator.of(context).pushNamed(AppRoutes.danmakuShield),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('弹幕设置'),
                   trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => Navigator.of(context).pushNamed(
-                    AppRoutes.danmakuSettings,
-                  ),
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pushNamed(AppRoutes.danmakuSettings),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('播放器高级设置'),
                   trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => Navigator.of(context).pushNamed(
-                    AppRoutes.playerSettings,
-                  ),
+                  onTap: () =>
+                      Navigator.of(context).pushNamed(AppRoutes.playerSettings),
                 ),
               ],
             ),
@@ -308,10 +297,7 @@ class _StepperTile extends StatelessWidget {
           ),
           SizedBox(
             width: suffix.isEmpty ? 36 : 56,
-            child: Text(
-              '$value$suffix',
-              textAlign: TextAlign.center,
-            ),
+            child: Text('$value$suffix', textAlign: TextAlign.center),
           ),
           IconButton(
             onPressed: () => onChanged(value + 1),

@@ -3,6 +3,7 @@ import 'package:live_core/live_core.dart';
 import '../provider_json.dart';
 import 'youtube_hls_master_playlist_parser.dart';
 import 'youtube_page_parser.dart';
+import 'youtube_danmaku_token.dart';
 
 class YouTubeMapper {
   const YouTubeMapper._();

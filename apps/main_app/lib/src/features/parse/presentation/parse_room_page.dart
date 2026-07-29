@@ -32,12 +32,14 @@ class _ParseRoomPageState extends State<ParseRoomPage> {
   @override
   void initState() {
     super.initState();
-    _controller =
-        TextEditingController(text: 'https://live.bilibili.com/66666');
+    _controller = TextEditingController(
+      text: 'https://live.bilibili.com/66666',
+    );
     _providers = widget.dependencies.listProviderDescriptors()
       ..sort((a, b) => a.displayName.compareTo(b.displayName));
-    final fallback =
-        _providers.where((item) => item.id == ProviderId.bilibili).firstOrNull;
+    final fallback = _providers
+        .where((item) => item.id == ProviderId.bilibili)
+        .firstOrNull;
     if (fallback != null) {
       _selectedProvider = fallback.id;
     }
@@ -119,10 +121,7 @@ class _ParseRoomPageState extends State<ParseRoomPage> {
                   onSubmitted: (_) => _parse(),
                 ),
                 const SizedBox(height: 14),
-                Text(
-                  '手动指定平台',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
+                Text('手动指定平台', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 10,
@@ -229,10 +228,7 @@ class _ParsedRoomCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '解析成功',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('解析成功', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 10),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -259,7 +255,8 @@ class _ParsedRoomCard extends StatelessWidget {
             contentPadding: EdgeInsets.zero,
             title: const Text('主播'),
             subtitle: Text(
-                detail.streamerName.isEmpty ? '未获取到主播信息' : detail.streamerName),
+              detail.streamerName.isEmpty ? '未获取到主播信息' : detail.streamerName,
+            ),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,

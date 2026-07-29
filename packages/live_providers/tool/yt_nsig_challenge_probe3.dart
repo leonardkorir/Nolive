@@ -34,5 +34,7 @@ Future<void> main() async {
     }
   }
   // ignore: avoid_print
-  print('done urls=${urls.length} withN=$found player=${detail.metadata?['playerJsUrl']}');
+  print(
+    'done urls=${urls.length} withN=$found player=${detail.metadata?['playerJsUrl']}',
+  );
 }

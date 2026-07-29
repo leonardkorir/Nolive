@@ -12,7 +12,7 @@ import 'proto/douyin.pb.dart';
 import 'tars/codec/tars_input_stream.dart';
 import 'tars/huya_danmaku.dart';
 
-abstract class IsolateDanmakuSession implements DanmakuSession {
+abstract class IsolateDanmakuSession extends DanmakuSession {
   final StreamController<LiveMessage> _controller =
       StreamController<LiveMessage>.broadcast();
   final _DanmakuParserWorker _parserWorker = _DanmakuParserWorker();

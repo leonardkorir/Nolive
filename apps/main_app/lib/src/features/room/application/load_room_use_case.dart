@@ -62,8 +62,7 @@ class LoadRoomUseCase {
     } on TimeoutException {
       throw ProviderParseException(
         providerId: providerId,
-        message:
-            '加载房间超时（${networkTimeout.inSeconds}s），请检查网络后重试。',
+        message: '加载房间超时（${networkTimeout.inSeconds}s），请检查网络后重试。',
       );
     }
   }
@@ -78,19 +77,26 @@ class LoadRoomUseCase {
     NetworkQualityPreference? cellularQualityPreference,
     bool? recordHistory,
   }) {
-    return _loadBody(
-      providerId: providerId,
-      roomId: roomId,
-      preferHighestQuality: preferHighestQuality,
-      preferAdaptiveAutoQuality: preferAdaptiveAutoQuality,
-      qualityPreference: qualityPreference,
-      isCellular: isCellular,
-      cellularQualityPreference: cellularQualityPreference,
-      recordHistory: recordHistory,
-    ).timeout(networkTimeout);
+    // The lease keeps this provider alive for the whole load, so a concurrent
+    // credential change (registry.clearCache) cannot close its HTTP client
+    // between the detail, qualities and play-url requests.
+    return registry.use(providerId, (provider) {
+      return _loadBody(
+        provider: provider,
+        providerId: providerId,
+        roomId: roomId,
+        preferHighestQuality: preferHighestQuality,
+        preferAdaptiveAutoQuality: preferAdaptiveAutoQuality,
+        qualityPreference: qualityPreference,
+        isCellular: isCellular,
+        cellularQualityPreference: cellularQualityPreference,
+        recordHistory: recordHistory,
+      ).timeout(networkTimeout);
+    });
   }
 
   Future<LoadedRoomSnapshot> _loadBody({
+    required LiveProvider provider,
     required ProviderId providerId,
     required String roomId,
     required bool preferHighestQuality,
@@ -100,7 +106,6 @@ class LoadRoomUseCase {
     NetworkQualityPreference? cellularQualityPreference,
     bool? recordHistory,
   }) async {
-    final provider = registry.create(providerId);
     final playQualities = provider.requireContract<SupportsPlayQualities>(
       ProviderCapability.playQualities,
     );
@@ -221,8 +226,7 @@ class LoadRoomUseCase {
     // Platforms that expose adaptive "auto" (Twitch / Chaturbate / Stripchat…)
     // can warm up on auto when the user leaves the auto-quality switch on.
     // YouTube is excluded: its adaptive master is not a reliable MPV source.
-    if (preferAdaptiveAutoQuality &&
-        supportsAdaptiveAutoQuality(providerId)) {
+    if (preferAdaptiveAutoQuality && supportsAdaptiveAutoQuality(providerId)) {
       final autoQuality = findAdaptiveAutoQuality(qualities);
       if (autoQuality != null) {
         return autoQuality;

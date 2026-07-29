@@ -5,10 +5,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
+import 'package:nolive_app/src/features/room/application/room_runtime_helper_contexts.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/twitch_playback_recovery.dart';
-import 'package:nolive_app/src/features/room/presentation/room_twitch_recovery_controller.dart';
+import 'package:nolive_app/src/features/room/application/room_twitch_recovery_controller.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 void main() {
@@ -80,7 +80,9 @@ void main() {
               bool resetTwitchRecoveryAttempts = true,
               LivePlayQuality? twitchStartupPromotionQuality,
             }) async {
-              fail('should not change quality when adaptive auto has no promotion');
+              fail(
+                'should not change quality when adaptive auto has no promotion',
+              );
             },
         refreshPlaybackSource:
             (

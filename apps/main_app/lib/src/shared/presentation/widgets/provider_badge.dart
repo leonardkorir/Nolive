@@ -111,9 +111,10 @@ class ProviderBadge extends StatelessWidget {
       'twitch' => 'TW',
       'youtube' => 'YT',
       'stripchat' => 'SC',
-      _ => providerId.value.isEmpty
-          ? 'L'
-          : providerId.value.substring(0, 1).toUpperCase(),
+      _ =>
+        providerId.value.isEmpty
+            ? 'L'
+            : providerId.value.substring(0, 1).toUpperCase(),
     };
   }
 }

@@ -3,6 +3,7 @@ import 'package:meta/meta.dart';
 
 import '../provider_json.dart';
 import 'douyu_sign_service.dart';
+import 'douyu_danmaku_token.dart';
 
 class DouyuMapper {
   const DouyuMapper._();

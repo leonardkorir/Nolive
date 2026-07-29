@@ -34,10 +34,7 @@ class DanmakuFilterConfig {
   @override
   int get hashCode {
     final sortedKeywords = blockedKeywords.toList()..sort();
-    return Object.hash(
-      Object.hashAll(sortedKeywords),
-      caseSensitive,
-    );
+    return Object.hash(Object.hashAll(sortedKeywords), caseSensitive);
   }
 
   static bool _setEquals(Set<String> a, Set<String> b) {

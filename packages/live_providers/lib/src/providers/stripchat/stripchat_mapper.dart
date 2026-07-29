@@ -1,6 +1,7 @@
 import 'package:live_core/live_core.dart';
 
 import '../provider_json.dart';
+import 'stripchat_danmaku_token.dart';
 
 class StripchatMapper {
   const StripchatMapper._();

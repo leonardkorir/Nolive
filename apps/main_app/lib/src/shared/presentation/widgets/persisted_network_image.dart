@@ -28,10 +28,7 @@ PersistedImageDecodeSize resolvePersistedImageDecodeSize({
   int? cacheWidth;
   int? cacheHeight;
   if (constraints.hasBoundedWidth && constraints.maxWidth > 0) {
-    cacheWidth = math.max(
-      1,
-      (constraints.maxWidth * devicePixelRatio).round(),
-    );
+    cacheWidth = math.max(1, (constraints.maxWidth * devicePixelRatio).round());
   }
   if (constraints.hasBoundedHeight && constraints.maxHeight > 0) {
     cacheHeight = math.max(
@@ -174,10 +171,12 @@ class _PersistedImageCache {
       LinkedHashMap<String, File>();
 
   static final _PersistedImageCache _avatar = _PersistedImageCache._('avatars');
-  static final _PersistedImageCache _categoryIcon =
-      _PersistedImageCache._('category_icons');
-  static final _PersistedImageCache _roomCover =
-      _PersistedImageCache._('room_covers');
+  static final _PersistedImageCache _categoryIcon = _PersistedImageCache._(
+    'category_icons',
+  );
+  static final _PersistedImageCache _roomCover = _PersistedImageCache._(
+    'room_covers',
+  );
 
   static _PersistedImageCache instanceFor(PersistedImageBucket bucket) {
     return switch (bucket) {
@@ -205,28 +204,25 @@ class _PersistedImageCache {
     if (inMemory != null && inMemory.existsSync()) {
       return Future<File?>.value(inMemory);
     }
-    return _inFlight.putIfAbsent(
-      normalizedUrl,
-      () async {
-        try {
-          final file = await _fileFor(normalizedUrl);
-          final exists = await file.exists();
-          if (exists) {
-            _rememberInMemory(normalizedUrl, file);
-            final stat = await file.stat();
-            if (DateTime.now().difference(stat.modified) <=
-                const Duration(days: 7)) {
-              return file;
-            }
-            unawaited(_refresh(normalizedUrl, file));
+    return _inFlight.putIfAbsent(normalizedUrl, () async {
+      try {
+        final file = await _fileFor(normalizedUrl);
+        final exists = await file.exists();
+        if (exists) {
+          _rememberInMemory(normalizedUrl, file);
+          final stat = await file.stat();
+          if (DateTime.now().difference(stat.modified) <=
+              const Duration(days: 7)) {
             return file;
           }
-          return _refresh(normalizedUrl, file);
-        } finally {
-          _inFlight.remove(normalizedUrl);
+          unawaited(_refresh(normalizedUrl, file));
+          return file;
         }
-      },
-    );
+        return _refresh(normalizedUrl, file);
+      } finally {
+        _inFlight.remove(normalizedUrl);
+      }
+    });
   }
 
   Future<File?> _refresh(String url, File file) async {
@@ -237,12 +233,12 @@ class _PersistedImageCache {
     HttpClient? client;
     try {
       client = HttpClient();
-      final request = await client.getUrl(uri).timeout(
-            const Duration(seconds: 15),
-          );
+      final request = await client
+          .getUrl(uri)
+          .timeout(const Duration(seconds: 15));
       final response = await request.close().timeout(
-            const Duration(seconds: 20),
-          );
+        const Duration(seconds: 20),
+      );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return await file.exists() ? file : null;
       }
@@ -296,8 +292,9 @@ class _PersistedImageCache {
 
   String _extensionFor(String url) {
     final uri = Uri.tryParse(url);
-    final lastSegment =
-        uri == null || uri.pathSegments.isEmpty ? '' : uri.pathSegments.last;
+    final lastSegment = uri == null || uri.pathSegments.isEmpty
+        ? ''
+        : uri.pathSegments.last;
     final dotIndex = lastSegment.lastIndexOf('.');
     if (dotIndex <= 0 || dotIndex == lastSegment.length - 1) {
       return '.img';

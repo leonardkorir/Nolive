@@ -1,7 +1,8 @@
 import 'package:live_danmaku/live_danmaku.dart';
 
 import 'danmaku_batch_mask_stub.dart'
-    if (dart.library.ffi) 'danmaku_batch_mask_ffi.dart' as native;
+    if (dart.library.ffi) 'danmaku_batch_mask_ffi.dart'
+    as native;
 
 class DanmakuBatchMaskResolution {
   const DanmakuBatchMaskResolution({
@@ -24,17 +25,11 @@ DanmakuBatchMaskResolution resolveAppDanmakuBatchMask({
       burstLimit: burstLimit,
     );
     if (nativeMask != null) {
-      return DanmakuBatchMaskResolution(
-        mask: nativeMask,
-        usingNative: true,
-      );
+      return DanmakuBatchMaskResolution(mask: nativeMask, usingNative: true);
     }
   }
   return DanmakuBatchMaskResolution(
-    mask: WindowedDanmakuBatchMask(
-      window: window,
-      burstLimit: burstLimit,
-    ),
+    mask: WindowedDanmakuBatchMask(window: window, burstLimit: burstLimit),
     usingNative: false,
   );
 }

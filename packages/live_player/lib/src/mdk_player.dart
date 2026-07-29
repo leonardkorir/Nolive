@@ -25,8 +25,9 @@ class MdkPlayer implements BasePlayer {
   static const Duration _stopWaitTimeout = Duration(milliseconds: 1200);
   static const Duration _releaseTextureTimeout = Duration(milliseconds: 1200);
   static const Duration _tunnelFirstFrameTimeout = Duration(milliseconds: 1200);
-  static const Duration _lowBufferWarningThreshold =
-      Duration(milliseconds: 250);
+  static const Duration _lowBufferWarningThreshold = Duration(
+    milliseconds: 250,
+  );
   static const Duration _runtimeDiagnosticsPollInterval = Duration(seconds: 1);
   static const int _maxRecentLogs = 24;
 
@@ -250,10 +251,10 @@ class MdkPlayer implements BasePlayer {
     }
     if (source.externalAudio != null) {
       final audioTracks =
-          player.mediaInfo.audio?.map((item) => item.index).toList(
-                    growable: false,
-                  ) ??
-              const <int>[];
+          player.mediaInfo.audio
+              ?.map((item) => item.index)
+              .toList(growable: false) ??
+          const <int>[];
       if (audioTracks.isNotEmpty) {
         player.activeAudioTracks = audioTracks;
       }
@@ -306,10 +307,9 @@ class MdkPlayer implements BasePlayer {
       }),
     );
     final textureStopwatch = Stopwatch()..start();
-    final textureId = await player.updateTexture(tunnel: androidTunnel).timeout(
-          _updateTextureTimeout,
-          onTimeout: () => -2,
-        );
+    final textureId = await player
+        .updateTexture(tunnel: androidTunnel)
+        .timeout(_updateTextureTimeout, onTimeout: () => -2);
     texturePendingLogged = true;
     textureStopwatch.stop();
     if (!_isRequestActive(requestSerial, player)) {
@@ -325,8 +325,9 @@ class MdkPlayer implements BasePlayer {
       _textureId.value = null;
       _logEvent('setSource texture failed=$textureId');
       final errorMessage = switch (textureId) {
-        -2 => 'MDK texture initialization timed out after '
-            '${_updateTextureTimeout.inMilliseconds}ms',
+        -2 =>
+          'MDK texture initialization timed out after '
+              '${_updateTextureTimeout.inMilliseconds}ms',
         _ => 'MDK texture initialization failed: $textureId',
       };
       _emitDiagnostics(_currentDiagnostics.copyWith(error: errorMessage));
@@ -477,11 +478,7 @@ class MdkPlayer implements BasePlayer {
     if (rgba == null) {
       return null;
     }
-    return _encodeRgbaToPng(
-      rgba: rgba,
-      width: width,
-      height: height,
-    );
+    return _encodeRgbaToPng(rgba: rgba, width: width, height: height);
   }
 
   @override
@@ -718,7 +715,8 @@ class MdkPlayer implements BasePlayer {
     required Duration position,
     required mdk.Player player,
   }) {
-    final canMeasureLowBuffer = _currentState.source != null &&
+    final canMeasureLowBuffer =
+        _currentState.source != null &&
         _firstFrameRendered &&
         _currentState.status == PlaybackStatus.playing &&
         !buffering;
@@ -806,22 +804,18 @@ class MdkPlayer implements BasePlayer {
     required int height,
   }) async {
     final completer = Completer<Uint8List?>();
-    ui.decodeImageFromPixels(
-      rgba,
-      width,
-      height,
-      ui.PixelFormat.rgba8888,
-      (image) async {
-        try {
-          final data = await image.toByteData(format: ui.ImageByteFormat.png);
-          completer.complete(data?.buffer.asUint8List());
-        } catch (_) {
-          completer.complete(null);
-        } finally {
-          image.dispose();
-        }
-      },
-    );
+    ui.decodeImageFromPixels(rgba, width, height, ui.PixelFormat.rgba8888, (
+      image,
+    ) async {
+      try {
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        completer.complete(data?.buffer.asUint8List());
+      } catch (_) {
+        completer.complete(null);
+      } finally {
+        image.dispose();
+      }
+    });
     return completer.future;
   }
 
@@ -847,10 +841,7 @@ class MdkPlayer implements BasePlayer {
     return player.mediaStatus.rawValue.toRadixString(16);
   }
 
-  bool _waitForStopped(
-    mdk.Player player, {
-    required String context,
-  }) {
+  bool _waitForStopped(mdk.Player player, {required String context}) {
     player.state = mdk.PlaybackState.stopped;
     final stopped = player.waitFor(
       mdk.PlaybackState.stopped,
@@ -873,10 +864,9 @@ class MdkPlayer implements BasePlayer {
       return;
     }
     _logEvent('$context releaseTexture start texture=$activeTextureId');
-    final result = await player.updateTexture(width: -1).timeout(
-          _releaseTextureTimeout,
-          onTimeout: () => -3,
-        );
+    final result = await player
+        .updateTexture(width: -1)
+        .timeout(_releaseTextureTimeout, onTimeout: () => -3);
     final activeTextureIdAfter = player.textureId.value;
     if (isMdkTextureReleaseDetached(
       result: result,
@@ -949,10 +939,9 @@ class MdkPlayer implements BasePlayer {
       'mediaStatus=${_mediaStatusHex(player)}',
     );
     final stopwatch = Stopwatch()..start();
-    final fallbackTextureId = await player.updateTexture(tunnel: false).timeout(
-          _updateTextureTimeout,
-          onTimeout: () => -2,
-        );
+    final fallbackTextureId = await player
+        .updateTexture(tunnel: false)
+        .timeout(_updateTextureTimeout, onTimeout: () => -2);
     stopwatch.stop();
     if (!_isRequestActive(requestSerial, player)) {
       return;
@@ -1075,8 +1064,7 @@ PlaybackStatus? resolveMdkBufferingStatusTransition({
     return switch (currentStatus) {
       PlaybackStatus.ready ||
       PlaybackStatus.buffering ||
-      PlaybackStatus.playing =>
-        PlaybackStatus.buffering,
+      PlaybackStatus.playing => PlaybackStatus.buffering,
       _ => null,
     };
   }
@@ -1122,9 +1110,7 @@ String? resolveMdkRuntimeEventErrorMessage({
 typedef MdkBufferStrategy = ({int minMs, int maxMs, bool drop});
 
 @visibleForTesting
-bool shouldPrimeMdkPlaybackBeforeTexture({
-  required bool androidTunnel,
-}) {
+bool shouldPrimeMdkPlaybackBeforeTexture({required bool androidTunnel}) {
   return androidTunnel;
 }
 
@@ -1169,24 +1155,12 @@ MdkBufferStrategy resolveMdkBufferStrategy({
   PlaybackBufferProfile bufferProfile = PlaybackBufferProfile.defaultLowLatency,
 }) {
   if (bufferProfile == PlaybackBufferProfile.heavyStreamStable) {
-    return (
-      minMs: 1000,
-      maxMs: 8000,
-      drop: false,
-    );
+    return (minMs: 1000, maxMs: 8000, drop: false);
   }
   if (lowLatency) {
-    return (
-      minMs: 500,
-      maxMs: 4000,
-      drop: false,
-    );
+    return (minMs: 500, maxMs: 4000, drop: false);
   }
-  return (
-    minMs: 500,
-    maxMs: 6000,
-    drop: false,
-  );
+  return (minMs: 500, maxMs: 6000, drop: false);
 }
 
 @visibleForTesting

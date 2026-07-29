@@ -1,15 +1,14 @@
 import 'dart:async';
 
-import 'package:floating/floating.dart';
 import 'package:flutter/widgets.dart';
 import 'package:live_player/live_player.dart';
 
-import 'room_fullscreen_runtime_context.dart';
-import 'room_fullscreen_session_platforms.dart';
-import 'room_view_ui_state.dart';
+import '../application/room_fullscreen_runtime_context.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
+import '../application/room_view_ui_state.dart';
 
-typedef RoomClearGestureTipCallback = void Function(
-    {required bool rescheduleChrome});
+typedef RoomClearGestureTipCallback =
+    void Function({required bool rescheduleChrome});
 
 class RoomPictureInPictureContext {
   const RoomPictureInPictureContext({
@@ -44,11 +43,11 @@ class RoomPictureInPictureContext {
   final bool Function() resolvePipHideDanmakuEnabled;
   final bool Function() resolveDanmakuOverlayVisible;
   final void Function(bool visible) updateDanmakuOverlayVisible;
-  final Rational Function() resolvePipAspectRatio;
+  final RoomPipAspectRatio Function() resolvePipAspectRatio;
   final void Function(double value) updateVolume;
   final RoomViewUiState Function() readViewUiState;
   final void Function(RoomViewUiState Function(RoomViewUiState current))
-      updateViewUiState;
+  updateViewUiState;
   final bool Function() isDisposed;
   final Future<void> Function() applyFullscreenSystemUi;
   final void Function() scheduleFullscreenChromeAutoHide;
@@ -56,7 +55,7 @@ class RoomPictureInPictureContext {
   final void Function() cancelChromeAutoHideTimers;
   final RoomClearGestureTipCallback clearGestureTip;
   final Future<PlaybackSource?> Function()
-      resolvePlaybackSourceForLifecycleRestore;
+  resolvePlaybackSourceForLifecycleRestore;
 }
 
 class RoomPictureInPictureCoordinator {
@@ -64,7 +63,7 @@ class RoomPictureInPictureCoordinator {
 
   final RoomPictureInPictureContext context;
 
-  StreamSubscription<PiPStatus>? _pipStatusSubscription;
+  StreamSubscription<RoomPipStatus>? _pipStatusSubscription;
   PlayerState? _lifecycleStoppedPlaybackState;
   bool _inlineChromeBeforePip = true;
   bool _fullscreenChromeBeforePip = true;
@@ -77,8 +76,9 @@ class RoomPictureInPictureCoordinator {
     if (_isDisposed) {
       return;
     }
-    _pipStatusSubscription ??=
-        context.pipHost.statusStream.listen(_handlePipStatusChanged);
+    _pipStatusSubscription ??= context.pipHost.statusStream.listen(
+      _handlePipStatusChanged,
+    );
     final pipSupported = await context.pipHost.isPipAvailable();
     final mediaVolume = await context.androidPlaybackBridge.getMediaVolume();
     if (_isDisposed) {
@@ -140,7 +140,7 @@ class RoomPictureInPictureCoordinator {
       if (_isDisposed) {
         return;
       }
-      if (status == PiPStatus.enabled) {
+      if (status == RoomPipStatus.enabled) {
         return;
       }
     } catch (error) {
@@ -170,13 +170,14 @@ class RoomPictureInPictureCoordinator {
     final operation = _lifecycleOperation.then(
       (_) => _handleLifecycleState(state),
     );
-    _lifecycleOperation = operation.catchError(
-      (Object error, StackTrace stackTrace) {
-        if (!_isDisposed) {
-          context.trace('lifecycle state=${state.name} failed error=$error');
-        }
-      },
-    );
+    _lifecycleOperation = operation.catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      if (!_isDisposed) {
+        context.trace('lifecycle state=${state.name} failed error=$error');
+      }
+    });
     return _lifecycleOperation;
   }
 
@@ -189,8 +190,8 @@ class RoomPictureInPictureCoordinator {
     }
     context.trace('lifecycle state=${state.name}');
     if (state == AppLifecycleState.resumed) {
-      final inPip =
-          await context.androidPlaybackBridge.isInPictureInPictureMode();
+      final inPip = await context.androidPlaybackBridge
+          .isInPictureInPictureMode();
       if (_isDisposed) {
         return;
       }
@@ -243,8 +244,8 @@ class RoomPictureInPictureCoordinator {
     if (context.readViewUiState().enteringPictureInPicture) {
       return;
     }
-    final inPip =
-        await context.androidPlaybackBridge.isInPictureInPictureMode();
+    final inPip = await context.androidPlaybackBridge
+        .isInPictureInPictureMode();
     if (_isDisposed) {
       return;
     }
@@ -281,11 +282,11 @@ class RoomPictureInPictureCoordinator {
     await _pipStatusSubscription?.cancel();
   }
 
-  void _handlePipStatusChanged(PiPStatus status) {
+  void _handlePipStatusChanged(RoomPipStatus status) {
     if (context.isDisposed()) {
       return;
     }
-    if (status == PiPStatus.enabled) {
+    if (status == RoomPipStatus.enabled) {
       context.updateViewUiState(
         (current) => current.copyWith(
           enteringPictureInPicture: false,
@@ -298,7 +299,7 @@ class RoomPictureInPictureCoordinator {
       context.clearGestureTip(rescheduleChrome: false);
       return;
     }
-    if (status == PiPStatus.disabled) {
+    if (status == RoomPipStatus.disabled) {
       unawaited(
         _restoreUiAfterPictureInPictureExit(
           reapplyFullscreenSystemUi: true,
@@ -314,9 +315,7 @@ class RoomPictureInPictureCoordinator {
   }
 
   Future<void> _restoreFromPictureInPictureFailure() async {
-    await _restoreUiAfterPictureInPictureExit(
-      reapplyFullscreenSystemUi: true,
-    );
+    await _restoreUiAfterPictureInPictureExit(reapplyFullscreenSystemUi: true);
   }
 
   Future<void> _restoreUiAfterPictureInPictureExit({
@@ -376,8 +375,7 @@ class RoomPictureInPictureCoordinator {
           PlaybackStatus.playing ||
           PlaybackStatus.paused ||
           PlaybackStatus.completed ||
-          PlaybackStatus.error =>
-            true,
+          PlaybackStatus.error => true,
           _ => false,
         };
   }
@@ -391,8 +389,7 @@ class RoomPictureInPictureCoordinator {
               PlaybackStatus.playing ||
               PlaybackStatus.paused ||
               PlaybackStatus.completed ||
-              PlaybackStatus.error =>
-                true,
+              PlaybackStatus.error => true,
               _ => false,
             });
   }
@@ -420,7 +417,8 @@ class RoomPictureInPictureCoordinator {
   }
 
   Future<void> _restorePlaybackAfterLifecycleStop(
-      PlayerState previousState) async {
+    PlayerState previousState,
+  ) async {
     final backend = previousState.backend ?? context.runtime.resolveBackend();
     context.trace(
       'lifecycle restore playback backend=${backend.name} '

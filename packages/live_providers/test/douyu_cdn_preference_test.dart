@@ -3,20 +3,23 @@ import 'package:live_providers/src/providers/douyu/douyu_mapper.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('sortedDouyuCdnsFromApi prefers re-weight and deprioritizes scdn/hw3', () {
-    final ordered = DouyuMapper.sortedDouyuCdnsFromApi([
-      {'cdn': 'scdn', 're-weight': 99999},
-      {'cdn': 'hw-h5', 're-weight': 100},
-      {'cdn': 'ws-h5', 're-weight': 100},
-      {'cdn': 'hw3-h5', 're-weight': 50000},
-    ]);
+  test(
+    'sortedDouyuCdnsFromApi prefers re-weight and deprioritizes scdn/hw3',
+    () {
+      final ordered = DouyuMapper.sortedDouyuCdnsFromApi([
+        {'cdn': 'scdn', 're-weight': 99999},
+        {'cdn': 'hw-h5', 're-weight': 100},
+        {'cdn': 'ws-h5', 're-weight': 100},
+        {'cdn': 'hw3-h5', 're-weight': 50000},
+      ]);
 
-    expect(ordered.first, 'ws-h5');
-    expect(ordered.contains('hw-h5'), isTrue);
-    expect(ordered.last, 'scdn');
-    // hw3 family should not be first when a better peer exists.
-    expect(ordered.indexOf('ws-h5'), lessThan(ordered.indexOf('hw3-h5')));
-  });
+      expect(ordered.first, 'ws-h5');
+      expect(ordered.contains('hw-h5'), isTrue);
+      expect(ordered.last, 'scdn');
+      // hw3 family should not be first when a better peer exists.
+      expect(ordered.indexOf('ws-h5'), lessThan(ordered.indexOf('hw3-h5')));
+    },
+  );
 
   test('preferReliableDouyuPlayUrls puts hw1a before hw3', () {
     final sorted = DouyuMapper.preferReliableDouyuPlayUrls([

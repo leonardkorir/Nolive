@@ -16,7 +16,8 @@ class MockDanmakuClient {
   final Duration heartbeatInterval;
   final Duration retryDelay;
 
-  final StreamController<LiveMessage> _controller = StreamController<LiveMessage>.broadcast();
+  final StreamController<LiveMessage> _controller =
+      StreamController<LiveMessage>.broadcast();
   Stream<LiveMessage> get messages => _controller.stream;
 
   MockWebSocketChannel? _channel;
@@ -52,11 +53,13 @@ class MockDanmakuClient {
             // Simple text format parsing: "user:text"
             final parts = data.split(':');
             if (parts.length >= 2) {
-              _controller.add(LiveMessage(
-                type: LiveMessageType.chat,
-                userName: parts[0],
-                content: parts.sublist(1).join(':'),
-              ));
+              _controller.add(
+                LiveMessage(
+                  type: LiveMessageType.chat,
+                  userName: parts[0],
+                  content: parts.sublist(1).join(':'),
+                ),
+              );
             }
           }
         },
@@ -133,36 +136,39 @@ void main() {
       return channel;
     }
 
-    test('successful connection parses chat messages and runs heartbeats', () async {
-      final client = MockDanmakuClient(
-        url: 'ws://mock-danmaku',
-        connector: mockConnector,
-        heartbeatInterval: const Duration(milliseconds: 20),
-      );
+    test(
+      'successful connection parses chat messages and runs heartbeats',
+      () async {
+        final client = MockDanmakuClient(
+          url: 'ws://mock-danmaku',
+          connector: mockConnector,
+          heartbeatInterval: const Duration(milliseconds: 20),
+        );
 
-      final received = <LiveMessage>[];
-      final sub = client.messages.listen(received.add);
+        final received = <LiveMessage>[];
+        final sub = client.messages.listen(received.add);
 
-      await client.connect();
-      expect(client.isConnected, isTrue);
-      expect(channels, hasLength(1));
+        await client.connect();
+        expect(client.isConnected, isTrue);
+        expect(channels, hasLength(1));
 
-      // Simulate server sending chat message
-      channels[0].receiveFromServer('Alice:Hello Danmaku!');
-      await Future.delayed(const Duration(milliseconds: 5));
+        // Simulate server sending chat message
+        channels[0].receiveFromServer('Alice:Hello Danmaku!');
+        await Future.delayed(const Duration(milliseconds: 5));
 
-      expect(received, hasLength(1));
-      expect(received[0].userName, 'Alice');
-      expect(received[0].content, 'Hello Danmaku!');
+        expect(received, hasLength(1));
+        expect(received[0].userName, 'Alice');
+        expect(received[0].content, 'Hello Danmaku!');
 
-      // Wait for heartbeats
-      await Future.delayed(const Duration(milliseconds: 50));
-      expect(client.heartbeatCount, greaterThanOrEqualTo(2));
-      expect(channels[0].sentMessages, contains('heartbeat'));
+        // Wait for heartbeats
+        await Future.delayed(const Duration(milliseconds: 50));
+        expect(client.heartbeatCount, greaterThanOrEqualTo(2));
+        expect(channels[0].sentMessages, contains('heartbeat'));
 
-      client.disconnect();
-      await sub.cancel();
-    });
+        client.disconnect();
+        await sub.cancel();
+      },
+    );
 
     test('connection drop triggers auto-reconnect and retry logic', () async {
       final client = MockDanmakuClient(
@@ -189,20 +195,23 @@ void main() {
       client.disconnect();
     });
 
-    test('disconnect prevents further retries and disposes resources', () async {
-      final client = MockDanmakuClient(
-        url: 'ws://mock-danmaku',
-        connector: mockConnector,
-        retryDelay: const Duration(milliseconds: 10),
-      );
+    test(
+      'disconnect prevents further retries and disposes resources',
+      () async {
+        final client = MockDanmakuClient(
+          url: 'ws://mock-danmaku',
+          connector: mockConnector,
+          retryDelay: const Duration(milliseconds: 10),
+        );
 
-      await client.connect();
-      client.disconnect();
-      expect(client.isConnected, isFalse);
+        await client.connect();
+        client.disconnect();
+        expect(client.isConnected, isFalse);
 
-      // Trigger a retry event via an async task if it weren't disposed
-      await Future.delayed(const Duration(milliseconds: 25));
-      expect(client.connectCount, 1); // No increase, retry didn't run
-    });
+        // Trigger a retry event via an async task if it weren't disposed
+        await Future.delayed(const Duration(milliseconds: 25));
+        expect(client.connectCount, 1); // No increase, retry didn't run
+      },
+    );
   });
 }

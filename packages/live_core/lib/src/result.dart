@@ -1,11 +1,7 @@
 class Result<T> {
-  const Result.success(this.value)
-      : error = null,
-        isSuccess = true;
+  const Result.success(this.value) : error = null, isSuccess = true;
 
-  const Result.failure(this.error)
-      : value = null,
-        isSuccess = false;
+  const Result.failure(this.error) : value = null, isSuccess = false;
 
   final T? value;
   final Object? error;
@@ -30,10 +26,7 @@ class Result<T> {
     return Result<R>.failure(error);
   }
 
-  R fold<R>(
-    R Function(T? value) success,
-    R Function(Object? error) failure,
-  ) {
+  R fold<R>(R Function(T? value) success, R Function(Object? error) failure) {
     return when(success: success, failure: failure);
   }
 }

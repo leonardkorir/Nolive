@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_presentation_helpers.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_view_data.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_view_data.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_controls_actions.dart';
 
 void main() {

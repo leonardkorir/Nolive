@@ -166,8 +166,8 @@ class RoomFollowPanel extends StatelessWidget {
     final summary = !hasSnapshot
         ? '显示最近一次刷新后仍在直播的关注房间。'
         : watchlist.liveCount == 0
-            ? '当前没有开播中的关注房间'
-            : '${watchlist.liveCount} 个正在直播 · 共 ${watchlist.entries.length} 个关注房间';
+        ? '当前没有开播中的关注房间'
+        : '${watchlist.liveCount} 个正在直播 · 共 ${watchlist.entries.length} 个关注房间';
     return DecoratedBox(
       decoration: BoxDecoration(
         color: theme.cardColor,
@@ -224,10 +224,9 @@ class RoomFollowPanel extends StatelessWidget {
   }
 
   Widget _buildLoadingState(BuildContext context) {
-    final baseColor =
-        Theme.of(context).colorScheme.surfaceContainerHighest.withValues(
-              alpha: 0.76,
-            );
+    final baseColor = Theme.of(
+      context,
+    ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.76);
     return AppSurfaceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -237,10 +236,9 @@ class RoomFollowPanel extends StatelessWidget {
             padding: EdgeInsets.only(bottom: index == 2 ? 0 : 10),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest
-                    .withValues(alpha: 0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Padding(
@@ -319,8 +317,9 @@ class RoomFullscreenFollowDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final drawerWidth =
-        math.min(MediaQuery.sizeOf(context).width * 0.54, 388.0).toDouble();
+    final drawerWidth = math
+        .min(MediaQuery.sizeOf(context).width * 0.54, 388.0)
+        .toDouble();
     // Use Positioned + AnimatedSlide so size/orientation changes do not
     // interpolate the off-screen `right` edge and flash the drawer.
     return Positioned(
@@ -377,8 +376,8 @@ class RoomFullscreenFollowDrawer extends StatelessWidget {
                       followState.isLoading
                           ? '正在同步关注页开播结果…'
                           : entries.isEmpty
-                              ? '当前没有正在直播的关注房间'
-                              : '${entries.length} 个房间可直接切换',
+                          ? '当前没有正在直播的关注房间'
+                          : '${entries.length} 个房间可直接切换',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: const Color(0xCCD5DAE1),
                       ),

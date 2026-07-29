@@ -101,14 +101,16 @@ class RoomFullscreenOverlay extends StatelessWidget {
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
                   child: Text(
                     normalizedGestureTip,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -251,58 +253,60 @@ class RoomFullscreenTopChrome extends StatelessWidget {
           final narrow = constraints.maxWidth < 520 || viewportHeight < 300;
           final visibleSecondaryActionCount =
               (pipSupported && !narrow ? 1 : 0) +
-                  (supportsDesktopMiniWindow && !narrow ? 1 : 0) +
-                  (supportsPlayerCapture && !narrow ? 1 : 0) +
-                  (!narrow ? 1 : 0);
-          final stackedActions = constraints.maxWidth < 700 ||
+              (supportsDesktopMiniWindow && !narrow ? 1 : 0) +
+              (supportsPlayerCapture && !narrow ? 1 : 0) +
+              (!narrow ? 1 : 0);
+          final stackedActions =
+              constraints.maxWidth < 700 ||
               viewportHeight < 300 ||
               (constraints.maxWidth < 820 &&
                   normalizedTitle.length > 18 &&
                   visibleSecondaryActionCount >= 3);
-          final ultraCompact = constraints.maxWidth < 420 ||
+          final ultraCompact =
+              constraints.maxWidth < 420 ||
               viewportHeight < 300 ||
               compactLandscape;
           final baseButtonExtent = ultraCompact
               ? 32.0
               : compact
-                  ? 36.0
-                  : 40.0;
+              ? 36.0
+              : 40.0;
           final buttonExtent = stackedActions
               ? (baseButtonExtent -
-                      (dense
-                          ? 8.0
-                          : compactLandscape
-                              ? 6.0
-                              : 2.0))
-                  .clamp(26.0, 40.0)
-                  .toDouble()
+                        (dense
+                            ? 8.0
+                            : compactLandscape
+                            ? 6.0
+                            : 2.0))
+                    .clamp(26.0, 40.0)
+                    .toDouble()
               : baseButtonExtent;
           final iconSize = ultraCompact
               ? 20.0
               : compact
-                  ? 22.0
-                  : 24.0;
+              ? 22.0
+              : 24.0;
           final titleFontSize = stackedActions
               ? ultraCompact
-                  ? 15.0
-                  : dense
-                      ? 16.0
-                      : 17.0
+                    ? 15.0
+                    : dense
+                    ? 16.0
+                    : 17.0
               : compact
-                  ? 16.0
-                  : ultraCompact
-                      ? 15.0
-                      : 18.0;
+              ? 16.0
+              : ultraCompact
+              ? 15.0
+              : 18.0;
           final horizontalPadding = compactLandscape
               ? 6.0
               : compact
-                  ? 8.0
-                  : 10.0;
+              ? 8.0
+              : 10.0;
           final bottomPadding = compactLandscape
               ? 4.0
               : compact
-                  ? 6.0
-                  : 8.0;
+              ? 6.0
+              : 8.0;
           final secondaryActions = <Widget>[
             if (pipSupported && !narrow)
               _FullscreenChromeIconButton(
@@ -376,9 +380,7 @@ class RoomFullscreenTopChrome extends StatelessWidget {
                               maxLines: 1,
                               softWrap: false,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
+                              style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(
                                     fontSize: titleFontSize,
                                     color: Colors.white,
@@ -425,12 +427,12 @@ class RoomFullscreenTopChrome extends StatelessWidget {
                           maxLines: 1,
                           softWrap: false,
                           overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontSize: titleFontSize,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontSize: titleFontSize,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
                         ),
                       ),
                       ...secondaryActions,
@@ -494,34 +496,34 @@ class RoomFullscreenBottomChrome extends StatelessWidget {
           final baseButtonExtent = veryShort
               ? 30.0
               : dense
-                  ? 36.0
-                  : compact
-                      ? 38.0
-                      : 42.0;
+              ? 36.0
+              : compact
+              ? 38.0
+              : 42.0;
           final buttonExtent = baseButtonExtent;
           final iconSize = veryShort
               ? 17.0
               : dense
-                  ? ultraCompact
-                      ? 19.0
-                      : 21.0
-                  : compact
-                      ? 22.0
-                      : 24.0;
+              ? ultraCompact
+                    ? 19.0
+                    : 21.0
+              : compact
+              ? 22.0
+              : 24.0;
           final baseLabelMaxWidth = dense
               ? ultraCompact
-                  ? 46.0
-                  : 52.0
+                    ? 46.0
+                    : 52.0
               : compact
-                  ? 60.0
-                  : 72.0;
+              ? 60.0
+              : 72.0;
           final labelMaxWidth = baseLabelMaxWidth + (dense ? 4.0 : 10.0);
           final exitButtonWidth = buttonExtent;
           final labelFontSize = veryShort
               ? 12.0
               : dense
-                  ? 13.0
-                  : 14.0;
+              ? 13.0
+              : 14.0;
           final bottomInset = MediaQuery.paddingOf(context).bottom;
           final horizontalPadding = dense ? 10.0 : 14.0;
           final topPadding = 0.0;
@@ -563,10 +565,10 @@ class RoomFullscreenBottomChrome extends StatelessWidget {
                     softWrap: false,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontSize: veryShort ? 13.0 : 15.0,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      fontSize: veryShort ? 13.0 : 15.0,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),

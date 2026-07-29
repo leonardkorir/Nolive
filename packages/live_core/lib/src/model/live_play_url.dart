@@ -25,5 +25,9 @@ class LivePlayUrl {
 
   @override
   int get hashCode => Object.hash(
-      url, modelMapHash(headers), lineLabel, modelMapHash(metadata));
+    url,
+    modelMapHash(headers),
+    lineLabel,
+    modelMapHash(metadata),
+  );
 }

@@ -20,7 +20,13 @@ read_single_quoted_value() {
 }
 
 pubspec_version="$(sed -n 's/^version:[[:space:]]*//p' "$PUBSPEC_FILE" | head -n 1)"
+# Version-matrix sources of truth: the pubspec constraints, the Flutter gradle
+# extension default, and the CI pin. The in-app manifest must mirror them.
+pubspec_dart_min="$(sed -n 's/^[[:space:]]*sdk:[[:space:]]*">=\([0-9.]*\).*/\1/p' "$PUBSPEC_FILE" | head -n 1)"
+pubspec_flutter_min="$(sed -n 's/^[[:space:]]*flutter:[[:space:]]*">=\([0-9.]*\).*/\1/p' "$PUBSPEC_FILE" | head -n 1)"
 fallback_version="$(read_single_quoted_value 'fallbackVersion' "$MANIFEST_FILE")"
+flutter_baseline="$(read_single_quoted_value 'flutterBaseline' "$MANIFEST_FILE")"
+android_min_sdk="$(read_single_quoted_value 'androidMinSdk' "$MANIFEST_FILE")"
 fallback_bundle_id="$(read_single_quoted_value 'fallbackBundleId' "$MANIFEST_FILE")"
 primary_platform="$(read_single_quoted_value 'primaryPlatform' "$MANIFEST_FILE")"
 build_bundle_id="$(sed -n 's/.*applicationId = "\([^"]*\)".*/\1/p' "$ANDROID_BUILD_FILE" | head -n 1)"
@@ -66,6 +72,44 @@ fi
 check_equal 'pubspec version vs fallbackVersion' "$pubspec_version" "$fallback_version"
 check_equal 'bundle id vs fallbackBundleId' "$build_bundle_id" "$fallback_bundle_id"
 check_equal 'primary platform' "$primary_platform" 'Android mobile'
+
+# --- version matrix -------------------------------------------------------
+# The in-app "关于" page used to advertise Flutter 3.35+ / Dart 3.6+ / minSdk 23
+# while the pubspec required 3.38 / 3.10 and Flutter defaulted minSdk to 24.
+# Users were told the app supported devices it does not.
+if [[ -z "$pubspec_flutter_min" || -z "$pubspec_dart_min" ]]; then
+  echo '[release-metadata] failed to read sdk/flutter constraints from pubspec' >&2
+  failures=$((failures + 1))
+else
+  expected_baseline="Flutter ${pubspec_flutter_min%.0}+ / Dart ${pubspec_dart_min%.0}+"
+  check_equal 'flutterBaseline vs pubspec environment' \
+    "$flutter_baseline" "$expected_baseline"
+  check_regex 'README Flutter requirement' \
+    "Flutter \`${pubspec_flutter_min%.0}\+\`" "$README_FILE"
+  check_regex 'README Dart requirement' \
+    "Dart \`${pubspec_dart_min%.0}\+\`" "$README_FILE"
+fi
+
+# build.gradle.kts uses flutter.minSdkVersion verbatim, so the manifest must
+# match the Flutter SDK's default rather than a hand-maintained number.
+flutter_extension="$(command -v flutter >/dev/null 2>&1 \
+  && dirname "$(dirname "$(readlink -f "$(command -v flutter)")")" || true)"
+flutter_extension="${flutter_extension}/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt"
+if [[ -f "$flutter_extension" ]]; then
+  sdk_min_sdk="$(sed -n 's/.*val minSdkVersion: Int = \([0-9]*\).*/\1/p' "$flutter_extension" | head -n 1)"
+  if [[ -n "$sdk_min_sdk" ]]; then
+    check_equal 'androidMinSdk vs flutter.minSdkVersion' "$android_min_sdk" "$sdk_min_sdk"
+  fi
+else
+  echo "[release-metadata] note: Flutter SDK not resolvable, skipped minSdk cross-check" >&2
+fi
+
+# README publicly claims Linux desktop parity, so the in-app page must not list
+# Linux as a deferred platform.
+if sed -n '/deferredPlatforms = <String>\[/,/\];/p' "$MANIFEST_FILE" | grep -q "'Linux'"; then
+  echo "[release-metadata] deferredPlatforms lists Linux while README claims desktop parity" >&2
+  failures=$((failures + 1))
+fi
 check_regex 'CHANGELOG release section' "^## ${release_version}( |-|$)" "$CHANGELOG_FILE"
 check_contains 'README' '当前正式发布目标是 Android。' "$README_FILE"
 check_contains 'README' 'scripts/build_main_app.sh android-release-ready' "$README_FILE"

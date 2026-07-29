@@ -98,9 +98,10 @@ class _BilibiliQrLoginPageState extends State<BilibiliQrLoginPage> {
           });
         case BilibiliQrLoginStatus.success:
           _pollTimer?.cancel();
-          showAppSnackBar(context, 
-                '已登录 ${progress.displayName ?? '哔哩哔哩账号'}${progress.userId == null ? '' : ' · UID ${progress.userId}'}',
-              );
+          showAppSnackBar(
+            context,
+            '已登录 ${progress.displayName ?? '哔哩哔哩账号'}${progress.userId == null ? '' : ' · UID ${progress.userId}'}',
+          );
           Navigator.of(context).pop(true);
       }
     } catch (error) {
@@ -132,10 +133,7 @@ class _BilibiliQrLoginPageState extends State<BilibiliQrLoginPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '扫码登录',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
+                Text('扫码登录', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
                 Text(
                   '使用哔哩哔哩手机客户端扫描二维码。登录成功后会自动写入 Cookie 和 UID。',

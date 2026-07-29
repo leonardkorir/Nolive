@@ -39,9 +39,11 @@ void main() {
         home: Scaffold(
           body: RoomChatPanel(
             messagesListenable: messages,
+            filteredDroppedListenable: ValueNotifier<int>(0),
             statusListenable: status,
             resolveAncillaryLoading: () => status.ancillaryLoading,
             resolveHasDanmakuSession: () => status.hasDanmakuSession,
+            resolveDanmakuUnavailableReason: () => null,
             room: const LiveRoomDetail(
               providerId: ProviderId.bilibili,
               roomId: '1000',
@@ -83,9 +85,11 @@ void main() {
           home: Scaffold(
             body: RoomChatPanel(
               messagesListenable: messages,
+              filteredDroppedListenable: ValueNotifier<int>(0),
               statusListenable: status,
               resolveAncillaryLoading: () => status.ancillaryLoading,
               resolveHasDanmakuSession: () => status.hasDanmakuSession,
+              resolveDanmakuUnavailableReason: () => null,
               room: const LiveRoomDetail(
                 providerId: ProviderId.chaturbate,
                 roomId: 'cb-room',
@@ -150,9 +154,11 @@ void main() {
         home: Scaffold(
           body: RoomChatPanel(
             messagesListenable: messages,
+            filteredDroppedListenable: ValueNotifier<int>(0),
             statusListenable: status,
             resolveAncillaryLoading: () => status.ancillaryLoading,
             resolveHasDanmakuSession: () => status.hasDanmakuSession,
+            resolveDanmakuUnavailableReason: () => null,
             room: const LiveRoomDetail(
               providerId: ProviderId.bilibili,
               roomId: '1000',
@@ -205,9 +211,11 @@ void main() {
         home: Scaffold(
           body: RoomChatPanel(
             messagesListenable: messages,
+            filteredDroppedListenable: ValueNotifier<int>(0),
             statusListenable: status,
             resolveAncillaryLoading: () => status.ancillaryLoading,
             resolveHasDanmakuSession: () => status.hasDanmakuSession,
+            resolveDanmakuUnavailableReason: () => null,
             room: const LiveRoomDetail(
               providerId: ProviderId.douyin,
               roomId: '1000',
@@ -248,9 +256,11 @@ void main() {
           home: Scaffold(
             body: RoomChatPanel(
               messagesListenable: messages,
+              filteredDroppedListenable: ValueNotifier<int>(0),
               statusListenable: status,
               resolveAncillaryLoading: () => status.ancillaryLoading,
               resolveHasDanmakuSession: () => status.hasDanmakuSession,
+              resolveDanmakuUnavailableReason: () => null,
               room: const LiveRoomDetail(
                 providerId: ProviderId.douyu,
                 roomId: '2140934',
@@ -279,6 +289,144 @@ void main() {
       expect(find.text('新消息到达后会在这里继续滚动'), findsOneWidget);
     },
   );
+
+  testWidgets('an empty panel says the filter hid everything, not 等待新消息', (
+    tester,
+  ) async {
+    // A wide keyword rule used to be indistinguishable from a dead danmaku
+    // connection: device captures showed 87 of 93 douyu messages dropped while
+    // the panel still read 弹幕连接已建立，等待新消息.
+    final messages = ValueNotifier<List<LiveMessage>>(const <LiveMessage>[]);
+    final dropped = ValueNotifier<int>(87);
+    final scrollController = ScrollController();
+    addTearDown(messages.dispose);
+    addTearDown(dropped.dispose);
+    addTearDown(scrollController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RoomChatPanel(
+            messagesListenable: messages,
+            filteredDroppedListenable: dropped,
+            statusListenable: messages,
+            resolveAncillaryLoading: () => false,
+            resolveHasDanmakuSession: () => true,
+            resolveDanmakuUnavailableReason: () => null,
+            room: const LiveRoomDetail(
+              providerId: ProviderId.bilibili,
+              roomId: '1000',
+              title: '测试直播间',
+              streamerName: '测试主播',
+              isLive: true,
+            ),
+            scrollController: scrollController,
+            chatTextSize: 14,
+            chatTextGap: 6,
+            chatBubbleStyle: false,
+            onRefreshRoom: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('消息已全部被屏蔽词过滤'), findsOneWidget);
+    expect(find.text('本次已隐藏 87 条，弹幕连接正常'), findsOneWidget);
+    expect(find.text('弹幕连接已建立，等待新消息'), findsNothing);
+  });
+
+  testWidgets('a populated panel still reports how many were hidden', (
+    tester,
+  ) async {
+    final messages = ValueNotifier<List<LiveMessage>>([
+      LiveMessage(
+        type: LiveMessageType.chat,
+        content: 'visible',
+        userName: 'someone',
+        timestamp: DateTime(2026, 1, 1),
+      ),
+    ]);
+    final dropped = ValueNotifier<int>(12);
+    final scrollController = ScrollController();
+    addTearDown(messages.dispose);
+    addTearDown(dropped.dispose);
+    addTearDown(scrollController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RoomChatPanel(
+            messagesListenable: messages,
+            filteredDroppedListenable: dropped,
+            statusListenable: messages,
+            resolveAncillaryLoading: () => false,
+            resolveHasDanmakuSession: () => true,
+            resolveDanmakuUnavailableReason: () => null,
+            room: const LiveRoomDetail(
+              providerId: ProviderId.bilibili,
+              roomId: '1000',
+              title: '测试直播间',
+              streamerName: '测试主播',
+              isLive: true,
+            ),
+            scrollController: scrollController,
+            chatTextSize: 14,
+            chatTextGap: 6,
+            chatBubbleStyle: false,
+            onRefreshRoom: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('已按屏蔽词隐藏 12 条'), findsOneWidget);
+    expect(find.textContaining('visible'), findsOneWidget);
+  });
+
+  testWidgets('no notice appears when nothing was filtered', (tester) async {
+    final messages = ValueNotifier<List<LiveMessage>>([
+      LiveMessage(
+        type: LiveMessageType.chat,
+        content: 'visible',
+        userName: 'someone',
+        timestamp: DateTime(2026, 1, 1),
+      ),
+    ]);
+    final dropped = ValueNotifier<int>(0);
+    final scrollController = ScrollController();
+    addTearDown(messages.dispose);
+    addTearDown(dropped.dispose);
+    addTearDown(scrollController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RoomChatPanel(
+            messagesListenable: messages,
+            filteredDroppedListenable: dropped,
+            statusListenable: messages,
+            resolveAncillaryLoading: () => false,
+            resolveHasDanmakuSession: () => true,
+            resolveDanmakuUnavailableReason: () => null,
+            room: const LiveRoomDetail(
+              providerId: ProviderId.bilibili,
+              roomId: '1000',
+              title: '测试直播间',
+              streamerName: '测试主播',
+              isLive: true,
+            ),
+            scrollController: scrollController,
+            chatTextSize: 14,
+            chatTextGap: 6,
+            chatBubbleStyle: false,
+            onRefreshRoom: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('屏蔽词'), findsNothing);
+  });
 
   testWidgets('room super chat panel shows plain empty state text', (
     tester,
@@ -331,5 +479,55 @@ void main() {
     expect(find.text('sc-0'), findsOneWidget);
     expect(find.text('sc-23'), findsOneWidget);
     expect(find.text('sc-24'), findsNothing);
+  });
+
+  testWidgets('placeholder danmaku session shows the reason, not 已建立', (
+    tester,
+  ) async {
+    // Regression: Chaturbate hands back ProviderUnavailableDanmakuSession when
+    // a Cloudflare challenge costs it the danmaku token. The panel used to see
+    // a non-null session and report "弹幕连接已建立，等待新消息" forever.
+    const reason = 'Chaturbate 未能获取本房间的弹幕连接参数，本次进房无法接收弹幕（播放不受影响）。';
+    final messages = ValueNotifier<List<LiveMessage>>(const []);
+    final status = _RoomChatPanelStatus(
+      ancillaryLoading: false,
+      hasDanmakuSession: true,
+    );
+    final scrollController = ScrollController();
+    addTearDown(messages.dispose);
+    addTearDown(status.dispose);
+    addTearDown(scrollController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RoomChatPanel(
+            messagesListenable: messages,
+            filteredDroppedListenable: ValueNotifier<int>(0),
+            statusListenable: status,
+            resolveAncillaryLoading: () => status.ancillaryLoading,
+            resolveHasDanmakuSession: () => status.hasDanmakuSession,
+            resolveDanmakuUnavailableReason: () => reason,
+            room: const LiveRoomDetail(
+              providerId: ProviderId.bilibili,
+              roomId: '1000',
+              title: '测试直播间',
+              streamerName: '测试主播',
+              isLive: true,
+            ),
+            scrollController: scrollController,
+            chatTextSize: 14,
+            chatTextGap: 4,
+            chatBubbleStyle: false,
+            onRefreshRoom: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('弹幕连接已建立，等待新消息'), findsNothing);
+    expect(find.text('当前房间无法接收弹幕'), findsOneWidget);
+    expect(find.text(reason), findsOneWidget);
   });
 }

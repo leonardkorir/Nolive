@@ -10,9 +10,7 @@ import 'package:nolive_app/src/app/runtime_bridges/linux_desktop_webview_adapter
 void main() {
   test('Linux plugin registration lists desktop_webview_window', () {
     // Structural: shipped Linux runner must register WebView plugin.
-    final cmake = File(
-      'linux/flutter/generated_plugins.cmake',
-    );
+    final cmake = File('linux/flutter/generated_plugins.cmake');
     expect(cmake.existsSync(), isTrue, reason: 'run from apps/main_app');
     final text = cmake.readAsStringSync();
     expect(text, contains('desktop_webview_window'));
@@ -21,8 +19,9 @@ void main() {
 
   test('Linux adapter implementation files exist', () {
     expect(
-      File('lib/src/app/runtime_bridges/linux_desktop_webview_adapter.dart')
-          .existsSync(),
+      File(
+        'lib/src/app/runtime_bridges/linux_desktop_webview_adapter.dart',
+      ).existsSync(),
       isTrue,
     );
     expect(

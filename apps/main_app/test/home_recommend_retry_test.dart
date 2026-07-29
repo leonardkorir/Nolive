@@ -10,10 +10,7 @@ void main() {
       isTransientHomeRecommendError(Exception('Twitch browse popular 请求超时')),
       isTrue,
     );
-    expect(
-      isTransientHomeRecommendError(Exception('未拿到首页推荐内容')),
-      isTrue,
-    );
+    expect(isTransientHomeRecommendError(Exception('未拿到首页推荐内容')), isTrue);
     expect(isTransientHomeRecommendError(Exception('parse error')), isFalse);
   });
 }

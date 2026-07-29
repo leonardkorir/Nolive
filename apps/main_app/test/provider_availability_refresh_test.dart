@@ -54,44 +54,43 @@ void main() {
     );
   });
 
-  testWidgets(
-    'browse page keeps chaturbate tab when account cookie is saved',
-    (tester) async {
-      final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
+  testWidgets('browse page keeps chaturbate tab when account cookie is saved', (
+    tester,
+  ) async {
+    final bootstrap = createAppBootstrap(mode: AppRuntimeMode.preview);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: BrowsePage(
-            dependencies: buildBrowseFeatureDependencies(bootstrap),
-          ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BrowsePage(
+          dependencies: buildBrowseFeatureDependencies(bootstrap),
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      // Chaturbate is layout-enabled by default; cookie is not a catalog gate.
-      expect(
-        find.byKey(const Key('browse-provider-tab-chaturbate')),
-        findsOneWidget,
-      );
+    // Chaturbate is layout-enabled by default; cookie is not a catalog gate.
+    expect(
+      find.byKey(const Key('browse-provider-tab-chaturbate')),
+      findsOneWidget,
+    );
 
-      await bootstrap.updateProviderAccountSettings(
-        const ProviderAccountSettings(
-          bilibiliCookie: '',
-          bilibiliUserId: 0,
-          chaturbateCookie: 'csrftoken=demo; __cf_bm=demo-bm',
-          douyinCookie: '',
-          twitchCookie: '',
-          youtubeCookie: '',
-        ),
-      );
-      await tester.pumpAndSettle();
+    await bootstrap.updateProviderAccountSettings(
+      const ProviderAccountSettings(
+        bilibiliCookie: '',
+        bilibiliUserId: 0,
+        chaturbateCookie: 'csrftoken=demo; __cf_bm=demo-bm',
+        douyinCookie: '',
+        twitchCookie: '',
+        youtubeCookie: '',
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const Key('browse-provider-tab-chaturbate')),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(
+      find.byKey(const Key('browse-provider-tab-chaturbate')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('browse category tile keeps visual area within adaptive cap', (
     tester,

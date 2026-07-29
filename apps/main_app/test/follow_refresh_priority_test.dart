@@ -94,15 +94,15 @@ void main() {
         updatedAt: DateTime(2026, 1, 2),
       ),
     );
-    final byDuration = sortFollowWatchEntries(
-      [short, long],
-      mode: FollowWatchSortMode.watchDuration,
-    );
+    final byDuration = sortFollowWatchEntries([
+      short,
+      long,
+    ], mode: FollowWatchSortMode.watchDuration);
     expect(byDuration.first.record.roomId, '2');
-    final byRecency = sortFollowWatchEntries(
-      [short, long],
-      mode: FollowWatchSortMode.recency,
-    );
+    final byRecency = sortFollowWatchEntries([
+      short,
+      long,
+    ], mode: FollowWatchSortMode.recency);
     expect(byRecency.first.record.roomId, '2');
   });
 }

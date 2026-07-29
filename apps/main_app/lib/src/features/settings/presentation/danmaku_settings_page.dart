@@ -158,9 +158,7 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
                   max: 10,
                   divisions: 9,
                   onChanged: (value) {
-                    _update(
-                      preferences.copyWith(maxFrequency: value.round()),
-                    );
+                    _update(preferences.copyWith(maxFrequency: value.round()));
                   },
                 ),
               ],
@@ -185,11 +183,13 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
                   divisions: 56,
                   onChanged: (value) {
                     _preview(
-                        (_preferences ?? preferences).copyWith(speed: value));
+                      (_preferences ?? preferences).copyWith(speed: value),
+                    );
                   },
                   onChangeEnd: (value) {
                     _update(
-                        (_preferences ?? preferences).copyWith(speed: value));
+                      (_preferences ?? preferences).copyWith(speed: value),
+                    );
                   },
                 ),
                 const Divider(height: 1),
@@ -202,11 +202,13 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
                   divisions: 9,
                   onChanged: (value) {
                     _preview(
-                        (_preferences ?? preferences).copyWith(area: value));
+                      (_preferences ?? preferences).copyWith(area: value),
+                    );
                   },
                   onChangeEnd: (value) {
                     _update(
-                        (_preferences ?? preferences).copyWith(area: value));
+                      (_preferences ?? preferences).copyWith(area: value),
+                    );
                   },
                 ),
                 const Divider(height: 1),
@@ -272,9 +274,11 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    for (var index = 0;
-                        index < _fontWeightLabels.length;
-                        index += 1)
+                    for (
+                      var index = 0;
+                      index < _fontWeightLabels.length;
+                      index += 1
+                    )
                       ChoiceChip(
                         label: Text(_fontWeightLabels[index]),
                         selected: preferences.fontWeight == index,
@@ -295,14 +299,16 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
                   divisions: 20,
                   onChanged: (value) {
                     _preview(
-                      (_preferences ?? preferences)
-                          .copyWith(strokeWidth: value),
+                      (_preferences ?? preferences).copyWith(
+                        strokeWidth: value,
+                      ),
                     );
                   },
                   onChangeEnd: (value) {
                     _update(
-                      (_preferences ?? preferences)
-                          .copyWith(strokeWidth: value),
+                      (_preferences ?? preferences).copyWith(
+                        strokeWidth: value,
+                      ),
                     );
                   },
                 ),
@@ -354,14 +360,16 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
                   divisions: 12,
                   onChanged: (value) {
                     _preview(
-                      (_preferences ?? preferences)
-                          .copyWith(bottomMargin: value),
+                      (_preferences ?? preferences).copyWith(
+                        bottomMargin: value,
+                      ),
                     );
                   },
                   onChangeEnd: (value) {
                     _update(
-                      (_preferences ?? preferences)
-                          .copyWith(bottomMargin: value),
+                      (_preferences ?? preferences).copyWith(
+                        bottomMargin: value,
+                      ),
                     );
                   },
                 ),
@@ -460,9 +468,9 @@ class _DanmakuPreviewCard extends StatelessWidget {
         children: [
           Text(
             '预览效果',
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: Colors.white70,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(color: Colors.white70),
           ),
           const SizedBox(height: 10),
           SingleChildScrollView(

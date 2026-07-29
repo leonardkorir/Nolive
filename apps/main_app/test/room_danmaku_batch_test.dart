@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
-import 'package:nolive_app/src/features/room/presentation/room_danmaku_batch.dart';
+import 'package:nolive_app/src/features/room/application/room_danmaku_batch.dart';
 
 void main() {
   test('mergeRoomDanmakuBatch partitions and trims incoming messages', () {

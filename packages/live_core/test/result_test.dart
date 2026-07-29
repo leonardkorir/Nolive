@@ -36,8 +36,10 @@ void main() {
     const success = Result<int>.success(null);
 
     expect(success.when(success: (value) => value, failure: (_) => 1), isNull);
-    expect(success.map((value) => value == null ? 'empty' : '$value').value,
-        'empty');
+    expect(
+      success.map((value) => value == null ? 'empty' : '$value').value,
+      'empty',
+    );
     expect(success.fold((value) => value, (_) => 1), isNull);
   });
 }

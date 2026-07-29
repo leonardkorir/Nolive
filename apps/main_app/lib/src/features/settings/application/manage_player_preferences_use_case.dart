@@ -10,6 +10,7 @@ enum PlayerScaleMode { contain, cover, fill, fitWidth, fitHeight }
 
 const String kDefaultMpvVideoOutputDriver = 'gpu-next';
 const String kDefaultMpvHardwareDecoder = 'auto-safe';
+
 /// Linux embed (libmpv + Flutter texture): prefer copy-mode HW decode so
 /// VAAPI/NVDEC still count as hardware even when zero-copy interop is flaky.
 const String kDefaultMpvHardwareDecoderLinux = 'auto-copy';
@@ -142,10 +143,7 @@ const String kNoliveExternalMpvVoEnv = 'NOLIVE_MPV_EXTERNAL_VO';
 
 bool _envFlagTruthy(String? raw) {
   final value = raw?.trim().toLowerCase() ?? '';
-  return value == '1' ||
-      value == 'true' ||
-      value == 'yes' ||
-      value == 'on';
+  return value == '1' || value == 'true' || value == 'yes' || value == 'on';
 }
 
 Map<String, String> _defaultProcessEnvironment() {
@@ -443,21 +441,19 @@ class LoadPlayerPreferencesUseCase {
           'player_mpv_allow_external_native_window',
         ) ??
         false;
-    final rawVideoOutputDriver =
-        await settingsRepository.readValue<String>(
-          'player_mpv_video_output_driver',
-        );
-    final rawHardwareDecoder =
-        await settingsRepository.readValue<String>(
-          'player_mpv_hardware_decoder',
-        );
-    final rawAudioOutputDriver =
-        await settingsRepository.readValue<String>(
-          'player_mpv_audio_output_driver',
-        );
+    final rawVideoOutputDriver = await settingsRepository.readValue<String>(
+      'player_mpv_video_output_driver',
+    );
+    final rawHardwareDecoder = await settingsRepository.readValue<String>(
+      'player_mpv_hardware_decoder',
+    );
+    final rawAudioOutputDriver = await settingsRepository.readValue<String>(
+      'player_mpv_audio_output_driver',
+    );
     final platform = _platformCapabilities;
     // Env can force the A/B path without touching settings persistence.
-    final mpvAllowExternalNativeWindow = platform.isDesktop &&
+    final mpvAllowExternalNativeWindow =
+        platform.isDesktop &&
         resolveAllowExternalNativeMpvWindow(
           preferenceEnabled: mpvAllowExternalNativeWindowPreference,
         );
@@ -487,8 +483,7 @@ class LoadPlayerPreferencesUseCase {
     // Persist platform-safe values so Android mediacodec leftovers from sync
     // cannot keep poisoning cold starts / room enter on Linux desktop.
     // Do not rewrite storage when only env forced an external VO override.
-    if (envVoOverride == null &&
-        rawVideoOutputDriver != mpvVideoOutputDriver) {
+    if (envVoOverride == null && rawVideoOutputDriver != mpvVideoOutputDriver) {
       await settingsRepository.writeValue(
         'player_mpv_video_output_driver',
         mpvVideoOutputDriver,

@@ -1,10 +1,7 @@
 /// Maps raw exceptions to short Chinese copy for empty/error cards and snacks.
 ///
 /// Primary UI messages must never be a raw stack or `Exception: ...` dump.
-String formatUserFacingError(
-  Object? error, {
-  String fallback = '加载失败，请稍后重试',
-}) {
+String formatUserFacingError(Object? error, {String fallback = '加载失败，请稍后重试'}) {
   if (error == null) {
     return fallback;
   }

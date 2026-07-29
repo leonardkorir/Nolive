@@ -620,7 +620,9 @@ window["tsInstance"] = new TS(extend({
 
           expect(response.items, isNotEmpty);
           expect(
-            response.items.any((item) => item.roomId == 'should_not_use_roomlist'),
+            response.items.any(
+              (item) => item.roomId == 'should_not_use_roomlist',
+            ),
             isFalse,
           );
           expect(
@@ -631,7 +633,10 @@ window["tsInstance"] = new TS(extend({
             apiClient.discoverRequestCounts[_discoverKey('f', 'trending')],
             isNull,
           );
-          expect(apiClient.roomListRequestCounts[_searchKey('f', '', 0)], isNull);
+          expect(
+            apiClient.roomListRequestCounts[_searchKey('f', '', 0)],
+            isNull,
+          );
         },
       );
     },
@@ -721,10 +726,7 @@ window.initialRoomDossier = "{\\"broadcaster_username\\":\\"kitayamachu\\",\\"ro
       expect(detail.isLive, isFalse);
       expect(detail.metadata?['passwordProtected'], isTrue);
       expect(detail.metadata?['roomStatus'], 'password');
-      expect(
-        detail.metadata?['playbackUnavailableReason'],
-        contains('加锁'),
-      );
+      expect(detail.metadata?['playbackUnavailableReason'], contains('加锁'));
       expect(apiClient.roomContextRequestCounts['kitayamachu'], 1);
       expect(apiClient.roomPageRequestCounts, isEmpty);
       expect(await dataSource.fetchPlayQualities(detail), isEmpty);
@@ -788,10 +790,7 @@ window.initialRoomDossier = "{\\"broadcaster_username\\":\\"kitayamachu\\",\\"ro
         anyOf(isNull, isEmpty),
       );
       // Context-first detail skips room page when context succeeds.
-      expect(
-        apiClient.roomPageCookies['dianafrisky'],
-        anyOf(isNull, isEmpty),
-      );
+      expect(apiClient.roomPageCookies['dianafrisky'], anyOf(isNull, isEmpty));
     },
   );
 
@@ -853,9 +852,7 @@ window.initialRoomDossier = "{\\"broadcaster_username\\":\\"kitayamachu\\",\\"ro
           },
         },
         discoverCarousels: {
-          _discoverKey('f', 'most_popular'): const {
-            'rooms': <Object>[],
-          },
+          _discoverKey('f', 'most_popular'): const {'rooms': <Object>[]},
         },
       );
       final provider = ChaturbateProvider(
@@ -873,7 +870,10 @@ window.initialRoomDossier = "{\\"broadcaster_username\\":\\"kitayamachu\\",\\"ro
       expect(response.items, hasLength(1));
       expect(response.items.single.roomId, 'dianafrisky');
       expect(response.items.single.viewerCount, 321);
-      expect(apiClient.roomListRequireFingerprint[_searchKey('f', '', 0)], false);
+      expect(
+        apiClient.roomListRequireFingerprint[_searchKey('f', '', 0)],
+        false,
+      );
       expect(apiClient.roomListCookies[_searchKey('f', '', 0)], isEmpty);
       expect(
         apiClient.discoverRequestCounts[_discoverKey('f', 'most_popular')],
@@ -1016,7 +1016,10 @@ window.initialRoomDossier = "{\\"broadcaster_username\\":\\"kitayamachu\\",\\"ro
     'fetch room detail builds danmaku token from context uid + cookie csrf when page lacks bootstrap',
     () async {
       final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+        requestScheduler: ChaturbateRequestScheduler(
+          minSpacing: Duration.zero,
+          maxConcurrent: 8,
+        ),
         cookie: 'csrftoken=csrf-from-cookie; sessionid=abc',
         client: MockClient((request) async {
           if (request.url.path == '/api/chatvideocontext/milabunny_/') {
@@ -1055,11 +1058,17 @@ window.initialRoomDossier = "{\\"broadcaster_username\\":\\"kitayamachu\\",\\"ro
     },
   );
 
+  // The room page request carries the configured cookie from the start, so the
+  // realtime bootstrap comes back on the first attempt — no retry involved.
+  // See chaturbate_cookie_challenge_recovery_test.dart for the retry path.
   test(
-    'fetch room detail retries room page with account cookie when anonymous page lacks realtime bootstrap',
+    'fetch room detail reads realtime bootstrap from the cookie-authenticated room page',
     () async {
       final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+        requestScheduler: ChaturbateRequestScheduler(
+          minSpacing: Duration.zero,
+          maxConcurrent: 8,
+        ),
         cookie: 'cf_clearance=test-clearance',
         client: MockClient((request) async {
           if (request.url.path == '/api/chatvideocontext/kittengirlxo/') {

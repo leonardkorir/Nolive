@@ -340,10 +340,7 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
     // 合并 manual + network，并按 address:port 去重。
     // 常见重复：选中目标时写入 manual-peer，网络侧仍有真实 deviceId 的同地址条目。
     final byEndpoint = <String, DiscoveredPeer>{};
-    for (final peer in [
-      ..._networkPeers.values,
-      ..._manualPeers.values,
-    ]) {
+    for (final peer in [..._networkPeers.values, ..._manualPeers.values]) {
       if (_isSelfDeviceId(peer.deviceId)) {
         continue;
       }
@@ -374,7 +371,8 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
 
   /// 同地址端口时优先保留：网络真实设备 ID > 非 manual 标签 > 更新鲜的。
   DiscoveredPeer _preferPeer(DiscoveredPeer left, DiscoveredPeer right) {
-    final leftManual = left.deviceId == 'manual-peer' || left.platform == 'manual';
+    final leftManual =
+        left.deviceId == 'manual-peer' || left.platform == 'manual';
     final rightManual =
         right.deviceId == 'manual-peer' || right.platform == 'manual';
     if (leftManual != rightManual) {
@@ -395,8 +393,9 @@ class UdpLocalDiscoveryService implements LocalDiscoveryService {
       accessToken: right.accessToken?.isNotEmpty == true
           ? right.accessToken
           : left.accessToken,
-      displayName:
-          right.displayName.isNotEmpty ? right.displayName : left.displayName,
+      displayName: right.displayName.isNotEmpty
+          ? right.displayName
+          : left.displayName,
     );
   }
 }

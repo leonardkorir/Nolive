@@ -35,7 +35,6 @@ enum _LibraryMenuAction { subscribe, toggleMode, sort, settings }
 
 class _LibraryPageState extends State<LibraryPage> {
   Timer? _autoRefreshTimer;
-  Timer? _coldStartRefreshTimer;
   _FollowFilter _followFilter = _FollowFilter.all;
   _FollowDisplayMode _displayMode = _FollowDisplayMode.list;
   _FollowSortMode _sortMode = _FollowSortMode.liveFirst;
@@ -45,26 +44,27 @@ class _LibraryPageState extends State<LibraryPage> {
   Object? _loadError;
   int _refreshGeneration = 0;
   int _localLoadGeneration = 0;
+
   /// Rotates which Chaturbate follows get detail this cycle (slow crawl).
   int _chaturbateRefreshCycle = 0;
   _LibraryPageData? _data;
   FollowPreferences _preferences = FollowPreferences.defaults;
   late final FollowProgressiveUiController _progressiveUi =
       FollowProgressiveUiController(
-    isMounted: () => mounted,
-    currentGeneration: () => _refreshGeneration,
-    writeSnapshot: (watchlist) {
-      widget.dependencies.followWatchlistSnapshot.value = watchlist;
-    },
-    applyWatchlistToPage: (watchlist) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _replaceWatchlist(watchlist);
-      });
-    },
-  );
+        isMounted: () => mounted,
+        currentGeneration: () => _refreshGeneration,
+        writeSnapshot: (watchlist) {
+          widget.dependencies.followWatchlistSnapshot.value = watchlist;
+        },
+        applyWatchlistToPage: (watchlist) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _replaceWatchlist(watchlist);
+          });
+        },
+      );
 
   @override
   void initState() {
@@ -94,7 +94,6 @@ class _LibraryPageState extends State<LibraryPage> {
     widget.dependencies.followDataRevision.removeListener(
       _handleFollowDataRevision,
     );
-    _coldStartRefreshTimer?.cancel();
     _autoRefreshTimer?.cancel();
     _progressiveUi.dispose();
     super.dispose();
@@ -109,23 +108,11 @@ class _LibraryPageState extends State<LibraryPage> {
     // Default tab is 关注: refresh non-CB fully; CB only crawls a small slow
     // batch so we never stampede CF into 429.
     if (snapshot == null && localData.watchlist.entries.isNotEmpty) {
-      // Defer first remote status crawl until after cold-start bootstrap so
-      // HTTP clients are not still closed/recreating (device logs: huya/douyin
-      // "failed before response" / "Client is already closed" at t+1s).
-      _scheduleColdStartRefresh();
-    }
-  }
-
-  /// First auto live-status refresh after process/page open.
-  ///
-  /// Local rows paint immediately via [_reloadLocalState]; remote detail waits
-  /// briefly so provider transports can finish bootstrap.
-  void _scheduleColdStartRefresh() {
-    _coldStartRefreshTimer?.cancel();
-    _coldStartRefreshTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (!mounted) {
-        return;
-      }
+      // Crawls immediately: provider transports build their http.Client in the
+      // constructor, so there is no bootstrap window to wait out. The t+1s
+      // "Client is already closed" this used to defer past came from cache
+      // invalidation disposing an in-flight provider, which the registry lease
+      // now prevents (follow_cold_start_cache_invalidation_test.dart).
       unawaited(
         _refresh(
           showErrorSnackBar: false,
@@ -133,7 +120,7 @@ class _LibraryPageState extends State<LibraryPage> {
           fullRefresh: true,
         ),
       );
-    });
+    }
   }
 
   void _handleFollowDataRevision() {
@@ -694,7 +681,7 @@ class _LibraryPageState extends State<LibraryPage> {
     switch (action) {
       case _LibraryMenuAction.subscribe:
         if (!mounted) return;
-            showAppSnackBar(context, '赛事订阅暂未开放');
+        showAppSnackBar(context, '赛事订阅暂未开放');
         return;
       case _LibraryMenuAction.toggleMode:
         await _persistDisplayMode(
@@ -912,8 +899,9 @@ class _LibraryPageState extends State<LibraryPage> {
                               ),
                               room: entry.toLiveRoom(),
                               descriptor: descriptor,
-                              statusLabel:
-                                  entry.isPasswordProtected ? '加锁' : null,
+                              statusLabel: entry.isPasswordProtected
+                                  ? '加锁'
+                                  : null,
                               onTap: () => _openRoom(
                                 entry.record.providerId,
                                 entry.roomId,
@@ -940,10 +928,8 @@ class _LibraryPageState extends State<LibraryPage> {
                             entry.record.providerId,
                           ),
                           showSurface: false,
-                          onTap: () => _openRoom(
-                            entry.record.providerId,
-                            entry.roomId,
-                          ),
+                          onTap: () =>
+                              _openRoom(entry.record.providerId, entry.roomId),
                           onRemove: () => _confirmRemoveFollow(entry.record),
                           onLongPress: () =>
                               _showFollowActions(entry, data.tags),
@@ -1086,9 +1072,7 @@ class _FilterChip extends StatelessWidget {
             : colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
         shape: StadiumBorder(
           side: BorderSide(
-            color: selected
-                ? colorScheme.outline
-                : colorScheme.outlineVariant,
+            color: selected ? colorScheme.outline : colorScheme.outlineVariant,
           ),
         ),
         child: InkWell(

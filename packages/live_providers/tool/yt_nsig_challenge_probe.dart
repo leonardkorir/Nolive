@@ -26,8 +26,6 @@ Future<void> main() async {
     stdout.writeln(
       'url nQuery=$n pathN=$pathN headers=${u.headers.keys.toList()}',
     );
-    stdout.writeln(
-      '  ${u.url.substring(0, u.url.length.clamp(0, 120))}',
-    );
+    stdout.writeln('  ${u.url.substring(0, u.url.length.clamp(0, 120))}');
   }
 }

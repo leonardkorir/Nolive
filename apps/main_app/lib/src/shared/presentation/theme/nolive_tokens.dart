@@ -107,25 +107,46 @@ class NoliveStatusColors extends ThemeExtension<NoliveStatusColors> {
     return NoliveStatusColors(
       liveForeground: Color.lerp(liveForeground, other.liveForeground, t)!,
       liveBackground: Color.lerp(liveBackground, other.liveBackground, t)!,
-      offlineForeground:
-          Color.lerp(offlineForeground, other.offlineForeground, t)!,
-      offlineBackground:
-          Color.lerp(offlineBackground, other.offlineBackground, t)!,
-      watchingForeground:
-          Color.lerp(watchingForeground, other.watchingForeground, t)!,
-      watchingBackground:
-          Color.lerp(watchingBackground, other.watchingBackground, t)!,
-      warningForeground:
-          Color.lerp(warningForeground, other.warningForeground, t)!,
-      warningBackground:
-          Color.lerp(warningBackground, other.warningBackground, t)!,
+      offlineForeground: Color.lerp(
+        offlineForeground,
+        other.offlineForeground,
+        t,
+      )!,
+      offlineBackground: Color.lerp(
+        offlineBackground,
+        other.offlineBackground,
+        t,
+      )!,
+      watchingForeground: Color.lerp(
+        watchingForeground,
+        other.watchingForeground,
+        t,
+      )!,
+      watchingBackground: Color.lerp(
+        watchingBackground,
+        other.watchingBackground,
+        t,
+      )!,
+      warningForeground: Color.lerp(
+        warningForeground,
+        other.warningForeground,
+        t,
+      )!,
+      warningBackground: Color.lerp(
+        warningBackground,
+        other.warningBackground,
+        t,
+      )!,
       overlayWarningForeground: Color.lerp(
         overlayWarningForeground,
         other.overlayWarningForeground,
         t,
       )!,
-      overlayMetaForeground:
-          Color.lerp(overlayMetaForeground, other.overlayMetaForeground, t)!,
+      overlayMetaForeground: Color.lerp(
+        overlayMetaForeground,
+        other.overlayMetaForeground,
+        t,
+      )!,
     );
   }
 }
@@ -133,11 +154,7 @@ class NoliveStatusColors extends ThemeExtension<NoliveStatusColors> {
 /// Shared corner radii: sm (row), md (grid card), lg (surface card).
 @immutable
 class NoliveRadii extends ThemeExtension<NoliveRadii> {
-  const NoliveRadii({
-    required this.sm,
-    required this.md,
-    required this.lg,
-  });
+  const NoliveRadii({required this.sm, required this.md, required this.lg});
 
   final double sm;
   final double md;
@@ -151,11 +168,7 @@ class NoliveRadii extends ThemeExtension<NoliveRadii> {
 
   @override
   NoliveRadii copyWith({double? sm, double? md, double? lg}) {
-    return NoliveRadii(
-      sm: sm ?? this.sm,
-      md: md ?? this.md,
-      lg: lg ?? this.lg,
-    );
+    return NoliveRadii(sm: sm ?? this.sm, md: md ?? this.md, lg: lg ?? this.lg);
   }
 
   @override

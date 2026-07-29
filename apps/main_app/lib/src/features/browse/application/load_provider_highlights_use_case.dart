@@ -41,48 +41,51 @@ class LoadProviderHighlightsUseCase {
     ProviderDescriptor descriptor,
   ) async {
     try {
-      final provider = registry.create(descriptor.id);
-      if (provider.supports(ProviderCapability.searchRooms)) {
-        final search = provider.requireContract<SupportsRoomSearch>(
-          ProviderCapability.searchRooms,
-        );
-        final queries = _queries[descriptor.id.value] ?? const ['架构'];
-        for (final query in [...queries, '']) {
-          final PagedResponse<LiveRoom> response;
-          try {
-            response = await search.searchRooms(query);
-          } catch (error, stackTrace) {
-            AppLog.instance.error(
-              'browse',
-              'provider highlights search failed '
-                  'provider=${descriptor.id.value} query=$query',
-              error: error,
-              stackTrace: stackTrace,
-            );
-            continue;
+      return await registry.use(descriptor.id, (provider) async {
+        if (provider.supports(ProviderCapability.searchRooms)) {
+          final search = provider.requireContract<SupportsRoomSearch>(
+            ProviderCapability.searchRooms,
+          );
+          final queries = _queries[descriptor.id.value] ?? const ['架构'];
+          for (final query in [...queries, '']) {
+            final PagedResponse<LiveRoom> response;
+            try {
+              response = await search.searchRooms(query);
+            } catch (error, stackTrace) {
+              AppLog.instance.error(
+                'browse',
+                'provider highlights search failed '
+                    'provider=${descriptor.id.value} query=$query',
+                error: error,
+                stackTrace: stackTrace,
+              );
+              continue;
+            }
+            if (response.items.isNotEmpty) {
+              return ProviderHighlightSection(
+                descriptor: descriptor,
+                query: query,
+                rooms: response.items.take(6).toList(growable: false),
+              );
+            }
           }
+        }
+        if (provider.supports(ProviderCapability.recommendRooms)) {
+          final recommendRooms = provider
+              .requireContract<SupportsRecommendRooms>(
+                ProviderCapability.recommendRooms,
+              );
+          final response = await recommendRooms.fetchRecommendRooms(page: 1);
           if (response.items.isNotEmpty) {
             return ProviderHighlightSection(
               descriptor: descriptor,
-              query: query,
+              query: '',
               rooms: response.items.take(6).toList(growable: false),
             );
           }
         }
-      }
-      if (provider.supports(ProviderCapability.recommendRooms)) {
-        final recommendRooms = provider.requireContract<SupportsRecommendRooms>(
-          ProviderCapability.recommendRooms,
-        );
-        final response = await recommendRooms.fetchRecommendRooms(page: 1);
-        if (response.items.isNotEmpty) {
-          return ProviderHighlightSection(
-            descriptor: descriptor,
-            query: '',
-            rooms: response.items.take(6).toList(growable: false),
-          );
-        }
-      }
+        return null;
+      });
     } catch (error, stackTrace) {
       AppLog.instance.error(
         'browse',

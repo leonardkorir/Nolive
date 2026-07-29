@@ -410,7 +410,12 @@ class TwitchAdGuardProxy {
           await gate.commitStatusAndClose(HttpStatus.notFound);
           return;
         }
-        await _pipeAsset(gate, session: session, assetId: assetId, asset: asset);
+        await _pipeAsset(
+          gate,
+          session: session,
+          assetId: assetId,
+          asset: asset,
+        );
         return;
       }
       await gate.commitStatusAndClose(HttpStatus.notFound);
@@ -515,10 +520,7 @@ class TwitchAdGuardProxy {
     await gate.writePlaylistBody(playlist);
     final warmLimit = _d.twitchAssetWarmPrefetchLimit;
     if (warmLimit > 0) {
-      session.warmAssets(
-        warmAssetIds.take(warmLimit),
-        _prefetchAsset,
-      );
+      session.warmAssets(warmAssetIds.take(warmLimit), _prefetchAsset);
     }
   }
 
@@ -536,7 +538,9 @@ class TwitchAdGuardProxy {
             group.candidates,
             session: session,
           );
-          if (selected == null || selected.hadAds || selected.segmentCount <= 0) {
+          if (selected == null ||
+              selected.hadAds ||
+              selected.segmentCount <= 0) {
             return;
           }
           final warmAssetIds = <String>[];
@@ -596,7 +600,10 @@ class TwitchAdGuardProxy {
             candidateIndex: stickyIndex,
           );
           if (loaded != null && !loaded.hadAds && loaded.segmentCount > 0) {
-            session?.rememberStickyCandidate(sticky, ttl: _d.twitchStickyCandidateTtl);
+            session?.rememberStickyCandidate(
+              sticky,
+              ttl: _d.twitchStickyCandidateTtl,
+            );
             if (_platformAdapter.kDebugMode) {
               _platformAdapter.debugPrint(
                 '[TwitchAdGuardProxy] sticky hit '
@@ -613,17 +620,18 @@ class TwitchAdGuardProxy {
     for (var attempt = 0; attempt < _maxPlaylistProbeAttempts; attempt += 1) {
       final pending = <int, Future<_TwitchPlaylistProbeEvent>>{
         for (var index = 0; index < candidates.length; index += 1)
-          index: _loadCandidatePlaylist(
-            candidates[index],
-            candidateIndex: index,
-          )
-              .timeout(_playlistCandidateProbeTimeout, onTimeout: () => null)
-              .then(
-                (playlist) => _TwitchPlaylistProbeEvent.playlist(
-                  index: index,
-                  playlist: playlist,
-                ),
-              ),
+          index:
+              _loadCandidatePlaylist(candidates[index], candidateIndex: index)
+                  .timeout(
+                    _playlistCandidateProbeTimeout,
+                    onTimeout: () => null,
+                  )
+                  .then(
+                    (playlist) => _TwitchPlaylistProbeEvent.playlist(
+                      index: index,
+                      playlist: playlist,
+                    ),
+                  ),
       };
       final loadedByIndex = List<_TwitchLoadedPlaylist?>.filled(
         candidates.length,
@@ -1484,9 +1492,11 @@ class _TwitchAdGuardSession {
   final Map<String, _TwitchCachedAssetBytes> cachedBytes =
       <String, _TwitchCachedAssetBytes>{};
   final Map<String, Future<void>> _pendingWarmAssets = <String, Future<void>>{};
+
   /// Rewritten media playlist per Auto group (skip CDN multi-probe on ABR hop).
   final Map<String, String> variantPlaylistByGroup = <String, String>{};
-  final Map<String, DateTime> variantPlaylistUntilByGroup = <String, DateTime>{};
+  final Map<String, DateTime> variantPlaylistUntilByGroup =
+      <String, DateTime>{};
 
   DateTime lastAccessAt = DateTime.now();
   int _assetCounter = 0;

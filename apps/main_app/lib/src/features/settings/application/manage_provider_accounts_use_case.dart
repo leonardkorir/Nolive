@@ -96,7 +96,10 @@ class LoadProviderAccountSettingsUseCase {
         SensitiveSettingKeys.accountBilibiliCookie,
       );
       if (fallback != null && fallback.isNotEmpty) {
-        AppLog.instance.warn('settings', 'Bilibili cookie loaded from plaintext SharedPreferences fallback.');
+        AppLog.instance.warn(
+          'settings',
+          'Bilibili cookie loaded from plaintext SharedPreferences fallback.',
+        );
       }
     }
     if (chaturbateCookie.isEmpty) {
@@ -104,7 +107,10 @@ class LoadProviderAccountSettingsUseCase {
         SensitiveSettingKeys.accountChaturbateCookie,
       );
       if (fallback != null && fallback.isNotEmpty) {
-        AppLog.instance.warn('settings', 'Chaturbate cookie loaded from plaintext SharedPreferences fallback.');
+        AppLog.instance.warn(
+          'settings',
+          'Chaturbate cookie loaded from plaintext SharedPreferences fallback.',
+        );
       }
     }
     if (douyinCookie.isEmpty) {
@@ -112,7 +118,10 @@ class LoadProviderAccountSettingsUseCase {
         SensitiveSettingKeys.accountDouyinCookie,
       );
       if (fallback != null && fallback.isNotEmpty) {
-        AppLog.instance.warn('settings', 'Douyin cookie loaded from plaintext SharedPreferences fallback.');
+        AppLog.instance.warn(
+          'settings',
+          'Douyin cookie loaded from plaintext SharedPreferences fallback.',
+        );
       }
     }
     if (stripchatCookie.isEmpty) {
@@ -120,7 +129,10 @@ class LoadProviderAccountSettingsUseCase {
         SensitiveSettingKeys.accountStripchatCookie,
       );
       if (fallback != null && fallback.isNotEmpty) {
-        AppLog.instance.warn('settings', 'Stripchat cookie loaded from plaintext SharedPreferences fallback.');
+        AppLog.instance.warn(
+          'settings',
+          'Stripchat cookie loaded from plaintext SharedPreferences fallback.',
+        );
       }
     }
     if (stripchatMouflonKeys.isEmpty) {
@@ -128,7 +140,10 @@ class LoadProviderAccountSettingsUseCase {
         SensitiveSettingKeys.accountStripchatMouflonKeys,
       );
       if (fallback != null && fallback.isNotEmpty) {
-        AppLog.instance.warn('settings', 'Stripchat Mouflon keys loaded from plaintext SharedPreferences fallback.');
+        AppLog.instance.warn(
+          'settings',
+          'Stripchat Mouflon keys loaded from plaintext SharedPreferences fallback.',
+        );
       }
     }
     if (twitchCookie.isEmpty) {
@@ -136,7 +151,10 @@ class LoadProviderAccountSettingsUseCase {
         SensitiveSettingKeys.accountTwitchCookie,
       );
       if (fallback != null && fallback.isNotEmpty) {
-        AppLog.instance.warn('settings', 'Twitch cookie loaded from plaintext SharedPreferences fallback.');
+        AppLog.instance.warn(
+          'settings',
+          'Twitch cookie loaded from plaintext SharedPreferences fallback.',
+        );
       }
     }
     if (youtubeCookie.isEmpty) {
@@ -144,7 +162,10 @@ class LoadProviderAccountSettingsUseCase {
         SensitiveSettingKeys.accountYouTubeCookie,
       );
       if (fallback != null && fallback.isNotEmpty) {
-        AppLog.instance.warn('settings', 'YouTube cookie loaded from plaintext SharedPreferences fallback.');
+        AppLog.instance.warn(
+          'settings',
+          'YouTube cookie loaded from plaintext SharedPreferences fallback.',
+        );
       }
     }
     return ProviderAccountSettings(

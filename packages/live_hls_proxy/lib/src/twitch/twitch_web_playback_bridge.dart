@@ -15,6 +15,7 @@ class TwitchWebPlaybackBridge {
     Duration pollInterval = const Duration(milliseconds: 500),
     Duration bootstrapScriptTimeout = const Duration(seconds: 4),
     Duration webViewStartTimeout = const Duration(seconds: 10),
+
     /// Extra attempts after the first headless create/run (CB-style cold start).
     /// Default 2 → up to 3 total tries on `Must be started before we block`.
     int webViewStartupRetryCount = 2,
@@ -580,7 +581,7 @@ return await (async () => {
         _platformAdapter.log(
           'twitch-bridge',
           'releasePressure deferred (active=${_lifecycle.activeUseCount}) '
-          'reason=$reason',
+              'reason=$reason',
         );
         return;
       }
@@ -589,9 +590,7 @@ return await (async () => {
     });
   }
 
-  Future<void> _waitUntilDocumentReady(
-    HlsHeadlessWebView webView,
-  ) async {
+  Future<void> _waitUntilDocumentReady(HlsHeadlessWebView webView) async {
     final deadline = DateTime.now().add(_timeout);
     while (DateTime.now().isBefore(deadline)) {
       if (await _isDocumentReady(webView)) {
@@ -697,7 +696,9 @@ return await (async () => {
           ).timeout(
             _bootstrapScriptTimeout,
             onTimeout: () {
-              _platformAdapter.debugPrint('Twitch web playback bootstrap script timed out.');
+              _platformAdapter.debugPrint(
+                'Twitch web playback bootstrap script timed out.',
+              );
               return null;
             },
           );
@@ -730,12 +731,16 @@ return await (async () => {
     final rawMap = _asMap(result.value);
     final errorMessage = rawMap['errorMessage']?.toString().trim() ?? '';
     if (errorMessage.isNotEmpty) {
-      _platformAdapter.debugPrint('Twitch web playback bootstrap returned error: $errorMessage');
+      _platformAdapter.debugPrint(
+        'Twitch web playback bootstrap returned error: $errorMessage',
+      );
       return null;
     }
     final forbiddenReason = rawMap['forbiddenReason']?.toString().trim() ?? '';
     if (forbiddenReason.isNotEmpty) {
-      _platformAdapter.debugPrint('Twitch web playback forbidden: $forbiddenReason');
+      _platformAdapter.debugPrint(
+        'Twitch web playback forbidden: $forbiddenReason',
+      );
     }
     final signature = rawMap['signature']?.toString().trim() ?? '';
     final tokenValue = rawMap['tokenValue']?.toString().trim() ?? '';

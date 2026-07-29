@@ -8,6 +8,7 @@ import 'youtube_data_source.dart';
 import 'youtube_decipher_service.dart';
 import 'youtube_live_data_source.dart';
 import 'youtube_preview_data_source.dart';
+import 'youtube_danmaku_token.dart';
 
 typedef YouTubeApiClientBuilder = YouTubeApiClient Function();
 typedef YouTubeApiClientDisposer = void Function(YouTubeApiClient apiClient);

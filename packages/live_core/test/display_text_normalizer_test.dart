@@ -5,10 +5,7 @@ import 'package:test/test.dart';
 
 void main() {
   test('normalizeDisplayText decodes html entities and trims spaces', () {
-    expect(
-      normalizeDisplayText(' PUBG&nbsp;9周年快乐（7点见） '),
-      'PUBG 9周年快乐（7点见）',
-    );
+    expect(normalizeDisplayText(' PUBG&nbsp;9周年快乐（7点见） '), 'PUBG 9周年快乐（7点见）');
     expect(
       normalizeDisplayText('Tom &amp;amp; Jerry &#x1F600; &copy;'),
       'Tom & Jerry 😀 ©',
@@ -26,20 +23,22 @@ void main() {
     expect(normalizeDisplayText(badText), '游戏厅');
   });
 
-  test('traditional simplification table has no duplicate or identity entries',
-      () {
-    final source = File(
-      'lib/src/text/display_text_normalizer.dart',
-    ).readAsStringSync();
-    final entries = RegExp(
-      r"MapEntry\('([^']+)', '([^']+)'\)",
-    ).allMatches(source);
-    final seen = <String>{};
-    for (final entry in entries) {
-      final key = entry.group(1)!;
-      final value = entry.group(2)!;
-      expect(value, isNot(key), reason: 'identity mapping for $key');
-      expect(seen.add(key), isTrue, reason: 'duplicate mapping for $key');
-    }
-  });
+  test(
+    'traditional simplification table has no duplicate or identity entries',
+    () {
+      final source = File(
+        'lib/src/text/display_text_normalizer.dart',
+      ).readAsStringSync();
+      final entries = RegExp(
+        r"MapEntry\('([^']+)', '([^']+)'\)",
+      ).allMatches(source);
+      final seen = <String>{};
+      for (final entry in entries) {
+        final key = entry.group(1)!;
+        final value = entry.group(2)!;
+        expect(value, isNot(key), reason: 'identity mapping for $key');
+        expect(seen.add(key), isTrue, reason: 'duplicate mapping for $key');
+      }
+    },
+  );
 }

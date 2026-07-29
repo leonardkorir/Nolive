@@ -222,8 +222,11 @@ void main() {
     );
 
     for (final result in reservedResults) {
-      expect(result.isSuccess, isFalse,
-          reason: 'Reserved segment should be rejected');
+      expect(
+        result.isSuccess,
+        isFalse,
+        reason: 'Reserved segment should be rejected',
+      );
     }
   });
 

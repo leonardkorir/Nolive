@@ -169,7 +169,7 @@ class RoomChatMessageTile extends StatelessWidget {
     final userName = normalizeDisplayText(message.userName).trim();
     final content = normalizeDisplayText(message.content);
 
-    if (userName == 'LiveSysMessage') {
+    if (userName == kLiveSystemMessageUserName) {
       return Padding(
         padding: EdgeInsets.only(bottom: gap),
         child: SelectableText(

@@ -25,9 +25,7 @@ class LayoutSettingsPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SectionHeader(
-                  title: '主页设置',
-                ),
+                const SectionHeader(title: '主页设置'),
                 const SizedBox(height: 12),
                 SettingsActionButton(
                   expanded: true,
@@ -90,21 +88,16 @@ class LayoutSettingsPage extends StatelessWidget {
       ShellTabId.home => (Icons.home_rounded, const Color(0xFF1778D4)),
       ShellTabId.browse => (Icons.grid_view_rounded, const Color(0xFF0F9D92)),
       ShellTabId.search => (Icons.search_rounded, const Color(0xFF7C3AED)),
-      ShellTabId.library => (
-          Icons.favorite_rounded,
-          const Color(0xFFE11D48),
-        ),
+      ShellTabId.library => (Icons.favorite_rounded, const Color(0xFFE11D48)),
       ShellTabId.profile => (
-          Icons.sentiment_satisfied_alt,
-          const Color(0xFFF97316),
-        ),
+        Icons.sentiment_satisfied_alt,
+        const Color(0xFFF97316),
+      ),
     };
     return SizedBox(
       width: 32,
       height: 32,
-      child: Center(
-        child: Icon(icon, size: 22, color: color),
-      ),
+      child: Center(child: Icon(icon, size: 22, color: color)),
     );
   }
 

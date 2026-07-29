@@ -5,7 +5,7 @@ import 'package:live_core/live_core.dart';
 import 'danmaku_activity_watchdog.dart';
 import '../providers/youtube/youtube_api_client.dart';
 
-class YouTubeDanmakuSession implements DanmakuSession {
+class YouTubeDanmakuSession extends DanmakuSession {
   YouTubeDanmakuSession({
     required this.apiClient,
     required this.apiKey,

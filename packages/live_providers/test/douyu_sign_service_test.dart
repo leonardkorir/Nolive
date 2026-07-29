@@ -245,9 +245,7 @@ function ub98484234(roomId, deviceId, timestamp) {
 
   test('websec form percent-encodes Base64 reserved characters', () async {
     DouyuDeviceId.clearSessionCacheForTest();
-    final transport = _StubEncryptionTransport(
-      encData: 'abc+def/ghi=',
-    );
+    final transport = _StubEncryptionTransport(encData: 'abc+def/ghi=');
     final service = HttpDouyuSignService(
       transport: transport,
       deviceId: HttpDouyuSignService.kDefaultDeviceId,
@@ -258,31 +256,31 @@ function ub98484234(roomId, deviceId, timestamp) {
     expect(body, isNot(contains('enc_data=abc+def/ghi=')));
   });
 
-  test('past expire_at falls back to local TTL without refetch thrash', () async {
-    DouyuDeviceId.clearSessionCacheForTest();
-    final transport = _StubEncryptionTransport();
-    final service = HttpDouyuSignService(
-      transport: transport,
-      deviceId: HttpDouyuSignService.kDefaultDeviceId,
-    );
+  test(
+    'past expire_at falls back to local TTL without refetch thrash',
+    () async {
+      DouyuDeviceId.clearSessionCacheForTest();
+      final transport = _StubEncryptionTransport();
+      final service = HttpDouyuSignService(
+        transport: transport,
+        deviceId: HttpDouyuSignService.kDefaultDeviceId,
+      );
 
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    service.seedEncryptionKeyForTest(
-      {
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      service.seedEncryptionKeyForTest({
         'rand_str': 'rand',
         'enc_time': 1,
         'is_special': 0,
         'key': 'key',
         'enc_data': 'enc-payload',
         'expire_at': now - 10, // already past
-      },
-      localExpireAtSeconds: now + 3600,
-    );
+      }, localExpireAtSeconds: now + 3600);
 
-    await service.buildSignedPlayBody('1');
-    await service.buildSignedPlayBody('1');
-    expect(transport.encryptionGets, 0);
-  });
+      await service.buildSignedPlayBody('1');
+      await service.buildSignedPlayBody('1');
+      expect(transport.encryptionGets, 0);
+    },
+  );
 
   test('concurrent ensureEncryptionKey coalesces to one GET', () async {
     DouyuDeviceId.clearSessionCacheForTest();
@@ -323,10 +321,7 @@ function ub98484234(roomId, deviceId, timestamp) {
       expect(ctx.deviceId, HttpDouyuSignService.kDefaultDeviceId);
       expect(ctx.body, contains('sign='));
       expect(transport.hitHomeH5Enc, isTrue);
-      expect(
-        diagnostics,
-        contains(contains('websec encryption failed')),
-      );
+      expect(diagnostics, contains(contains('websec encryption failed')));
     },
   );
 }

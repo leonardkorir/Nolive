@@ -1,5 +1,6 @@
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
+import 'package:nolive_app/src/shared/application/provider_request_retry.dart';
 
 class LoadProviderRecommendRoomsUseCase {
   const LoadProviderRecommendRoomsUseCase(
@@ -15,36 +16,21 @@ class LoadProviderRecommendRoomsUseCase {
   Future<PagedResponse<LiveRoom>> call({
     required ProviderId providerId,
     int page = 1,
-  }) async {
-    final maxAttempts = providerId == ProviderId.bilibili && page == 1
-        ? bilibiliMaxAttempts
-        : 1;
-    ProviderParseException? lastError;
-    for (var attempt = 0; attempt < maxAttempts; attempt += 1) {
-      if (attempt > 0) {
-        registry.invalidate(providerId);
-        await Future<void>.delayed(bilibiliRetryDelay);
-      }
-      final provider = registry.create(providerId);
-      final recommendRooms = provider.requireContract<SupportsRecommendRooms>(
-        ProviderCapability.recommendRooms,
-      );
-      try {
-        final response = await recommendRooms.fetchRecommendRooms(page: page);
-        if (response.items.isNotEmpty || attempt + 1 >= maxAttempts) {
-          return response;
-        }
-      } on ProviderParseException catch (error) {
-        lastError = error;
-        if (attempt + 1 >= maxAttempts) {
-          rethrow;
-        }
-      }
-    }
-    throw lastError ??
-        ProviderParseException(
-          providerId: providerId,
-          message: '${providerId.value} recommend rooms failed unexpectedly.',
-        );
+  }) {
+    return retryProviderRequestWithRebuild<PagedResponse<LiveRoom>>(
+      registry: registry,
+      providerId: providerId,
+      operation: 'recommend rooms',
+      maxAttempts: providerId == ProviderId.bilibili && page == 1
+          ? bilibiliMaxAttempts
+          : 1,
+      retryDelay: bilibiliRetryDelay,
+      shouldRetryResult: (response) => response.items.isEmpty,
+      action: (provider) => provider
+          .requireContract<SupportsRecommendRooms>(
+            ProviderCapability.recommendRooms,
+          )
+          .fetchRecommendRooms(page: page),
+    );
   }
 }

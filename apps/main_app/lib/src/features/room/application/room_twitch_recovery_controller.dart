@@ -5,8 +5,9 @@ import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/twitch_playback_recovery.dart';
-import 'package:nolive_app/src/features/room/presentation/room_playback_source_helpers.dart';
-import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_source_helpers.dart';
+import 'package:nolive_app/src/features/room/application/room_runtime_helper_contexts.dart';
+import 'package:nolive_app/src/features/room/application/room_provider_traits.dart';
 
 typedef RoomTwitchSwitchQuality =
     Future<void> Function(
@@ -160,8 +161,9 @@ class RoomTwitchRecoveryController {
       ProviderId.stripchat => 'stripchat',
       _ => 'twitch',
     };
-    final supportsStartupPromotion =
-        providerId == ProviderId.twitch || providerId == ProviderId.stripchat;
+    final supportsStartupPromotion = roomProviderTraitsFor(
+      providerId,
+    ).usesHeadlessStartupPromotion;
     if (!supportsStartupPromotion) {
       return;
     }
@@ -399,7 +401,7 @@ class RoomTwitchRecoveryController {
       playbackSource: playbackSource,
       playUrls: playUrls,
     );
-    if (providerId != ProviderId.twitch) {
+    if (!roomProviderTraitsFor(providerId).usesFixedLineRecovery) {
       return;
     }
     switch (fixedRecovery.action) {

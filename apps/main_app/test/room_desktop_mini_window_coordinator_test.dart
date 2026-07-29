@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nolive_app/src/features/room/presentation/room_desktop_mini_window_coordinator.dart';
-import 'package:nolive_app/src/features/room/presentation/room_view_ui_state.dart';
+import 'package:nolive_app/src/features/room/application/room_view_ui_state.dart';
 
 import 'room_fullscreen_test_fakes.dart';
 

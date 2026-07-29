@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
+import 'package:nolive_app/src/features/room/application/room_page_session_state.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/resolve_play_source_use_case.dart';
@@ -12,15 +12,15 @@ import 'package:nolive_app/src/features/room/application/room_ancillary_controll
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 import 'package:nolive_app/src/features/room/application/room_session_controller.dart';
 import 'package:nolive_app/src/features/room/application/twitch_playback_recovery.dart';
-import 'package:nolive_app/src/features/room/presentation/room_danmaku_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_runtime_context.dart';
+import 'package:nolive_app/src/features/room/application/room_danmaku_controller.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_runtime_context.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_platforms.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
 import 'package:nolive_app/src/features/room/presentation/room_page_session_coordinator.dart';
 import 'package:nolive_app/src/features/room/presentation/room_panel_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_playback_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
-import 'package:nolive_app/src/features/room/presentation/room_twitch_recovery_controller.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_controller.dart';
+import 'package:nolive_app/src/features/room/application/room_runtime_helper_contexts.dart';
+import 'package:nolive_app/src/features/room/application/room_twitch_recovery_controller.dart';
 import 'package:nolive_app/src/features/room/presentation/room_runtime_view_adapter.dart';
 import 'package:nolive_app/src/features/room/presentation/room_page_ui_effects.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
@@ -1113,7 +1113,7 @@ class _TestRoomFullscreenSessionController
           updateDanmakuOverlayVisible: (_) {},
           resolveVolume: () => 1,
           updateVolume: (_) {},
-          resolvePipAspectRatio: () => const Rational(16, 9),
+          resolvePipAspectRatio: () => RoomPipAspectRatio(width: 16, height: 9),
           resolveScreenSize: () => const Size(1080, 1920),
           resolvePlaybackSourceForLifecycleRestore: () async => null,
           resolveIsVerticalVideo: () => false,
@@ -1155,7 +1155,7 @@ class _TestRoomFullscreenSessionController
   }
 }
 
-class _TestDanmakuSession implements DanmakuSession {
+class _TestDanmakuSession extends DanmakuSession {
   int disconnectCalls = 0;
 
   @override

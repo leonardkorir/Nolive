@@ -541,7 +541,9 @@ class RoomPlayerSurfaceSection extends StatelessWidget {
                         data.unavailableReason,
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: NoliveRoomChrome.onVideo.withValues(alpha: 0.88),
+                          color: NoliveRoomChrome.onVideo.withValues(
+                            alpha: 0.88,
+                          ),
                           height: 1.35,
                         ),
                       ),

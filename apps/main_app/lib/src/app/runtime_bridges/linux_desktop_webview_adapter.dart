@@ -39,8 +39,7 @@ class LinuxDesktopCookieJar implements HlsProxyCookieManager {
     required String name,
     required String domain,
     required String path,
-  }) =>
-      '$domain|$path|$name';
+  }) => '$domain|$path|$name';
 
   @override
   Future<void> setCookie({
@@ -52,14 +51,17 @@ class LinuxDesktopCookieJar implements HlsProxyCookieManager {
     bool isSecure = true,
   }) async {
     final normalizedDomain = domain.startsWith('.') ? domain : '.$domain';
-    _cookies[_key(name: name, domain: normalizedDomain, path: path)] =
-        _StoredCookie(
-          name: name,
-          value: value,
-          domain: normalizedDomain,
-          path: path.isEmpty ? '/' : path,
-          isSecure: isSecure,
-        );
+    _cookies[_key(
+      name: name,
+      domain: normalizedDomain,
+      path: path,
+    )] = _StoredCookie(
+      name: name,
+      value: value,
+      domain: normalizedDomain,
+      path: path.isEmpty ? '/' : path,
+      isSecure: isSecure,
+    );
   }
 
   @override
@@ -79,12 +81,14 @@ class LinuxDesktopCookieJar implements HlsProxyCookieManager {
 
   /// Cookie assignment statements for document.cookie injection.
   List<String> documentCookieAssignments() {
-    return _cookies.values.map((c) {
-      final domain = c.domain.startsWith('.') ? c.domain : '.${c.domain}';
-      final secure = c.isSecure ? '; Secure' : '';
-      // SameSite=None requires Secure; used for cross-site playback domains.
-      return "document.cookie=${jsonEncode('${c.name}=${c.value}; path=${c.path}; domain=$domain$secure; SameSite=None')}";
-    }).toList(growable: false);
+    return _cookies.values
+        .map((c) {
+          final domain = c.domain.startsWith('.') ? c.domain : '.${c.domain}';
+          final secure = c.isSecure ? '; Secure' : '';
+          // SameSite=None requires Secure; used for cross-site playback domains.
+          return "document.cookie=${jsonEncode('${c.name}=${c.value}; path=${c.path}; domain=$domain$secure; SameSite=None')}";
+        })
+        .toList(growable: false);
   }
 
   /// Merge cookies read from a live [Webview] into the jar.
@@ -96,17 +100,16 @@ class LinuxDesktopCookieJar implements HlsProxyCookieManager {
             ? cookie.domain
             : '.${cookie.domain}';
         _cookies[_key(
-              name: cookie.name,
-              domain: domain,
-              path: cookie.path.isEmpty ? '/' : cookie.path,
-            )] =
-            _StoredCookie(
-              name: cookie.name,
-              value: cookie.value,
-              domain: domain,
-              path: cookie.path.isEmpty ? '/' : cookie.path,
-              isSecure: cookie.secure,
-            );
+          name: cookie.name,
+          domain: domain,
+          path: cookie.path.isEmpty ? '/' : cookie.path,
+        )] = _StoredCookie(
+          name: cookie.name,
+          value: cookie.value,
+          domain: domain,
+          path: cookie.path.isEmpty ? '/' : cookie.path,
+          isSecure: cookie.secure,
+        );
       }
     } catch (error, stackTrace) {
       AppLog.instance.error(
@@ -314,7 +317,8 @@ class LinuxDesktopHeadlessWebView implements HlsHeadlessWebView {
   @override
   Future<String?> getHtml() async {
     final result = await evaluateJavascript(
-      source: 'document.documentElement ? document.documentElement.outerHTML : ""',
+      source:
+          'document.documentElement ? document.documentElement.outerHTML : ""',
     );
     return result?.toString();
   }
@@ -510,7 +514,10 @@ class LinuxDesktopWebLoginSession {
     try {
       webview.close();
     } catch (error) {
-      AppLog.instance.warn('linux/webview', 'login webview close failed: $error');
+      AppLog.instance.warn(
+        'linux/webview',
+        'login webview close failed: $error',
+      );
     }
     await Future<void>.delayed(const Duration(milliseconds: 80));
   }

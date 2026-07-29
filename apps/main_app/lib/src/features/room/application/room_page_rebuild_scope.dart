@@ -182,9 +182,7 @@ class RoomPreviewDisposePlan {
 ///
 /// [cleanupPlayback] is typically [shouldCleanupPlaybackOnRoomPreviewDispose]
 /// from the page module.
-RoomPreviewDisposePlan planRoomPreviewDispose({
-  required bool cleanupPlayback,
-}) {
+RoomPreviewDisposePlan planRoomPreviewDispose({required bool cleanupPlayback}) {
   return RoomPreviewDisposePlan(
     cleanupPlayback: cleanupPlayback,
     deferHeavyControllerDisposeUntilAfterCleanup: cleanupPlayback,

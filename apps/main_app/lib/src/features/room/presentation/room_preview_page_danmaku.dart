@@ -39,13 +39,15 @@ class _RoomDanmakuOverlayState extends State<RoomDanmakuOverlay> {
         : MediaQuery.sizeOf(context).width / (16 / 9);
     final topInset =
         (widget.fullscreen ? MediaQuery.paddingOf(context).top : 0.0) +
-            widget.preferences.topMargin +
-            8;
+        widget.preferences.topMargin +
+        8;
     final usableHeight =
-        (playerHeight - topInset - widget.preferences.bottomMargin)
-            .clamp(_laneHeight, playerHeight);
-    final desired =
-        ((usableHeight * widget.preferences.area) / _laneHeight).floor();
+        (playerHeight - topInset - widget.preferences.bottomMargin).clamp(
+          _laneHeight,
+          playerHeight,
+        );
+    final desired = ((usableHeight * widget.preferences.area) / _laneHeight)
+        .floor();
     final maxLanes = widget.fullscreen ? 6 : 4;
     return desired.clamp(1, maxLanes);
   }
@@ -106,16 +108,17 @@ class _RoomDanmakuOverlayState extends State<RoomDanmakuOverlay> {
     final now = DateTime.now();
     final viewportWidth = MediaQuery.sizeOf(context).width;
     final incomingLimit = (_laneCount + 2).clamp(2, 8);
-    final incoming = messages
-        .skip(math.max(0, messages.length - incomingLimit))
-        .toList(growable: true)
-      ..sort((left, right) {
-        final leftTime =
-            left.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final rightTime =
-            right.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
-        return leftTime.compareTo(rightTime);
-      });
+    final incoming =
+        messages
+            .skip(math.max(0, messages.length - incomingLimit))
+            .toList(growable: true)
+          ..sort((left, right) {
+            final leftTime =
+                left.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final rightTime =
+                right.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return leftTime.compareTo(rightTime);
+          });
     var changed = false;
     for (final message in incoming) {
       final text = _overlayText(message);
@@ -312,10 +315,10 @@ class RoomPlayerSuperChatOverlay extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
             ],
@@ -446,10 +449,7 @@ class _DanmakuTrackBubbleState extends State<_DanmakuTrackBubble>
               ),
               builder: (context, child) {
                 final dx = start + ((end - start) * _controller.value);
-                return Transform.translate(
-                  offset: Offset(dx, 0),
-                  child: child,
-                );
+                return Transform.translate(offset: Offset(dx, 0), child: child);
               },
             );
           },
@@ -515,10 +515,7 @@ class RoomErrorState extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              Text(
-                '错误详情',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('错误详情', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               SelectableText(detail),
             ],

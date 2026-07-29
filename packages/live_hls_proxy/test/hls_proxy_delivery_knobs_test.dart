@@ -61,7 +61,10 @@ void main() {
 
     test('unbound active defaults to desktop so package tests stay thick', () {
       DeliveryPlatformProfile.resetForTest();
-      expect(DeliveryPlatformProfile.active.family, DeliveryPlatformFamily.desktop);
+      expect(
+        DeliveryPlatformProfile.active.family,
+        DeliveryPlatformFamily.desktop,
+      );
       expect(
         DeliveryPlatformProfile.active.stripchatDefaultCdnDomain,
         'doppiocdn.net',
@@ -78,7 +81,10 @@ void main() {
         DeliveryPlatformProfile.active.stripchatMasterPlaylistQuery,
         '?minHeight=240',
       );
-      expect(DeliveryPlatformProfile.active.stripchatPreferNetCdnFirst, isFalse);
+      expect(
+        DeliveryPlatformProfile.active.stripchatPreferNetCdnFirst,
+        isFalse,
+      );
     });
   });
 

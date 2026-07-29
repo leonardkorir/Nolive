@@ -56,10 +56,7 @@ void main() {
     expect(detail.isLive, isTrue);
     expect(detail.viewerCount, 132000);
     // Room detail no longer pre-signs (SlotSun signs at play time).
-    expect(
-      detail.metadata?['deviceId'],
-      HttpDouyuSignService.kDefaultDeviceId,
-    );
+    expect(detail.metadata?['deviceId'], HttpDouyuSignService.kDefaultDeviceId);
 
     final qualities = await provider.fetchPlayQualities(detail);
     expect(qualities, isNotEmpty);
@@ -120,29 +117,26 @@ void main() {
     },
   );
 
-  test(
-    'betard offline still attempts getH5Play (stale show_status)',
-    () async {
-      // betard show_status=0 but getH5Play can still return ladder/URLs.
-      final transport = _FakeDouyuTransport()..offlineRoom = true;
-      final signService = _FakeDouyuSignService();
-      final provider = DouyuProvider(
-        dataSource: DouyuLiveDataSource(
-          transport: transport,
-          signService: signService,
-        ),
-      );
+  test('betard offline still attempts getH5Play (stale show_status)', () async {
+    // betard show_status=0 but getH5Play can still return ladder/URLs.
+    final transport = _FakeDouyuTransport()..offlineRoom = true;
+    final signService = _FakeDouyuSignService();
+    final provider = DouyuProvider(
+      dataSource: DouyuLiveDataSource(
+        transport: transport,
+        signService: signService,
+      ),
+    );
 
-      final detail = await provider.fetchRoomDetail('312212');
-      expect(detail.isLive, isFalse);
-      final qualities = await provider.fetchPlayQualities(detail);
-      expect(qualities, isNotEmpty);
-      expect(
-        transport.postBodies.where((item) => item.contains('rate=-1')),
-        isNotEmpty,
-      );
-    },
-  );
+    final detail = await provider.fetchRoomDetail('312212');
+    expect(detail.isLive, isFalse);
+    final qualities = await provider.fetchPlayQualities(detail);
+    expect(qualities, isNotEmpty);
+    expect(
+      transport.postBodies.where((item) => item.contains('rate=-1')),
+      isNotEmpty,
+    );
+  });
 
   test('getH5Play error -5 yields empty qualities without throw', () async {
     final transport = _FakeDouyuTransport()..playErrorCode = -5;
@@ -186,14 +180,8 @@ void main() {
   });
 
   test('classifyDouyuH5PlayError maps offline and auth', () {
-    expect(
-      classifyDouyuH5PlayError(-5, null),
-      DouyuH5PlayErrorKind.offline,
-    );
-    expect(
-      classifyDouyuH5PlayError(1, '房间未开播'),
-      DouyuH5PlayErrorKind.offline,
-    );
+    expect(classifyDouyuH5PlayError(-5, null), DouyuH5PlayErrorKind.offline);
+    expect(classifyDouyuH5PlayError(1, '房间未开播'), DouyuH5PlayErrorKind.offline);
     expect(
       classifyDouyuH5PlayError(1, '签名错误'),
       DouyuH5PlayErrorKind.authFailed,

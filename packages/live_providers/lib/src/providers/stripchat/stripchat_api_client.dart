@@ -436,13 +436,14 @@ class HttpStripchatApiClient implements StripchatApiClient {
     // Preferred first, then remaining by bandwidth (source child 404 must not
     // leave playback stuck on empty master — same recovery as llhls proxy).
     final ordered = <_StripchatMasterVariant>[];
-    final preferred = variants
-        .where(
-          (variant) =>
-              _matchesPreferredVariant(variant.url, preferredVariantId),
-        )
-        .toList(growable: false)
-      ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+    final preferred =
+        variants
+            .where(
+              (variant) =>
+                  _matchesPreferredVariant(variant.url, preferredVariantId),
+            )
+            .toList(growable: false)
+          ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
     ordered.addAll(preferred);
     final rest = List<_StripchatMasterVariant>.of(variants)
       ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));

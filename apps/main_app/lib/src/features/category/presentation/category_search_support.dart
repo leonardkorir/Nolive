@@ -32,18 +32,18 @@ List<FilteredCategoryGroup> filterCategoryGroups(
   final groups = <FilteredCategoryGroup>[];
   for (final category in categories) {
     final children = childrenOf(category);
-    final matchedByGroup = normalizeDisplayText(category.name)
-        .toLowerCase()
-        .contains(normalized);
+    final matchedByGroup = normalizeDisplayText(
+      category.name,
+    ).toLowerCase().contains(normalized);
     final matchedChildren = matchedByGroup
         ? children
         : children
-            .where(
-              (item) => normalizeDisplayText(item.name)
-                  .toLowerCase()
-                  .contains(normalized),
-            )
-            .toList(growable: false);
+              .where(
+                (item) => normalizeDisplayText(
+                  item.name,
+                ).toLowerCase().contains(normalized),
+              )
+              .toList(growable: false);
     if (matchedChildren.isEmpty) {
       continue;
     }

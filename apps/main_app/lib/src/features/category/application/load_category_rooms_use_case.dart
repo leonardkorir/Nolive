@@ -11,10 +11,11 @@ class LoadCategoryRoomsUseCase {
     required LiveSubCategory category,
     int page = 1,
   }) async {
-    final provider = registry.create(providerId);
-    final rooms = provider.requireContract<SupportsCategoryRooms>(
-      ProviderCapability.categories,
-    );
-    return rooms.fetchCategoryRooms(category, page: page);
+    return registry.use(providerId, (provider) {
+      final rooms = provider.requireContract<SupportsCategoryRooms>(
+        ProviderCapability.categories,
+      );
+      return rooms.fetchCategoryRooms(category, page: page);
+    });
   }
 }

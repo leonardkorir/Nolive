@@ -100,10 +100,7 @@ class SecureSnapshotImportCoordinator {
       mode: mode,
       lastSyncAt: lastSyncAt,
     );
-    await _notifyAfterImport(
-      followDataChanged: true,
-      settingsChanged: true,
-    );
+    await _notifyAfterImport(followDataChanged: true, settingsChanged: true);
   }
 
   Future<void> _notifyAfterImport({

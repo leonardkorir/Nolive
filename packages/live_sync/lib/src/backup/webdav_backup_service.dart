@@ -40,8 +40,8 @@ class WebDavBackupConfig {
 
 class HttpWebDavBackupService implements WebDavBackupService {
   HttpWebDavBackupService({required this.config, HttpClient? client})
-      : _client = client ?? HttpClient(),
-        _ownsClient = client == null {
+    : _client = client ?? HttpClient(),
+      _ownsClient = client == null {
     if (_ownsClient) {
       _client.connectionTimeout = _kRequestTimeout;
       _client.idleTimeout = _kRequestTimeout;
@@ -127,11 +127,7 @@ class HttpWebDavBackupService implements WebDavBackupService {
         return;
       case HttpStatus.unauthorized:
       case HttpStatus.forbidden:
-        await _throwStatus(
-          action: 'WebDAV 鉴权失败',
-          response: response,
-          uri: uri,
-        );
+        await _throwStatus(action: 'WebDAV 鉴权失败', response: response, uri: uri);
       case HttpStatus.methodNotAllowed:
       case HttpStatus.notImplemented:
         await response.drain<void>();
@@ -197,8 +193,9 @@ class HttpWebDavBackupService implements WebDavBackupService {
 
   Future<HttpClientRequest> _openRequest(String method, Uri uri) async {
     try {
-      final request =
-          await _client.openUrl(method, uri).timeout(_kRequestTimeout);
+      final request = await _client
+          .openUrl(method, uri)
+          .timeout(_kRequestTimeout);
       await _applyHeaders(request);
       return request;
     } on TimeoutException {
@@ -256,8 +253,9 @@ class HttpWebDavBackupService implements WebDavBackupService {
   Uri _baseUri() {
     final base = Uri.parse(config.baseUrl.trim());
     _assertSecureBaseUri(base);
-    final normalizedPath =
-        base.path.endsWith('/') ? base.path : '${base.path}/';
+    final normalizedPath = base.path.endsWith('/')
+        ? base.path
+        : '${base.path}/';
     return base.replace(path: normalizedPath, query: null, fragment: null);
   }
 
@@ -273,11 +271,7 @@ class HttpWebDavBackupService implements WebDavBackupService {
     return _appendPath(_baseUri(), _remotePathSegments());
   }
 
-  Uri _appendPath(
-    Uri base,
-    List<String> segments, {
-    bool directory = false,
-  }) {
+  Uri _appendPath(Uri base, List<String> segments, {bool directory = false}) {
     final prefix = base.path.endsWith('/') ? base.path : '${base.path}/';
     final encoded = segments.map(Uri.encodeComponent).join('/');
     final suffix = directory ? '/' : '';
@@ -306,8 +300,10 @@ class HttpWebDavBackupService implements WebDavBackupService {
     if (auth != null) {
       request.headers.set(HttpHeaders.authorizationHeader, auth);
     }
-    request.headers
-        .set(HttpHeaders.acceptHeader, 'application/json, text/xml, */*');
+    request.headers.set(
+      HttpHeaders.acceptHeader,
+      'application/json, text/xml, */*',
+    );
   }
 
   Future<String?> _buildAuthorizationHeader() async {

@@ -255,7 +255,8 @@ class StripchatMouflonKeyCache {
     final timestamp = (capturedAt ?? DateTime.now()).toUtc();
     final merged = <String, List<StripchatMouflonKeyRecord>>{};
     for (final record in records) {
-      merged.putIfAbsent(record.pkey, () => <StripchatMouflonKeyRecord>[])
+      merged
+          .putIfAbsent(record.pkey, () => <StripchatMouflonKeyRecord>[])
           .add(record);
     }
     for (final record in freshRecords) {
@@ -275,8 +276,10 @@ class StripchatMouflonKeyCache {
         source: source,
         captureSource: normalizedCaptureSource,
       );
-      final bucket =
-          merged.putIfAbsent(normalizedPkey, () => <StripchatMouflonKeyRecord>[]);
+      final bucket = merged.putIfAbsent(
+        normalizedPkey,
+        () => <StripchatMouflonKeyRecord>[],
+      );
       if (bucket.isEmpty) {
         bucket.add(candidate);
         continue;
@@ -302,10 +305,9 @@ class StripchatMouflonKeyCache {
         bucket[existingIndex] = candidate;
       }
     }
-    final nextRecords = merged.values
-        .expand((bucket) => bucket)
-        .toList(growable: false)
-      ..sort((left, right) => right.capturedAt.compareTo(left.capturedAt));
+    final nextRecords =
+        merged.values.expand((bucket) => bucket).toList(growable: false)
+          ..sort((left, right) => right.capturedAt.compareTo(left.capturedAt));
     return StripchatMouflonKeyCache(
       records: List<StripchatMouflonKeyRecord>.unmodifiable(
         nextRecords.take(maxRecords),
@@ -326,9 +328,7 @@ class StripchatMouflonKeyCache {
     );
   }
 
-  StripchatMouflonKeyCache withTrustedFallbacks({
-    DateTime? capturedAt,
-  }) {
+  StripchatMouflonKeyCache withTrustedFallbacks({DateTime? capturedAt}) {
     final trustedRecords = <StripchatMouflonKeyRecord>[];
     _hardcodedPdkeys.forEach((pkey, pdkey) {
       trustedRecords.add(

@@ -1,5 +1,6 @@
 import 'package:live_core/live_core.dart';
 import 'package:live_providers/live_providers.dart';
+import 'package:nolive_app/src/shared/application/provider_request_retry.dart';
 
 class LoadProviderCategoriesUseCase {
   const LoadProviderCategoriesUseCase(
@@ -23,34 +24,17 @@ class LoadProviderCategoriesUseCase {
 
   Future<List<LiveCategory>> _fetchCategoriesWithRetry({
     required ProviderId providerId,
-  }) async {
-    final maxAttempts = providerId == ProviderId.bilibili
-        ? bilibiliMaxAttempts
-        : 1;
-    ProviderParseException? lastError;
-    for (var attempt = 0; attempt < maxAttempts; attempt += 1) {
-      if (attempt > 0) {
-        registry.invalidate(providerId);
-        await Future<void>.delayed(bilibiliRetryDelay);
-      }
-      final provider = registry.create(providerId);
-      final categories = provider.requireContract<SupportsCategories>(
-        ProviderCapability.categories,
-      );
-      try {
-        return await categories.fetchCategories();
-      } on ProviderParseException catch (error) {
-        lastError = error;
-        if (attempt + 1 >= maxAttempts) {
-          rethrow;
-        }
-      }
-    }
-    throw lastError ??
-        ProviderParseException(
-          providerId: providerId,
-          message: '${providerId.value} categories failed unexpectedly.',
-        );
+  }) {
+    return retryProviderRequestWithRebuild<List<LiveCategory>>(
+      registry: registry,
+      providerId: providerId,
+      operation: 'categories',
+      maxAttempts: providerId == ProviderId.bilibili ? bilibiliMaxAttempts : 1,
+      retryDelay: bilibiliRetryDelay,
+      action: (provider) => provider
+          .requireContract<SupportsCategories>(ProviderCapability.categories)
+          .fetchCategories(),
+    );
   }
 }
 

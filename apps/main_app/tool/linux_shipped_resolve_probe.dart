@@ -22,7 +22,9 @@ Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   final site = args.isEmpty ? 'douyu' : args.first;
   final caps = AppPlatformCapabilities.current();
-  stdout.writeln('platform=${caps.operatingSystem} webview=${caps.supportsHeadlessWebView}');
+  stdout.writeln(
+    'platform=${caps.operatingSystem} webview=${caps.supportsHeadlessWebView}',
+  );
 
   final bridges = buildAppRuntimeBridgesForTesting(
     mode: AppRuntimeMode.live,
@@ -89,9 +91,8 @@ Future<void> main(List<String> args) async {
   final url = resolved.playUrls.first.url;
   stdout.writeln('RESOLVE_OK site=$site url=$url');
 
-  final loopbackNeeded = site == 'twitch' ||
-      site == 'chaturbate' ||
-      site == 'stripchat';
+  final loopbackNeeded =
+      site == 'twitch' || site == 'chaturbate' || site == 'stripchat';
   if (loopbackNeeded) {
     final token = switch (site) {
       'twitch' => 'twitch-ad-guard',

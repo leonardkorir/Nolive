@@ -5,6 +5,7 @@ import 'package:live_providers/src/providers/stripchat/stripchat_live_data_sourc
 import 'package:test/test.dart';
 
 import 'support/stripchat_fixture_loader.dart';
+import 'package:live_providers/src/providers/stripchat/stripchat_danmaku_token.dart';
 
 class _MockStripchatApiClient implements StripchatApiClient {
   _MockStripchatApiClient({

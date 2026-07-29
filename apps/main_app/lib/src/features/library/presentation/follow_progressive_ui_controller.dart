@@ -77,9 +77,7 @@ class FollowProgressiveUiController {
   void _flushPending() {
     final pending = _pending;
     final generation = _pendingGeneration;
-    if (pending == null ||
-        generation == null ||
-        !_isCurrent(generation)) {
+    if (pending == null || generation == null || !_isCurrent(generation)) {
       return;
     }
     applyWatchlistToPage(pending);

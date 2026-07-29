@@ -85,9 +85,7 @@ class MemoryPlayer implements BasePlayer {
     // Keep any diagnostics the test/host already seeded.
     if ((_currentDiagnostics.width ?? 0) <= 0 ||
         (_currentDiagnostics.height ?? 0) <= 0) {
-      _emitDiagnostics(
-        _currentDiagnostics.copyWith(width: 1280, height: 720),
-      );
+      _emitDiagnostics(_currentDiagnostics.copyWith(width: 1280, height: 720));
     }
     _emit(
       _currentState.copyWith(
@@ -109,8 +107,9 @@ class MemoryPlayer implements BasePlayer {
     _emitDiagnostics(
       _currentDiagnostics.copyWith(clearWidth: true, clearHeight: true),
     );
-    _emit(_currentState.copyWith(
-        status: PlaybackStatus.ready, clearSource: true));
+    _emit(
+      _currentState.copyWith(status: PlaybackStatus.ready, clearSource: true),
+    );
   }
 
   @override

@@ -125,21 +125,21 @@ class DanmakuPreferences {
 
   @override
   int get hashCode => Object.hash(
-        enabledByDefault,
-        nativeBatchMaskEnabled,
-        fontSize,
-        fontWeight,
-        area,
-        speed,
-        opacity,
-        strokeWidth,
-        lineHeight,
-        topMargin,
-        bottomMargin,
-        frequencyWindowSeconds,
-        maxFrequency,
-        textNormalizationEnabled,
-      );
+    enabledByDefault,
+    nativeBatchMaskEnabled,
+    fontSize,
+    fontWeight,
+    area,
+    speed,
+    opacity,
+    strokeWidth,
+    lineHeight,
+    topMargin,
+    bottomMargin,
+    frequencyWindowSeconds,
+    maxFrequency,
+    textNormalizationEnabled,
+  );
 }
 
 class LoadDanmakuPreferencesUseCase {
@@ -150,11 +150,15 @@ class LoadDanmakuPreferencesUseCase {
   Future<DanmakuPreferences> call() async {
     final defaults = DanmakuPreferences.defaults;
     return DanmakuPreferences(
-      enabledByDefault: await settingsRepository
-              .readValue<bool>('danmaku_enabled_by_default') ??
+      enabledByDefault:
+          await settingsRepository.readValue<bool>(
+            'danmaku_enabled_by_default',
+          ) ??
           defaults.enabledByDefault,
-      nativeBatchMaskEnabled: await settingsRepository
-              .readValue<bool>('danmaku_native_batch_mask_enabled') ??
+      nativeBatchMaskEnabled:
+          await settingsRepository.readValue<bool>(
+            'danmaku_native_batch_mask_enabled',
+          ) ??
           defaults.nativeBatchMaskEnabled,
       fontSize: _clampDouble(
         await settingsRepository.readValue<double>('danmaku_font_size'),

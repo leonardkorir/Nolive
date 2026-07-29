@@ -10,8 +10,10 @@ class RemoveFollowRoomUseCase {
   final FollowRepository followRepository;
   final ValueNotifier<int>? followDataRevision;
 
-  Future<void> call(
-      {required String providerId, required String roomId}) async {
+  Future<void> call({
+    required String providerId,
+    required String roomId,
+  }) async {
     await followRepository.remove(providerId, roomId);
     if (followDataRevision != null) {
       followDataRevision!.value += 1;

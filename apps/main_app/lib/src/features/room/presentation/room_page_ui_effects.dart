@@ -5,7 +5,7 @@ import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/app/routing/app_routes.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_presentation_helpers.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_view_data.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_view_data.dart';
 import 'package:nolive_app/src/features/room/presentation/room_preview_page_controls_actions.dart';
 import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
 
@@ -27,26 +27,23 @@ class RoomPageUiEffects {
     showAppSnackBar(context, message);
   }
 
-  Future<void> pushNamed(
-    String routeName, {
-    bool rootNavigator = false,
-  }) async {
+  Future<void> pushNamed(String routeName, {bool rootNavigator = false}) async {
     if (!isMounted()) {
       return;
     }
-    await Navigator.of(context, rootNavigator: rootNavigator).pushNamed(
-      routeName,
-    );
+    await Navigator.of(
+      context,
+      rootNavigator: rootNavigator,
+    ).pushNamed(routeName);
   }
 
   Future<void> pushReplacementToRoom(RoomRouteArguments args) async {
     if (!isMounted()) {
       return;
     }
-    await Navigator.of(context).pushReplacementNamed(
-      AppRoutes.room,
-      arguments: args,
-    );
+    await Navigator.of(
+      context,
+    ).pushReplacementNamed(AppRoutes.room, arguments: args);
   }
 
   void popPage() {

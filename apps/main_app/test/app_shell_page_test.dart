@@ -34,10 +34,7 @@ void main() {
       isNot(NavigationDestinationLabelBehavior.alwaysHide),
     );
     // Product shell keeps all destination labels visible (alwaysShow).
-    expect(
-      navBar.labelBehavior,
-      NavigationDestinationLabelBehavior.alwaysShow,
-    );
+    expect(navBar.labelBehavior, NavigationDestinationLabelBehavior.alwaysShow);
     // Selected tab label is discoverable on the phone shell.
     expect(find.text('关注'), findsWidgets);
   });
@@ -85,10 +82,6 @@ void main() {
         home: AppShellPage(dependencies: buildAppShellDependencies(bootstrap)),
       ),
     );
-    await tester.pumpAndSettle();
-    // Library defers first follow-status crawl (~1.2s) so transports finish
-    // cold-start bootstrap before remote detail requests.
-    await tester.pump(const Duration(milliseconds: 1200));
     await tester.pumpAndSettle();
 
     expect(detailCalls, 1);

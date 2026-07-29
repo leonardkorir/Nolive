@@ -158,7 +158,11 @@ class _ProfilePageState extends State<ProfilePage> {
           const _TopAppTile(),
           const SizedBox(height: 8),
           // Original flat menu — same order as before IA refactor.
-          for (var index = 0; index < widget.menuEntries.length; index += 1) ...[
+          for (
+            var index = 0;
+            index < widget.menuEntries.length;
+            index += 1
+          ) ...[
             _ProfileEntryTile(entry: widget.menuEntries[index]),
             const Divider(height: 1),
           ],
@@ -192,8 +196,8 @@ class _ProfilePageState extends State<ProfilePage> {
                             ? 'Ver -'
                             : 'Ver ${_currentVersion!}',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
+                          color: colorScheme.onSurfaceVariant,
+                        ),
                       ),
                       const SizedBox(width: 4),
                       Icon(

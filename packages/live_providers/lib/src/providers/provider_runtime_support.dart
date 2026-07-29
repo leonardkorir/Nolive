@@ -139,8 +139,11 @@ Future<T> runProviderRequestWithRetry<T>({
     } catch (error, stackTrace) {
       if (error is! ProviderRetryableException || attempt >= attempts) {
         if (error is ProviderRetryableException) {
+          // Retries are exhausted, but the failure was still a transport blip.
+          // Keep that marked so callers upstream (follow crawl, room load) can
+          // decide to retry without parsing the message text.
           Error.throwWithStackTrace(
-            error.error,
+            markProviderFailureTransient(error.error),
             error.stackTrace ?? stackTrace,
           );
         }
@@ -163,9 +166,23 @@ Future<T> runProviderRequestWithRetry<T>({
   }
 
   if (lastError != null && lastStackTrace != null) {
-    Error.throwWithStackTrace(lastError, lastStackTrace);
+    Error.throwWithStackTrace(
+      markProviderFailureTransient(lastError),
+      lastStackTrace,
+    );
   }
   throw StateError('Unreachable provider retry flow for $operation.');
+}
+
+/// Re-tags [error] as a transport blip when it carries that shape.
+///
+/// Non-provider errors pass through untouched — [isTransientTransportFailure]
+/// already classifies those by type.
+Object markProviderFailureTransient(Object error) {
+  if (error is ProviderParseException) {
+    return error.asTransient();
+  }
+  return error;
 }
 
 bool isRetryableHttpStatus(int statusCode) {

@@ -187,14 +187,8 @@ void main() {
       capturedAt: DateTime.utc(2026, 5, 8, 13, 5, 0),
     );
 
-    expect(
-      merged.lookup('Ook7quaiNgiyuhai')?.pdkey,
-      'EQueeGh2kaewa3ch',
-    );
-    expect(
-      merged.lookup('Ook7quaiNgiyuhai')?.captureSource,
-      'hash-cache-key',
-    );
+    expect(merged.lookup('Ook7quaiNgiyuhai')?.pdkey, 'EQueeGh2kaewa3ch');
+    expect(merged.lookup('Ook7quaiNgiyuhai')?.captureSource, 'hash-cache-key');
   });
 
   test('stripchat mouflon key source priority normalizes suffixed sources', () {
@@ -208,43 +202,48 @@ void main() {
     );
   });
 
-  test('stripchat mouflon key cache overlays trusted fallbacks over weak cache', () {
-    final cache = const StripchatMouflonKeyCache().mergeRecords(
-      <StripchatMouflonKeyRecord>[
-        StripchatMouflonKeyRecord(
-          pkey: 'Ook7quaiNgiyuhai',
-          pdkey: '8iPRUU0AnxoOSif9',
-          capturedAt: DateTime.utc(2026, 5, 9, 5, 24),
-          source: StripchatCalibrationSource.auto,
-          captureSource: 'known-keys-active',
-        ),
-      ],
-      source: StripchatCalibrationSource.auto,
-      capturedAt: DateTime.utc(2026, 5, 9, 5, 24),
-    );
+  test(
+    'stripchat mouflon key cache overlays trusted fallbacks over weak cache',
+    () {
+      final cache = const StripchatMouflonKeyCache().mergeRecords(
+        <StripchatMouflonKeyRecord>[
+          StripchatMouflonKeyRecord(
+            pkey: 'Ook7quaiNgiyuhai',
+            pdkey: '8iPRUU0AnxoOSif9',
+            capturedAt: DateTime.utc(2026, 5, 9, 5, 24),
+            source: StripchatCalibrationSource.auto,
+            captureSource: 'known-keys-active',
+          ),
+        ],
+        source: StripchatCalibrationSource.auto,
+        capturedAt: DateTime.utc(2026, 5, 9, 5, 24),
+      );
 
-    final merged = cache.withTrustedFallbacks(
-      capturedAt: DateTime.utc(2026, 5, 9, 5, 25),
-    );
+      final merged = cache.withTrustedFallbacks(
+        capturedAt: DateTime.utc(2026, 5, 9, 5, 25),
+      );
 
-    expect(merged.lookup('Ook7quaiNgiyuhai')?.pdkey, 'EQueeGh2kaewa3ch');
-    expect(
-      merged.lookup('Ook7quaiNgiyuhai')?.captureSource,
-      'trusted-fallback',
-    );
-  });
+      expect(merged.lookup('Ook7quaiNgiyuhai')?.pdkey, 'EQueeGh2kaewa3ch');
+      expect(
+        merged.lookup('Ook7quaiNgiyuhai')?.captureSource,
+        'trusted-fallback',
+      );
+    },
+  );
 
-  test('stripchat mouflon key cache includes current gray trusted fallback', () {
-    final merged = const StripchatMouflonKeyCache().withTrustedFallbacks(
-      capturedAt: DateTime.utc(2026, 5, 15, 11, 30),
-    );
+  test(
+    'stripchat mouflon key cache includes current gray trusted fallback',
+    () {
+      final merged = const StripchatMouflonKeyCache().withTrustedFallbacks(
+        capturedAt: DateTime.utc(2026, 5, 15, 11, 30),
+      );
 
-    expect(merged.lookup('Ook7quaiNgiyuhai')?.pdkey, 'EQueeGh2kaewa3ch');
-    expect(merged.lookup('Fq6m2TO2ZeBkRPm9')?.pdkey, 'xb6di1NF9EFXHUwb');
-    expect(
-      merged.lookup('Fq6m2TO2ZeBkRPm9')?.captureSource,
-      'trusted-fallback',
-    );
-  });
-
+      expect(merged.lookup('Ook7quaiNgiyuhai')?.pdkey, 'EQueeGh2kaewa3ch');
+      expect(merged.lookup('Fq6m2TO2ZeBkRPm9')?.pdkey, 'xb6di1NF9EFXHUwb');
+      expect(
+        merged.lookup('Fq6m2TO2ZeBkRPm9')?.captureSource,
+        'trusted-fallback',
+      );
+    },
+  );
 }

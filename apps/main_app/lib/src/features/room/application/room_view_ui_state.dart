@@ -91,7 +91,8 @@ class RoomViewUiState {
           showFullscreenFollowDrawer ?? this.showFullscreenFollowDrawer,
       inlineChromeBeforeLifecycle:
           inlineChromeBeforeLifecycle ?? this.inlineChromeBeforeLifecycle,
-      fullscreenChromeBeforeLifecycle: fullscreenChromeBeforeLifecycle ??
+      fullscreenChromeBeforeLifecycle:
+          fullscreenChromeBeforeLifecycle ??
           this.fullscreenChromeBeforeLifecycle,
     );
   }
@@ -123,22 +124,22 @@ class RoomViewUiState {
 
   @override
   int get hashCode => Object.hashAll(<Object?>[
-        isFullscreen,
-        fullscreenBootstrapPending,
-        fullscreenBootstrapScheduled,
-        desktopMiniWindowActive,
-        showInlinePlayerChrome,
-        showFullscreenChrome,
-        showFullscreenLockButton,
-        lockFullscreenControls,
-        pipSupported,
-        enteringPictureInPicture,
-        pausedByLifecycle,
-        restoreDanmakuAfterPip,
-        danmakuVisibleBeforePip,
-        fullscreenAutoApplied,
-        showFullscreenFollowDrawer,
-        inlineChromeBeforeLifecycle,
-        fullscreenChromeBeforeLifecycle,
-      ]);
+    isFullscreen,
+    fullscreenBootstrapPending,
+    fullscreenBootstrapScheduled,
+    desktopMiniWindowActive,
+    showInlinePlayerChrome,
+    showFullscreenChrome,
+    showFullscreenLockButton,
+    lockFullscreenControls,
+    pipSupported,
+    enteringPictureInPicture,
+    pausedByLifecycle,
+    restoreDanmakuAfterPip,
+    danmakuVisibleBeforePip,
+    fullscreenAutoApplied,
+    showFullscreenFollowDrawer,
+    inlineChromeBeforeLifecycle,
+    fullscreenChromeBeforeLifecycle,
+  ]);
 }

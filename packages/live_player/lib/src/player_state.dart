@@ -4,6 +4,7 @@ import 'player_backend.dart';
 
 enum PlaybackBufferProfile {
   defaultLowLatency,
+
   /// Foreign live (Twitch/YouTube, etc.) on phone and desktop: cache on,
   /// multi-second readahead. Delivery-only; does not change Auto quality policy.
   desktopStableLive,
@@ -62,8 +63,9 @@ class PlayerState {
       position: position ?? this.position,
       buffered: buffered ?? this.buffered,
       duration: duration ?? this.duration,
-      errorMessage:
-          clearErrorMessage ? null : errorMessage ?? this.errorMessage,
+      errorMessage: clearErrorMessage
+          ? null
+          : errorMessage ?? this.errorMessage,
       volume: volume ?? this.volume,
       source: clearSource ? null : source ?? this.source,
       backend: backend ?? this.backend,
@@ -86,15 +88,15 @@ class PlayerState {
 
   @override
   int get hashCode => Object.hash(
-        status,
-        position,
-        buffered,
-        duration,
-        errorMessage,
-        volume,
-        source,
-        backend,
-      );
+    status,
+    position,
+    buffered,
+    duration,
+    errorMessage,
+    volume,
+    source,
+    backend,
+  );
 }
 
 class PlaybackSource {
@@ -131,14 +133,14 @@ class PlaybackSource {
 
   @override
   int get hashCode => Object.hash(
-        url,
-        _mapHash(headers),
-        externalAudio,
-        masterPlaylistUrl,
-        masterPlaylistContent,
-        bufferProfile,
-        hlsBitrate,
-      );
+    url,
+    _mapHash(headers),
+    externalAudio,
+    masterPlaylistUrl,
+    masterPlaylistContent,
+    bufferProfile,
+    hlsBitrate,
+  );
 }
 
 class PlaybackExternalMedia {
@@ -165,12 +167,7 @@ class PlaybackExternalMedia {
   }
 
   @override
-  int get hashCode => Object.hash(
-        url,
-        _mapHash(headers),
-        label,
-        mimeType,
-      );
+  int get hashCode => Object.hash(url, _mapHash(headers), label, mimeType);
 }
 
 int _mapHash(Map<String, String> values) {

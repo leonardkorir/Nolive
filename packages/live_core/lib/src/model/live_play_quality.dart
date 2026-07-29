@@ -10,17 +10,17 @@ class LivePlayQuality {
     this.sortOrder = 0,
     Map<String, Object?>? metadata,
   }) : metadata = metadata == null
-            ? null
-            : UnmodifiableMapView<String, Object?>(
-                Map<String, Object?>.fromEntries(
-                  metadata.entries.map(
-                    (entry) => MapEntry(
-                      entry.key,
-                      _immutableMetadataValue(entry.value),
-                    ),
-                  ),
-                ),
-              );
+           ? null
+           : UnmodifiableMapView<String, Object?>(
+               Map<String, Object?>.fromEntries(
+                 metadata.entries.map(
+                   (entry) => MapEntry(
+                     entry.key,
+                     _immutableMetadataValue(entry.value),
+                   ),
+                 ),
+               ),
+             );
 
   final String id;
   final String label;
@@ -49,10 +49,7 @@ Object? _immutableMetadataValue(Object? value) {
     return UnmodifiableMapView<Object?, Object?>(
       Map<Object?, Object?>.fromEntries(
         value.entries.map(
-          (entry) => MapEntry(
-            entry.key,
-            _immutableMetadataValue(entry.value),
-          ),
+          (entry) => MapEntry(entry.key, _immutableMetadataValue(entry.value)),
         ),
       ),
     );

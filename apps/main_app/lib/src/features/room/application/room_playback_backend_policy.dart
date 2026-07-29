@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
+import 'package:nolive_app/src/features/room/application/room_provider_traits.dart';
 
 PlayerBackend resolveRoomPlaybackBackend({
   required ProviderId providerId,
@@ -28,11 +29,5 @@ PlayerBackend resolveRoomPlaybackBackend({
 }
 
 bool _prefersMpvOnAndroid(ProviderId providerId) {
-  return switch (providerId) {
-    ProviderId.youtube ||
-    ProviderId.twitch ||
-    ProviderId.chaturbate ||
-    ProviderId.stripchat => true,
-    _ => false,
-  };
+  return roomProviderTraitsFor(providerId).prefersMpvOnAndroid;
 }

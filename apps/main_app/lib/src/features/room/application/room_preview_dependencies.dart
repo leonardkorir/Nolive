@@ -15,7 +15,8 @@ import 'package:nolive_app/src/features/room/application/resolve_play_source_use
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_room_ui_preferences_use_case.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_platforms.dart';
+import 'package:nolive_app/src/app/platform/room_fullscreen_session_platform_adapters.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 import 'package:nolive_app/src/shared/application/provider_catalog_use_cases.dart';
 
@@ -66,7 +67,7 @@ class RoomPreviewDependencies {
       updateRoomUiPreferences: bootstrap.updateRoomUiPreferences,
       loadPlayerPreferences: bootstrap.loadPlayerPreferences,
       updatePlayerPreferences: bootstrap.updatePlayerPreferences,
-      fullscreenSessionPlatforms: RoomFullscreenSessionPlatforms.defaults(),
+      fullscreenSessionPlatforms: defaultRoomFullscreenSessionPlatforms(),
       isLiveMode: bootstrap.isLiveMode,
     );
   }
@@ -165,9 +166,7 @@ class RoomFollowWatchlistDependencies {
 }
 
 class RoomDanmakuDependencies {
-  const RoomDanmakuDependencies({
-    required this.openRoomDanmaku,
-  });
+  const RoomDanmakuDependencies({required this.openRoomDanmaku});
 
   factory RoomDanmakuDependencies.fromPreviewDependencies(
     RoomPreviewDependencies dependencies,

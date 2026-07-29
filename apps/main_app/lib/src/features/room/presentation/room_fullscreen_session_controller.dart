@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:live_player/live_player.dart';
@@ -10,14 +9,14 @@ import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 
 import 'room_desktop_mini_window_coordinator.dart';
 import 'room_fullscreen_chrome_controller.dart';
-import 'room_fullscreen_form_factor_policy.dart';
-import 'room_fullscreen_runtime_context.dart';
-import 'room_fullscreen_session_platforms.dart';
-import 'room_gesture_ui_state.dart';
-import 'room_page_rebuild_scope.dart';
+import '../application/room_fullscreen_form_factor_policy.dart';
+import '../application/room_fullscreen_runtime_context.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
+import '../application/room_gesture_ui_state.dart';
+import '../application/room_page_rebuild_scope.dart';
 import 'room_picture_in_picture_coordinator.dart';
-import 'room_playback_leave_cleanup_coordinator.dart';
-import 'room_view_ui_state.dart';
+import '../application/room_playback_leave_cleanup_coordinator.dart';
+import '../application/room_view_ui_state.dart';
 
 bool shouldRefreshMdkBackendAfterCleanup(PlayerState state) {
   if (state.backend != PlayerBackend.mdk) {
@@ -29,8 +28,7 @@ bool shouldRefreshMdkBackendAfterCleanup(PlayerState state) {
         PlaybackStatus.playing ||
         PlaybackStatus.paused ||
         PlaybackStatus.completed ||
-        PlaybackStatus.error =>
-          true,
+        PlaybackStatus.error => true,
         _ => false,
       };
 }
@@ -70,10 +68,10 @@ class RoomFullscreenSessionBindings {
   final void Function(bool visible) updateDanmakuOverlayVisible;
   final double Function() resolveVolume;
   final void Function(double value) updateVolume;
-  final Rational Function() resolvePipAspectRatio;
+  final RoomPipAspectRatio Function() resolvePipAspectRatio;
   final Size Function() resolveScreenSize;
   final Future<PlaybackSource?> Function()
-      resolvePlaybackSourceForLifecycleRestore;
+  resolvePlaybackSourceForLifecycleRestore;
   final bool Function() resolveIsVerticalVideo;
 
   /// Optional override for tests; defaults to ChromeOS ARC version sniffing.
@@ -168,7 +166,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   late final RoomPictureInPictureCoordinator _pipCoordinator;
   late final RoomDesktopMiniWindowCoordinator _desktopMiniWindowCoordinator;
   late final RoomPlaybackLeaveCleanupCoordinator
-      _playbackLeaveCleanupCoordinator;
+  _playbackLeaveCleanupCoordinator;
 
   RoomViewUiState _viewUiState = const RoomViewUiState();
   RoomGestureUiState _gestureUiState = const RoomGestureUiState();
@@ -176,6 +174,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   bool _preserveRoomTransitionOnDispose = false;
   bool _disposed = false;
   int _fullscreenBootstrapRequestToken = 0;
+
   /// Last applied fullscreen orientation mode (phone portrait vs large flexible).
   RoomFullscreenVideoOrientationMode? _lastAppliedOrientationMode;
 
@@ -221,9 +220,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   }
 
   void resetAutoFullscreenApplied() {
-    _replaceViewUiState(
-      _viewUiState.copyWith(fullscreenAutoApplied: false),
-    );
+    _replaceViewUiState(_viewUiState.copyWith(fullscreenAutoApplied: false));
   }
 
   void prepareForFollowRoomTransition() {
@@ -569,8 +566,8 @@ class RoomFullscreenSessionController extends ChangeNotifier {
           }
         }
         // ARC: native freeze only (sole orientation authority).
-        final frozen =
-            await platforms.androidPlaybackBridge.freezeFullscreenOrientation();
+        final frozen = await platforms.androidPlaybackBridge
+            .freezeFullscreenOrientation();
         if (!frozen) {
           bindings.trace(
             'fullscreen controls lock orientation failed: freeze returned false '
@@ -661,9 +658,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
 
   Future<void> cleanupPlaybackOnLeave() {
     _chromeController.cancelAutoHideTimers();
-    _replaceViewUiState(
-      _viewUiState.copyWith(pausedByLifecycle: false),
-    );
+    _replaceViewUiState(_viewUiState.copyWith(pausedByLifecycle: false));
     return _playbackLeaveCleanupCoordinator.cleanupPlaybackOnLeave();
   }
 
@@ -685,9 +680,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
         status != PlaybackStatus.buffering) {
       return;
     }
-    _replaceViewUiState(
-      _viewUiState.copyWith(fullscreenAutoApplied: true),
-    );
+    _replaceViewUiState(_viewUiState.copyWith(fullscreenAutoApplied: true));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_disposed || _viewUiState.fullscreenSessionActive) {
         return;
@@ -767,9 +760,7 @@ class RoomFullscreenSessionController extends ChangeNotifier {
             !_viewUiState.fullscreenBootstrapPending) {
           return;
         }
-        unawaited(
-          cancelPendingFullscreenBootstrap(scheduleInlineChrome: true),
-        );
+        unawaited(cancelPendingFullscreenBootstrap(scheduleInlineChrome: true));
       });
       return;
     }
@@ -805,13 +796,14 @@ class RoomFullscreenSessionController extends ChangeNotifier {
   }
 
   Future<void> _applyOverlayStyle({required bool darkBackground}) async {
-    final style = (darkBackground
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark)
-        .copyWith(
-      statusBarColor: Colors.transparent,
-      systemNavigationBarColor: Colors.transparent,
-    );
+    final style =
+        (darkBackground
+                ? SystemUiOverlayStyle.light
+                : SystemUiOverlayStyle.dark)
+            .copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: Colors.transparent,
+            );
     await platforms.systemUi.setSystemUIOverlayStyle(style);
   }
 

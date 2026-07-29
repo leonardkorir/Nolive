@@ -4,10 +4,7 @@ import 'dart:io';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class GithubReleaseInfo {
-  const GithubReleaseInfo({
-    required this.version,
-    required this.releaseUri,
-  });
+  const GithubReleaseInfo({required this.version, required this.releaseUri});
 
   final String version;
   final Uri releaseUri;
@@ -33,12 +30,15 @@ class GithubAppUpdateService {
     Uri? repoHomepageUri,
     Uri? latestReleaseLookupUri,
     this.clientFactory = _defaultHttpClientFactory,
-  })  : repoHomepageUri = repoHomepageUri ?? repoHomepageUriDefault,
-        latestReleaseLookupUri =
-            latestReleaseLookupUri ?? latestReleaseLookupUriDefault;
+  }) : repoHomepageUri = repoHomepageUri ?? repoHomepageUriDefault,
+       latestReleaseLookupUri =
+           latestReleaseLookupUri ?? latestReleaseLookupUriDefault;
 
-  static final Uri repoHomepageUriDefault =
-      Uri(scheme: 'https', host: 'github.com', path: '/leonardkorir/Nolive');
+  static final Uri repoHomepageUriDefault = Uri(
+    scheme: 'https',
+    host: 'github.com',
+    path: '/leonardkorir/Nolive',
+  );
   static final Uri latestReleaseLookupUriDefault = Uri(
     scheme: 'https',
     host: 'github.com',
@@ -111,8 +111,9 @@ class GithubAppUpdateService {
   }
 
   static String _versionFromReleaseUri(Uri releaseUri) {
-    final tag =
-        releaseUri.pathSegments.isEmpty ? '' : releaseUri.pathSegments.last;
+    final tag = releaseUri.pathSegments.isEmpty
+        ? ''
+        : releaseUri.pathSegments.last;
     final version = tag.startsWith('v') ? tag.substring(1) : tag;
     if (version.isEmpty) {
       throw const FormatException('Invalid GitHub release tag.');
@@ -129,7 +130,8 @@ class GithubAppUpdateService {
     return core
         .split('.')
         .map(
-            (part) => int.tryParse(part.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
+          (part) => int.tryParse(part.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0,
+        )
         .toList(growable: false);
   }
 }

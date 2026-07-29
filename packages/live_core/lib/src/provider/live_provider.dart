@@ -56,17 +56,11 @@ abstract class SupportsRecommendRooms {
 }
 
 abstract class SupportsRoomSearch {
-  Future<PagedResponse<LiveRoom>> searchRooms(
-    String query, {
-    int page = 1,
-  });
+  Future<PagedResponse<LiveRoom>> searchRooms(String query, {int page = 1});
 }
 
 abstract class SupportsAnchorSearch {
-  Future<PagedResponse<LiveRoom>> searchAnchors(
-    String query, {
-    int page = 1,
-  });
+  Future<PagedResponse<LiveRoom>> searchAnchors(String query, {int page = 1});
 }
 
 abstract class SupportsRoomDetail {
@@ -90,6 +84,14 @@ abstract class DanmakuSession {
   Future<void> connect();
 
   Future<void> disconnect();
+
+  /// Why this session can never deliver messages, or null when it is a real
+  /// connection.
+  ///
+  /// A provider that cannot reach chat still returns a session so the room can
+  /// open, so "a session exists" does not mean "chat is connected". UI must
+  /// check this before telling the user the connection is established.
+  String? get unavailableReason => null;
 }
 
 abstract class SupportsDanmaku {

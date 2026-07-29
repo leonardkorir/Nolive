@@ -35,8 +35,9 @@ class RoomListItem extends StatelessWidget {
     final normalizedTitle = normalizeDisplayText(title);
     final normalizedSubtitle = normalizeDisplayText(subtitle);
     final normalizedTrailing = normalizeDisplayText(trailing);
-    final normalizedAvatarFallbackText =
-        normalizeDisplayText(avatarFallbackText);
+    final normalizedAvatarFallbackText = normalizeDisplayText(
+      avatarFallbackText,
+    );
     final normalizedTags = tags
         .map(normalizeDisplayText)
         .where((item) => item.isNotEmpty)
@@ -120,10 +121,7 @@ class RoomListItem extends StatelessWidget {
                   ],
                 ),
               ],
-              if (footer != null) ...[
-                const SizedBox(height: 8),
-                footer!,
-              ],
+              if (footer != null) ...[const SizedBox(height: 8), footer!],
             ],
           ),
         ),
@@ -180,9 +178,9 @@ class _RoomListAvatarFallback extends StatelessWidget {
         child: Text(
           initial,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.w600,
-              ),
+            color: colorScheme.onPrimaryContainer,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );

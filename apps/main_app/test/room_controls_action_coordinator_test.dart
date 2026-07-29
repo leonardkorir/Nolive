@@ -12,8 +12,8 @@ import 'package:nolive_app/src/features/room/application/load_room_use_case.dart
 import 'package:nolive_app/src/features/room/application/resolve_play_source_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_session_controller.dart';
 import 'package:nolive_app/src/features/room/application/twitch_playback_recovery.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_action_coordinator.dart';
-import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_action_coordinator.dart';
+import 'package:nolive_app/src/features/room/application/room_runtime_helper_contexts.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_room_ui_preferences_use_case.dart';
@@ -1086,7 +1086,7 @@ class _TestCoordinatorRuntime extends PlayerRuntimeController {
   }
 }
 
-class _TestDanmakuSession implements DanmakuSession {
+class _TestDanmakuSession extends DanmakuSession {
   @override
   Stream<LiveMessage> get messages => const Stream<LiveMessage>.empty();
 

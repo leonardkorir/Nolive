@@ -77,9 +77,7 @@ class RoomLoadingRoomShell extends StatelessWidget {
                 ),
         ),
         if (embeddedPlayerView != null)
-          IgnorePointer(
-            child: embeddedPlayerView!,
-          ),
+          IgnorePointer(child: embeddedPlayerView!),
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -93,10 +91,7 @@ class RoomLoadingRoomShell extends StatelessWidget {
           child: Container(
             key: const Key('room-loading-shell'),
             constraints: const BoxConstraints(maxWidth: 320),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 16,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
             decoration: NoliveRoomChrome.panelDecoration(
               context: context,
               alpha: 0.62,
@@ -146,9 +141,7 @@ class RoomLoadingRoomShell extends StatelessWidget {
         color: colorScheme.surface,
         child: Row(
           children: [
-            Expanded(
-              child: loadingPlayer,
-            ),
+            Expanded(child: loadingPlayer),
             const VerticalDivider(width: 1),
             SizedBox(
               width: kRoomLandscapeSidePanelWidth,
@@ -177,7 +170,9 @@ class RoomLoadingRoomShell extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  streamerName.isEmpty ? '正在读取主播信息' : streamerName,
+                                  streamerName.isEmpty
+                                      ? '正在读取主播信息'
+                                      : streamerName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.titleMedium?.copyWith(
@@ -206,13 +201,21 @@ class RoomLoadingRoomShell extends StatelessWidget {
                       color: colorScheme.surface,
                       child: Row(
                         children: [
-                          buildTab('聊天', const Key('room-panel-tab-chat'), true),
+                          buildTab(
+                            '聊天',
+                            const Key('room-panel-tab-chat'),
+                            true,
+                          ),
                           buildTab(
                             'SC',
                             const Key('room-panel-tab-super-chat'),
                             false,
                           ),
-                          buildTab('关注', const Key('room-panel-tab-follow'), false),
+                          buildTab(
+                            '关注',
+                            const Key('room-panel-tab-follow'),
+                            false,
+                          ),
                           buildTab(
                             '设置',
                             const Key('room-panel-tab-settings'),
@@ -270,10 +273,7 @@ class RoomLoadingRoomShell extends StatelessWidget {
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          AspectRatio(
-            aspectRatio: 16 / 9,
-            child: loadingPlayer,
-          ),
+          AspectRatio(aspectRatio: 16 / 9, child: loadingPlayer),
           Material(
             color: colorScheme.surface,
             child: Padding(
@@ -326,17 +326,9 @@ class RoomLoadingRoomShell extends StatelessWidget {
               child: Row(
                 children: [
                   buildTab('聊天', const Key('room-panel-tab-chat'), true),
-                  buildTab(
-                    'SC',
-                    const Key('room-panel-tab-super-chat'),
-                    false,
-                  ),
+                  buildTab('SC', const Key('room-panel-tab-super-chat'), false),
                   buildTab('关注', const Key('room-panel-tab-follow'), false),
-                  buildTab(
-                    '设置',
-                    const Key('room-panel-tab-settings'),
-                    false,
-                  ),
+                  buildTab('设置', const Key('room-panel-tab-settings'), false),
                 ],
               ),
             ),
@@ -562,9 +554,7 @@ class RoomPreviewSections extends StatelessWidget {
 }
 
 class _RoomPanelScrollPage extends StatelessWidget {
-  const _RoomPanelScrollPage({
-    required this.child,
-  });
+  const _RoomPanelScrollPage({required this.child});
 
   final Widget child;
 
@@ -579,9 +569,7 @@ class _RoomPanelScrollPage extends StatelessWidget {
 }
 
 class _RoomHeader extends StatelessWidget {
-  const _RoomHeader({
-    required this.data,
-  });
+  const _RoomHeader({required this.data});
 
   final RoomSectionsViewData data;
 
@@ -603,9 +591,9 @@ class _RoomHeader extends StatelessWidget {
               outlineColor: colorScheme.outlineVariant,
               fallbackTextStyle: applyZhTextStyleOrNull(
                 Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -619,10 +607,10 @@ class _RoomHeader extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 15.5,
-                          height: 1.08,
-                        ),
+                      fontWeight: FontWeight.w500,
+                      fontSize: 15.5,
+                      height: 1.08,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -630,10 +618,10 @@ class _RoomHeader extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                          fontSize: 9.5,
-                          height: 1.04,
-                        ),
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 9.5,
+                      height: 1.04,
+                    ),
                   ),
                   if (data.statusPresentation != null) ...[
                     const SizedBox(height: 6),
@@ -651,9 +639,9 @@ class _RoomHeader extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: colorScheme.onSecondaryContainer,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          color: colorScheme.onSecondaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -677,9 +665,9 @@ class _RoomHeader extends StatelessWidget {
                     Text(
                       data.viewerLabel,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13.5,
-                          ),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                      ),
                     ),
                   ],
                 ),
@@ -688,11 +676,11 @@ class _RoomHeader extends StatelessWidget {
                   Text(
                     data.qualityBadgeLabel!,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 9,
-                          height: 1.02,
-                        ),
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 9,
+                      height: 1.02,
+                    ),
                   ),
                 ],
               ],
@@ -726,9 +714,9 @@ class _RoomBottomActions extends StatelessWidget {
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
-            fontSize: 13.5,
-          ),
+        fontWeight: FontWeight.w500,
+        fontSize: 13.5,
+      ),
     );
     return SafeArea(
       top: false,

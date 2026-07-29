@@ -8,6 +8,7 @@ import 'twitch_data_source.dart';
 import 'twitch_live_data_source.dart';
 import 'twitch_playback_bootstrap.dart';
 import 'twitch_preview_data_source.dart';
+import 'twitch_danmaku_token.dart';
 
 class TwitchProvider extends LiveProvider
     implements

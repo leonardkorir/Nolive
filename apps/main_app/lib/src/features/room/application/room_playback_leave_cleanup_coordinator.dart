@@ -1,11 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
 import 'package:live_player/live_player.dart';
 
-import 'room_fullscreen_runtime_context.dart';
-import 'room_fullscreen_session_platforms.dart';
-import 'room_view_ui_state.dart';
+import '../application/room_fullscreen_runtime_context.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
+import '../application/room_view_ui_state.dart';
 
 typedef RoomShouldRefreshBackendAfterCleanup = bool Function(PlayerState state);
 
@@ -52,8 +51,9 @@ class RoomPlaybackLeaveCleanupCoordinator {
     final stateBeforeCleanup = context.runtime.readCurrentState();
     final backend =
         stateBeforeCleanup.backend ?? context.runtime.resolveBackend();
-    final shouldRefresh =
-        context.shouldRefreshBackendAfterCleanup(stateBeforeCleanup);
+    final shouldRefresh = context.shouldRefreshBackendAfterCleanup(
+      stateBeforeCleanup,
+    );
     context.trace(
       'cleanup playback state '
       'backend=${backend.name} '
@@ -77,8 +77,8 @@ class RoomPlaybackLeaveCleanupCoordinator {
       );
       return;
     }
-    final inPip =
-        await context.androidPlaybackBridge.isInPictureInPictureMode();
+    final inPip = await context.androidPlaybackBridge
+        .isInPictureInPictureMode();
     if (!inPip) {
       context.trace('cleanup playback stop inPip=$inPip');
       await _stopPlayerForCleanup(context.runtime);
@@ -91,21 +91,17 @@ class RoomPlaybackLeaveCleanupCoordinator {
       return;
     }
     context.trace(
-        'cleanup playback skip stop due active PiP backend=${backend.name}');
+      'cleanup playback skip stop due active PiP backend=${backend.name}',
+    );
   }
 
   Future<void> _stopPlayerForCleanup(
-      RoomFullscreenRuntimeContext runtime) async {
-    // Widget tests dispose mid-teardown; Future.timeout leaves pending timers.
+    RoomFullscreenRuntimeContext runtime,
+  ) async {
     final boundStop = context.stopTimeout;
     final boundRefresh = context.forceRefreshTimeout;
-    final useTimeout = !_isFlutterWidgetTestBinding;
     try {
-      if (useTimeout) {
-        await runtime.stop().timeout(boundStop);
-      } else {
-        await runtime.stop();
-      }
+      await runtime.stop().timeout(boundStop);
     } on TimeoutException {
       context.trace(
         'cleanup playback stop timed out after '
@@ -115,13 +111,9 @@ class RoomPlaybackLeaveCleanupCoordinator {
       // stop can hang 5s+; next room reuses a dirty MPV and first-open freezes).
       // Happy path (phone tens-of-ms stop) never hits this branch.
       try {
-        if (useTimeout) {
-          await runtime
-              .refreshBackendWithoutPlaybackState()
-              .timeout(boundRefresh);
-        } else {
-          await runtime.refreshBackendWithoutPlaybackState();
-        }
+        await runtime.refreshBackendWithoutPlaybackState().timeout(
+          boundRefresh,
+        );
         context.trace('cleanup playback force refresh after stop timeout');
       } on TimeoutException {
         context.trace(
@@ -162,15 +154,5 @@ class RoomPlaybackLeaveCleanupCoordinator {
         'cleanup playback refresh failed backend=${backend.name} error=$error',
       );
     }
-  }
-}
-
-bool get _isFlutterWidgetTestBinding {
-  try {
-    final name = WidgetsBinding.instance.runtimeType.toString();
-    return name.contains('TestWidgetsFlutterBinding') ||
-        name.contains('AutomatedTestWidgetsFlutterBinding');
-  } catch (_) {
-    return false;
   }
 }

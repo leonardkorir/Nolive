@@ -76,9 +76,21 @@ void main() {
       await store.ensureReady();
 
       // Check results
-      expect(await store.read('key1'), isEmpty, reason: 'key1 was deleted during warmup');
-      expect(await store.read('key2'), 'val2', reason: 'key2 was written during warmup');
-      expect(await store.read('key3'), 'val3', reason: 'key3 was unmodified and copied');
+      expect(
+        await store.read('key1'),
+        isEmpty,
+        reason: 'key1 was deleted during warmup',
+      );
+      expect(
+        await store.read('key2'),
+        'val2',
+        reason: 'key2 was written during warmup',
+      );
+      expect(
+        await store.read('key3'),
+        'val3',
+        reason: 'key3 was unmodified and copied',
+      );
     });
 
     test('warmup write-then-delete on same key during warmup', () async {
@@ -130,35 +142,38 @@ void main() {
       expect(await store.read('key1'), 'new');
     });
 
-    test('rollback on promotion failure restores dirty keys and resolved store', () async {
-      final allowed = {'key1'};
-      final resolved = FailureSecureCredentialStore();
+    test(
+      'rollback on promotion failure restores dirty keys and resolved store',
+      () async {
+        final allowed = {'key1'};
+        final resolved = FailureSecureCredentialStore();
 
-      final store = LazySecureCredentialStore(
-        settingsRepository: settingsRepo,
-        allowedKeys: allowed,
-        initialSettings: {'key1': 'old'},
-        loader: () async {
-          return resolved;
-        },
-      );
+        final store = LazySecureCredentialStore(
+          settingsRepository: settingsRepo,
+          allowedKeys: allowed,
+          initialSettings: {'key1': 'old'},
+          loader: () async {
+            return resolved;
+          },
+        );
 
-      // Trigger write during warmup to make it dirty
-      await store.write('key1', 'new');
+        // Trigger write during warmup to make it dirty
+        await store.write('key1', 'new');
 
-      // Force failure during writeAll migration in promoteResolvedStore
-      resolved.shouldFail = true;
+        // Force failure during writeAll migration in promoteResolvedStore
+        resolved.shouldFail = true;
 
-      // Run warmup, which should fail and rollback to fallback
-      await store.ensureReady();
+        // Run warmup, which should fail and rollback to fallback
+        await store.ensureReady();
 
-      // Since promotion failed, it should have rolled back to fallbackStore
-      // and retained 'new'
-      expect(await store.read('key1'), 'new');
+        // Since promotion failed, it should have rolled back to fallbackStore
+        // and retained 'new'
+        expect(await store.read('key1'), 'new');
 
-      // The resolved store itself should have been rolled back to empty
-      expect(resolved.snapshot(), isEmpty);
-    });
+        // The resolved store itself should have been rolled back to empty
+        expect(resolved.snapshot(), isEmpty);
+      },
+    );
 
     test('fail-open behavior when loader throws exception', () async {
       final allowed = {'key1'};

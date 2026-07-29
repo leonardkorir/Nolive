@@ -31,11 +31,7 @@ class NoliveRoomChrome {
     return BorderRadius.circular(panelRadius(context));
   }
 
-  static List<Color> posterGradient = const [
-    scrimSoft,
-    scrimFaint,
-    scrimMid,
-  ];
+  static List<Color> posterGradient = const [scrimSoft, scrimFaint, scrimMid];
 
   static BoxDecoration panelDecoration({
     BuildContext? context,

@@ -1,5 +1,1 @@
-enum PlayerBackend {
-  memory,
-  mpv,
-  mdk,
-}
+enum PlayerBackend { memory, mpv, mdk }

@@ -45,16 +45,19 @@ class ResolvePlaySourceUseCase {
     bool preferHttps = false,
     List<LivePlayUrl>? preloadedPlayUrls,
   }) async {
-    final provider = registry.create(providerId);
+    final providerName = registry.create(providerId).descriptor.displayName;
     final urls =
         preloadedPlayUrls ??
-        await provider
-            .requireContract<SupportsPlayUrls>(ProviderCapability.playUrls)
-            .fetchPlayUrls(detail: detail, quality: quality);
+        await registry.use<List<LivePlayUrl>>(
+          providerId,
+          (provider) => provider
+              .requireContract<SupportsPlayUrls>(ProviderCapability.playUrls)
+              .fetchPlayUrls(detail: detail, quality: quality),
+        );
     if (urls.isEmpty) {
       throw ProviderParseException(
         providerId: providerId,
-        message: '${provider.descriptor.displayName} 当前没有返回可用播放地址。',
+        message: '$providerName 当前没有返回可用播放地址。',
       );
     }
     var effectiveUrls = urls;
@@ -278,10 +281,7 @@ const _heavyStreamQualityKeywords = <String>[
 
 /// Desktop host detection for buffer-profile resolution (injectable in tests).
 @visibleForTesting
-bool resolveIsDesktopPlaybackHost({
-  TargetPlatform? platform,
-  bool? isWeb,
-}) {
+bool resolveIsDesktopPlaybackHost({TargetPlatform? platform, bool? isWeb}) {
   if (isWeb ?? kIsWeb) {
     return false;
   }
@@ -362,10 +362,7 @@ PlaybackBufferProfile resolvePlaybackBufferProfile({
   // Phone used to fall through to defaultLowLatency (cache=no) and thrash on
   // ad-guard / 1080p HLS; desktop already used desktopStableLive successfully.
   // [isDesktop] remains for API compatibility / future host-only profile forks.
-  if (_looksLikeForeignStableLive(
-    playUrl: playUrl,
-    providerId: providerId,
-  )) {
+  if (_looksLikeForeignStableLive(playUrl: playUrl, providerId: providerId)) {
     return PlaybackBufferProfile.desktopStableLive;
   }
 

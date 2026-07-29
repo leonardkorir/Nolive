@@ -31,7 +31,8 @@ class PushLocalSyncSnapshotUseCase {
         ? await _loadCredentials()
         : const <String, String>{};
 
-    final isFullSync = selectedCategories.isEmpty ||
+    final isFullSync =
+        selectedCategories.isEmpty ||
         selectedCategories.length == SyncDataCategory.values.length;
 
     if (isFullSync) {
@@ -106,10 +107,7 @@ class PushLocalSyncSnapshotUseCase {
       return snapshot;
     }
     return SyncSnapshot(
-      settings: <String, Object?>{
-        ...snapshot.settings,
-        ...credentials,
-      },
+      settings: <String, Object?>{...snapshot.settings, ...credentials},
       history: snapshot.history,
       follows: snapshot.follows,
       tags: snapshot.tags,

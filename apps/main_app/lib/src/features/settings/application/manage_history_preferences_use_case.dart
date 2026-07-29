@@ -1,15 +1,11 @@
 import 'package:live_storage/live_storage.dart';
 
 class HistoryPreferences {
-  const HistoryPreferences({
-    this.recordWatchHistory = true,
-  });
+  const HistoryPreferences({this.recordWatchHistory = true});
 
   final bool recordWatchHistory;
 
-  HistoryPreferences copyWith({
-    bool? recordWatchHistory,
-  }) {
+  HistoryPreferences copyWith({bool? recordWatchHistory}) {
     return HistoryPreferences(
       recordWatchHistory: recordWatchHistory ?? this.recordWatchHistory,
     );
@@ -34,8 +30,10 @@ class LoadHistoryPreferencesUseCase {
 
   Future<HistoryPreferences> call() async {
     return HistoryPreferences(
-      recordWatchHistory: await settingsRepository
-              .readValue<bool>('history_record_watch_enabled') ??
+      recordWatchHistory:
+          await settingsRepository.readValue<bool>(
+            'history_record_watch_enabled',
+          ) ??
           true,
     );
   }

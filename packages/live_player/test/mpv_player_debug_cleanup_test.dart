@@ -21,8 +21,9 @@ void main() {
     });
 
     test('deletes only native reference holder files in a directory', () async {
-      final directory =
-          await Directory.systemTemp.createTemp('nolive-mpv-cleanup-test-');
+      final directory = await Directory.systemTemp.createTemp(
+        'nolive-mpv-cleanup-test-',
+      );
       addTearDown(() async {
         if (await directory.exists()) {
           await directory.delete(recursive: true);
@@ -39,8 +40,9 @@ void main() {
       await holderFile.writeAsString('stale');
       await otherFile.writeAsString('keep');
 
-      final deleted =
-          await deleteMediaKitNativeReferenceHolderFilesInDirectory(directory);
+      final deleted = await deleteMediaKitNativeReferenceHolderFilesInDirectory(
+        directory,
+      );
 
       expect(deleted, 1);
       expect(await holderFile.exists(), isFalse);

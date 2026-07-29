@@ -13,10 +13,10 @@ class SimulatedBackendPlayer implements BasePlayer {
     required this.backend,
     required Duration startupDelay,
     required Duration bufferDelay,
-  })  : _startupDelay = startupDelay,
-        _bufferDelay = bufferDelay,
-        _currentState = PlayerState(backend: backend),
-        _currentDiagnostics = PlayerDiagnostics.empty(backend);
+  }) : _startupDelay = startupDelay,
+       _bufferDelay = bufferDelay,
+       _currentState = PlayerState(backend: backend),
+       _currentDiagnostics = PlayerDiagnostics.empty(backend);
 
   final Duration _startupDelay;
   final Duration _bufferDelay;
@@ -67,11 +67,13 @@ class SimulatedBackendPlayer implements BasePlayer {
   @override
   Future<void> setSource(PlaybackSource source) async {
     _currentSource = source;
-    _emit(_currentState.copyWith(
-      status: PlaybackStatus.buffering,
-      source: source,
-      clearErrorMessage: true,
-    ));
+    _emit(
+      _currentState.copyWith(
+        status: PlaybackStatus.buffering,
+        source: source,
+        clearErrorMessage: true,
+      ),
+    );
     await Future<void>.delayed(_bufferDelay);
     _emit(
       _currentState.copyWith(
@@ -100,9 +102,7 @@ class SimulatedBackendPlayer implements BasePlayer {
     // Keep any diagnostics the test/host already seeded.
     if ((_currentDiagnostics.width ?? 0) <= 0 ||
         (_currentDiagnostics.height ?? 0) <= 0) {
-      _emitDiagnostics(
-        _currentDiagnostics.copyWith(width: 1280, height: 720),
-      );
+      _emitDiagnostics(_currentDiagnostics.copyWith(width: 1280, height: 720));
     }
     _emit(
       _currentState.copyWith(
@@ -124,10 +124,9 @@ class SimulatedBackendPlayer implements BasePlayer {
     _emitDiagnostics(
       _currentDiagnostics.copyWith(clearWidth: true, clearHeight: true),
     );
-    _emit(_currentState.copyWith(
-      status: PlaybackStatus.ready,
-      clearSource: true,
-    ));
+    _emit(
+      _currentState.copyWith(status: PlaybackStatus.ready, clearSource: true),
+    );
   }
 
   @override
@@ -136,9 +135,8 @@ class SimulatedBackendPlayer implements BasePlayer {
   }
 
   @override
-  Future<Uint8List?> captureScreenshot() async => Uint8List.fromList(
-        _kPreviewScreenshotPng,
-      );
+  Future<Uint8List?> captureScreenshot() async =>
+      Uint8List.fromList(_kPreviewScreenshotPng);
 
   @override
   Widget buildView({

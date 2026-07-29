@@ -66,8 +66,10 @@ class _ResponsiveTabSwipeSwitcherState
     if (delta == 0) {
       return;
     }
-    final targetIndex =
-        (controller.index + delta).clamp(0, controller.length - 1);
+    final targetIndex = (controller.index + delta).clamp(
+      0,
+      controller.length - 1,
+    );
     if (targetIndex == controller.index) {
       return;
     }

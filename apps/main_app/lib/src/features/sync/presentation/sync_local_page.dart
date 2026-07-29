@@ -14,104 +14,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import 'sync_local_platform.dart';
 import 'package:nolive_app/src/shared/presentation/app_feedback.dart';
-
-class _LocalSyncPairingPayload {
-  const _LocalSyncPairingPayload({
-    required this.accessToken,
-    this.host,
-    this.port,
-  });
-
-  final String accessToken;
-  final String? host;
-  final int? port;
-}
-
-String _normalizeBarePairingCode(String value) {
-  return value
-      .trim()
-      .replaceFirst(RegExp(r'^nolive-sync:', caseSensitive: false), '')
-      .replaceAll(RegExp(r'[\s-]'), '');
-}
-
-_LocalSyncPairingPayload? _parseLocalSyncPairingPayload(
-  String value, {
-  bool allowBareToken = true,
-}) {
-  final trimmed = value.trim();
-  if (trimmed.isEmpty) {
-    return null;
-  }
-
-  final uri = Uri.tryParse(trimmed);
-  if (uri != null &&
-      uri.scheme.toLowerCase() == 'nolive-sync' &&
-      uri.host == 'pair') {
-    final token = _normalizeBarePairingCode(
-      uri.queryParameters['token'] ?? uri.queryParameters['accessToken'] ?? '',
-    );
-    if (token.isEmpty) {
-      return null;
-    }
-    final host = uri.queryParameters['host'] ?? uri.queryParameters['address'];
-    final normalizedHost = host?.trim();
-    return _LocalSyncPairingPayload(
-      accessToken: token,
-      host: normalizedHost == null || normalizedHost.isEmpty
-          ? null
-          : normalizedHost,
-      port: int.tryParse(uri.queryParameters['port'] ?? ''),
-    );
-  }
-
-  if (!allowBareToken && !trimmed.toLowerCase().startsWith('nolive-sync:')) {
-    return null;
-  }
-
-  final token = _normalizeBarePairingCode(trimmed);
-  if (token.isEmpty) {
-    return null;
-  }
-  return _LocalSyncPairingPayload(accessToken: token);
-}
-
-String _normalizeLocalSyncPairingCode(String value) {
-  return _parseLocalSyncPairingPayload(value)?.accessToken ?? '';
-}
-
-String _formatLocalSyncPairingCode(String value) {
-  final normalized = _normalizeLocalSyncPairingCode(value);
-  if (normalized.isEmpty) {
-    return '';
-  }
-  final buffer = StringBuffer();
-  for (var index = 0; index < normalized.length; index += 4) {
-    if (index > 0) {
-      buffer.write('-');
-    }
-    final end = (index + 4).clamp(0, normalized.length).toInt();
-    buffer.write(normalized.substring(index, end));
-  }
-  return buffer.toString();
-}
-
-String _buildLocalSyncPairingQrData({
-  required SyncPreferences preferences,
-  required List<String> addresses,
-  required int port,
-  required String accessToken,
-}) {
-  return Uri(
-    scheme: 'nolive-sync',
-    host: 'pair',
-    queryParameters: <String, String>{
-      if (addresses.isNotEmpty) 'host': addresses.first,
-      'port': port.toString(),
-      'token': accessToken,
-      'name': preferences.localDeviceName,
-    },
-  ).toString();
-}
+import 'package:nolive_app/src/features/sync/application/sync_local_peer_policy.dart';
 
 class SyncLocalPage extends StatefulWidget {
   const SyncLocalPage({
@@ -138,6 +41,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
   List<DiscoveredPeer> _peers = const [];
   List<String> _localAddresses = const [];
   bool _busy = false;
+
   /// 用户显式开启后，全量/设置类同步会附带平台 Cookie 与 WebDAV 密码。
   bool _includeSensitiveCredentials = false;
 
@@ -215,12 +119,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
   }
 
   List<String> _shareableEndpoints(int port) {
-    if (_localAddresses.isEmpty) {
-      return const [];
-    }
-    return _localAddresses
-        .map((address) => 'http://$address:$port/snapshot')
-        .toList(growable: false);
+    return syncShareableEndpoints(addresses: _localAddresses, port: port);
   }
 
   /// 只记录本机 deviceId / 地址，用于过滤发现列表；**绝不**把本机写进「附近设备」。
@@ -235,7 +134,9 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       _selfPeerDeviceId = info.deviceId;
       // 清掉历史版本误注入的本机条目。
       if (previousSelfPeerId != null) {
-        widget.dependencies.localDiscoveryService.removePeer(previousSelfPeerId);
+        widget.dependencies.localDiscoveryService.removePeer(
+          previousSelfPeerId,
+        );
       }
       widget.dependencies.localDiscoveryService.removePeer(info.deviceId);
       widget.dependencies.localDiscoveryService.removePeer('self');
@@ -254,20 +155,6 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       _selfPeerDeviceId = null;
     }
     widget.dependencies.localDiscoveryService.removePeer('self');
-  }
-
-  bool _isSelfPeer(DiscoveredPeer peer) {
-    final selfPeerDeviceId = _selfPeerDeviceId;
-    if (peer.deviceId == 'self' ||
-        (selfPeerDeviceId != null && peer.deviceId == selfPeerDeviceId)) {
-      return true;
-    }
-    // 本机同步地址已在上方展示；同地址:端口视为本机，不进附近设备。
-    final selfPort = widget.dependencies.localSyncServer.endpoint.port;
-    if (peer.port != selfPort) {
-      return false;
-    }
-    return _localAddresses.any((address) => address == peer.address);
   }
 
   Future<void> _refresh() async {
@@ -437,10 +324,10 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     required TextEditingController tokenController,
   }) async {
     if (!widget.supportsPairingScanner()) {
-          showAppSnackBar(context, '当前平台不支持扫码，请手动输入配对码');
+      showAppSnackBar(context, '当前平台不支持扫码，请手动输入配对码');
       return;
     }
-    final payload = await Navigator.of(context).push<_LocalSyncPairingPayload>(
+    final payload = await Navigator.of(context).push<SyncPairingPayload>(
       MaterialPageRoute(
         builder: (context) => const _LocalSyncPairingScannerPage(),
       ),
@@ -495,11 +382,12 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       if (!mounted) {
         return;
       }
-      showAppSnackBar(context, 
-            widget.dependencies.localSyncServer.isRunning
-                ? '局域网同步服务已启动'
-                : '局域网同步服务已停止',
-          );
+      showAppSnackBar(
+        context,
+        widget.dependencies.localSyncServer.isRunning
+            ? '局域网同步服务已启动'
+            : '局域网同步服务已停止',
+      );
       await _refresh();
     });
   }
@@ -531,7 +419,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       if (!mounted) {
         return;
       }
-          showAppSnackBar(context, '目标在线：${info.displayName}');
+      showAppSnackBar(context, '目标在线：${info.displayName}');
     });
   }
 
@@ -558,8 +446,8 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     SyncDataCategory category,
   ) async {
     await _runBusy(() async {
-      final includeCredentials = _includeSensitiveCredentials &&
-          category == SyncDataCategory.settings;
+      final includeCredentials =
+          _includeSensitiveCredentials && category == SyncDataCategory.settings;
       await widget.dependencies.pushLocalSyncSnapshot(
         preferences,
         categories: <SyncDataCategory>{category},
@@ -586,10 +474,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
       accessToken = preferences.localPeerAccessToken.trim();
     }
     if (accessToken.isEmpty && announce && mounted) {
-      showAppSnackBar(
-        context,
-        '该设备未提供配对码，请扫描对方二维码或在「编辑目标」中填写后再同步。',
-      );
+      showAppSnackBar(context, '该设备未提供配对码，请扫描对方二维码或在「编辑目标」中填写后再同步。');
     }
     final nextPreferences = preferences.copyWith(
       localPeerAddress: peer.address,
@@ -628,19 +513,12 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     DiscoveredPeer peer,
   ) async {
     await _runBusy(() async {
-      final next = await _savePeerAsTarget(
-        preferences,
-        peer,
-        announce: false,
-      );
+      final next = await _savePeerAsTarget(preferences, peer, announce: false);
       if (next.localPeerAccessToken.trim().isEmpty) {
         if (!mounted) {
           return;
         }
-        showAppSnackBar(
-          context,
-          '缺少配对码：请扫对方二维码，或等设备广播更新后再试。',
-        );
+        showAppSnackBar(context, '缺少配对码：请扫对方二维码，或等设备广播更新后再试。');
         return;
       }
       await widget.dependencies.pushLocalSyncSnapshot(
@@ -707,7 +585,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     if (!mounted) {
       return;
     }
-        showAppSnackBar(context, '同步地址已复制');
+    showAppSnackBar(context, '同步地址已复制');
   }
 
   Future<void> _copyPairingCode(String value) async {
@@ -715,16 +593,12 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
     if (!mounted) {
       return;
     }
-        showAppSnackBar(context, '配对码已复制');
+    showAppSnackBar(context, '配对码已复制');
   }
 
-  String _normalizePairingCode(String value) {
-    return _normalizeLocalSyncPairingCode(value);
-  }
+  String _normalizePairingCode(String value) => normalizeSyncPairingCode(value);
 
-  String _formatPairingCode(String value) {
-    return _formatLocalSyncPairingCode(value);
-  }
+  String _formatPairingCode(String value) => formatSyncPairingCode(value);
 
   String _labelOfCategory(SyncDataCategory category) {
     return switch (category) {
@@ -751,34 +625,16 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
 
   /// 附近设备：排除本机，并按 address:port 再去重（UI 层兜底）。
   List<DiscoveredPeer> _remotePeers() {
-    final byEndpoint = <String, DiscoveredPeer>{};
-    for (final peer in _peers) {
-      if (_isSelfPeer(peer)) {
-        continue;
-      }
-      final key = '${peer.address}:${peer.port}';
-      final existing = byEndpoint[key];
-      if (existing == null ||
-          peer.lastSeenAt.isAfter(existing.lastSeenAt) ||
-          (existing.deviceId == 'manual-peer' && peer.deviceId != 'manual-peer')) {
-        byEndpoint[key] = peer;
-      }
-    }
-    return byEndpoint.values.toList(growable: false);
+    return dedupeRemoteSyncPeers(
+      _peers,
+      selfDeviceId: _selfPeerDeviceId,
+      selfPort: widget.dependencies.localSyncServer.endpoint.port,
+      localAddresses: _localAddresses,
+    );
   }
 
   String _relativeLastSeen(DateTime value) {
-    final diff = DateTime.now().difference(value);
-    if (diff.inSeconds < 5) {
-      return '刚刚在线';
-    }
-    if (diff.inMinutes < 1) {
-      return '${diff.inSeconds} 秒前';
-    }
-    if (diff.inHours < 1) {
-      return '${diff.inMinutes} 分钟前';
-    }
-    return '${diff.inHours} 小时前';
+    return relativeLastSeenLabel(value, now: DateTime.now());
   }
 
   @override
@@ -816,15 +672,17 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
             );
             final pairingCode = data.localPairingCode;
             final formattedPairingCode = _formatPairingCode(pairingCode);
-            final pairingQrData = _buildLocalSyncPairingQrData(
-              preferences: preferences,
+            final pairingQrData = buildSyncPairingQrData(
+              deviceName: preferences.localDeviceName,
               addresses: _localAddresses,
               port: widget.dependencies.localSyncServer.endpoint.port,
               accessToken: pairingCode,
             );
             final remotePeers = _remotePeers();
             final hasTarget = preferences.localPeerAddress.trim().isNotEmpty;
-            final hasPairing = preferences.localPeerAccessToken.trim().isNotEmpty;
+            final hasPairing = preferences.localPeerAccessToken
+                .trim()
+                .isNotEmpty;
 
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -988,9 +846,7 @@ class _SyncLocalPageState extends State<SyncLocalPage> {
                             ),
                             isThreeLine: true,
                             trailing: FilledButton.tonal(
-                              key: Key(
-                                'sync-local-peer-push-${peer.deviceId}',
-                              ),
+                              key: Key('sync-local-peer-push-${peer.deviceId}'),
                               onPressed: _busy
                                   ? null
                                   : () => _syncToPeer(preferences, peer),
@@ -1147,7 +1003,7 @@ class _LocalSyncPairingScannerPageState
       return;
     }
     for (final barcode in capture.barcodes) {
-      final payload = _parseLocalSyncPairingPayload(
+      final payload = parseSyncPairingPayload(
         barcode.rawValue ?? '',
         allowBareToken: false,
       );
@@ -1160,7 +1016,7 @@ class _LocalSyncPairingScannerPageState
     }
   }
 
-  Future<void> _completeScan(_LocalSyncPairingPayload payload) async {
+  Future<void> _completeScan(SyncPairingPayload payload) async {
     try {
       await _controller.stop();
       if (!mounted) {
@@ -1172,7 +1028,7 @@ class _LocalSyncPairingScannerPageState
       if (!mounted) {
         return;
       }
-            showAppErrorSnackBar(context, error, prefix: '扫码器停止失败：');
+      showAppErrorSnackBar(context, error, prefix: '扫码器停止失败：');
     }
   }
 

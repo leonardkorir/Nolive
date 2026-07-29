@@ -25,13 +25,14 @@ class RepositorySyncSnapshotService {
   final SyncSnapshotMerger merger;
 
   Future<SyncSnapshot> exportSnapshot() async {
-    final settings = Map<String, Object?>.from(
-      await settingsRepository.listAll(),
-    )..removeWhere((key, _) {
-        return key != 'blocked_keywords' &&
-            shouldIncludeSettingInSnapshot?.call(key) == false;
-      });
-    final blockedKeywords = (settings.remove('blocked_keywords') as List?)
+    final settings =
+        Map<String, Object?>.from(await settingsRepository.listAll())
+          ..removeWhere((key, _) {
+            return key != 'blocked_keywords' &&
+                shouldIncludeSettingInSnapshot?.call(key) == false;
+          });
+    final blockedKeywords =
+        (settings.remove('blocked_keywords') as List?)
             ?.map((item) => item.toString())
             .toList(growable: false) ??
         const <String>[];
@@ -50,13 +51,13 @@ class RepositorySyncSnapshotService {
     return switch (category) {
       SyncDataCategory.settings => SyncSnapshot(settings: snapshot.settings),
       SyncDataCategory.library => SyncSnapshot(
-          follows: snapshot.follows,
-          tags: snapshot.tags,
-        ),
+        follows: snapshot.follows,
+        tags: snapshot.tags,
+      ),
       SyncDataCategory.history => SyncSnapshot(history: snapshot.history),
       SyncDataCategory.blockedKeywords => SyncSnapshot(
-          blockedKeywords: snapshot.blockedKeywords,
-        ),
+        blockedKeywords: snapshot.blockedKeywords,
+      ),
     };
   }
 
@@ -129,16 +130,17 @@ class RepositorySyncSnapshotService {
         lastSyncAt: lastSyncAt,
       );
       final partial = switch (category) {
-        SyncDataCategory.settings =>
-          SyncSnapshot(settings: mergedFull.settings),
+        SyncDataCategory.settings => SyncSnapshot(
+          settings: mergedFull.settings,
+        ),
         SyncDataCategory.library => SyncSnapshot(
-            follows: mergedFull.follows,
-            tags: mergedFull.tags,
-          ),
+          follows: mergedFull.follows,
+          tags: mergedFull.tags,
+        ),
         SyncDataCategory.history => SyncSnapshot(history: mergedFull.history),
         SyncDataCategory.blockedKeywords => SyncSnapshot(
-            blockedKeywords: mergedFull.blockedKeywords,
-          ),
+          blockedKeywords: mergedFull.blockedKeywords,
+        ),
       };
       await importCategory(category, partial, clearExisting: true);
       return;
@@ -186,7 +188,7 @@ class RepositorySyncSnapshotService {
         if (!clearExisting) {
           final existing =
               await settingsRepository.readValue<List>('blocked_keywords') ??
-                  const <Object?>[];
+              const <Object?>[];
           final merged = <String>[
             for (final item in existing) item.toString(),
             for (final item in snapshot.blockedKeywords) item,

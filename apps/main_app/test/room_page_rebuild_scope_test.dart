@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_page_rebuild_scope.dart';
+import 'package:nolive_app/src/features/room/application/room_page_rebuild_scope.dart';
 
 void main() {
   group('shouldSessionCoordinatorFanOutChildNotify', () {
@@ -46,11 +46,14 @@ void main() {
   });
 
   group('planRoomPreviewDispose', () {
-    test('cleanup defers heavy controller dispose until after leave cleanup', () {
-      final plan = planRoomPreviewDispose(cleanupPlayback: true);
-      expect(plan.cleanupPlayback, isTrue);
-      expect(plan.deferHeavyControllerDisposeUntilAfterCleanup, isTrue);
-    });
+    test(
+      'cleanup defers heavy controller dispose until after leave cleanup',
+      () {
+        final plan = planRoomPreviewDispose(cleanupPlayback: true);
+        expect(plan.cleanupPlayback, isTrue);
+        expect(plan.deferHeavyControllerDisposeUntilAfterCleanup, isTrue);
+      },
+    );
 
     test('no cleanup disposes heavy controllers immediately', () {
       final plan = planRoomPreviewDispose(cleanupPlayback: false);
@@ -155,7 +158,10 @@ void main() {
         );
 
         expect(order, ['runtime', 'playback', 'fullscreen', 'observer']);
-        expect(steps, isNot(contains(RoomPreviewHeavyDisposeStep.cleanupPlaybackOnLeave)));
+        expect(
+          steps,
+          isNot(contains(RoomPreviewHeavyDisposeStep.cleanupPlaybackOnLeave)),
+        );
         expect(steps.first, RoomPreviewHeavyDisposeStep.disposeRuntime);
       },
     );
@@ -188,7 +194,13 @@ void main() {
           ),
         );
 
-        expect(order, ['cleanup', 'runtime', 'playback', 'fullscreen', 'observer']);
+        expect(order, [
+          'cleanup',
+          'runtime',
+          'playback',
+          'fullscreen',
+          'observer',
+        ]);
         expect(steps.first, RoomPreviewHeavyDisposeStep.cleanupPlaybackOnLeave);
         expect(steps, contains(RoomPreviewHeavyDisposeStep.disposePlayback));
       },
@@ -295,9 +307,7 @@ void main() {
       expect(
         shouldScheduleFullRoomPageRebuildForPlayerState(
           previous: playing,
-          next: playing.copyWith(
-            buffered: const Duration(milliseconds: 600),
-          ),
+          next: playing.copyWith(buffered: const Duration(milliseconds: 600)),
         ),
         isTrue,
       );
@@ -311,18 +321,14 @@ void main() {
       expect(
         shouldScheduleFullRoomPageRebuildForPlayerState(
           previous: afterFirstFrame,
-          next: afterFirstFrame.copyWith(
-            position: const Duration(seconds: 3),
-          ),
+          next: afterFirstFrame.copyWith(position: const Duration(seconds: 3)),
         ),
         isFalse,
       );
       expect(
         shouldScheduleFullRoomPageRebuildForPlayerState(
           previous: afterFirstFrame,
-          next: afterFirstFrame.copyWith(
-            buffered: const Duration(seconds: 5),
-          ),
+          next: afterFirstFrame.copyWith(buffered: const Duration(seconds: 5)),
         ),
         isFalse,
       );

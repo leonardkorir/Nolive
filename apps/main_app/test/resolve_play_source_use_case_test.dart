@@ -737,11 +737,7 @@ void main() {
     'resolvePlaybackBufferProfile maps 4K/超高清 labels to heavyStreamStable',
     () {
       const playUrl = LivePlayUrl(url: 'https://hw1a.douyucdn2.cn/live/x.flv');
-      final fourK = LivePlayQuality(
-        id: '16',
-        label: '4K超高清',
-        sortOrder: 4000,
-      );
+      final fourK = LivePlayQuality(id: '16', label: '4K超高清', sortOrder: 4000);
       expect(
         resolvePlaybackBufferProfile(playUrl: playUrl, quality: fourK),
         PlaybackBufferProfile.heavyStreamStable,

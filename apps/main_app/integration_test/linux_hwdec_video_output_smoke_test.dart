@@ -24,7 +24,8 @@ void main() {
   ) async {
     expect(Platform.isLinux, isTrue);
 
-    final videoPath = Platform.environment['NOLIVE_HW_TEST_VIDEO'] ??
+    final videoPath =
+        Platform.environment['NOLIVE_HW_TEST_VIDEO'] ??
         '/tmp/grok-goal-858430f9b6a5/implementer/test-hw.mp4';
     final videoFile = File(videoPath);
     expect(
@@ -100,12 +101,15 @@ void main() {
       if (player.state.playing || player.state.position > Duration.zero) {
         sawPlaying = true;
       }
-      final earlyMarker =
-          markerFile.existsSync() ? markerFile.readAsStringSync().trim() : '';
-      final hwOk = hwdecCurrent.isNotEmpty &&
+      final earlyMarker = markerFile.existsSync()
+          ? markerFile.readAsStringSync().trim()
+          : '';
+      final hwOk =
+          hwdecCurrent.isNotEmpty &&
           hwdecCurrent != 'no' &&
           hwdecCurrent != 'none';
-      final voHw = earlyMarker == 'flutter-display' ||
+      final voHw =
+          earlyMarker == 'flutter-display' ||
           earlyMarker == 'gdk-display' ||
           earlyMarker == 'gdk-gl-context';
       if (hwOk && (voHw || sawPlaying)) {
@@ -113,8 +117,9 @@ void main() {
       }
     }
 
-    final marker =
-        markerFile.existsSync() ? markerFile.readAsStringSync().trim() : '';
+    final marker = markerFile.existsSync()
+        ? markerFile.readAsStringSync().trim()
+        : '';
     final summary =
         'hwdec=$hwdec hwdec-current=$hwdecCurrent current-vo=$currentVo '
         'playing=$sawPlaying position=${player.state.position} '
@@ -136,9 +141,7 @@ void main() {
     // may stay on S/W upload by design (isolated EGL crashes raster); that is
     // acceptable when hwdec-current is a real backend.
     expect(
-      hwdecCurrent.isNotEmpty &&
-          hwdecCurrent != 'no' &&
-          hwdecCurrent != 'none',
+      hwdecCurrent.isNotEmpty && hwdecCurrent != 'no' && hwdecCurrent != 'none',
       isTrue,
       reason:
           'expected active hardware decode (hwdec-current not no/none), got '
@@ -147,7 +150,8 @@ void main() {
     // AC1: on machines with GPU/libEGL, VideoOutput must take an OpenGL H/W
     // path (flutter-display / gdk-display / gdk-gl-context / flutter-raster),
     // not silent or permanent software when init can succeed.
-    final hwTexture = marker == 'flutter-display' ||
+    final hwTexture =
+        marker == 'flutter-display' ||
         marker == 'gdk-display' ||
         marker == 'gdk-gl-context' ||
         marker == 'flutter-raster';

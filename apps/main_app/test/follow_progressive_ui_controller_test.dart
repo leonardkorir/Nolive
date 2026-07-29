@@ -65,25 +65,27 @@ void main() {
     },
   );
 
-  test('onEntryResolved ignores superseded generation without writing snapshot',
-      () {
-    var generation = 2;
-    final snapshots = <String>[];
-    final pagePaints = <String>[];
-    final controller = FollowProgressiveUiController(
-      isMounted: () => true,
-      currentGeneration: () => generation,
-      writeSnapshot: (w) => snapshots.add(w.entries.single.roomId),
-      applyWatchlistToPage: (w) => pagePaints.add(w.entries.single.roomId),
-    );
+  test(
+    'onEntryResolved ignores superseded generation without writing snapshot',
+    () {
+      var generation = 2;
+      final snapshots = <String>[];
+      final pagePaints = <String>[];
+      final controller = FollowProgressiveUiController(
+        isMounted: () => true,
+        currentGeneration: () => generation,
+        writeSnapshot: (w) => snapshots.add(w.entries.single.roomId),
+        applyWatchlistToPage: (w) => pagePaints.add(w.entries.single.roomId),
+      );
 
-    controller.beginGeneration(2);
-    controller.onEntryResolved(1, _list('stale'));
-    expect(snapshots, isEmpty);
-    expect(pagePaints, isEmpty);
+      controller.beginGeneration(2);
+      controller.onEntryResolved(1, _list('stale'));
+      expect(snapshots, isEmpty);
+      expect(pagePaints, isEmpty);
 
-    controller.onEntryResolved(2, _list('live'));
-    expect(snapshots, ['live']);
-    controller.dispose();
-  });
+      controller.onEntryResolved(2, _list('live'));
+      expect(snapshots, ['live']);
+      controller.dispose();
+    },
+  );
 }

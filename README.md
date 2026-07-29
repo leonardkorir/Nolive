@@ -15,7 +15,7 @@ Nolive 是一个基于 Flutter 的直播聚合客户端，以 Android 为主发�
 - 当前正式发布目标是 Android。
 - 正式发布主目标仍是 Android（mobile first）；**Linux 桌面**在依赖齐备时可构建与 Android 主路径同能力的桌面端（平板 UI + 播放 + 国际站 WebView bridge / 登录）。
 - 当前对外发布口径为多平台直播聚合客户端。
-- 主应用版本见 `apps/main_app/pubspec.yaml`（当前 `0.3.8+11`）；对外版本变化见 [`CHANGELOG.md`](CHANGELOG.md) 与 GitHub Releases。
+- 主应用版本见 `apps/main_app/pubspec.yaml`（当前 `0.3.9+12`）；对外版本变化见 [`CHANGELOG.md`](CHANGELOG.md) 与 GitHub Releases。
 
 ## 功能概览
 

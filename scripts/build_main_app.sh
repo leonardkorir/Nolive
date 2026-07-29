@@ -139,6 +139,11 @@ case "$TARGET" in
     scripts/verify_release_metadata.sh
     flutter pub run melos run analyze
     flutter pub run melos run test
+    # Format lives here, not only in pr-checks: work lands directly on main in
+    # this repo, and pr-checks only fires on pull_request, so a push-only
+    # workflow left formatting ungated. That is how the tree drifted far enough
+    # that one `dart format` touched 251 unrelated files.
+    flutter pub run melos run format-check
     ;;
   verify-release-metadata)
     scripts/verify_release_metadata.sh

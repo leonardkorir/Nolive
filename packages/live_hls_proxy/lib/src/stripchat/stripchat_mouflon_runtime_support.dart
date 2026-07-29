@@ -100,7 +100,8 @@ int? _readMp4BoxSize(Uint8List bytes, int offset) {
   if (offset + 4 > bytes.lengthInBytes) {
     return null;
   }
-  final size = (bytes[offset] << 24) |
+  final size =
+      (bytes[offset] << 24) |
       (bytes[offset + 1] << 16) |
       (bytes[offset + 2] << 8) |
       bytes[offset + 3];

@@ -6,8 +6,9 @@ class LoadBlockedKeywordsUseCase {
   final SettingsRepository settingsRepository;
 
   Future<List<String>> call() async {
-    return await settingsRepository
-            .readValue<List<String>>('blocked_keywords') ??
+    return await settingsRepository.readValue<List<String>>(
+          'blocked_keywords',
+        ) ??
         const <String>[];
   }
 }
@@ -24,7 +25,7 @@ class AddBlockedKeywordUseCase {
     }
     final current =
         await settingsRepository.readValue<List<String>>('blocked_keywords') ??
-            const <String>[];
+        const <String>[];
     final next = {...current, normalized}.toList(growable: false)..sort();
     await settingsRepository.writeValue('blocked_keywords', next);
   }
@@ -38,7 +39,7 @@ class RemoveBlockedKeywordUseCase {
   Future<void> call(String keyword) async {
     final current =
         await settingsRepository.readValue<List<String>>('blocked_keywords') ??
-            const <String>[];
+        const <String>[];
     final next = [...current]..removeWhere((item) => item == keyword);
     await settingsRepository.writeValue('blocked_keywords', next);
   }

@@ -1,5 +1,6 @@
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
+import 'package:nolive_app/src/features/room/application/room_provider_traits.dart';
 
 /// Tracks multi-line failover state for non–site-specialized providers.
 ///
@@ -161,9 +162,7 @@ class RoomGenericLineFailoverStep {
 /// Providers that already own specialized recovery and should not use generic
 /// multi-line failover.
 bool shouldUseGenericMultiLineFailover(ProviderId providerId) {
-  return providerId != ProviderId.twitch &&
-      providerId != ProviderId.chaturbate &&
-      providerId != ProviderId.stripchat;
+  return roomProviderTraitsFor(providerId).usesGenericMultiLineFailover;
 }
 
 /// Caps full play-source reloads after multi-line terminal failure.

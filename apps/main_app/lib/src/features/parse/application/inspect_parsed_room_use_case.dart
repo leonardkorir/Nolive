@@ -14,17 +14,20 @@ class InspectParsedRoomUseCase {
   roomDetailOverride;
 
   Future<ParsedRoomInspection> call(ParsedRoomInput parsedRoom) async {
-    final provider = registry.create(parsedRoom.providerId);
-    final overridden = await roomDetailOverride?.call(
-      providerId: parsedRoom.providerId,
-      roomId: parsedRoom.roomId,
-    );
-    final detail =
-        overridden ??
-        await provider
-            .requireContract<SupportsRoomDetail>(ProviderCapability.roomDetail)
-            .fetchRoomDetail(parsedRoom.roomId);
-    return ParsedRoomInspection(parsedRoom: parsedRoom, detail: detail);
+    return registry.use(parsedRoom.providerId, (provider) async {
+      final overridden = await roomDetailOverride?.call(
+        providerId: parsedRoom.providerId,
+        roomId: parsedRoom.roomId,
+      );
+      final detail =
+          overridden ??
+          await provider
+              .requireContract<SupportsRoomDetail>(
+                ProviderCapability.roomDetail,
+              )
+              .fetchRoomDetail(parsedRoom.roomId);
+      return ParsedRoomInspection(parsedRoom: parsedRoom, detail: detail);
+    });
   }
 }
 

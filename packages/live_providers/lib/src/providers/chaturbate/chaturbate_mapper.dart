@@ -4,6 +4,7 @@ import '../provider_json.dart';
 import 'chaturbate_api_client.dart';
 import 'chaturbate_hls_master_playlist_parser.dart';
 import 'chaturbate_room_page_parser.dart';
+import 'chaturbate_danmaku_token.dart';
 
 class ChaturbateMapper {
   const ChaturbateMapper._();

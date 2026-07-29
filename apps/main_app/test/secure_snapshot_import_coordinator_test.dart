@@ -423,15 +423,16 @@ void main() {
       final coordinator = SecureSnapshotImportCoordinator(
         snapshotService: snapshotService,
         secureCredentialStore: secureCredentialStore,
-        onAfterImport: ({
-          required bool followDataChanged,
-          required bool settingsChanged,
-        }) async {
-          notifications.add((
-            follow: followDataChanged,
-            settings: settingsChanged,
-          ));
-        },
+        onAfterImport:
+            ({
+              required bool followDataChanged,
+              required bool settingsChanged,
+            }) async {
+              notifications.add((
+                follow: followDataChanged,
+                settings: settingsChanged,
+              ));
+            },
       );
 
       await coordinator.importCategory(

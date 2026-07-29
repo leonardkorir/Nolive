@@ -110,45 +110,55 @@ class NoliveTheme {
     required Color dividerColor,
   }) {
     final baseTypography = Typography.material2021().black.apply(
-          bodyColor: colorScheme.onSurface,
-          displayColor: colorScheme.onSurface,
-        );
-    final textTheme = applyZhTextTheme(baseTypography.copyWith(
-      headlineMedium: baseTypography.headlineMedium?.copyWith(
-        fontWeight: FontWeight.w500,
-        letterSpacing: 0,
-        height: 1.12,
+      bodyColor: colorScheme.onSurface,
+      displayColor: colorScheme.onSurface,
+    );
+    final textTheme = applyZhTextTheme(
+      baseTypography.copyWith(
+        headlineMedium: baseTypography.headlineMedium?.copyWith(
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0,
+          height: 1.12,
+        ),
+        headlineSmall: baseTypography.headlineSmall?.copyWith(
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0,
+          height: 1.14,
+        ),
+        titleLarge: baseTypography.titleLarge?.copyWith(
+          fontWeight: FontWeight.w500,
+          fontSize: 16,
+          height: 1.14,
+        ),
+        titleMedium: baseTypography.titleMedium?.copyWith(
+          fontWeight: FontWeight.w500,
+          fontSize: 13.5,
+          height: 1.18,
+        ),
+        titleSmall: baseTypography.titleSmall?.copyWith(
+          fontWeight: FontWeight.w500,
+          fontSize: 12.5,
+          height: 1.18,
+        ),
+        bodyLarge: baseTypography.bodyLarge?.copyWith(
+          fontSize: 14,
+          height: 1.28,
+        ),
+        bodyMedium: baseTypography.bodyMedium?.copyWith(
+          fontSize: 13,
+          height: 1.26,
+        ),
+        bodySmall: baseTypography.bodySmall?.copyWith(
+          fontSize: 12,
+          height: 1.24,
+        ),
+        labelLarge: baseTypography.labelLarge?.copyWith(
+          fontWeight: FontWeight.w500,
+          fontSize: 11.5,
+          height: 1.16,
+        ),
       ),
-      headlineSmall: baseTypography.headlineSmall?.copyWith(
-        fontWeight: FontWeight.w500,
-        letterSpacing: 0,
-        height: 1.14,
-      ),
-      titleLarge: baseTypography.titleLarge?.copyWith(
-        fontWeight: FontWeight.w500,
-        fontSize: 16,
-        height: 1.14,
-      ),
-      titleMedium: baseTypography.titleMedium?.copyWith(
-        fontWeight: FontWeight.w500,
-        fontSize: 13.5,
-        height: 1.18,
-      ),
-      titleSmall: baseTypography.titleSmall?.copyWith(
-        fontWeight: FontWeight.w500,
-        fontSize: 12.5,
-        height: 1.18,
-      ),
-      bodyLarge: baseTypography.bodyLarge?.copyWith(fontSize: 14, height: 1.28),
-      bodyMedium:
-          baseTypography.bodyMedium?.copyWith(fontSize: 13, height: 1.26),
-      bodySmall: baseTypography.bodySmall?.copyWith(fontSize: 12, height: 1.24),
-      labelLarge: baseTypography.labelLarge?.copyWith(
-        fontWeight: FontWeight.w500,
-        fontSize: 11.5,
-        height: 1.16,
-      ),
-    ));
+    );
 
     final statusColors = colorScheme.brightness == Brightness.dark
         ? NoliveStatusColors.dark()
@@ -160,27 +170,27 @@ class NoliveTheme {
       scaffoldBackgroundColor: scaffoldBackgroundColor,
       textTheme: textTheme,
       primaryTextTheme: textTheme,
-      extensions: <ThemeExtension<dynamic>>[
-        statusColors,
-        NoliveRadii.standard,
-      ],
+      extensions: <ThemeExtension<dynamic>>[statusColors, NoliveRadii.standard],
       appBarTheme: AppBarTheme(
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
-        systemOverlayStyle: (colorScheme.brightness == Brightness.dark
-                ? SystemUiOverlayStyle.light
-                : SystemUiOverlayStyle.dark)
-            .copyWith(
-          statusBarColor: Colors.transparent,
-          systemNavigationBarColor: Colors.transparent,
+        systemOverlayStyle:
+            (colorScheme.brightness == Brightness.dark
+                    ? SystemUiOverlayStyle.light
+                    : SystemUiOverlayStyle.dark)
+                .copyWith(
+                  statusBarColor: Colors.transparent,
+                  systemNavigationBarColor: Colors.transparent,
+                ),
+        titleTextStyle: applyZhTextStyleOrNull(
+          textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: colorScheme.onSurface,
+          ),
         ),
-        titleTextStyle: applyZhTextStyleOrNull(textTheme.titleLarge?.copyWith(
-          fontWeight: FontWeight.w500,
-          color: colorScheme.onSurface,
-        )),
       ),
       cardTheme: CardThemeData(
         color: cardColor,
@@ -274,10 +284,9 @@ class NoliveTheme {
       chipTheme: ChipThemeData(
         backgroundColor: colorScheme.surfaceContainerHighest,
         selectedColor: colorScheme.primaryContainer,
-        labelStyle: applyZhTextStyle(TextStyle(
-          color: colorScheme.onSurface,
-          fontWeight: FontWeight.w500,
-        )),
+        labelStyle: applyZhTextStyle(
+          TextStyle(color: colorScheme.onSurface, fontWeight: FontWeight.w500),
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
@@ -304,17 +313,21 @@ class NoliveTheme {
         indicatorColor: navigationIndicatorColor,
         surfaceTintColor: Colors.transparent,
         labelTextStyle: WidgetStateProperty.all(
-          applyZhTextStyle(TextStyle(
-            fontWeight: FontWeight.w500,
-            color: colorScheme.onSurface,
-          )),
+          applyZhTextStyle(
+            TextStyle(
+              fontWeight: FontWeight.w500,
+              color: colorScheme.onSurface,
+            ),
+          ),
         ),
       ),
       // Desktop rail: Chinese labels (首页/关注/…) need the same fallback font.
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: navigationBackgroundColor,
         indicatorColor: navigationIndicatorColor,
-        selectedIconTheme: IconThemeData(color: colorScheme.onSecondaryContainer),
+        selectedIconTheme: IconThemeData(
+          color: colorScheme.onSecondaryContainer,
+        ),
         unselectedIconTheme: IconThemeData(color: colorScheme.onSurfaceVariant),
         selectedLabelTextStyle: applyZhTextStyleOrNull(
           textTheme.labelMedium?.copyWith(

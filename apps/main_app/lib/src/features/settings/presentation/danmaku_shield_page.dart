@@ -84,9 +84,8 @@ class _DanmakuShieldPageState extends State<DanmakuShieldPage> {
                     Text(
                       '示例：`广告` 会屏蔽包含“广告”的消息；`re:^抽奖.*\$` 会屏蔽以“抽奖”开头的整条弹幕。',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),

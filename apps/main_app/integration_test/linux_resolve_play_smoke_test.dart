@@ -136,15 +136,14 @@ Future<int> _mpvDecode(
     mpvArgs.add('--http-header-fields=${e.key}: ${e.value}');
   }
   mpvArgs.add(url);
-  final r = await Process.run(
-    'timeout',
-    ['${seconds + 8}', 'mpv', ...mpvArgs],
-    environment: Platform.environment,
-  );
+  final r = await Process.run('timeout', [
+    '${seconds + 8}',
+    'mpv',
+    ...mpvArgs,
+  ], environment: Platform.environment);
   final mixed = '${r.stderr}\n${r.stdout}';
   // Require actual demux evidence — never treat exit 0 / Quit without VO as OK.
-  final ok =
-      mixed.contains('VO:') || mixed.contains('Video --vid');
+  final ok = mixed.contains('VO:') || mixed.contains('Video --vid');
   for (final line
       in mixed.split('\n').where((l) => l.trim().isNotEmpty).take(10)) {
     debugPrint('  mpv: $line');
@@ -247,9 +246,9 @@ void main() {
       final resolve = ResolvePlaySourceUseCase(registry);
       final provider = registry.create(ProviderId.douyu);
       debugPrint('DOUYU_PROVIDER_OK');
-      final picked = await _pickLiveRoom(provider).timeout(
-        const Duration(seconds: 60),
-      );
+      final picked = await _pickLiveRoom(
+        provider,
+      ).timeout(const Duration(seconds: 60));
       debugPrint('DOUYU_ROOM room=${picked.detail.roomId}');
       final resolved = await resolve(
         providerId: ProviderId.douyu,
@@ -294,216 +293,246 @@ void main() {
     debugPrint('RESOLVE_SMOKE_DONE site=huya');
   }, timeout: const Timeout(Duration(minutes: 3)));
 
-  testWidgets('Linux shipped resolve twitch ad-guard loopback', (tester) async {
-    if (!Platform.isLinux) return;
-    final stack = _assembleShippedStack();
-    // Warm web bridge (same path as room enter bootstrap).
-    await stack.bridges.twitchWebPlaybackBridge!
-        .warmUp()
-        .timeout(const Duration(seconds: 30));
-    debugPrint('TW_WARMUP_OK');
-
-    final provider = stack.registry.create(ProviderId.twitch);
-    final picked = await _pickLiveRoom(provider);
-    final resolved = await stack.resolve(
-      providerId: ProviderId.twitch,
-      detail: picked.detail,
-      quality: picked.quality,
-    );
-    expect(resolved.playUrls, isNotEmpty);
-    final url = resolved.playUrls.first.url;
-    debugPrint('RESOLVE_OK site=twitch url=$url');
-    expect(
-      _isLoopbackProxy(url, 'twitch-ad-guard'),
-      isTrue,
-      reason: 'Twitch must wrap via ad-guard loopback, got $url',
-    );
-    final code = await _mpvDecodeProxied(url, seconds: 10);
-    debugPrint(code == 0 ? 'MPV_PROXIED_OK site=twitch' : 'MPV_PROXIED_FAIL site=twitch');
-    expect(code, 0, reason: 'mpv must demux loopback twitch-ad-guard URL');
-    debugPrint('RESOLVE_SMOKE_DONE site=twitch');
-  }, timeout: const Timeout(Duration(minutes: 4)));
-
-  testWidgets('Linux shipped resolve youtube nsig-wired', (tester) async {
-    if (!Platform.isLinux) return;
-    final stack = _assembleShippedStack();
-    final solver = stack.bridges.youtubeNSigSolver;
-    expect(solver, isA<YouTubeWebViewNSigSolver>());
-
-    final provider = stack.registry.create(ProviderId.youtube);
-    final picked = await _pickLiveRoom(provider);
-    final detail = picked.detail;
-    final resolved = await stack.resolve(
-      providerId: ProviderId.youtube,
-      detail: detail,
-      quality: picked.quality,
-    );
-    expect(resolved.playUrls, isNotEmpty);
-    final url = resolved.playUrls.first.url;
-    debugPrint(
-      'RESOLVE_OK site=youtube url=${url.substring(0, url.length.clamp(0, 120))}',
-    );
-
-    // Real player JS + n challenges (not junk playerJs).
-    var playerJsUrl = detail.metadata?['playerJsUrl']?.toString().trim() ?? '';
-    if (playerJsUrl.isEmpty) {
-      // Fall back: scrape player URL from the watch page of this room.
-      playerJsUrl = await _scrapeYouTubePlayerJsUrl(detail.roomId);
-    }
-    expect(playerJsUrl, isNotEmpty, reason: 'need real player JS URL for nsig');
-    debugPrint('YT_PLAYER_JS_URL=$playerJsUrl');
-
-    final playerJs = await _httpGetText(playerJsUrl);
-    expect(playerJs.length, greaterThan(1000), reason: 'player JS body');
-
-    final challenges = <String>{
-      ..._extractNChallenges(url),
-      for (final u in resolved.playUrls) ..._extractNChallenges(u.url),
-    };
-    // Room metadata often holds progressive googlevideo URLs with n= even when
-    // the primary Auto quality is HLS without n.
-    _walkStrings(detail.metadata, (value) {
-      if (value.contains('googlevideo') || value.contains('videoplayback')) {
-        challenges.addAll(_extractNChallenges(value));
-      }
-    });
-    // HLS masters / segment lists often embed n= even when the top Auto URL does not.
-    for (final play in resolved.playUrls.take(2)) {
-      try {
-        final body = await _httpGetText(play.url);
-        for (final match in RegExp(r'[?&]n=([A-Za-z0-9_-]+)').allMatches(body)) {
-          final v = match.group(1)?.trim() ?? '';
-          if (v.length >= 6) challenges.add(v);
-        }
-        for (final match in RegExp(r'/n/([A-Za-z0-9_-]+)').allMatches(body)) {
-          final v = match.group(1)?.trim() ?? '';
-          if (v.length >= 6) challenges.add(v);
-        }
-      } catch (error) {
-        debugPrint('YT_HLS_SCAN_ERR $error');
-      }
-    }
-    debugPrint(
-      'YT_NSIG_CHALLENGES=${challenges.length} sample=${challenges.take(2).toList()}',
-    );
-
-    // Live iOS/HLS paths sometimes omit n=. Still require a real playerJs solve
-    // that returns a mapped result (not junk-player "unexpected structure").
-    final challengeList = challenges.isNotEmpty
-        ? challenges.take(3).toList(growable: false)
-        : <String>[
-            // Plausible n-token length used by googlevideo when n= is present.
-            'aBcDeFgHiJ',
-          ];
-    final usedRealChallenge = challenges.isNotEmpty;
-    debugPrint(
-      'YT_NSIG_SOLVE_START realPlayerJs=${playerJs.length} '
-      'realChallenge=$usedRealChallenge',
-    );
-    final nsigResults = await solver!
-        .solveNChallenges(
-          playerJsUrl: playerJsUrl,
-          playerJs: playerJs,
-          challenges: challengeList,
-        )
-        .timeout(const Duration(seconds: 60));
-    debugPrint(
-      'YT_NSIG_SOLVE_OK results=${nsigResults.length} '
-      'keys=${nsigResults.keys.take(3).toList()}',
-    );
-    expect(
-      nsigResults,
-      isNotEmpty,
-      reason:
-          'Linux WebView nsig must return solved entries with real player JS '
-          '(got empty map)',
-    );
-    for (final c in challengeList) {
-      final solved = nsigResults[c];
-      expect(
-        solved != null && solved!.isNotEmpty,
-        isTrue,
-        reason: 'challenge $c must map to a non-empty solved nsig',
+  testWidgets(
+    'Linux shipped resolve twitch ad-guard loopback',
+    (tester) async {
+      if (!Platform.isLinux) return;
+      final stack = _assembleShippedStack();
+      // Warm web bridge (same path as room enter bootstrap).
+      await stack.bridges.twitchWebPlaybackBridge!.warmUp().timeout(
+        const Duration(seconds: 30),
       );
-      // Transformation must change the token for a real nsig transform.
-      if (usedRealChallenge) {
+      debugPrint('TW_WARMUP_OK');
+
+      final provider = stack.registry.create(ProviderId.twitch);
+      final picked = await _pickLiveRoom(provider);
+      final resolved = await stack.resolve(
+        providerId: ProviderId.twitch,
+        detail: picked.detail,
+        quality: picked.quality,
+      );
+      expect(resolved.playUrls, isNotEmpty);
+      final url = resolved.playUrls.first.url;
+      debugPrint('RESOLVE_OK site=twitch url=$url');
+      expect(
+        _isLoopbackProxy(url, 'twitch-ad-guard'),
+        isTrue,
+        reason: 'Twitch must wrap via ad-guard loopback, got $url',
+      );
+      final code = await _mpvDecodeProxied(url, seconds: 10);
+      debugPrint(
+        code == 0
+            ? 'MPV_PROXIED_OK site=twitch'
+            : 'MPV_PROXIED_FAIL site=twitch',
+      );
+      expect(code, 0, reason: 'mpv must demux loopback twitch-ad-guard URL');
+      debugPrint('RESOLVE_SMOKE_DONE site=twitch');
+    },
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  testWidgets(
+    'Linux shipped resolve youtube nsig-wired',
+    (tester) async {
+      if (!Platform.isLinux) return;
+      final stack = _assembleShippedStack();
+      final solver = stack.bridges.youtubeNSigSolver;
+      expect(solver, isA<YouTubeWebViewNSigSolver>());
+
+      final provider = stack.registry.create(ProviderId.youtube);
+      final picked = await _pickLiveRoom(provider);
+      final detail = picked.detail;
+      final resolved = await stack.resolve(
+        providerId: ProviderId.youtube,
+        detail: detail,
+        quality: picked.quality,
+      );
+      expect(resolved.playUrls, isNotEmpty);
+      final url = resolved.playUrls.first.url;
+      debugPrint(
+        'RESOLVE_OK site=youtube url=${url.substring(0, url.length.clamp(0, 120))}',
+      );
+
+      // Real player JS + n challenges (not junk playerJs).
+      var playerJsUrl =
+          detail.metadata?['playerJsUrl']?.toString().trim() ?? '';
+      if (playerJsUrl.isEmpty) {
+        // Fall back: scrape player URL from the watch page of this room.
+        playerJsUrl = await _scrapeYouTubePlayerJsUrl(detail.roomId);
+      }
+      expect(
+        playerJsUrl,
+        isNotEmpty,
+        reason: 'need real player JS URL for nsig',
+      );
+      debugPrint('YT_PLAYER_JS_URL=$playerJsUrl');
+
+      final playerJs = await _httpGetText(playerJsUrl);
+      expect(playerJs.length, greaterThan(1000), reason: 'player JS body');
+
+      final challenges = <String>{
+        ..._extractNChallenges(url),
+        for (final u in resolved.playUrls) ..._extractNChallenges(u.url),
+      };
+      // Room metadata often holds progressive googlevideo URLs with n= even when
+      // the primary Auto quality is HLS without n.
+      _walkStrings(detail.metadata, (value) {
+        if (value.contains('googlevideo') || value.contains('videoplayback')) {
+          challenges.addAll(_extractNChallenges(value));
+        }
+      });
+      // HLS masters / segment lists often embed n= even when the top Auto URL does not.
+      for (final play in resolved.playUrls.take(2)) {
+        try {
+          final body = await _httpGetText(play.url);
+          for (final match in RegExp(
+            r'[?&]n=([A-Za-z0-9_-]+)',
+          ).allMatches(body)) {
+            final v = match.group(1)?.trim() ?? '';
+            if (v.length >= 6) challenges.add(v);
+          }
+          for (final match in RegExp(r'/n/([A-Za-z0-9_-]+)').allMatches(body)) {
+            final v = match.group(1)?.trim() ?? '';
+            if (v.length >= 6) challenges.add(v);
+          }
+        } catch (error) {
+          debugPrint('YT_HLS_SCAN_ERR $error');
+        }
+      }
+      debugPrint(
+        'YT_NSIG_CHALLENGES=${challenges.length} sample=${challenges.take(2).toList()}',
+      );
+
+      // Live iOS/HLS paths sometimes omit n=. Still require a real playerJs solve
+      // that returns a mapped result (not junk-player "unexpected structure").
+      final challengeList = challenges.isNotEmpty
+          ? challenges.take(3).toList(growable: false)
+          : <String>[
+              // Plausible n-token length used by googlevideo when n= is present.
+              'aBcDeFgHiJ',
+            ];
+      final usedRealChallenge = challenges.isNotEmpty;
+      debugPrint(
+        'YT_NSIG_SOLVE_START realPlayerJs=${playerJs.length} '
+        'realChallenge=$usedRealChallenge',
+      );
+      final nsigResults = await solver!
+          .solveNChallenges(
+            playerJsUrl: playerJsUrl,
+            playerJs: playerJs,
+            challenges: challengeList,
+          )
+          .timeout(const Duration(seconds: 60));
+      debugPrint(
+        'YT_NSIG_SOLVE_OK results=${nsigResults.length} '
+        'keys=${nsigResults.keys.take(3).toList()}',
+      );
+      expect(
+        nsigResults,
+        isNotEmpty,
+        reason:
+            'Linux WebView nsig must return solved entries with real player JS '
+            '(got empty map)',
+      );
+      for (final c in challengeList) {
+        final solved = nsigResults[c];
         expect(
-          solved != c,
+          solved != null && solved!.isNotEmpty,
           isTrue,
-          reason: 'solved nsig should differ from challenge for real n tokens',
+          reason: 'challenge $c must map to a non-empty solved nsig',
+        );
+        // Transformation must change the token for a real nsig transform.
+        if (usedRealChallenge) {
+          expect(
+            solved != c,
+            isTrue,
+            reason:
+                'solved nsig should differ from challenge for real n tokens',
+          );
+        }
+        debugPrint(
+          'YT_NSIG_MAPPED challengeLen=${c.length} solvedLen=${solved!.length} '
+          'changed=${solved != c}',
         );
       }
-      debugPrint(
-        'YT_NSIG_MAPPED challengeLen=${c.length} solvedLen=${solved!.length} '
-        'changed=${solved != c}',
-      );
-    }
-    debugPrint('RESOLVE_SMOKE_DONE site=youtube');
-  }, timeout: const Timeout(Duration(minutes: 5)));
+      debugPrint('RESOLVE_SMOKE_DONE site=youtube');
+    },
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
 
-  testWidgets('Linux shipped resolve chaturbate ll-hls loopback', (tester) async {
-    if (!Platform.isLinux) return;
-    final stack = _assembleShippedStack();
-    final provider = stack.registry.create(ProviderId.chaturbate);
-    final picked = await _pickLiveRoom(provider);
-    final resolved = await stack.resolve(
-      providerId: ProviderId.chaturbate,
-      detail: picked.detail,
-      quality: picked.quality,
-    );
-    expect(resolved.playUrls, isNotEmpty);
-    final url = resolved.playUrls.first.url;
-    debugPrint('RESOLVE_OK site=chaturbate url=$url');
-    expect(
-      _isLoopbackProxy(url, 'chaturbate-llhls'),
-      isTrue,
-      reason: 'CB must wrap via LL-HLS loopback, got $url',
-    );
-    final code = await _mpvDecodeProxied(url, seconds: 10);
-    debugPrint(
-      code == 0
-          ? 'MPV_PROXIED_OK site=chaturbate'
-          : 'MPV_PROXIED_FAIL site=chaturbate',
-    );
-    // Loopback wrap is the hard gate; mpv demux is strong evidence when it works.
-    if (code != 0) {
-      debugPrint('MPV_PROXIED_SOFT_FAIL site=chaturbate (proxy URL still valid)');
-    } else {
-      expect(code, 0);
-    }
-    debugPrint('RESOLVE_SMOKE_DONE site=chaturbate');
-  }, timeout: const Timeout(Duration(minutes: 3)));
-
-  testWidgets('Linux shipped resolve stripchat ll-hls loopback', (tester) async {
-    if (!Platform.isLinux) return;
-    final stack = _assembleShippedStack();
-    final provider = stack.registry.create(ProviderId.stripchat);
-    final picked = await _pickLiveRoom(provider);
-    final resolved = await stack.resolve(
-      providerId: ProviderId.stripchat,
-      detail: picked.detail,
-      quality: picked.quality,
-    );
-    expect(resolved.playUrls, isNotEmpty);
-    final url = resolved.playUrls.first.url;
-    debugPrint('RESOLVE_OK site=stripchat url=$url');
-    expect(
-      _isLoopbackProxy(url, 'stripchat-llhls'),
-      isTrue,
-      reason: 'SC must wrap via LL-HLS loopback, got $url',
-    );
-    // SC AES/pdkey path is exercised by the proxy serving the playlist.
-    // Cap mpv so live AES demux cannot hang the suite.
-    final code = await _mpvDecodeProxied(url, seconds: 12);
-    if (code == 0) {
-      debugPrint('MPV_PROXIED_OK site=stripchat');
-    } else {
-      // Honest label: no VO/Video — do not claim PROXIED_OK.
-      debugPrint(
-        'MPV_PROXIED_FAIL site=stripchat '
-        '(resolve loopback+pdkey still proven; decode needs headers/AES path)',
+  testWidgets(
+    'Linux shipped resolve chaturbate ll-hls loopback',
+    (tester) async {
+      if (!Platform.isLinux) return;
+      final stack = _assembleShippedStack();
+      final provider = stack.registry.create(ProviderId.chaturbate);
+      final picked = await _pickLiveRoom(provider);
+      final resolved = await stack.resolve(
+        providerId: ProviderId.chaturbate,
+        detail: picked.detail,
+        quality: picked.quality,
       );
-    }
-    debugPrint('RESOLVE_SMOKE_DONE site=stripchat');
-  }, timeout: const Timeout(Duration(minutes: 3)));
+      expect(resolved.playUrls, isNotEmpty);
+      final url = resolved.playUrls.first.url;
+      debugPrint('RESOLVE_OK site=chaturbate url=$url');
+      expect(
+        _isLoopbackProxy(url, 'chaturbate-llhls'),
+        isTrue,
+        reason: 'CB must wrap via LL-HLS loopback, got $url',
+      );
+      final code = await _mpvDecodeProxied(url, seconds: 10);
+      debugPrint(
+        code == 0
+            ? 'MPV_PROXIED_OK site=chaturbate'
+            : 'MPV_PROXIED_FAIL site=chaturbate',
+      );
+      // Loopback wrap is the hard gate; mpv demux is strong evidence when it works.
+      if (code != 0) {
+        debugPrint(
+          'MPV_PROXIED_SOFT_FAIL site=chaturbate (proxy URL still valid)',
+        );
+      } else {
+        expect(code, 0);
+      }
+      debugPrint('RESOLVE_SMOKE_DONE site=chaturbate');
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
+
+  testWidgets(
+    'Linux shipped resolve stripchat ll-hls loopback',
+    (tester) async {
+      if (!Platform.isLinux) return;
+      final stack = _assembleShippedStack();
+      final provider = stack.registry.create(ProviderId.stripchat);
+      final picked = await _pickLiveRoom(provider);
+      final resolved = await stack.resolve(
+        providerId: ProviderId.stripchat,
+        detail: picked.detail,
+        quality: picked.quality,
+      );
+      expect(resolved.playUrls, isNotEmpty);
+      final url = resolved.playUrls.first.url;
+      debugPrint('RESOLVE_OK site=stripchat url=$url');
+      expect(
+        _isLoopbackProxy(url, 'stripchat-llhls'),
+        isTrue,
+        reason: 'SC must wrap via LL-HLS loopback, got $url',
+      );
+      // SC AES/pdkey path is exercised by the proxy serving the playlist.
+      // Cap mpv so live AES demux cannot hang the suite.
+      final code = await _mpvDecodeProxied(url, seconds: 12);
+      if (code == 0) {
+        debugPrint('MPV_PROXIED_OK site=stripchat');
+      } else {
+        // Honest label: no VO/Video — do not claim PROXIED_OK.
+        debugPrint(
+          'MPV_PROXIED_FAIL site=stripchat '
+          '(resolve loopback+pdkey still proven; decode needs headers/AES path)',
+        );
+      }
+      debugPrint('RESOLVE_SMOKE_DONE site=stripchat');
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 }

@@ -13,6 +13,7 @@ import '../aes_worker.dart';
 import '../hls_proxy_delivery_knobs.dart';
 import '../hls_proxy_platform_adapter.dart';
 import 'stripchat_mouflon_key_cache.dart';
+import 'stripchat_playlist_policy.dart';
 import 'stripchat_mouflon_runtime_support.dart' as stripchat_runtime;
 
 // Delivery knobs: see [HlsProxyDeliveryKnobs] (mobile=release, desktop=thick Linux).
@@ -551,10 +552,7 @@ class StripchatLlHlsProxy {
       requestUri: request.requestedUri,
     );
     final mediaKey = _mediaPlaylistKey(requestUpstream);
-    final policy = _publishPolicy(
-      session: session,
-      mediaUri: requestUpstream,
-    );
+    final policy = _publishPolicy(session: session, mediaUri: requestUpstream);
     // Per-path sticky so Auto ABR can hop 1080↔720↔240 without losing cache.
     var slot = session.mediaStickyByKey[mediaKey];
     // Thin sticky (e.g. media=2 on 1080p) looks "playable" over HTTP but demuxer
@@ -573,13 +571,13 @@ class StripchatLlHlsProxy {
         ? null
         : DateTime.now().difference(slot.updatedAt);
     final refreshing = session.refreshInFlightByKey.containsKey(mediaKey);
-    final stickyFresh =
-        stickyAge != null && stickyAge <= policy.stickyMaxAge;
+    final stickyFresh = stickyAge != null && stickyAge <= policy.stickyMaxAge;
     // High tier (1080/source): never sticky-serve under minMedia (logs media=2
     // rebuffer). Low/mid: sticky with ≥1 keeps playlist HTTP non-blocking while
     // a slow segment warm is in flight (unit: refresh-while-asset-inflight).
-    final stickyMinMedia =
-        policy.tier == _StripchatTierClass.high ? policy.minMedia : 1;
+    final stickyMinMedia = policy.tier == StripchatTierClass.high
+        ? policy.minMedia
+        : 1;
     final stickyThickEnough =
         slot != null && slot.mediaSegmentCount >= stickyMinMedia;
     // High: cold raw edge OR cold tail of the *published* sticky assets means
@@ -601,7 +599,7 @@ class StripchatLlHlsProxy {
           );
     final coldEdgeIds = <String>{...coldRawEdge, ...coldStickyTail}.toList();
     final highEdgeCold =
-        policy.tier == _StripchatTierClass.high && coldEdgeIds.isNotEmpty;
+        policy.tier == StripchatTierClass.high && coldEdgeIds.isNotEmpty;
     if (highEdgeCold) {
       session.enqueueWarmAssets(coldEdgeIds, prioritize: true);
       for (final id in coldEdgeIds) {
@@ -636,7 +634,7 @@ class StripchatLlHlsProxy {
       if (slot.rawAssetIds.isNotEmpty) {
         // High: re-warm *entire* raw window on every sticky hit so demuxer
         // catch-up does not meet a cold mid-window segment (154803 Source).
-        if (policy.tier == _StripchatTierClass.high) {
+        if (policy.tier == StripchatTierClass.high) {
           session.enqueueWarmAssets(slot.rawAssetIds, prioritize: true);
           for (final id in slot.rawAssetIds) {
             if (!session.cachedAssets.containsKey(id) &&
@@ -894,10 +892,7 @@ class StripchatLlHlsProxy {
     try {
       return await future;
     } finally {
-      if (identical(
-        session.materializeInFlightByKey[coalesceKey],
-        future,
-      )) {
+      if (identical(session.materializeInFlightByKey[coalesceKey], future)) {
         session.materializeInFlightByKey.remove(coalesceKey);
       }
     }
@@ -988,8 +983,7 @@ class StripchatLlHlsProxy {
       }
     }
     // Fixed quality must never serve multi-variant master (assets=0 loop).
-    if (session.pinSingleRendition &&
-        _looksLikeMasterPlaylist(upstream.body)) {
+    if (session.pinSingleRendition && _looksLikeMasterPlaylist(upstream.body)) {
       final recovered = await _recoverPinnedMediaFromMaster(session);
       if (recovered != null && !_looksLikeMasterPlaylist(recovered.body)) {
         upstream = recovered;
@@ -1102,8 +1096,7 @@ class StripchatLlHlsProxy {
     // MAP-only playlist. Prefer never publishing uncached media (fallback-full
     // with cold edge caused post-start rebuffer in 13:29 logs).
     // First publish is *per media path* so ABR into a new tier still warms hard.
-    final isFirstPublish =
-        pathSlot == null || pathSlot.mediaSegmentCount <= 0;
+    final isFirstPublish = pathSlot == null || pathSlot.mediaSegmentCount <= 0;
     _warmStripchatPlaylistAssets(session, rewritten.assetIds);
     // Fixed high quality / any media path: force-start every uncached id now
     // (do not wait for drain slots only) — 1080 segs need full-window concurrency.
@@ -1157,7 +1150,7 @@ class StripchatLlHlsProxy {
     }
     // High mid-play: wait for *all new media* + full raw tail warm before we
     // advertise the window (15:43: playlist media=8 but demuxer still underran).
-    if (policy.tier == _StripchatTierClass.high && !isFirstPublish) {
+    if (policy.tier == StripchatTierClass.high && !isFirstPublish) {
       if (newMediaIds.isNotEmpty) {
         await _awaitSpecificAssetsWarm(
           session,
@@ -1214,9 +1207,7 @@ class StripchatLlHlsProxy {
       }
       // High tier: refuse to publish-thin on first open if sticky has better.
       final keepSlot = pathSlot;
-      if (hasPlayableSticky &&
-          keepSlot != null &&
-          prevMedia > cachedMedia) {
+      if (hasPlayableSticky && keepSlot != null && prevMedia > cachedMedia) {
         _trace(
           'playlist materialize keep-sticky session=${session.id} '
           'key=$mediaKey reason=thin-vs-sticky cachedMedia=$cachedMedia '
@@ -1231,7 +1222,7 @@ class StripchatLlHlsProxy {
       }
       // Single/thin cached media: only for low tier or as last mid-play option.
       if (cachedMedia >= 1 &&
-          (policy.tier == _StripchatTierClass.low || !isFirstPublish)) {
+          (policy.tier == StripchatTierClass.low || !isFirstPublish)) {
         _trace(
           'playlist materialize publish-thin session=${session.id} '
           'key=$mediaKey cachedMedia=$cachedMedia '
@@ -1269,7 +1260,7 @@ class StripchatLlHlsProxy {
 
     var publishable = choose();
     // High: never put a media URI in the sticky that is not fully cached.
-    if (!isMaster && policy.tier == _StripchatTierClass.high) {
+    if (!isMaster && policy.tier == StripchatTierClass.high) {
       final verified = _restrictPlaylistToCachedAssets(
         session: session,
         playlist: publishable,
@@ -1311,18 +1302,12 @@ class StripchatLlHlsProxy {
           _startStripchatWarmTask(session, id);
         }
       }
-      final tail = _tailMediaIds(
-        publishable.assetIds,
-        _d.scHighEdgeWarmCount,
-      );
+      final tail = _tailMediaIds(publishable.assetIds, _d.scHighEdgeWarmCount);
       for (final id in tail) {
         _warmNeighborAssets(session, id);
       }
       // Also warm full raw tail aggressively.
-      final rawTail = _tailMediaIds(
-        pathRawAssetIds,
-        _d.scHighEdgeWarmCount,
-      );
+      final rawTail = _tailMediaIds(pathRawAssetIds, _d.scHighEdgeWarmCount);
       session.enqueueWarmAssets(rawTail, prioritize: true);
       for (final id in rawTail) {
         if (!session.cachedAssets.containsKey(id) &&
@@ -1355,9 +1340,9 @@ class StripchatLlHlsProxy {
       pinSingleRendition: session.pinSingleRendition,
     );
     switch (tier) {
-      case _StripchatTierClass.high:
+      case StripchatTierClass.high:
         return _StripchatPublishPolicy(
-          tier: _StripchatTierClass.high,
+          tier: StripchatTierClass.high,
           minMedia: _d.scHighMinPublishMediaSegments,
           preferMedia: _d.scHighPreferPublishMediaSegments,
           maxHistoryExtras: _d.scHighMaxHistoryExtras,
@@ -1368,9 +1353,9 @@ class StripchatLlHlsProxy {
           backgroundMinInterval: _d.scHighPlaylistBackgroundMinInterval,
           pumpInterval: _d.scHighPlaylistPumpInterval,
         );
-      case _StripchatTierClass.mid:
+      case StripchatTierClass.mid:
         return _StripchatPublishPolicy(
-          tier: _StripchatTierClass.mid,
+          tier: StripchatTierClass.mid,
           minMedia: _d.scMidMinPublishMediaSegments,
           preferMedia: _d.scMidPreferPublishMediaSegments,
           maxHistoryExtras: _d.scMidMaxHistoryExtras,
@@ -1381,9 +1366,9 @@ class StripchatLlHlsProxy {
           backgroundMinInterval: _d.scPlaylistBackgroundMinInterval,
           pumpInterval: _d.scPlaylistPumpInterval,
         );
-      case _StripchatTierClass.low:
+      case StripchatTierClass.low:
         return _StripchatPublishPolicy(
-          tier: _StripchatTierClass.low,
+          tier: StripchatTierClass.low,
           minMedia: _d.scMinPublishCachedMediaSegments,
           preferMedia: _d.scPreferPublishCachedMediaSegments,
           maxHistoryExtras: _d.scLowMaxHistoryExtras,
@@ -1397,46 +1382,20 @@ class StripchatLlHlsProxy {
     }
   }
 
-  _StripchatTierClass _tierClassFor({
+  StripchatTierClass _tierClassFor({
     required String preferredVariantId,
     required Uri mediaUri,
     required bool pinSingleRendition,
   }) {
-    final preferred = preferredVariantId.trim().toLowerCase();
-    final path = mediaUri.path.toLowerCase();
-    final file = mediaUri.pathSegments.isEmpty
-        ? ''
-        : mediaUri.pathSegments.last.toLowerCase();
-    bool looksHigh(String s) =>
-        s.contains('1080') ||
-        s.contains('source') ||
-        s == 'auto-max' ||
-        // Bare `{id}.m3u8` is Stripchat "source"/max progressive.
-        RegExp(r'^\d+\.m3u8$').hasMatch(s);
-    bool looksMid(String s) => s.contains('720');
-    if (looksHigh(preferred) || looksHigh(file) || looksHigh(path)) {
-      return _StripchatTierClass.high;
-    }
-    if (looksMid(preferred) || looksMid(file) || looksMid(path)) {
-      return _StripchatTierClass.mid;
-    }
-    // Fixed pin without quality token still treat as mid (safer than low).
-    if (pinSingleRendition && preferred.isNotEmpty) {
-      return _StripchatTierClass.mid;
-    }
-    return _StripchatTierClass.low;
+    return stripchatTierClassFor(
+      preferredVariantId: preferredVariantId,
+      mediaUri: mediaUri,
+      pinSingleRendition: pinSingleRendition,
+    );
   }
 
-  /// Media asset ids (heuristic: drop first id as MAP when list is multi).
-  List<String> _mediaAssetIds(List<String> assetIds) {
-    if (assetIds.isEmpty) {
-      return const <String>[];
-    }
-    if (assetIds.length == 1) {
-      return List<String>.from(assetIds);
-    }
-    return assetIds.sublist(1);
-  }
+  List<String> _mediaAssetIds(List<String> assetIds) =>
+      stripchatMediaAssetIds(assetIds);
 
   /// Merge still-cached media pairs from previous sticky in front of [filtered]
   /// so demuxer keeps a multi-window runway (high target ~6 media segs).
@@ -1491,9 +1450,7 @@ class StripchatLlHlsProxy {
       structureManifest: structureManifest,
       pairs: cappedPairs,
     );
-    final assetIds = <String>[
-      for (final pair in cappedPairs) pair.assetId,
-    ];
+    final assetIds = <String>[for (final pair in cappedPairs) pair.assetId];
     _trace(
       'playlist thicken history session=${session.id} '
       'extras=${retained.length} new=${newPairs.length} '
@@ -1612,7 +1569,7 @@ class StripchatLlHlsProxy {
     final effective =
         policy ??
         _StripchatPublishPolicy(
-          tier: _StripchatTierClass.low,
+          tier: StripchatTierClass.low,
           minMedia: _d.scMinPublishCachedMediaSegments,
           preferMedia: _d.scPreferPublishCachedMediaSegments,
           maxHistoryExtras: _d.scLowMaxHistoryExtras,
@@ -1638,7 +1595,7 @@ class StripchatLlHlsProxy {
     }
     // High mid-play: try to cache the *entire* raw media window (usually 3),
     // not just minMedia — otherwise edge lags while history looks thick.
-    final prefer = effective.tier == _StripchatTierClass.high
+    final prefer = effective.tier == StripchatTierClass.high
         ? (preferThicker || isFirstPublish
               ? max(effective.minMedia, targets.length)
               : targets.length)
@@ -1653,10 +1610,10 @@ class StripchatLlHlsProxy {
     final deadline = DateTime.now().add(budget);
     // High tier first open must not early-exit at media=2 (14:19 rebuffer).
     final strictMin =
-        isFirstPublish && effective.tier == _StripchatTierClass.high;
+        isFirstPublish && effective.tier == StripchatTierClass.high;
     // High mid-play: also require tail edge warm before accepting min.
     final requireEdge =
-        effective.tier == _StripchatTierClass.high && !isFirstPublish;
+        effective.tier == StripchatTierClass.high && !isFirstPublish;
     while (DateTime.now().isBefore(deadline)) {
       if (_disposed || session._disposed) {
         return;
@@ -1664,7 +1621,8 @@ class StripchatLlHlsProxy {
       final cached = targets
           .where((id) => session.cachedAssets.containsKey(id))
           .length;
-      final edgeOk = !requireEdge ||
+      final edgeOk =
+          !requireEdge ||
           _uncachedTailMediaIds(
             session: session,
             assetIds: assetIds,
@@ -1679,9 +1637,7 @@ class StripchatLlHlsProxy {
         return;
       }
       // Strict HQ first: accept min only in the last 20% of budget.
-      if (strictMin &&
-          elapsed >= budget * 0.80 &&
-          cached >= minAcceptable) {
+      if (strictMin && elapsed >= budget * 0.80 && cached >= minAcceptable) {
         return;
       }
       // Keep re-kicking uncached edge.
@@ -1817,10 +1773,7 @@ class StripchatLlHlsProxy {
   }
 
   /// After an asset is delivered, warm following media in the raw window.
-  void _warmNeighborAssets(
-    _StripchatLlHlsSession session,
-    String assetId,
-  ) {
+  void _warmNeighborAssets(_StripchatLlHlsSession session, String assetId) {
     final raw = session.lastRawAssetIds;
     if (raw.isEmpty) {
       return;
@@ -1971,9 +1924,7 @@ class StripchatLlHlsProxy {
     }
     session.enqueueWarmAssets(targets, prioritize: true);
     _kickStripchatWarmDrain(session);
-    final deadline = DateTime.now().add(
-      timeout ?? _d.scPrimeEdgeWarmWait,
-    );
+    final deadline = DateTime.now().add(timeout ?? _d.scPrimeEdgeWarmWait);
     while (DateTime.now().isBefore(deadline)) {
       if (_disposed || session._disposed) {
         return;
@@ -2013,10 +1964,7 @@ class StripchatLlHlsProxy {
 
   /// Start a warm fetch. Player-requested assets may call this even when the
   /// concurrency budget is full so mpv is not blocked behind background warms.
-  void _startStripchatWarmTask(
-    _StripchatLlHlsSession session,
-    String assetId,
-  ) {
+  void _startStripchatWarmTask(_StripchatLlHlsSession session, String assetId) {
     if (session.cachedAssets.containsKey(assetId) ||
         session.isWarmInFlight(assetId)) {
       return;
@@ -2074,13 +2022,14 @@ class StripchatLlHlsProxy {
         _startStripchatWarmTask(session, assetId);
       }
       // High-bitrate SC segments often need >1.2s; wait longer on demand path.
-      final warmBudget = session.pinSingleRendition ||
+      final warmBudget =
+          session.pinSingleRendition ||
               _tierClassFor(
                     preferredVariantId: session.preferredVariantId,
                     mediaUri: session.playlistUri ?? session.upstreamUri,
                     pinSingleRendition: session.pinSingleRendition,
                   ) ==
-                  _StripchatTierClass.high
+                  StripchatTierClass.high
           ? _d.scHighWarmWaitTimeout
           : _d.scWarmWaitTimeout;
       final warmed = await session.waitForWarmAsset(
@@ -2434,9 +2383,7 @@ class StripchatLlHlsProxy {
   /// Delivery-only: cache-ahead top-N bandwidth media playlists for Auto ABR.
   /// Player still receives multi-variant master. Coalesced so concurrent master
   /// materialize / prime only start one prewarm wave.
-  Future<void> _prewarmAutoMediaVariants(
-    _StripchatLlHlsSession session,
-  ) async {
+  Future<void> _prewarmAutoMediaVariants(_StripchatLlHlsSession session) async {
     if (_disposed ||
         session._disposed ||
         session.pinSingleRendition ||
@@ -2501,9 +2448,7 @@ class StripchatLlHlsProxy {
         );
         _trace('auto media prewarm done session=${session.id}');
       } catch (error) {
-        _trace(
-          'auto media prewarm failed session=${session.id} error=$error',
-        );
+        _trace('auto media prewarm failed session=${session.id} error=$error');
       }
     }();
     session.autoPrewarmInFlight = run;
@@ -2680,9 +2625,7 @@ class StripchatLlHlsProxy {
         .getUrl(uri)
         .timeout(_d.scPlaylistFetchTimeout);
     _buildUpstreamHeaders(headers).forEach(request.headers.set);
-    final response = await request
-        .close()
-        .timeout(_d.scPlaylistFetchTimeout);
+    final response = await request.close().timeout(_d.scPlaylistFetchTimeout);
     final body = await response
         .transform(utf8.decoder)
         .join()
@@ -2935,11 +2878,7 @@ class StripchatLlHlsProxy {
       final qualityId = nameId.isNotEmpty
           ? nameId
           : (qualityMatch?.group(1) ?? (sourceLike ? 'source' : ''));
-      variants.add((
-        url: resolved,
-        bandwidth: bandwidth,
-        qualityId: qualityId,
-      ));
+      variants.add((url: resolved, bandwidth: bandwidth, qualityId: qualityId));
     }
     if (variants.isEmpty) {
       return const <Uri>[];
@@ -3070,10 +3009,7 @@ class StripchatLlHlsProxy {
           ),
           keyCache: session.keyCache,
           tracePdkey: (phase, {required pkey, required source}) {
-            _trace(
-              'pdkey $phase pkey=$pkey source=$source',
-              verbose: true,
-            );
+            _trace('pdkey $phase pkey=$pkey source=$source', verbose: true);
           },
           traceDecision: (message) => _trace(message, verbose: true),
           onPdkeyAllFailed: session.notePdkeyAllFailed,
@@ -3378,68 +3314,14 @@ class StripchatLlHlsProxy {
     List<String> preferredCdnDomains = const <String>[],
     Set<String> attemptedHosts = const <String>{},
   }) {
-    final host = uri.host.trim().toLowerCase();
-    final prefix = host.startsWith('media-hls.')
-        ? 'media-hls.'
-        : host.startsWith('edge-hls.')
-        ? 'edge-hls.'
-        : '';
-    final seenHosts = <String>{
-      host,
-      ...attemptedHosts.map((item) => item.toLowerCase()),
-    };
-    // Prefer profile CDN order (desktop .net-first; mobile release order).
-    final domains = _orderStripchatCdnDomains(<String>[
-      ...preferredCdnDomains,
-      ...HlsProxyDeliveryKnobs.fromActiveProfile().scKnownCdnDomains,
-    ]);
-    final fallbacks = <Uri>[];
-    for (final domain in domains) {
-      final normalizedDomain = domain.trim().toLowerCase();
-      if (normalizedDomain.isEmpty) {
-        continue;
-      }
-      final candidateHost = '$prefix$normalizedDomain';
-      if (!seenHosts.add(candidateHost)) {
-        continue;
-      }
-      fallbacks.add(
-        uri.replace(
-          host: candidateHost,
-          path: uri.path,
-          query: uri.hasQuery ? uri.query : null,
-        ),
-      );
-    }
-    return UnmodifiableListView<Uri>(fallbacks);
-  }
-
-  /// Stable CDN TLD preference for host failover (official player = .net).
-  static List<String> _orderStripchatCdnDomains(Iterable<String> domains) {
-    const rank = <String, int>{
-      'doppiocdn.net': 0,
-      'doppiocdn.org': 1,
-      'doppiocdn.com': 2,
-      'doppiocdn.media': 3,
-    };
-    final seen = <String>{};
-    final ordered = <String>[];
-    for (final domain in domains) {
-      final d = domain.trim().toLowerCase();
-      if (d.isEmpty || !seen.add(d)) {
-        continue;
-      }
-      ordered.add(d);
-    }
-    ordered.sort((a, b) {
-      final ra = rank[a] ?? 50;
-      final rb = rank[b] ?? 50;
-      if (ra != rb) {
-        return ra.compareTo(rb);
-      }
-      return a.compareTo(b);
-    });
-    return ordered;
+    return stripchatPlaylistFallbackUris(
+      uri: uri,
+      cdnDomains: <String>[
+        ...preferredCdnDomains,
+        ...HlsProxyDeliveryKnobs.fromActiveProfile().scKnownCdnDomains,
+      ],
+      attemptedHosts: attemptedHosts,
+    );
   }
 
   List<Uri> _buildPkeyFallbackUris(Uri uri, StripchatMouflonKeyCache cache) {
@@ -3817,43 +3699,54 @@ class _StripchatLlHlsSession {
   final StripchatMouflonKeyCache keyCache;
   final String roomUrl;
   final String preferredVariantId;
+
   /// Fixed quality only: collapse master → preferred media playlist.
   /// Auto keeps multi-variant master for platform ABR.
   final bool pinSingleRendition;
+
   /// Edge master for pin recovery when probed media child is 404.
   final Uri? masterPlaylistUri;
   final HlsAesWorkerSession aesWorker;
   final List<String> playlistCdnDomains;
+
   /// Platform delivery knobs (mobile thin vs desktop thick); not quality policy.
   final HlsProxyDeliveryKnobs delivery;
   Uri? playlistUri;
   Uri? pinnedMediaPlaylistUri;
   String? lastSuccessfulPlaylist;
   DateTime? lastSuccessfulPlaylistAt;
+
   /// host+path of the media playlist lastSuccessful applies to (ABR-safe).
   String? lastStickyMediaKey;
   List<String> lastAssetIds = const <String>[];
+
   /// Full rewritten window (including unpublished live edge) for neighbor warm.
   List<String> lastRawAssetIds = const <String>[];
+
   /// EXTINF media segments in [lastSuccessfulPlaylist] (not MAP).
   int lastMediaSegmentCount = 0;
+
   /// Per media-path sticky slots for Auto ABR (1080/720/480/source independently).
   final Map<String, _StripchatMediaStickySlot> mediaStickyByKey =
       <String, _StripchatMediaStickySlot>{};
+
   /// Coalesce concurrent materialize for the same master/media path.
   final Map<String, Future<_StripchatRewrittenPlaylist?>>
-  materializeInFlightByKey =
-      <String, Future<_StripchatRewrittenPlaylist?>>{};
+  materializeInFlightByKey = <String, Future<_StripchatRewrittenPlaylist?>>{};
+
   /// Per-path background refresh (ABR can refresh 1080 while serving 240 sticky).
   final Map<String, Future<_StripchatRewrittenPlaylist?>> refreshInFlightByKey =
       <String, Future<_StripchatRewrittenPlaylist?>>{};
+
   /// Single Auto top-N prewarm wave per session.
   Future<void>? autoPrewarmInFlight;
   bool? shouldDropMap;
+
   /// After the first edge-warm gate, playlist refreshes must stay non-blocking.
   bool initialEdgeWarmCompleted = false;
   Future<void>? startupPrimeInFlight;
   Timer? playlistPumpTimer;
+
   /// Last pump period so high-tier can restart at a faster cadence.
   Duration? playlistPumpInterval;
 
@@ -3917,17 +3810,20 @@ class _StripchatLlHlsSession {
     }
     return best;
   }
+
   final Map<String, _StripchatAssetTargets> _assetTargets =
       <String, _StripchatAssetTargets>{};
   final Map<String, String> _assetIdsByKey = <String, String>{};
   final Map<String, _StripchatCachedAsset> cachedAssets =
       <String, _StripchatCachedAsset>{};
   final Map<String, Future<void>> _pendingWarmAssets = <String, Future<void>>{};
+
   /// Background warm queue (FIFO). [enqueueWarmAssets] with prioritize:true
   /// inserts at the front so player-requested segments jump the line.
   final Queue<String> _warmQueue = Queue<String>();
   final Set<String> _warmQueued = <String>{};
   int _warmInFlightCount = 0;
+
   /// Cache successful mouflon path decrypts so playlist rewrites (every 1–2s)
   /// do not re-hit the AES isolate for the same window.
   final Map<String, String> _mouflonDecryptCache = <String, String>{};
@@ -3936,7 +3832,8 @@ class _StripchatLlHlsSession {
 
   int get warmInFlightCount => _warmInFlightCount;
 
-  bool isWarmInFlight(String assetId) => _pendingWarmAssets.containsKey(assetId);
+  bool isWarmInFlight(String assetId) =>
+      _pendingWarmAssets.containsKey(assetId);
 
   void removeFromWarmQueue(String assetId) {
     if (_warmQueued.remove(assetId)) {
@@ -4158,8 +4055,6 @@ class _StripchatMediaStickySlot {
 }
 
 /// Bitrate class for delivery thickness only (not platform ABR).
-enum _StripchatTierClass { high, mid, low }
-
 class _StripchatPublishPolicy {
   const _StripchatPublishPolicy({
     required this.tier,
@@ -4174,8 +4069,9 @@ class _StripchatPublishPolicy {
     required this.pumpInterval,
   });
 
-  final _StripchatTierClass tier;
+  final StripchatTierClass tier;
   final int minMedia;
+
   /// History thicken target (high=6 so multi-window runway).
   final int preferMedia;
   final int maxHistoryExtras;
@@ -4234,6 +4130,7 @@ class _StripchatRewrittenPlaylist {
 
   final String manifest;
   final List<String> assetIds;
+
   /// Count of EXTINF media segments when known (0 = unspecified/full rewrite).
   final int mediaSegmentCount;
 }

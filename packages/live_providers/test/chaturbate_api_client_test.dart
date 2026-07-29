@@ -11,7 +11,10 @@ import 'package:test/test.dart';
 void main() {
   test('chaturbate api client forwards configured cookie header', () async {
     final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+      requestScheduler: ChaturbateRequestScheduler(
+        minSpacing: Duration.zero,
+        maxConcurrent: 8,
+      ),
       cookie: 'cf_clearance=test-clearance; __cf_bm=test-bm',
       client: MockClient((request) async {
         expect(
@@ -40,7 +43,10 @@ void main() {
     () async {
       final expected = '<html><body>你好😀</body></html>';
       final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+        requestScheduler: ChaturbateRequestScheduler(
+          minSpacing: Duration.zero,
+          maxConcurrent: 8,
+        ),
         client: MockClient((request) async {
           return http.Response.bytes(
             utf8.encode(expected),
@@ -59,7 +65,10 @@ void main() {
     'chaturbate api client surfaces cloudflare challenge guidance',
     () async {
       final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+        requestScheduler: ChaturbateRequestScheduler(
+          minSpacing: Duration.zero,
+          maxConcurrent: 8,
+        ),
         client: MockClient((request) async {
           return http.Response(
             '<html><head><title>Just a moment...</title></head></html>',
@@ -87,7 +96,10 @@ void main() {
 
   test('chaturbate discover request carries browser-like cors headers', () async {
     final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+      requestScheduler: ChaturbateRequestScheduler(
+        minSpacing: Duration.zero,
+        maxConcurrent: 8,
+      ),
       client: MockClient((request) async {
         expect(
           request.url.toString(),
@@ -107,7 +119,10 @@ void main() {
 
   test('chaturbate discover request uses gender route as referer', () async {
     final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+      requestScheduler: ChaturbateRequestScheduler(
+        minSpacing: Duration.zero,
+        maxConcurrent: 8,
+      ),
       client: MockClient((request) async {
         expect(
           request.headers['referer'],
@@ -123,7 +138,10 @@ void main() {
   test('chaturbate danmaku auth/history use room page as referer', () async {
     var authCalls = 0;
     final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+      requestScheduler: ChaturbateRequestScheduler(
+        minSpacing: Duration.zero,
+        maxConcurrent: 8,
+      ),
       client: MockClient((request) async {
         expect(request.headers['referer'], 'https://chaturbate.com/realcest/');
         authCalls += 1;
@@ -149,7 +167,10 @@ void main() {
     'chaturbate room history 403 is typed as non-fatal history absence',
     () async {
       final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+        requestScheduler: ChaturbateRequestScheduler(
+          minSpacing: Duration.zero,
+          maxConcurrent: 8,
+        ),
         client: MockClient((request) async {
           expect(request.url.path, '/push_service/room_history/');
           return http.Response('forbidden', 403);
@@ -177,7 +198,10 @@ void main() {
 
   test('chaturbate room history cloudflare 403 remains fatal', () async {
     final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+      requestScheduler: ChaturbateRequestScheduler(
+        minSpacing: Duration.zero,
+        maxConcurrent: 8,
+      ),
       client: MockClient((request) async {
         return http.Response(
           '<html><head><title>Just a moment...</title></head></html>',
@@ -243,7 +267,10 @@ void main() {
     'chaturbate room context can suppress configured cookie header',
     () async {
       final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+        requestScheduler: ChaturbateRequestScheduler(
+          minSpacing: Duration.zero,
+          maxConcurrent: 8,
+        ),
         cookie: 'cf_clearance=test-clearance; __cf_bm=test-bm',
         client: MockClient((request) async {
           expect(request.url.path, '/api/chatvideocontext/kittengirlxo/');
@@ -258,7 +285,10 @@ void main() {
 
   test('chaturbate room page can suppress configured cookie header', () async {
     final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+      requestScheduler: ChaturbateRequestScheduler(
+        minSpacing: Duration.zero,
+        maxConcurrent: 8,
+      ),
       cookie: 'cf_clearance=test-clearance; __cf_bm=test-bm',
       client: MockClient((request) async {
         expect(request.url.path, '/kittengirlxo/');
@@ -272,7 +302,10 @@ void main() {
 
   test('chaturbate room list can suppress configured cookie header', () async {
     final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+      requestScheduler: ChaturbateRequestScheduler(
+        minSpacing: Duration.zero,
+        maxConcurrent: 8,
+      ),
       cookie: 'cf_clearance=test-clearance; __cf_bm=test-bm',
       client: MockClient((request) async {
         expect(request.url.path, '/api/ts/roomlist/room-list/');
@@ -292,7 +325,10 @@ void main() {
 
   test('chaturbate hls playlist can suppress configured cookie header', () async {
     final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+      requestScheduler: ChaturbateRequestScheduler(
+        minSpacing: Duration.zero,
+        maxConcurrent: 8,
+      ),
       cookie: 'cf_clearance=test-clearance; __cf_bm=test-bm',
       client: MockClient((request) async {
         expect(
@@ -357,7 +393,10 @@ void main() {
     () async {
       var requestCount = 0;
       final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+        requestScheduler: ChaturbateRequestScheduler(
+          minSpacing: Duration.zero,
+          maxConcurrent: 8,
+        ),
         client: MockClient((request) async {
           requestCount += 1;
           if (requestCount == 1) {
@@ -390,7 +429,10 @@ void main() {
 
   test('chaturbate empty room list query omits keywords parameter', () async {
     final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+      requestScheduler: ChaturbateRequestScheduler(
+        minSpacing: Duration.zero,
+        maxConcurrent: 8,
+      ),
       client: MockClient((request) async {
         expect(request.url.path, '/api/ts/roomlist/room-list/');
         expect(request.url.queryParameters.containsKey('keywords'), isFalse);
@@ -410,7 +452,10 @@ void main() {
 
   test('chaturbate room list can skip fingerprint requirement', () async {
     final client = HttpChaturbateApiClient(
-      requestScheduler: ChaturbateRequestScheduler(minSpacing: Duration.zero, maxConcurrent: 8),
+      requestScheduler: ChaturbateRequestScheduler(
+        minSpacing: Duration.zero,
+        maxConcurrent: 8,
+      ),
       client: MockClient((request) async {
         expect(request.url.path, '/api/ts/roomlist/room-list/');
         expect(

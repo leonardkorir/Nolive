@@ -78,42 +78,37 @@ void main() {
     expect(provider.fetchRoomDetailCalls, 0);
   });
 
-  test(
-    'provider smoke uses recommend rooms when query is empty',
-    () async {
-      final provider = _FakeSmokeProvider(
-        rooms: [
-          const LiveRoom(
-            providerId: ProviderId.douyin,
-            roomId: 'hot-1',
-            title: 'hot room',
-            streamerName: 'hot streamer',
-            isLive: true,
-          ),
-        ],
-        detail: const LiveRoomDetail(
+  test('provider smoke uses recommend rooms when query is empty', () async {
+    final provider = _FakeSmokeProvider(
+      rooms: [
+        const LiveRoom(
           providerId: ProviderId.douyin,
           roomId: 'hot-1',
           title: 'hot room',
           streamerName: 'hot streamer',
           isLive: true,
         ),
-        qualities: [
-          LivePlayQuality(id: 'origin', label: '原画', isDefault: true),
-        ],
-        urls: const [LivePlayUrl(url: 'https://example.com/douyin.flv')],
-      );
+      ],
+      detail: const LiveRoomDetail(
+        providerId: ProviderId.douyin,
+        roomId: 'hot-1',
+        title: 'hot room',
+        streamerName: 'hot streamer',
+        isLive: true,
+      ),
+      qualities: [LivePlayQuality(id: 'origin', label: '原画', isDefault: true)],
+      urls: const [LivePlayUrl(url: 'https://example.com/douyin.flv')],
+    );
 
-      final result = await runProviderSmokeCase(
-        ProviderSmokeCase(name: 'douyin', provider: provider, query: ''),
-      );
+    final result = await runProviderSmokeCase(
+      ProviderSmokeCase(name: 'douyin', provider: provider, query: ''),
+    );
 
-      expect(validateProviderSmokeResult(result), isNull);
-      expect(provider.searchCalls, 0);
-      expect(provider.fetchRecommendRoomsCalls, 1);
-      expect(result.urls.single.url, contains('douyin.flv'));
-    },
-  );
+    expect(validateProviderSmokeResult(result), isNull);
+    expect(provider.searchCalls, 0);
+    expect(provider.fetchRecommendRoomsCalls, 1);
+    expect(result.urls.single.url, contains('douyin.flv'));
+  });
 
   test('provider smoke fails when qualities are missing', () async {
     final result = await runProviderSmokeCase(

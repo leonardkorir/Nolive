@@ -16,7 +16,8 @@ void main() {
           // not testing hang/timeout create failures.
           return ByteData.sublistView(
             Uint8List.fromList(
-              'globalThis.NoliveYouTubeNSigSolver={solveN:async()=>({})};'.codeUnits,
+              'globalThis.NoliveYouTubeNSigSolver={solveN:async()=>({})};'
+                  .codeUnits,
             ),
           );
         });
@@ -27,34 +28,35 @@ void main() {
         .setMockMessageHandler('flutter/assets', null);
   });
 
-  test('youtube nsig solver times out hung webview start and disposes', () async {
-    final adapter = _FakeYoutubeAdapter(hangOnCreate: true);
-    final solver = YouTubeWebViewNSigSolver(
-      platformAdapter: adapter,
-      solveTimeout: const Duration(milliseconds: 30),
-      webViewStartTimeout: const Duration(milliseconds: 40),
-    );
+  test(
+    'youtube nsig solver times out hung webview start and disposes',
+    () async {
+      final adapter = _FakeYoutubeAdapter(hangOnCreate: true);
+      final solver = YouTubeWebViewNSigSolver(
+        platformAdapter: adapter,
+        solveTimeout: const Duration(milliseconds: 30),
+        webViewStartTimeout: const Duration(milliseconds: 40),
+      );
 
-    final startedAt = DateTime.now();
-    await expectLater(
-      () => solver.solveNChallenges(
-        playerJsUrl: 'https://www.youtube.com/s/player/abc/base.js',
-        playerJs: 'function(){}',
-        challenges: const ['n1'],
-      ),
-      throwsA(isA<TimeoutException>()),
-    );
-    final elapsed = DateTime.now().difference(startedAt);
-    expect(elapsed, lessThan(const Duration(seconds: 2)));
-    await solver.dispose();
-  });
+      final startedAt = DateTime.now();
+      await expectLater(
+        () => solver.solveNChallenges(
+          playerJsUrl: 'https://www.youtube.com/s/player/abc/base.js',
+          playerJs: 'function(){}',
+          challenges: const ['n1'],
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      final elapsed = DateTime.now().difference(startedAt);
+      expect(elapsed, lessThan(const Duration(seconds: 2)));
+      await solver.dispose();
+    },
+  );
 
   test('youtube nsig solver releasePressure disposes idle webview', () async {
     final adapter = _FakeYoutubeAdapter(
       hangOnCreate: false,
-      solveResults: {
-        'n1': 'solved1',
-      },
+      solveResults: {'n1': 'solved1'},
     );
     final solver = YouTubeWebViewNSigSolver(
       platformAdapter: adapter,
@@ -179,7 +181,8 @@ class _FakeYoutubeWebView implements HlsHeadlessWebView {
     required String functionBody,
     required Map<String, dynamic> arguments,
   }) async {
-    final challenges = (arguments['challenges'] as List?)
+    final challenges =
+        (arguments['challenges'] as List?)
             ?.map((item) => item.toString())
             .toList(growable: false) ??
         const <String>[];

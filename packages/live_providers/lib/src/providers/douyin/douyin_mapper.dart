@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:live_core/live_core.dart';
 
 import '../provider_json.dart';
+import 'douyin_danmaku_token.dart';
 
 class DouyinMapper {
   const DouyinMapper._();

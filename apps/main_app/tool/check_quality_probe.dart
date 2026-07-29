@@ -17,13 +17,15 @@ Future<void> main(List<String> args) async {
       .requireContract<SupportsPlayQualities>(ProviderCapability.playQualities)
       .fetchPlayQualities(detail);
   stdout.writeln(
-      'detail: ${detail.title} / ${detail.roomId} / ${detail.streamerName}');
+    'detail: ${detail.title} / ${detail.roomId} / ${detail.streamerName}',
+  );
   for (final q in qualities) {
     final urls = await provider
         .requireContract<SupportsPlayUrls>(ProviderCapability.playUrls)
         .fetchPlayUrls(detail: detail, quality: q);
     stdout.writeln(
-        'QUALITY ${q.id} ${q.label} default=${q.isDefault} sort=${q.sortOrder} count=${urls.length}');
+      'QUALITY ${q.id} ${q.label} default=${q.isDefault} sort=${q.sortOrder} count=${urls.length}',
+    );
     for (final u in urls.take(3)) {
       stdout.writeln('  ${u.lineLabel} -> ${u.url}');
     }

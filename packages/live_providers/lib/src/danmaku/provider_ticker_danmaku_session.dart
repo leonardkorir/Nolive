@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:live_core/live_core.dart';
 
-class ProviderTickerDanmakuSession implements DanmakuSession {
+class ProviderTickerDanmakuSession extends DanmakuSession {
   ProviderTickerDanmakuSession({
     required this.providerId,
     required this.detail,

@@ -181,7 +181,11 @@ class ChaturbateLlHlsProxy {
         wrapped.add(playUrl);
         continue;
       }
-      final session = _createSession(roomId: roomId, quality: quality, playUrl: proxyPlayUrl);
+      final session = _createSession(
+        roomId: roomId,
+        quality: quality,
+        playUrl: proxyPlayUrl,
+      );
       _sessions[session.id] = session;
       wrapped.add(
         LivePlayUrl(
@@ -547,7 +551,9 @@ class ChaturbateLlHlsProxy {
       await response.close();
     } catch (error) {
       if (_platformAdapter.kDebugMode) {
-        _platformAdapter.debugPrint('ChaturbateLlHlsProxy request failed: $error');
+        _platformAdapter.debugPrint(
+          'ChaturbateLlHlsProxy request failed: $error',
+        );
       }
       response.statusCode = HttpStatus.internalServerError;
       await response.close();
@@ -775,7 +781,9 @@ class ChaturbateLlHlsProxy {
           await refresh;
         } catch (error) {
           if (_platformAdapter.kDebugMode) {
-            _platformAdapter.debugPrint('ChaturbateLlHlsProxy prime refresh failed: $error');
+            _platformAdapter.debugPrint(
+              'ChaturbateLlHlsProxy prime refresh failed: $error',
+            );
           }
         }
       }
@@ -853,7 +861,9 @@ class ChaturbateLlHlsProxy {
       await refresh;
     } catch (error) {
       if (_platformAdapter.kDebugMode) {
-        _platformAdapter.debugPrint('ChaturbateLlHlsProxy refresh failed: $error');
+        _platformAdapter.debugPrint(
+          'ChaturbateLlHlsProxy refresh failed: $error',
+        );
       }
     } finally {
       if (identical(session.refreshInFlight, refresh)) {
@@ -1802,7 +1812,9 @@ class ChaturbateLlHlsProxy {
         await _cacheAssetIfNeeded(session: session, assetId: assetId);
       } catch (error) {
         if (_platformAdapter.kDebugMode) {
-          _platformAdapter.debugPrint('ChaturbateLlHlsProxy asset fetch failed: $error');
+          _platformAdapter.debugPrint(
+            'ChaturbateLlHlsProxy asset fetch failed: $error',
+          );
         }
       }
       final refreshedAsset = session.assets[assetId];

@@ -1071,60 +1071,63 @@ void main() {
   );
 
   group('ensureStarted lifecycle', () {
-    test('concurrent ensureStarted single-flight leaves a usable server', () async {
-      final results = await Future.wait([
-        proxy.ensureStarted(),
-        proxy.ensureStarted(),
-        proxy.ensureStarted(),
-      ]);
-      expect(results, hasLength(3));
+    test(
+      'concurrent ensureStarted single-flight leaves a usable server',
+      () async {
+        final results = await Future.wait([
+          proxy.ensureStarted(),
+          proxy.ensureStarted(),
+          proxy.ensureStarted(),
+        ]);
+        expect(results, hasLength(3));
 
-      // Second wave joins an already-running proxy without rebinding.
-      await Future.wait([proxy.ensureStarted(), proxy.ensureStarted()]);
+        // Second wave joins an already-running proxy without rebinding.
+        await Future.wait([proxy.ensureStarted(), proxy.ensureStarted()]);
 
-      final base = 'http://${upstream.address.address}:${upstream.port}';
-      upstream.listen((request) async {
-        request.response.write(_cleanPlaylist(segmentPath: '/life.ts'));
-        await request.response.close();
-      });
+        final base = 'http://${upstream.address.address}:${upstream.port}';
+        upstream.listen((request) async {
+          request.response.write(_cleanPlaylist(segmentPath: '/life.ts'));
+          await request.response.close();
+        });
 
-      final quality = LivePlayQuality(
-        id: '720p',
-        label: '720p',
-        metadata: {
-          'twitchPlaybackGroup': TwitchPlaybackQualityGroup(
-            id: '720p',
-            label: '720p',
-            sortOrder: 720,
-            candidates: [
-              TwitchPlaybackCandidate(
-                playlistUrl: '$base/life.m3u8',
-                headers: const {},
-                playerType: 'popout',
-                platform: 'web',
-                lineLabel: '默认 Popout',
-              ),
-            ],
-          ).toJson(),
-        },
-      );
-      final wrapped = await proxy.wrapPlayUrls(
-        roomId: 'life_room',
-        quality: quality,
-        playUrls: [
-          LivePlayUrl(
-            url: '$base/life.m3u8',
-            lineLabel: '默认 Popout',
-            metadata: const {'playerType': 'popout'},
-          ),
-        ],
-      );
-      final status = await _readStatusCode(Uri.parse(wrapped.first.url));
-      // Proxy is up; upstream may 404 the playlist path — not the point.
-      // A listening ad-guard endpoint returns a real HTTP status, not connection refused.
-      expect(status, isNotNull);
-      expect(status, greaterThanOrEqualTo(200));
-    });
+        final quality = LivePlayQuality(
+          id: '720p',
+          label: '720p',
+          metadata: {
+            'twitchPlaybackGroup': TwitchPlaybackQualityGroup(
+              id: '720p',
+              label: '720p',
+              sortOrder: 720,
+              candidates: [
+                TwitchPlaybackCandidate(
+                  playlistUrl: '$base/life.m3u8',
+                  headers: const {},
+                  playerType: 'popout',
+                  platform: 'web',
+                  lineLabel: '默认 Popout',
+                ),
+              ],
+            ).toJson(),
+          },
+        );
+        final wrapped = await proxy.wrapPlayUrls(
+          roomId: 'life_room',
+          quality: quality,
+          playUrls: [
+            LivePlayUrl(
+              url: '$base/life.m3u8',
+              lineLabel: '默认 Popout',
+              metadata: const {'playerType': 'popout'},
+            ),
+          ],
+        );
+        final status = await _readStatusCode(Uri.parse(wrapped.first.url));
+        // Proxy is up; upstream may 404 the playlist path — not the point.
+        // A listening ad-guard endpoint returns a real HTTP status, not connection refused.
+        expect(status, isNotNull);
+        expect(status, greaterThanOrEqualTo(200));
+      },
+    );
 
     test('ensureStarted after dispose throws disposed StateError', () async {
       await proxy.ensureStarted();

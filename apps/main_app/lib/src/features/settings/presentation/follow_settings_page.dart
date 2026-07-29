@@ -62,7 +62,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
     if (!mounted) {
       return;
     }
-        showAppSnackBar(context, message);
+    showAppSnackBar(context, message);
     await _refresh();
   }
 
@@ -295,7 +295,7 @@ class _FollowSettingsPageState extends State<FollowSettingsPage> {
     if (!mounted) {
       return;
     }
-        showAppSnackBar(context, message);
+    showAppSnackBar(context, message);
   }
 
   Future<void> _removeTag(String tag) async {

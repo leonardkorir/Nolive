@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_chrome_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_gesture_ui_state.dart';
-import 'package:nolive_app/src/features/room/presentation/room_view_ui_state.dart';
+import 'package:nolive_app/src/features/room/application/room_gesture_ui_state.dart';
+import 'package:nolive_app/src/features/room/application/room_view_ui_state.dart';
 
 import 'room_fullscreen_test_fakes.dart';
 

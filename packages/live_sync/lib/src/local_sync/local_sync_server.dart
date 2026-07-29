@@ -24,10 +24,7 @@ abstract class LocalSyncServer {
 
   Future<SyncSnapshot> exportCategory(SyncDataCategory category);
 
-  Future<void> importCategory(
-    SyncDataCategory category,
-    SyncSnapshot snapshot,
-  );
+  Future<void> importCategory(SyncDataCategory category, SyncSnapshot snapshot);
 
   Future<LocalSyncPeerInfo> readInfo();
 }
@@ -37,15 +34,14 @@ class HttpLocalSyncServer implements LocalSyncServer {
     required Future<SyncSnapshot> Function() exportSnapshot,
     required Future<void> Function(SyncSnapshot snapshot) importSnapshot,
     required Future<SyncSnapshot> Function(SyncDataCategory category)
-        exportCategory,
+    exportCategory,
     required Future<void> Function(
       SyncDataCategory category,
       SyncSnapshot snapshot,
-    ) importCategory,
-    Future<void> Function(
-      SyncDataCategory category,
-      SyncSnapshot snapshot,
-    )? rollbackCategory,
+    )
+    importCategory,
+    Future<void> Function(SyncDataCategory category, SyncSnapshot snapshot)?
+    rollbackCategory,
     Future<LocalSyncPeerInfo> Function()? readInfo,
     this.host = '0.0.0.0',
     this.port = 23234,
@@ -54,20 +50,21 @@ class HttpLocalSyncServer implements LocalSyncServer {
     String? accessToken,
     Future<String?> Function()? accessTokenResolver,
     void Function(Object error, StackTrace stackTrace)? onUnexpectedError,
-  })  : _exportSnapshot = exportSnapshot,
-        _importSnapshot = importSnapshot,
-        _exportCategory = exportCategory,
-        _importCategory = importCategory,
-        _rollbackCategory = rollbackCategory ?? importCategory,
-        _onUnexpectedError = onUnexpectedError ?? _defaultUnexpectedErrorLogger,
-        _staticAccessToken = _normalizeAccessToken(accessToken),
-        _accessTokenResolver = accessTokenResolver,
-        _readInfo = readInfo ??
-            (() async => const LocalSyncPeerInfo(
-                  displayName: 'nolive-device',
-                  deviceId: 'nolive-device',
-                  platform: 'unknown',
-                )) {
+  }) : _exportSnapshot = exportSnapshot,
+       _importSnapshot = importSnapshot,
+       _exportCategory = exportCategory,
+       _importCategory = importCategory,
+       _rollbackCategory = rollbackCategory ?? importCategory,
+       _onUnexpectedError = onUnexpectedError ?? _defaultUnexpectedErrorLogger,
+       _staticAccessToken = _normalizeAccessToken(accessToken),
+       _accessTokenResolver = accessTokenResolver,
+       _readInfo =
+           readInfo ??
+           (() async => const LocalSyncPeerInfo(
+             displayName: 'nolive-device',
+             deviceId: 'nolive-device',
+             platform: 'unknown',
+           )) {
     if (_isWildcardHost(host) &&
         _staticAccessToken == null &&
         _accessTokenResolver == null) {
@@ -82,15 +79,11 @@ class HttpLocalSyncServer implements LocalSyncServer {
   final Future<SyncSnapshot> Function() _exportSnapshot;
   final Future<void> Function(SyncSnapshot snapshot) _importSnapshot;
   final Future<SyncSnapshot> Function(SyncDataCategory category)
-      _exportCategory;
-  final Future<void> Function(
-    SyncDataCategory category,
-    SyncSnapshot snapshot,
-  ) _importCategory;
-  final Future<void> Function(
-    SyncDataCategory category,
-    SyncSnapshot snapshot,
-  ) _rollbackCategory;
+  _exportCategory;
+  final Future<void> Function(SyncDataCategory category, SyncSnapshot snapshot)
+  _importCategory;
+  final Future<void> Function(SyncDataCategory category, SyncSnapshot snapshot)
+  _rollbackCategory;
   final void Function(Object error, StackTrace stackTrace) _onUnexpectedError;
   final String? _staticAccessToken;
   final Future<String?> Function()? _accessTokenResolver;
@@ -114,7 +107,8 @@ class HttpLocalSyncServer implements LocalSyncServer {
 
   @override
   Uri get endpoint => Uri.parse(
-      'http://${host == '0.0.0.0' ? '127.0.0.1' : host}:$port/snapshot');
+    'http://${host == '0.0.0.0' ? '127.0.0.1' : host}:$port/snapshot',
+  );
 
   @override
   Future<void> start() async {
@@ -149,8 +143,7 @@ class HttpLocalSyncServer implements LocalSyncServer {
   Future<void> importCategory(
     SyncDataCategory category,
     SyncSnapshot snapshot,
-  ) =>
-      _importCategory(category, snapshot);
+  ) => _importCategory(category, snapshot);
 
   @override
   Future<LocalSyncPeerInfo> readInfo() async {
@@ -268,20 +261,14 @@ class HttpLocalSyncServer implements LocalSyncServer {
       request.response.statusCode = HttpStatus.requestEntityTooLarge;
       request.response.headers.contentType = ContentType.json;
       request.response.write(
-        jsonEncode({
-          'error': 'payload_too_large',
-          'message': error.message,
-        }),
+        jsonEncode({'error': 'payload_too_large', 'message': error.message}),
       );
       await request.response.close();
     } on FormatException catch (error) {
       request.response.statusCode = HttpStatus.badRequest;
       request.response.headers.contentType = ContentType.json;
       request.response.write(
-        jsonEncode({
-          'error': 'invalid_snapshot',
-          'message': error.message,
-        }),
+        jsonEncode({'error': 'invalid_snapshot', 'message': error.message}),
       );
       await request.response.close();
     } catch (error, stackTrace) {
@@ -315,7 +302,8 @@ class HttpLocalSyncServer implements LocalSyncServer {
     final decoded = jsonDecode(payload);
     if (decoded is! Map) {
       throw const FormatException(
-          'Local sync batch payload must be an object.');
+        'Local sync batch payload must be an object.',
+      );
     }
     final rawCategories = decoded['categories'];
     if (rawCategories is! Map || rawCategories.isEmpty) {
@@ -417,8 +405,10 @@ class HttpLocalSyncServer implements LocalSyncServer {
     if (seconds == null) {
       return false;
     }
-    final requestTime =
-        DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true);
+    final requestTime = DateTime.fromMillisecondsSinceEpoch(
+      seconds * 1000,
+      isUtc: true,
+    );
     final now = DateTime.now().toUtc();
     if (requestTime.isBefore(now.subtract(_authTimestampSkew)) ||
         requestTime.isAfter(now.add(_authTimestampSkew))) {
@@ -430,9 +420,10 @@ class HttpLocalSyncServer implements LocalSyncServer {
     final bodySha256 = sha256.convert(utf8.encode(body)).toString();
     final payload =
         '${request.method.toUpperCase()}${request.uri.path}$timestamp$nonce$bodySha256';
-    final expectedSignature = Hmac(sha256, utf8.encode(expected))
-        .convert(utf8.encode(payload))
-        .toString();
+    final expectedSignature = Hmac(
+      sha256,
+      utf8.encode(expected),
+    ).convert(utf8.encode(payload)).toString();
     if (!_constantTimeEquals(signature, expectedSignature)) {
       return false;
     }

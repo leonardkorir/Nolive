@@ -111,9 +111,9 @@ void main() {
       expect(runtime.hasPendingRoomTeardown, isFalse);
 
       // Subsequent room-load waits must return immediately after release.
-      await runtime
-          .waitForPendingRoomTeardown()
-          .timeout(const Duration(milliseconds: 50));
+      await runtime.waitForPendingRoomTeardown().timeout(
+        const Duration(milliseconds: 50),
+      );
     },
   );
 

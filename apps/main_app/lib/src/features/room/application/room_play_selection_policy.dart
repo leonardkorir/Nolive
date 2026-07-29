@@ -1,4 +1,5 @@
 import 'package:live_core/live_core.dart';
+import 'package:nolive_app/src/features/room/application/room_provider_traits.dart';
 
 /// Whether the player "自动画质（Auto）" switch should force adaptive auto on
 /// room entry for this provider.
@@ -6,7 +7,7 @@ import 'package:live_core/live_core.dart';
 /// YouTube exposes an `auto` ladder entry, but that multi-variant master path
 /// is unreliable under MPV; treat YouTube as fixed-tier only.
 bool supportsAdaptiveAutoQuality(ProviderId providerId) {
-  return providerId != ProviderId.youtube;
+  return roomProviderTraitsFor(providerId).supportsAdaptiveAutoQuality;
 }
 
 /// Adaptive "auto" tier used by Twitch / Chaturbate / Stripchat-style ladders.
@@ -67,9 +68,9 @@ List<LivePlayUrl> preferredPlayUrlsForQuality({
   if (providerId == ProviderId.chaturbate) {
     final ordered = List<LivePlayUrl>.from(urls);
     ordered.sort((left, right) {
-      return chaturbatePlaybackPriority(left).compareTo(
-        chaturbatePlaybackPriority(right),
-      );
+      return chaturbatePlaybackPriority(
+        left,
+      ).compareTo(chaturbatePlaybackPriority(right));
     });
     return ordered;
   }

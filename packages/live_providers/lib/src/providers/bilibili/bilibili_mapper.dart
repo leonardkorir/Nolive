@@ -2,6 +2,7 @@ import 'package:live_core/live_core.dart';
 
 import '../provider_json.dart';
 import 'bilibili_sign_service.dart';
+import 'bilibili_danmaku_token.dart';
 
 class BilibiliMapper {
   const BilibiliMapper._();

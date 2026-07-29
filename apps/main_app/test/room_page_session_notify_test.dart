@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_page_session_coordinator.dart';
-import 'package:nolive_app/src/features/room/presentation/room_playback_session_state.dart';
+import 'package:nolive_app/src/features/room/application/room_page_session_state.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_session_state.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 
 void main() {
@@ -18,10 +18,7 @@ void main() {
       ),
     );
     expect(
-      shouldNotifyRoomPageSessionListeners(
-        previous: base,
-        next: withPending,
-      ),
+      shouldNotifyRoomPageSessionListeners(previous: base, next: withPending),
       isFalse,
       reason: 'UI does not read pendingPlayback* bookkeeping fields',
     );
@@ -37,10 +34,7 @@ void main() {
       ),
     );
     expect(
-      shouldNotifyRoomPageSessionListeners(
-        previous: base,
-        next: withSource,
-      ),
+      shouldNotifyRoomPageSessionListeners(previous: base, next: withSource),
       isTrue,
     );
   });

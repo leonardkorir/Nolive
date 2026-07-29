@@ -153,10 +153,7 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
 
     if (storage != null) {
       final store = FlutterSecureCredentialStore._(storage);
-      await store._load(
-        timeout: boundTimeout,
-        retryAttempts: boundRetries,
-      );
+      await store._load(timeout: boundTimeout, retryAttempts: boundRetries);
       return store;
     }
 
@@ -178,10 +175,7 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
       final candidate = candidates[index];
       try {
         final store = FlutterSecureCredentialStore._(candidate);
-        await store._load(
-          timeout: boundTimeout,
-          retryAttempts: boundRetries,
-        );
+        await store._load(timeout: boundTimeout, retryAttempts: boundRetries);
         if (index > 0) {
           AppLog.instance.info(
             'bootstrap',
@@ -200,7 +194,8 @@ class FlutterSecureCredentialStore implements SecureCredentialStore {
         );
         // Device Keystore hangs (not just a bad EncryptedSharedPreferences
         // path): further backends would also stall cold start. Fail open fast.
-        final timedOut = error is TimeoutException ||
+        final timedOut =
+            error is TimeoutException ||
             (error is SecureCredentialStoreUnavailableException &&
                 error.message.contains('timed out'));
         if (timedOut) {
@@ -507,12 +502,13 @@ class LazySecureCredentialStore implements SecureCredentialStore {
          allowedKeys: [...allowedKeys, _migrationSentinelKey],
          initialSettings: initialSettings,
        ),
-       _publishedSnapshot = _extractAllowedSecureValues(
-         initialSettings,
-         {...allowedKeys, _migrationSentinelKey},
-       );
+       _publishedSnapshot = _extractAllowedSecureValues(initialSettings, {
+         ...allowedKeys,
+         _migrationSentinelKey,
+       });
 
-  static const String _migrationSentinelKey = 'nolive.secure.migration_complete';
+  static const String _migrationSentinelKey =
+      'nolive.secure.migration_complete';
 
   final SettingsRepository _settingsRepository;
   final Set<String> _allowedKeys;
@@ -532,13 +528,9 @@ class LazySecureCredentialStore implements SecureCredentialStore {
 
   Future<void> _enqueue(Future<void> Function() action) {
     final completer = Completer<void>();
-    _transactionQueue = _transactionQueue.then(
-      (_) => action(),
-      onError: (_) => action(),
-    ).then(
-      completer.complete,
-      onError: completer.completeError,
-    );
+    _transactionQueue = _transactionQueue
+        .then((_) => action(), onError: (_) => action())
+        .then(completer.complete, onError: completer.completeError);
     return completer.future;
   }
 
@@ -728,11 +720,15 @@ class LazySecureCredentialStore implements SecureCredentialStore {
         }
 
         final isDirty = writtenDuringWarmup.contains(key);
-        final isNotMigratedAndMissing = !isMigrated && !resolvedSnapshot.containsKey(key);
-        final shouldWrite = (isDirty || isNotMigratedAndMissing) && !deletedDuringWarmup.contains(key);
+        final isNotMigratedAndMissing =
+            !isMigrated && !resolvedSnapshot.containsKey(key);
+        final shouldWrite =
+            (isDirty || isNotMigratedAndMissing) &&
+            !deletedDuringWarmup.contains(key);
         if (shouldWrite) {
           // Skip if a concurrent operation modified this key after our checkpoint
-          if (!_writtenKeysDuringWarmup.contains(key) && !_deletedKeysDuringWarmup.contains(key)) {
+          if (!_writtenKeysDuringWarmup.contains(key) &&
+              !_deletedKeysDuringWarmup.contains(key)) {
             if (resolvedSnapshot[key] != entry.value) {
               valuesToWrite[key] = entry.value;
             }
@@ -748,7 +744,8 @@ class LazySecureCredentialStore implements SecureCredentialStore {
         final shouldDelete = deletedDuringWarmup.contains(key);
         if (shouldDelete) {
           // Skip if a concurrent operation modified this key after our checkpoint
-          if (!_writtenKeysDuringWarmup.contains(key) && !_deletedKeysDuringWarmup.contains(key)) {
+          if (!_writtenKeysDuringWarmup.contains(key) &&
+              !_deletedKeysDuringWarmup.contains(key)) {
             keysToDelete.add(key);
           }
         }
@@ -805,8 +802,8 @@ class LazySecureCredentialStore implements SecureCredentialStore {
       AppLog.instance.error(
         'bootstrap',
         'secure store promotion failed during reconciliation. '
-        'Tainted write keys: ${valuesToWrite.keys.toList()}, '
-        'Tainted delete keys: $keysToDelete',
+            'Tainted write keys: ${valuesToWrite.keys.toList()}, '
+            'Tainted delete keys: $keysToDelete',
         error: error,
         stackTrace: stackTrace,
       );

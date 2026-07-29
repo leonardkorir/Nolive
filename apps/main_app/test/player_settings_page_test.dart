@@ -26,7 +26,10 @@ void main() {
       find.byKey(const Key('player-prefer-highest-quality-switch')),
       findsOneWidget,
     );
-    expect(find.byKey(const Key('player-wifi-quality-highest')), findsOneWidget);
+    expect(
+      find.byKey(const Key('player-wifi-quality-highest')),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('player-force-https-switch')), findsOneWidget);
 
     await tester.scrollUntilVisible(

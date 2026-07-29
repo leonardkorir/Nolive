@@ -1,9 +1,5 @@
 /// Quality ladder: 0 lowest, 1 middle, 2 highest.
-enum NetworkQualityPreference {
-  lowest,
-  middle,
-  highest,
-}
+enum NetworkQualityPreference { lowest, middle, highest }
 
 /// Selects a quality index for a descending-quality list (index 0 = best).
 int selectQualityIndex({

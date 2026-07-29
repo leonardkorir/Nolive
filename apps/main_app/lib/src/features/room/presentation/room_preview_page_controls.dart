@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:nolive_app/src/features/room/presentation/room_controls_presentation_helpers.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_view_data.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_view_data.dart';
 import 'package:nolive_app/src/shared/presentation/widgets/app_surface_card.dart';
 
 class RoomControlsPanel extends StatelessWidget {
@@ -83,9 +83,11 @@ class RoomControlsPanel extends StatelessWidget {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('切换清晰度'),
-                  trailing: Text(viewData.hasPlayback
-                      ? viewData.effectiveQualityLabel
-                      : '不可用'),
+                  trailing: Text(
+                    viewData.hasPlayback
+                        ? viewData.effectiveQualityLabel
+                        : '不可用',
+                  ),
                   onTap: viewData.hasPlayback ? onShowQuality : null,
                 ),
                 const Divider(height: 1),
@@ -93,7 +95,8 @@ class RoomControlsPanel extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('切换线路'),
                   trailing: Text(
-                      viewData.hasPlayback ? viewData.currentLineLabel : '不可用'),
+                    viewData.hasPlayback ? viewData.currentLineLabel : '不可用',
+                  ),
                   onTap: viewData.hasPlayback ? onShowLine : null,
                 ),
                 const Divider(height: 1),
@@ -109,8 +112,9 @@ class RoomControlsPanel extends StatelessWidget {
                     contentPadding: EdgeInsets.zero,
                     title: const Text('小窗播放'),
                     trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap:
-                        viewData.hasPlayback ? onEnterPictureInPicture : null,
+                    onTap: viewData.hasPlayback
+                        ? onEnterPictureInPicture
+                        : null,
                   ),
                 ],
                 if (viewData.supportsDesktopMiniWindow) ...[
@@ -121,8 +125,9 @@ class RoomControlsPanel extends StatelessWidget {
                       viewData.desktopMiniWindowActive ? '退出桌面小窗' : '桌面小窗',
                     ),
                     trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap:
-                        viewData.hasPlayback ? onToggleDesktopMiniWindow : null,
+                    onTap: viewData.hasPlayback
+                        ? onToggleDesktopMiniWindow
+                        : null,
                   ),
                 ],
                 if (viewData.supportsPlayerCapture) ...[
@@ -265,9 +270,9 @@ class _RoomStepperRow extends StatelessWidget {
             child: Text(
               title,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 13.5,
-                  ),
+                fontWeight: FontWeight.w500,
+                fontSize: 13.5,
+              ),
             ),
           ),
           DecoratedBox(
@@ -280,23 +285,25 @@ class _RoomStepperRow extends StatelessWidget {
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints.tightFor(width: 28, height: 28),
+                  constraints: const BoxConstraints.tightFor(
+                    width: 28,
+                    height: 28,
+                  ),
                   onPressed: () => onChanged(value - 1),
                   iconSize: 18,
                   icon: const Icon(Icons.remove),
                 ),
                 SizedBox(
                   width: suffix.isEmpty ? 32 : 52,
-                  child: Center(
-                    child: Text('$value$suffix'),
-                  ),
+                  child: Center(child: Text('$value$suffix')),
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints.tightFor(width: 28, height: 28),
+                  constraints: const BoxConstraints.tightFor(
+                    width: 28,
+                    height: 28,
+                  ),
                   onPressed: () => onChanged(value + 1),
                   iconSize: 18,
                   icon: const Icon(Icons.add),

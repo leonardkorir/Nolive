@@ -33,13 +33,18 @@ class _HomePageState extends State<HomePage> {
       ]),
       builder: (context, _) {
         final preferences = widget.dependencies.layoutPreferences.value;
-        final providers = widget.dependencies
-            .listAvailableProviders()
-            .where((item) => item.supports(ProviderCapability.recommendRooms))
-            .toList(growable: false)
-          ..sort((a, b) => preferences
-              .providerSortIndex(a.id.value)
-              .compareTo(preferences.providerSortIndex(b.id.value)));
+        final providers =
+            widget.dependencies
+                .listAvailableProviders()
+                .where(
+                  (item) => item.supports(ProviderCapability.recommendRooms),
+                )
+                .toList(growable: false)
+              ..sort(
+                (a, b) => preferences
+                    .providerSortIndex(a.id.value)
+                    .compareTo(preferences.providerSortIndex(b.id.value)),
+              );
 
         if (providers.isEmpty) {
           return const Scaffold(body: Center(child: Text('暂无可用平台')));
@@ -65,13 +70,14 @@ class _HomePageState extends State<HomePage> {
                     tooltip: '搜索',
                     visualDensity: VisualDensity.compact,
                     onPressed: () {
-                      final controller =
-                          DefaultTabController.maybeOf(tabContext);
+                      final controller = DefaultTabController.maybeOf(
+                        tabContext,
+                      );
                       final selectedIndex = controller?.index ?? 0;
                       final selectedProvider = providers[selectedIndex];
                       Navigator.of(tabContext).push(
                         MaterialPageRoute<void>(
-                           builder: (context) => SearchPage(
+                          builder: (context) => SearchPage(
                             dependencies:
                                 widget.dependencies.searchDependencies,
                             standalone: true,
@@ -92,7 +98,9 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     for (var index = 0; index < providers.length; index += 1)
                       _HomeProviderFeedTab(
-                        key: PageStorageKey('home-${providers[index].id.value}'),
+                        key: PageStorageKey(
+                          'home-${providers[index].id.value}',
+                        ),
                         dependencies: widget.dependencies,
                         descriptor: providers[index],
                         tabIndex: index,
@@ -438,8 +446,8 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
           AppLog.instance.info(
             'home',
             'provider recommend empty, retrying '
-            'provider=${widget.descriptor.id.value} page=$page '
-            'attempt=$attempt/$maxAttempts',
+                'provider=${widget.descriptor.id.value} page=$page '
+                'attempt=$attempt/$maxAttempts',
           );
           await Future<void>.delayed(Duration(milliseconds: 400 * attempt));
           continue;
@@ -448,8 +456,8 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
           AppLog.instance.info(
             'home',
             'provider recommend recovered '
-            'provider=${widget.descriptor.id.value} page=$page '
-            'attempt=$attempt/$maxAttempts items=${response.items.length}',
+                'provider=${widget.descriptor.id.value} page=$page '
+                'attempt=$attempt/$maxAttempts items=${response.items.length}',
           );
         }
         return response;
@@ -498,8 +506,9 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
       if (left.isLive != right.isLive) {
         return right.isLive ? 1 : -1;
       }
-      final popularity =
-          (right.viewerCount ?? -1).compareTo(left.viewerCount ?? -1);
+      final popularity = (right.viewerCount ?? -1).compareTo(
+        left.viewerCount ?? -1,
+      );
       if (popularity != 0) {
         return popularity;
       }
@@ -591,17 +600,14 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
               18,
             ),
             sliver: SliverGrid(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final room = _rooms[index];
-                  return LiveRoomGridCard(
-                    room: room,
-                    descriptor: widget.descriptor,
-                    onTap: () => widget.onOpenRoom(room),
-                  );
-                },
-                childCount: _rooms.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final room = _rooms[index];
+                return LiveRoomGridCard(
+                  room: room,
+                  descriptor: widget.descriptor,
+                  onTap: () => widget.onOpenRoom(room),
+                );
+              }, childCount: _rooms.length),
               gridDelegate: buildLiveRoomGridDelegate(context),
             ),
           ),
@@ -620,24 +626,18 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
                         child: CircularProgressIndicator.adaptive(),
                       )
                     : _hasMore
-                        ? Text(
-                            '继续滑动自动加载更多',
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                          )
-                        : Text(
-                            '已经到底了',
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                          ),
+                    ? Text(
+                        '继续滑动自动加载更多',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    : Text(
+                        '已经到底了',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -646,7 +646,6 @@ class _HomeProviderFeedTabState extends State<_HomeProviderFeedTab>
     );
   }
 }
-
 
 /// Transient home recommend failures (timeouts / network) worth auto-retry.
 @visibleForTesting

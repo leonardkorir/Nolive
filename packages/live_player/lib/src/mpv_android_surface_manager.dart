@@ -874,14 +874,16 @@ bool looksLikeArcChromeOsRuntime({
   String? operatingSystemVersion,
   bool? isAndroidPlatform,
 }) {
-  final android = isAndroidPlatform ??
+  final android =
+      isAndroidPlatform ??
       (!kIsWeb && defaultTargetPlatform == TargetPlatform.android);
   if (!android) {
     return false;
   }
-  final version = (operatingSystemVersion ??
-          (!kIsWeb ? Platform.operatingSystemVersion : ''))
-      .trim();
+  final version =
+      (operatingSystemVersion ??
+              (!kIsWeb ? Platform.operatingSystemVersion : ''))
+          .trim();
   if (version.isEmpty) {
     return false;
   }

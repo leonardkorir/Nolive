@@ -31,16 +31,19 @@ class LocalSyncPeerInfo {
     final snapshotPath = json['snapshotPath']?.toString().trim();
     final accessToken = json['accessToken']?.toString().trim();
     return LocalSyncPeerInfo(
-      displayName:
-          (displayName == null || displayName.isEmpty) ? '未知设备' : displayName,
-      deviceId:
-          (deviceId == null || deviceId.isEmpty) ? 'unknown-device' : deviceId,
+      displayName: (displayName == null || displayName.isEmpty)
+          ? '未知设备'
+          : displayName,
+      deviceId: (deviceId == null || deviceId.isEmpty)
+          ? 'unknown-device'
+          : deviceId,
       platform: (platform == null || platform.isEmpty) ? 'unknown' : platform,
       snapshotPath: (snapshotPath == null || snapshotPath.isEmpty)
           ? '/snapshot'
           : snapshotPath,
-      accessToken:
-          (accessToken == null || accessToken.isEmpty) ? null : accessToken,
+      accessToken: (accessToken == null || accessToken.isEmpty)
+          ? null
+          : accessToken,
     );
   }
 }

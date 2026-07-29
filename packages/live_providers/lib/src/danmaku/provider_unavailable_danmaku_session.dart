@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:live_core/live_core.dart';
 
-class ProviderUnavailableDanmakuSession implements DanmakuSession {
+class ProviderUnavailableDanmakuSession extends DanmakuSession {
   ProviderUnavailableDanmakuSession({required this.reason});
 
   final String reason;
@@ -11,6 +11,9 @@ class ProviderUnavailableDanmakuSession implements DanmakuSession {
       StreamController<LiveMessage>.broadcast();
 
   bool _connected = false;
+
+  @override
+  String? get unavailableReason => reason.trim().isEmpty ? null : reason.trim();
 
   @override
   Stream<LiveMessage> get messages => _controller.stream;
@@ -27,7 +30,7 @@ class ProviderUnavailableDanmakuSession implements DanmakuSession {
     _controller.add(
       LiveMessage(
         type: LiveMessageType.notice,
-        userName: 'LiveSysMessage',
+        userName: kLiveSystemMessageUserName,
         content: reason.trim(),
         timestamp: DateTime.now(),
       ),

@@ -34,28 +34,34 @@ class StreamerAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final trimmed = normalizeDisplayText(fallbackText).trim();
-    final initial =
-        trimmed.isEmpty ? '主' : trimmed.substring(0, 1).toUpperCase();
+    final initial = trimmed.isEmpty
+        ? '主'
+        : trimmed.substring(0, 1).toUpperCase();
     final palette = _AvatarPalette.forBrightness(theme.brightness);
     final effectiveBackgroundColor = backgroundColor ?? palette.background;
     final borderColor = isLive ? liveRingColor : outlineColor;
     final double borderWidth = isLive
         ? liveRingWidth
         : borderColor == null
-            ? 0.0
-            : outlineWidth;
+        ? 0.0
+        : outlineWidth;
     final double inset = borderColor == null ? 0.0 : borderWidth;
-    final fallbackStyle = fallbackTextStyle ??
-        applyZhTextStyleOrNull(theme.textTheme.titleMedium?.copyWith(
-          color: palette.foreground,
-          fontWeight: FontWeight.w600,
-          height: 1,
-        )) ??
-        applyZhTextStyle(TextStyle(
-          color: palette.foreground,
-          fontWeight: FontWeight.w600,
-          height: 1,
-        ));
+    final fallbackStyle =
+        fallbackTextStyle ??
+        applyZhTextStyleOrNull(
+          theme.textTheme.titleMedium?.copyWith(
+            color: palette.foreground,
+            fontWeight: FontWeight.w600,
+            height: 1,
+          ),
+        ) ??
+        applyZhTextStyle(
+          TextStyle(
+            color: palette.foreground,
+            fontWeight: FontWeight.w600,
+            height: 1,
+          ),
+        );
 
     return SizedBox(
       width: size,
@@ -87,10 +93,7 @@ class StreamerAvatar extends StatelessWidget {
 }
 
 class _AvatarPalette {
-  const _AvatarPalette({
-    required this.background,
-    required this.foreground,
-  });
+  const _AvatarPalette({required this.background, required this.foreground});
 
   final Color background;
   final Color foreground;

@@ -4,7 +4,7 @@ import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
 import 'package:nolive_app/src/features/room/application/resolve_play_source_use_case.dart';
 import 'package:nolive_app/src/features/room/application/room_session_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
+import 'package:nolive_app/src/features/room/application/room_runtime_helper_contexts.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 
@@ -19,73 +19,82 @@ bool shouldRefreshRoomAfterPlayerSettingsReturn({
       previous.forceHttpsEnabled != next.forceHttpsEnabled;
 }
 
-typedef RoomResolvePlaybackRefresh = Future<ResolvedPlaySource> Function(
-  LoadedRoomSnapshot snapshot,
-  LivePlayQuality quality,
-);
+typedef RoomResolvePlaybackRefresh =
+    Future<ResolvedPlaySource> Function(
+      LoadedRoomSnapshot snapshot,
+      LivePlayQuality quality,
+    );
 
-typedef RoomPlaybackSourceFromLine = PlaybackSource Function(
-  LivePlayUrl playUrl, {
-  LivePlayQuality? quality,
-  ProviderId? providerId,
-});
+typedef RoomPlaybackSourceFromLine =
+    PlaybackSource Function(
+      LivePlayUrl playUrl, {
+      LivePlayQuality? quality,
+      ProviderId? providerId,
+    });
 
-typedef RoomBindPlaybackSourceWithRecovery = Future<bool> Function({
-  required PlaybackSource playbackSource,
-  required String label,
-  bool autoPlay,
-  Duration autoPlayDelay,
-  PlaybackSource? currentPlaybackSource,
-  bool preferFreshBackendBeforeFirstSetSource,
-  bool Function()? shouldAbortRetry,
-});
+typedef RoomBindPlaybackSourceWithRecovery =
+    Future<bool> Function({
+      required PlaybackSource playbackSource,
+      required String label,
+      bool autoPlay,
+      Duration autoPlayDelay,
+      PlaybackSource? currentPlaybackSource,
+      bool preferFreshBackendBeforeFirstSetSource,
+      bool Function()? shouldAbortRetry,
+    });
 
-typedef RoomReplaceResolvedPlaybackSession = void Function({
-  required LiveRoomDetail activeRoomDetail,
-  required LivePlayQuality selectedQuality,
-  required LivePlayQuality effectiveQuality,
-  required PlaybackSource? playbackSource,
-  required List<LivePlayUrl> playUrls,
-});
+typedef RoomReplaceResolvedPlaybackSession =
+    void Function({
+      required LiveRoomDetail activeRoomDetail,
+      required LivePlayQuality selectedQuality,
+      required LivePlayQuality effectiveQuality,
+      required PlaybackSource? playbackSource,
+      required List<LivePlayUrl> playUrls,
+    });
 
-typedef RoomUpdatePlaybackSourceForLineSwitch = void Function({
-  required PlaybackSource playbackSource,
-  required bool hasPlayback,
-});
+typedef RoomUpdatePlaybackSourceForLineSwitch =
+    void Function({
+      required PlaybackSource playbackSource,
+      required bool hasPlayback,
+    });
 
-typedef RoomSchedulePlaybackBootstrap = void Function({
-  required PlaybackSource? playbackSource,
-  required bool hasPlayback,
-  required bool autoPlay,
-  bool force,
-});
+typedef RoomSchedulePlaybackBootstrap =
+    void Function({
+      required PlaybackSource? playbackSource,
+      required bool hasPlayback,
+      required bool autoPlay,
+      bool force,
+    });
 
-typedef RoomScheduleTwitchRecovery = void Function({
-  required LoadedRoomSnapshot snapshot,
-  required PlaybackSource? playbackSource,
-  required List<LivePlayUrl> playUrls,
-  required LivePlayQuality selectedQuality,
-});
+typedef RoomScheduleTwitchRecovery =
+    void Function({
+      required LoadedRoomSnapshot snapshot,
+      required PlaybackSource? playbackSource,
+      required List<LivePlayUrl> playUrls,
+      required LivePlayQuality selectedQuality,
+    });
 
-typedef RoomRefreshRoom = Future<void> Function({
-  bool showFeedback,
-  bool reloadPlayer,
-  bool forcePlaybackRebind,
-});
+typedef RoomRefreshRoom =
+    Future<void> Function({
+      bool showFeedback,
+      bool reloadPlayer,
+      bool forcePlaybackRebind,
+    });
 
-typedef RoomApplyPlayerPreferences = void Function(
-  PlayerPreferences preferences,
-);
+typedef RoomApplyPlayerPreferences =
+    void Function(PlayerPreferences preferences);
 
-typedef RoomApplyDanmakuPreferences = void Function({
-  required DanmakuPreferences preferences,
-  required List<String> blockedKeywords,
-});
+typedef RoomApplyDanmakuPreferences =
+    void Function({
+      required DanmakuPreferences preferences,
+      required List<String> blockedKeywords,
+    });
 
-typedef RoomPersistScreenshot = Future<String?> Function({
-  required Uint8List bytes,
-  required String fileName,
-});
+typedef RoomPersistScreenshot =
+    Future<String?> Function({
+      required Uint8List bytes,
+      required String fileName,
+    });
 
 typedef RoomCaptureRenderedPlayerSurface = Future<Uint8List?> Function();
 
@@ -160,7 +169,8 @@ class RoomControlsActionContext {
   final void Function({
     LivePlayQuality? startupPromotionQuality,
     required bool resetAttempts,
-  }) prepareTwitchForResolvedPlayback;
+  })
+  prepareTwitchForResolvedPlayback;
   final void Function({required bool resetAttempts}) prepareTwitchForLineSwitch;
   final Future<PlayerPreferences> Function() loadPlayerPreferences;
   final RoomApplyPlayerPreferences applyPlayerPreferences;
@@ -169,7 +179,7 @@ class RoomControlsActionContext {
   final Future<List<String>> Function() loadBlockedKeywords;
   final RoomApplyDanmakuPreferences applyDanmakuPreferences;
   final Future<DanmakuSession?> Function({required LiveRoomDetail detail})
-      openRoomDanmaku;
+  openRoomDanmaku;
   final Future<void> Function(DanmakuSession? session) bindDanmakuSession;
   final Future<void> Function() leaveRoom;
   final RoomCaptureRenderedPlayerSurface? captureRenderedPlayerSurface;

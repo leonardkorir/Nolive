@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_generic_line_failover.dart';
+import 'package:nolive_app/src/features/room/application/room_generic_line_failover.dart';
 
 void main() {
   final lines = [
@@ -16,10 +16,7 @@ void main() {
     final controller = RoomGenericLineFailoverController(
       policy: const PlaybackFailoverPolicy(maxRetriesPerLine: 2),
     );
-    controller.reset(
-      playUrls: lines,
-      sourceBuilder: sourceOf,
-    );
+    controller.reset(playUrls: lines, sourceBuilder: sourceOf);
 
     final first = controller.nextStep()!;
     expect(first.action, PlaybackFailoverAction.retryCurrentLine);
@@ -89,10 +86,7 @@ void main() {
         LivePlayUrl(url: 'https://b.example/x.flv', lineLabel: 'x'),
       ];
       expect(
-        controller.ensureSession(
-          playUrls: otherLines,
-          sourceBuilder: sourceOf,
-        ),
+        controller.ensureSession(playUrls: otherLines, sourceBuilder: sourceOf),
         isTrue,
       );
       expect(controller.retryCount, 0);
@@ -201,7 +195,10 @@ void main() {
     budget.consume();
     final t0 = DateTime.utc(2026, 7, 22, 12);
     budget.notePlaying(isPlaying: true, now: t0);
-    budget.notePlaying(isPlaying: false, now: t0.add(const Duration(seconds: 1)));
+    budget.notePlaying(
+      isPlaying: false,
+      now: t0.add(const Duration(seconds: 1)),
+    );
     budget.notePlaying(
       isPlaying: true,
       now: t0.add(const Duration(seconds: 2)),

@@ -51,11 +51,11 @@ class RoomGestureUiState {
 
   @override
   int get hashCode => Object.hash(
-        tracking,
-        adjustingBrightness,
-        startY,
-        startVolume,
-        startBrightness,
-        tipText,
-      );
+    tracking,
+    adjustingBrightness,
+    startY,
+    startVolume,
+    startBrightness,
+    tipText,
+  );
 }

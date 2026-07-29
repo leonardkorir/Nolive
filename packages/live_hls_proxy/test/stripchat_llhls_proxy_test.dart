@@ -193,16 +193,14 @@ $upstreamBase/seg_3609.mp4
     },
   );
 
-  test(
-    'stripchat auto keeps multi-variant master for platform ABR',
-    () async {
-      final upstream = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      final upstreamBase = 'http://${upstream.address.host}:${upstream.port}';
+  test('stripchat auto keeps multi-variant master for platform ABR', () async {
+    final upstream = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final upstreamBase = 'http://${upstream.address.host}:${upstream.port}';
 
-      upstream.listen((request) async {
-        if (request.uri.path.endsWith('/master.m3u8')) {
-          request.response.headers.contentType = ContentType.text;
-          request.response.write('''
+    upstream.listen((request) async {
+      if (request.uri.path.endsWith('/master.m3u8')) {
+        request.response.headers.contentType = ContentType.text;
+        request.response.write('''
 #EXTM3U
 #EXT-X-MOUFLON:PSCH:v2:test
 #EXT-X-STREAM-INF:BANDWIDTH=800000
@@ -212,73 +210,69 @@ $upstreamBase/child_720p.m3u8
 #EXT-X-STREAM-INF:BANDWIDTH=8000000
 $upstreamBase/child_1080p60.m3u8
 ''');
-        } else if (request.uri.path.endsWith('.m3u8')) {
-          request.response.headers.contentType = ContentType.text;
-          request.response.write('''
+      } else if (request.uri.path.endsWith('.m3u8')) {
+        request.response.headers.contentType = ContentType.text;
+        request.response.write('''
 #EXTM3U
 #EXT-X-TARGETDURATION:2
 #EXTINF:2.000
 $upstreamBase/seg.mp4
 ''');
-        } else if (request.uri.path.endsWith('.mp4')) {
-          request.response.headers.contentType = ContentType.binary;
-          request.response.add(utf8.encode('segment'));
-        } else {
-          request.response.statusCode = HttpStatus.notFound;
-        }
-        await request.response.close();
-      });
+      } else if (request.uri.path.endsWith('.mp4')) {
+        request.response.headers.contentType = ContentType.binary;
+        request.response.add(utf8.encode('segment'));
+      } else {
+        request.response.statusCode = HttpStatus.notFound;
+      }
+      await request.response.close();
+    });
 
-      final proxy = StripchatLlHlsProxy(
-        platformAdapter: _FakePlatformAdapter(),
-        enabledOverride: true,
-        enablePriming: false,
-      );
-      addTearDown(proxy.dispose);
-      addTearDown(() => upstream.close(force: true));
+    final proxy = StripchatLlHlsProxy(
+      platformAdapter: _FakePlatformAdapter(),
+      enabledOverride: true,
+      enablePriming: false,
+    );
+    addTearDown(proxy.dispose);
+    addTearDown(() => upstream.close(force: true));
 
-      final wrapped = await proxy.wrapPlayUrls(
-        roomId: 'test_room',
-        quality: LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
-        playUrls: [
-          LivePlayUrl(
-            url: '$upstreamBase/master.m3u8',
-            headers: const {'referer': 'https://zh.stripchat.com/auto'},
-            lineLabel: 'Auto',
-            metadata: {
-              'masterPlaylistUrl':
-                  'https://edge-hls.doppiocdn.com/hls/101/master/101_auto.m3u8',
-              // Probe may store a max child; Auto must still expose master ABR.
-              'resolvedPlaylistUrl': '$upstreamBase/child_1080p60.m3u8',
-            },
-          ),
-        ],
-      );
-
-      final client = HttpClient();
-      addTearDown(() => client.close(force: true));
-      final response = await (await client.getUrl(
-        Uri.parse(wrapped.single.url),
-      )).close();
-      final text = utf8.decode(
-        await response.fold<List<int>>(
-          <int>[],
-          (buffer, data) => buffer..addAll(data),
+    final wrapped = await proxy.wrapPlayUrls(
+      roomId: 'test_room',
+      quality: LivePlayQuality(id: 'auto', label: 'Auto', isDefault: true),
+      playUrls: [
+        LivePlayUrl(
+          url: '$upstreamBase/master.m3u8',
+          headers: const {'referer': 'https://zh.stripchat.com/auto'},
+          lineLabel: 'Auto',
+          metadata: {
+            'masterPlaylistUrl':
+                'https://edge-hls.doppiocdn.com/hls/101/master/101_auto.m3u8',
+            // Probe may store a max child; Auto must still expose master ABR.
+            'resolvedPlaylistUrl': '$upstreamBase/child_1080p60.m3u8',
+          },
         ),
-      );
+      ],
+    );
 
-      expect(response.statusCode, HttpStatus.ok);
-      // Business: Auto keeps multi-variant master for platform ABR.
-      expect(text, contains('#EXT-X-STREAM-INF'));
-      expect(text, contains('/stripchat-llhls/'));
-      expect(text, contains('upstream='));
-      expect(text, isNot(contains('#EXT-X-MOUFLON:')));
-      expect(
-        wrapped.single.metadata?['upstreamUrl'],
-        contains('master.m3u8'),
-      );
-    },
-  );
+    final client = HttpClient();
+    addTearDown(() => client.close(force: true));
+    final response = await (await client.getUrl(
+      Uri.parse(wrapped.single.url),
+    )).close();
+    final text = utf8.decode(
+      await response.fold<List<int>>(
+        <int>[],
+        (buffer, data) => buffer..addAll(data),
+      ),
+    );
+
+    expect(response.statusCode, HttpStatus.ok);
+    // Business: Auto keeps multi-variant master for platform ABR.
+    expect(text, contains('#EXT-X-STREAM-INF'));
+    expect(text, contains('/stripchat-llhls/'));
+    expect(text, contains('upstream='));
+    expect(text, isNot(contains('#EXT-X-MOUFLON:')));
+    expect(wrapped.single.metadata?['upstreamUrl'], contains('master.m3u8'));
+  });
 
   test(
     'stripchat auto keeps independent sticky slots per media path for ABR',
@@ -377,9 +371,7 @@ $upstreamBase/seg240_c.mp4
       // Request each media child via proxy upstream= (simulates ABR hop).
       final basePlaylist = Uri.parse(wrapped.single.url);
       Uri childProxy(String path) => basePlaylist.replace(
-        queryParameters: <String, String>{
-          'upstream': '$upstreamBase$path',
-        },
+        queryParameters: <String, String>{'upstream': '$upstreamBase$path'},
       );
 
       final first1080 = await fetch(childProxy('/child_1080p.m3u8'));
@@ -606,66 +598,63 @@ $upstreamBase/seg_low.mp4
     },
   );
 
-  test(
-    'stripchat playlist host/sibling fallbacks after media 404',
-    () async {
-      final upstream = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      final upstreamBase = 'http://${upstream.address.host}:${upstream.port}';
-      final requests = <String>[];
+  test('stripchat playlist host/sibling fallbacks after media 404', () async {
+    final upstream = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final upstreamBase = 'http://${upstream.address.host}:${upstream.port}';
+    final requests = <String>[];
 
-      upstream.listen((request) async {
-        requests.add(request.uri.path);
-        if (request.uri.path.endsWith('/77771651.m3u8')) {
-          request.response.statusCode = HttpStatus.notFound;
-          request.response.write('not found');
-        } else if (request.uri.path.endsWith('/77771651_1080p.m3u8')) {
-          request.response.headers.contentType = ContentType.text;
-          request.response.write('''
+    upstream.listen((request) async {
+      requests.add(request.uri.path);
+      if (request.uri.path.endsWith('/77771651.m3u8')) {
+        request.response.statusCode = HttpStatus.notFound;
+        request.response.write('not found');
+      } else if (request.uri.path.endsWith('/77771651_1080p.m3u8')) {
+        request.response.headers.contentType = ContentType.text;
+        request.response.write('''
 #EXTM3U
 #EXT-X-TARGETDURATION:2
 #EXTINF:2.000
 $upstreamBase/seg_ok.mp4
 ''');
-        } else if (request.uri.path.endsWith('.mp4')) {
-          request.response.headers.contentType = ContentType.binary;
-          request.response.add(utf8.encode('segment'));
-        } else {
-          request.response.statusCode = HttpStatus.notFound;
-        }
-        await request.response.close();
-      });
+      } else if (request.uri.path.endsWith('.mp4')) {
+        request.response.headers.contentType = ContentType.binary;
+        request.response.add(utf8.encode('segment'));
+      } else {
+        request.response.statusCode = HttpStatus.notFound;
+      }
+      await request.response.close();
+    });
 
-      final proxy = StripchatLlHlsProxy(
-        platformAdapter: _FakePlatformAdapter(),
-        enabledOverride: true,
-      );
-      addTearDown(proxy.dispose);
-      addTearDown(() => upstream.close(force: true));
+    final proxy = StripchatLlHlsProxy(
+      platformAdapter: _FakePlatformAdapter(),
+      enabledOverride: true,
+    );
+    addTearDown(proxy.dispose);
+    addTearDown(() => upstream.close(force: true));
 
-      final session = proxy.createSessionForTest(
-        LivePlayUrl(
-          url: '$upstreamBase/77771651.m3u8?psch=v2&pkey=test',
-          headers: const {'referer': 'https://zh.stripchat.com/x'},
-          lineLabel: 'source',
-          metadata: const {
-            'preferredVariantId': 'source',
-            'stripchatCdnDomains': ['doppiocdn.com'],
-          },
-        ),
-        keyCache: const StripchatMouflonKeyCache(),
-      );
-      final fetched = await proxy.fetchPlaylistWithFallbacksForTest(
-        session: session,
-        uri: Uri.parse('$upstreamBase/77771651.m3u8?psch=v2&pkey=test'),
+    final session = proxy.createSessionForTest(
+      LivePlayUrl(
+        url: '$upstreamBase/77771651.m3u8?psch=v2&pkey=test',
         headers: const {'referer': 'https://zh.stripchat.com/x'},
-      );
+        lineLabel: 'source',
+        metadata: const {
+          'preferredVariantId': 'source',
+          'stripchatCdnDomains': ['doppiocdn.com'],
+        },
+      ),
+      keyCache: const StripchatMouflonKeyCache(),
+    );
+    final fetched = await proxy.fetchPlaylistWithFallbacksForTest(
+      session: session,
+      uri: Uri.parse('$upstreamBase/77771651.m3u8?psch=v2&pkey=test'),
+      headers: const {'referer': 'https://zh.stripchat.com/x'},
+    );
 
-      expect(fetched.statusCode, HttpStatus.ok);
-      expect(fetched.body, contains('#EXTINF:2.000'));
-      expect(requests, contains('/77771651.m3u8'));
-      expect(requests, contains('/77771651_1080p.m3u8'));
-    },
-  );
+    expect(fetched.statusCode, HttpStatus.ok);
+    expect(fetched.body, contains('#EXTINF:2.000'));
+    expect(requests, contains('/77771651.m3u8'));
+    expect(requests, contains('/77771651_1080p.m3u8'));
+  });
 
   test('stripchat ll-hls proxy detects initialization in mp4 bytes', () {
     final bytes = Uint8List.fromList(<int>[
@@ -3086,38 +3075,37 @@ $upstreamBase/media.mp4
       // Auto ABR: prime rewrites multi-variant master only. Child media
       // playlists warm on first player request (not forced collapse).
       expect(seenUris, contains('/master.m3u8'));
-      expect(
-        seenUris.where((u) => u.contains('variant.m3u8')),
-        isEmpty,
-      );
+      expect(seenUris.where((u) => u.contains('variant.m3u8')), isEmpty);
     },
   );
 
   group('ensureStarted lifecycle', () {
-    test('concurrent ensureStarted single-flight and post-dispose fails closed',
-        () async {
-      final proxy = StripchatLlHlsProxy(
-        platformAdapter: _FakePlatformAdapter(),
-        enabledOverride: true,
-      );
-      await Future.wait([
-        proxy.ensureStarted(),
-        proxy.ensureStarted(),
-        proxy.ensureStarted(),
-      ]);
-      await proxy.ensureStarted();
-      await proxy.dispose();
-      await expectLater(
-        proxy.ensureStarted(),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains('disposed'),
+    test(
+      'concurrent ensureStarted single-flight and post-dispose fails closed',
+      () async {
+        final proxy = StripchatLlHlsProxy(
+          platformAdapter: _FakePlatformAdapter(),
+          enabledOverride: true,
+        );
+        await Future.wait([
+          proxy.ensureStarted(),
+          proxy.ensureStarted(),
+          proxy.ensureStarted(),
+        ]);
+        await proxy.ensureStarted();
+        await proxy.dispose();
+        await expectLater(
+          proxy.ensureStarted(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('disposed'),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     test('dispose during ensureStarted fails closed', () async {
       final proxy = StripchatLlHlsProxy(
@@ -3140,7 +3128,6 @@ $upstreamBase/media.mp4
     });
   });
 }
-
 
 String _encryptSegmentForTest(String value, String pdkey) {
   return _encryptBytesForTest(utf8.encode(value), pdkey);

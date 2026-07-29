@@ -7,6 +7,7 @@ import 'huya_live_data_source.dart';
 import 'huya_preview_data_source.dart';
 import 'huya_sign_service.dart';
 import 'huya_transport.dart';
+import 'huya_danmaku_token.dart';
 
 class HuyaProvider extends LiveProvider
     implements

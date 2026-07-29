@@ -167,9 +167,7 @@ extension MpvPlayerPropertyLifecycle on MpvPlayer {
         _logEvent('setSource external-native-window armed vo=$externalVo');
       }
     } catch (error) {
-      _logEvent(
-        'setSource external-native-window arm failed error=$error',
-      );
+      _logEvent('setSource external-native-window arm failed error=$error');
     }
   }
 }
@@ -335,8 +333,7 @@ Map<String, String> resolveMpvSourcePlatformProperties({
   final normalizedHardwareDecoder = hardwareDecoder?.trim() ?? '';
   final normalizedVideoTrackSelection = videoTrackSelection?.trim() ?? '';
   final properties = <String, String>{
-    'force-seekable':
-        shouldForceSeekableForSource(source, isAndroid: isAndroid)
+    'force-seekable': shouldForceSeekableForSource(source, isAndroid: isAndroid)
         ? 'yes'
         : 'no',
     'demuxer-lavf-o': '',
@@ -792,6 +789,7 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
   String audioOutputDriver = 'auto',
   bool isAndroid = false,
   bool allowExternalNativeWindow = false,
+
   /// When non-null, force the ARC decode ladder tier (tests / runtime escalate).
   /// Production MpvPlayer passes the active tier when [looksLikeArcChromeOsRuntime].
   ArcMpvDecodeTier? arcDecodeTier,
@@ -964,8 +962,9 @@ MpvRuntimeConfiguration resolveMpvRuntimeConfiguration({
       null => null,
     },
     usesExternalNativeWindow: usesExternalNativeWindow,
-    externalNativeVideoOutputDriver:
-        usesExternalNativeWindow ? sanitizedVideoOutputDriver : null,
+    externalNativeVideoOutputDriver: usesExternalNativeWindow
+        ? sanitizedVideoOutputDriver
+        : null,
   );
 }
 

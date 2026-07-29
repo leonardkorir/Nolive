@@ -59,15 +59,18 @@ class PlaybackFailoverPolicy {
     }
 
     // HTTP status only when it looks like a status token, not a path fragment.
-    if (RegExp(r'\b(http\s*)?(error\s*)?(status( code)?\s*)?404\b').hasMatch(n) ||
-        RegExp(r'\b(http\s*)?(error\s*)?(status( code)?\s*)?403\b').hasMatch(n) ||
+    if (RegExp(
+          r'\b(http\s*)?(error\s*)?(status( code)?\s*)?404\b',
+        ).hasMatch(n) ||
+        RegExp(
+          r'\b(http\s*)?(error\s*)?(status( code)?\s*)?403\b',
+        ).hasMatch(n) ||
         RegExp(r'\bhttp\s+error\b').hasMatch(n)) {
       return true;
     }
 
-    final hasOpenOrConnectWording = n.contains('open') ||
-        n.contains('connect') ||
-        n.contains('connection');
+    final hasOpenOrConnectWording =
+        n.contains('open') || n.contains('connect') || n.contains('connection');
 
     // Pure mid-stream read glitches after first playing: soft path.
     if (hasReachedPlaying) {

@@ -53,41 +53,47 @@ void main() {
     expect(status, PlaybackStatus.ready);
   });
 
-  test('resolveMdkBufferingStatusTransition enters buffering while playing',
-      () {
-    final status = resolveMdkBufferingStatusTransition(
-      currentStatus: PlaybackStatus.playing,
-      buffering: true,
-      hasSource: true,
-      firstFrameRendered: true,
-    );
+  test(
+    'resolveMdkBufferingStatusTransition enters buffering while playing',
+    () {
+      final status = resolveMdkBufferingStatusTransition(
+        currentStatus: PlaybackStatus.playing,
+        buffering: true,
+        hasSource: true,
+        firstFrameRendered: true,
+      );
 
-    expect(status, PlaybackStatus.buffering);
-  });
+      expect(status, PlaybackStatus.buffering);
+    },
+  );
 
-  test('resolveMdkBufferingStatusTransition restores playing after rebuffer',
-      () {
-    final status = resolveMdkBufferingStatusTransition(
-      currentStatus: PlaybackStatus.buffering,
-      buffering: false,
-      hasSource: true,
-      firstFrameRendered: true,
-    );
+  test(
+    'resolveMdkBufferingStatusTransition restores playing after rebuffer',
+    () {
+      final status = resolveMdkBufferingStatusTransition(
+        currentStatus: PlaybackStatus.buffering,
+        buffering: false,
+        hasSource: true,
+        firstFrameRendered: true,
+      );
 
-    expect(status, PlaybackStatus.playing);
-  });
+      expect(status, PlaybackStatus.playing);
+    },
+  );
 
-  test('resolveMdkBufferingStatusTransition restores ready before first frame',
-      () {
-    final status = resolveMdkBufferingStatusTransition(
-      currentStatus: PlaybackStatus.buffering,
-      buffering: false,
-      hasSource: true,
-      firstFrameRendered: false,
-    );
+  test(
+    'resolveMdkBufferingStatusTransition restores ready before first frame',
+    () {
+      final status = resolveMdkBufferingStatusTransition(
+        currentStatus: PlaybackStatus.buffering,
+        buffering: false,
+        hasSource: true,
+        firstFrameRendered: false,
+      );
 
-    expect(status, PlaybackStatus.ready);
-  });
+      expect(status, PlaybackStatus.ready);
+    },
+  );
 
   test('resolveMdkBufferingStatusTransition keeps paused state stable', () {
     final status = resolveMdkBufferingStatusTransition(
@@ -119,25 +125,27 @@ void main() {
     );
   });
 
-  test('resolveMdkRuntimeEventErrorMessage ignores non-fatal event payloads',
-      () {
-    expect(
-      resolveMdkRuntimeEventErrorMessage(
-        category: 'render.video',
-        detail: '1st_frame',
-        rawError: 'decoder failed',
-      ),
-      isNull,
-    );
-    expect(
-      resolveMdkRuntimeEventErrorMessage(
-        category: 'buffering',
-        detail: 'progress',
-        rawError: 'network jitter',
-      ),
-      isNull,
-    );
-  });
+  test(
+    'resolveMdkRuntimeEventErrorMessage ignores non-fatal event payloads',
+    () {
+      expect(
+        resolveMdkRuntimeEventErrorMessage(
+          category: 'render.video',
+          detail: '1st_frame',
+          rawError: 'decoder failed',
+        ),
+        isNull,
+      );
+      expect(
+        resolveMdkRuntimeEventErrorMessage(
+          category: 'buffering',
+          detail: 'progress',
+          rawError: 'network jitter',
+        ),
+        isNull,
+      );
+    },
+  );
 
   test('resolveMdkRuntimeEventErrorMessage keeps fatal runtime errors', () {
     expect(
@@ -151,83 +159,81 @@ void main() {
   });
 
   test('shouldPrimeMdkPlaybackBeforeTexture follows tunnel mode', () {
-    expect(
-      shouldPrimeMdkPlaybackBeforeTexture(androidTunnel: true),
-      isTrue,
-    );
-    expect(
-      shouldPrimeMdkPlaybackBeforeTexture(androidTunnel: false),
-      isFalse,
-    );
+    expect(shouldPrimeMdkPlaybackBeforeTexture(androidTunnel: true), isTrue);
+    expect(shouldPrimeMdkPlaybackBeforeTexture(androidTunnel: false), isFalse);
   });
 
-  test('shouldAttemptMdkTunnelFallback only when tunnel stall is recoverable',
-      () {
-    expect(
-      shouldAttemptMdkTunnelFallback(
-        androidTunnel: true,
-        firstFrameRendered: false,
-        fallbackAttempted: false,
-        hasSource: true,
-        textureId: 3,
-      ),
-      isTrue,
-    );
-    expect(
-      shouldAttemptMdkTunnelFallback(
-        androidTunnel: true,
-        firstFrameRendered: true,
-        fallbackAttempted: false,
-        hasSource: true,
-        textureId: 3,
-      ),
-      isFalse,
-    );
-    expect(
-      shouldAttemptMdkTunnelFallback(
-        androidTunnel: true,
-        firstFrameRendered: false,
-        fallbackAttempted: true,
-        hasSource: true,
-        textureId: 3,
-      ),
-      isFalse,
-    );
-    expect(
-      shouldAttemptMdkTunnelFallback(
-        androidTunnel: true,
-        firstFrameRendered: false,
-        fallbackAttempted: false,
-        hasSource: false,
-        textureId: 3,
-      ),
-      isFalse,
-    );
-    expect(
-      shouldAttemptMdkTunnelFallback(
-        androidTunnel: false,
-        firstFrameRendered: false,
-        fallbackAttempted: false,
-        hasSource: true,
-        textureId: 3,
-      ),
-      isFalse,
-    );
-  });
+  test(
+    'shouldAttemptMdkTunnelFallback only when tunnel stall is recoverable',
+    () {
+      expect(
+        shouldAttemptMdkTunnelFallback(
+          androidTunnel: true,
+          firstFrameRendered: false,
+          fallbackAttempted: false,
+          hasSource: true,
+          textureId: 3,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldAttemptMdkTunnelFallback(
+          androidTunnel: true,
+          firstFrameRendered: true,
+          fallbackAttempted: false,
+          hasSource: true,
+          textureId: 3,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldAttemptMdkTunnelFallback(
+          androidTunnel: true,
+          firstFrameRendered: false,
+          fallbackAttempted: true,
+          hasSource: true,
+          textureId: 3,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldAttemptMdkTunnelFallback(
+          androidTunnel: true,
+          firstFrameRendered: false,
+          fallbackAttempted: false,
+          hasSource: false,
+          textureId: 3,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldAttemptMdkTunnelFallback(
+          androidTunnel: false,
+          firstFrameRendered: false,
+          fallbackAttempted: false,
+          hasSource: true,
+          textureId: 3,
+        ),
+        isFalse,
+      );
+    },
+  );
 
-  test('resolveMdkRegisterOptions includes tunnel-aware low latency config',
-      () {
-    final options = resolveMdkRegisterOptions(
-      lowLatency: true,
-      androidTunnel: true,
-    );
+  test(
+    'resolveMdkRegisterOptions includes tunnel-aware low latency config',
+    () {
+      final options = resolveMdkRegisterOptions(
+        lowLatency: true,
+        androidTunnel: true,
+      );
 
-    expect(options, <String, Object>{
-      'platforms': ['windows', 'macos', 'linux', 'android', 'ios'],
-      'lowLatency': 2,
-      'tunnel': true,
-    });
-  });
+      expect(options, <String, Object>{
+        'platforms': ['windows', 'macos', 'linux', 'android', 'ios'],
+        'lowLatency': 2,
+        'tunnel': true,
+      });
+    },
+  );
 
   test('resolveMdkRegisterOptions omits low latency when disabled', () {
     final options = resolveMdkRegisterOptions(
@@ -268,90 +274,74 @@ void main() {
     expect(strategy.drop, isFalse);
   });
 
-  test('shouldPollMdkRuntimeDiagnostics only while playback context exists',
-      () {
-    expect(
-      shouldPollMdkRuntimeDiagnostics(
-        hasSource: false,
-        hasTexture: false,
-      ),
-      isFalse,
-    );
-    expect(
-      shouldPollMdkRuntimeDiagnostics(
-        hasSource: true,
-        hasTexture: false,
-      ),
-      isTrue,
-    );
-    expect(
-      shouldPollMdkRuntimeDiagnostics(
-        hasSource: false,
-        hasTexture: true,
-      ),
-      isTrue,
-    );
-  });
-
-  test('resolveMdkPreferredVideoDecoders prefers Android hardware decoding',
-      () {
-    final decoders = resolveMdkPreferredVideoDecoders(
-      preferHardwareVideoDecoder: true,
-      targetPlatform: TargetPlatform.android,
-      isWeb: false,
-    );
-
-    expect(decoders, const <String>['AMediaCodec', 'MediaCodec', 'FFmpeg']);
-  });
+  test(
+    'shouldPollMdkRuntimeDiagnostics only while playback context exists',
+    () {
+      expect(
+        shouldPollMdkRuntimeDiagnostics(hasSource: false, hasTexture: false),
+        isFalse,
+      );
+      expect(
+        shouldPollMdkRuntimeDiagnostics(hasSource: true, hasTexture: false),
+        isTrue,
+      );
+      expect(
+        shouldPollMdkRuntimeDiagnostics(hasSource: false, hasTexture: true),
+        isTrue,
+      );
+    },
+  );
 
   test(
-      'resolveMdkPreferredVideoDecoders stays null when disabled or unsupported',
-      () {
-    expect(
-      resolveMdkPreferredVideoDecoders(
-        preferHardwareVideoDecoder: false,
+    'resolveMdkPreferredVideoDecoders prefers Android hardware decoding',
+    () {
+      final decoders = resolveMdkPreferredVideoDecoders(
+        preferHardwareVideoDecoder: true,
         targetPlatform: TargetPlatform.android,
         isWeb: false,
-      ),
-      isNull,
-    );
-    expect(
-      resolveMdkPreferredVideoDecoders(
-        preferHardwareVideoDecoder: true,
-        targetPlatform: TargetPlatform.iOS,
-        isWeb: false,
-      ),
-      isNull,
-    );
-  });
+      );
+
+      expect(decoders, const <String>['AMediaCodec', 'MediaCodec', 'FFmpeg']);
+    },
+  );
+
+  test(
+    'resolveMdkPreferredVideoDecoders stays null when disabled or unsupported',
+    () {
+      expect(
+        resolveMdkPreferredVideoDecoders(
+          preferHardwareVideoDecoder: false,
+          targetPlatform: TargetPlatform.android,
+          isWeb: false,
+        ),
+        isNull,
+      );
+      expect(
+        resolveMdkPreferredVideoDecoders(
+          preferHardwareVideoDecoder: true,
+          targetPlatform: TargetPlatform.iOS,
+          isWeb: false,
+        ),
+        isNull,
+      );
+    },
+  );
 
   test('isMdkTextureReleaseDetached treats cleared -1 result as benign', () {
     expect(
-      isMdkTextureReleaseDetached(
-        result: -1,
-        activeTextureIdAfter: -1,
-      ),
+      isMdkTextureReleaseDetached(result: -1, activeTextureIdAfter: -1),
       isTrue,
     );
     expect(
-      isMdkTextureReleaseDetached(
-        result: -1,
-        activeTextureIdAfter: null,
-      ),
+      isMdkTextureReleaseDetached(result: -1, activeTextureIdAfter: null),
       isTrue,
     );
     expect(
-      isMdkTextureReleaseDetached(
-        result: -1,
-        activeTextureIdAfter: 3,
-      ),
+      isMdkTextureReleaseDetached(result: -1, activeTextureIdAfter: 3),
       isFalse,
     );
     expect(
-      isMdkTextureReleaseDetached(
-        result: 0,
-        activeTextureIdAfter: -1,
-      ),
+      isMdkTextureReleaseDetached(result: 0, activeTextureIdAfter: -1),
       isFalse,
     );
   });

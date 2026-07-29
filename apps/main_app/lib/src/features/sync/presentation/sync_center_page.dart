@@ -44,7 +44,8 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
 
   Future<void> _copySummary() async {
     final payload = SyncSnapshotJsonCodec.encode(
-        await widget.dependencies.loadSyncSnapshot());
+      await widget.dependencies.loadSyncSnapshot(),
+    );
     await Clipboard.setData(ClipboardData(text: payload));
     if (!mounted) {
       return;
@@ -91,8 +92,8 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
             final localSummary = localServerRunning
                 ? '已启动'
                 : preferences.localPeerAddress.trim().isEmpty
-                    ? '未配置'
-                    : '${preferences.localPeerAddress}:${preferences.localPeerPort}';
+                ? '未配置'
+                : '${preferences.localPeerAddress}:${preferences.localPeerPort}';
 
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -151,9 +152,9 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
                         title: const Text('WebDAV 同步'),
                         subtitle: Text(webDavSummary),
                         trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: () => Navigator.of(context).pushNamed(
-                          AppRoutes.syncWebDav,
-                        ),
+                        onTap: () => Navigator.of(
+                          context,
+                        ).pushNamed(AppRoutes.syncWebDav),
                       ),
                       const Divider(height: 1),
                       ListTile(
@@ -163,9 +164,9 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
                         title: const Text('局域网数据同步'),
                         subtitle: Text(localSummary),
                         trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: () => Navigator.of(context).pushNamed(
-                          AppRoutes.syncLocal,
-                        ),
+                        onTap: () => Navigator.of(
+                          context,
+                        ).pushNamed(AppRoutes.syncLocal),
                       ),
                       const Divider(height: 1),
                       ListTile(
@@ -174,9 +175,9 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
                         leading: const Icon(Icons.import_export_rounded),
                         title: const Text('导入 / 导出'),
                         trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: () => Navigator.of(context).pushNamed(
-                          AppRoutes.otherSettings,
-                        ),
+                        onTap: () => Navigator.of(
+                          context,
+                        ).pushNamed(AppRoutes.otherSettings),
                       ),
                     ],
                   ),
@@ -191,10 +192,7 @@ class _SyncCenterPageState extends State<SyncCenterPage> {
 }
 
 class SyncSnapshotView {
-  const SyncSnapshotView({
-    required this.snapshot,
-    required this.preferences,
-  });
+  const SyncSnapshotView({required this.snapshot, required this.preferences});
 
   final SyncSnapshot snapshot;
   final SyncPreferences preferences;

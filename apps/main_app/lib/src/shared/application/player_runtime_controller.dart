@@ -20,6 +20,7 @@ class PlayerRuntimeController {
 
   final BasePlayer _delegate;
   final Duration _roomTeardownTimeout;
+  final Set<_BoundedWait> _boundedWaits = <_BoundedWait>{};
   Future<void> _pendingRoomTeardown = Future<void>.value();
   int _queuedRoomTeardowns = 0;
 
@@ -134,7 +135,18 @@ class PlayerRuntimeController {
     );
   }
 
-  Future<void> dispose() => _delegate.dispose();
+  /// Cancels every armed teardown watchdog, then disposes the delegate.
+  ///
+  /// A disposed runtime has no "next room load" left to unblock, so keeping the
+  /// watchdogs armed would only leave stray timers behind (which is also what
+  /// makes widget tests report pending timers after tearing down a room page).
+  Future<void> dispose() async {
+    for (final wait in _boundedWaits.toList(growable: false)) {
+      wait.abort();
+    }
+    _boundedWaits.clear();
+    await _delegate.dispose();
+  }
 
   Future<void> serializeRoomTeardown(
     Future<void> Function() action, {
@@ -164,30 +176,12 @@ class PlayerRuntimeController {
   }
 
   Duration _effectiveTeardownTimeout(Duration? timeout) {
-    // Widget tests dispose the room page while teardown is still in-flight.
-    // A multi-second timeout timer then fails `!timersPending`. Keep production
-    // Chromebook hang protection, but skip the artificial timer under tests.
-    if (_isFlutterWidgetTestBinding) {
-      return Duration.zero;
-    }
     return timeout ?? _roomTeardownTimeout;
   }
 
-  static bool get _isFlutterWidgetTestBinding {
-    try {
-      final name = WidgetsBinding.instance.runtimeType.toString();
-      return name.contains('TestWidgetsFlutterBinding') ||
-          name.contains('AutomatedTestWidgetsFlutterBinding');
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// Like [Future.timeout], but always cancels the timer when [future] ends.
-  ///
-  /// [Future.timeout] under [runZoned] + Flutter's fake-async can leave a
-  /// pending timer after the future completes, which fails widget tests.
-  static Future<void> _awaitBounded(
+  /// Like [Future.timeout], but the watchdog is tracked so [dispose] can cancel
+  /// it instead of leaving an armed timer behind.
+  Future<void> _awaitBounded(
     Future<void> future,
     Duration bound, {
     void Function()? onTimeout,
@@ -195,36 +189,9 @@ class PlayerRuntimeController {
     if (bound <= Duration.zero) {
       return future;
     }
-    final completer = Completer<void>();
-    late final Timer timer;
-    timer = Timer(bound, () {
-      if (completer.isCompleted) {
-        return;
-      }
-      if (onTimeout != null) {
-        onTimeout();
-        completer.complete();
-        return;
-      }
-      completer.completeError(
-        TimeoutException('operation timed out', bound),
-      );
-    });
-    future.then(
-      (_) {
-        timer.cancel();
-        if (!completer.isCompleted) {
-          completer.complete();
-        }
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        timer.cancel();
-        if (!completer.isCompleted) {
-          completer.completeError(error, stackTrace);
-        }
-      },
-    );
-    return completer.future;
+    final wait = _BoundedWait(future, bound, onTimeout: onTimeout);
+    _boundedWaits.add(wait);
+    return wait.future.whenComplete(() => _boundedWaits.remove(wait));
   }
 
   Widget buildView({
@@ -252,9 +219,67 @@ class PlayerRuntimeController {
       PlaybackStatus.playing ||
       PlaybackStatus.paused ||
       PlaybackStatus.completed ||
-      PlaybackStatus.error =>
-        true,
+      PlaybackStatus.error => true,
       _ => false,
     };
+  }
+}
+
+/// A [Future.timeout]-style bound whose watchdog can be cancelled early.
+///
+/// [abort] releases waiters without waiting for the wrapped future, which is
+/// what lets [PlayerRuntimeController.dispose] tear down cleanly while a native
+/// `stop()` is still stalled.
+class _BoundedWait {
+  _BoundedWait(Future<void> future, this._bound, {void Function()? onTimeout})
+    : _onTimeout = onTimeout {
+    _timer = Timer(_bound, _fireTimeout);
+    future.then(
+      (_) => _settle(),
+      onError: (Object error, StackTrace stackTrace) =>
+          _settle(error, stackTrace),
+    );
+  }
+
+  final Duration _bound;
+  final void Function()? _onTimeout;
+  final Completer<void> _completer = Completer<void>();
+  late final Timer _timer;
+
+  Future<void> get future => _completer.future;
+
+  void _fireTimeout() {
+    if (_completer.isCompleted) {
+      return;
+    }
+    final onTimeout = _onTimeout;
+    if (onTimeout != null) {
+      onTimeout();
+      _completer.complete();
+      return;
+    }
+    _completer.completeError(TimeoutException('operation timed out', _bound));
+  }
+
+  void _settle([Object? error, StackTrace? stackTrace]) {
+    _timer.cancel();
+    if (_completer.isCompleted) {
+      return;
+    }
+    if (error != null) {
+      _completer.completeError(error, stackTrace ?? StackTrace.current);
+    } else {
+      _completer.complete();
+    }
+  }
+
+  /// Cancels the watchdog and releases waiters. Teardown is over, so this
+  /// completes normally rather than surfacing a timeout the caller cannot act
+  /// on.
+  void abort() {
+    _timer.cancel();
+    if (!_completer.isCompleted) {
+      _completer.complete();
+    }
   }
 }

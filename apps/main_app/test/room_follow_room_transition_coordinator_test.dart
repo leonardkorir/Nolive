@@ -1,18 +1,17 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/presentation/room_follow_room_transition_coordinator.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_runtime_context.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_runtime_context.dart';
 import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_session_platforms.dart';
-import 'package:nolive_app/src/features/room/presentation/room_playback_controller.dart';
-import 'package:nolive_app/src/features/room/presentation/room_runtime_helper_contexts.dart';
-import 'package:nolive_app/src/features/room/presentation/room_view_ui_state.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
+import 'package:nolive_app/src/features/room/application/room_playback_controller.dart';
+import 'package:nolive_app/src/features/room/application/room_runtime_helper_contexts.dart';
+import 'package:nolive_app/src/features/room/application/room_view_ui_state.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 import 'room_fullscreen_test_fakes.dart';
@@ -60,35 +59,37 @@ void main() {
     },
   );
 
-  test('navigation failure reports message without forced playback restore',
-      () async {
-    final harness = _TestRoomTransitionHarness(
-      playerBackend: PlayerBackend.mdk,
-    );
-    addTearDown(harness.dispose);
-    harness.fullscreenController.replaceViewUiState(
-      const RoomViewUiState(isFullscreen: true),
-    );
-    harness.player.emit(
-      PlayerState(
-        backend: PlayerBackend.mdk,
-        status: PlaybackStatus.playing,
-        source: harness.source,
-      ),
-    );
+  test(
+    'navigation failure reports message without forced playback restore',
+    () async {
+      final harness = _TestRoomTransitionHarness(
+        playerBackend: PlayerBackend.mdk,
+      );
+      addTearDown(harness.dispose);
+      harness.fullscreenController.replaceViewUiState(
+        const RoomViewUiState(isFullscreen: true),
+      );
+      harness.player.emit(
+        PlayerState(
+          backend: PlayerBackend.mdk,
+          status: PlaybackStatus.playing,
+          source: harness.source,
+        ),
+      );
 
-    await harness.coordinator.openFollowRoom(
-      leavingRoom: false,
-      commitNavigation: (_) {
-        throw StateError('navigation failed');
-      },
-      showMessage: harness.messages.add,
-    );
+      await harness.coordinator.openFollowRoom(
+        leavingRoom: false,
+        commitNavigation: (_) {
+          throw StateError('navigation failed');
+        },
+        showMessage: harness.messages.add,
+      );
 
-    expect(harness.runtime.refreshCount, 0);
-    expect(harness.player.events, isEmpty);
-    expect(harness.messages, contains('切换直播间失败，请稍后重试'));
-  });
+      expect(harness.runtime.refreshCount, 0);
+      expect(harness.player.events, isEmpty);
+      expect(harness.messages, contains('切换直播间失败，请稍后重试'));
+    },
+  );
 
   test(
     'async navigation failure reports message without forced playback restore',
@@ -229,7 +230,7 @@ class _TestRoomTransitionHarness {
         updateDanmakuOverlayVisible: (_) {},
         resolveVolume: () => 1,
         updateVolume: (_) {},
-        resolvePipAspectRatio: () => const Rational(16, 9),
+        resolvePipAspectRatio: () => RoomPipAspectRatio(width: 16, height: 9),
         resolveScreenSize: () => const Size(1080, 1920),
         resolvePlaybackSourceForLifecycleRestore: () async => null,
         resolveIsVerticalVideo: () => false,

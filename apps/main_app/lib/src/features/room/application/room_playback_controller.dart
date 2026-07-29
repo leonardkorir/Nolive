@@ -1,11 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
+
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
-import 'room_playback_source_helpers.dart';
+import '../application/room_playback_source_helpers.dart';
+import 'package:nolive_app/src/features/room/application/room_provider_traits.dart';
 
 const String _mdkTextureInitializationErrorPrefix =
     'MDK texture initialization ';
@@ -104,8 +106,14 @@ class RoomPlaybackController extends ChangeNotifier {
   final RoomPlaybackEndOfFrame _waitForEndOfFrame;
   final Duration _playbackRebindIdleTimeout;
 
+  /// Fallback when no frame synchroniser is injected.
+  ///
+  /// Real frame synchronisation lives in
+  /// `app/platform/room_frame_synchronizer.dart` and is injected by the room
+  /// page; this keeps the controller usable (and this layer plugin-free)
+  /// outside a Flutter binding.
   static void _defaultSchedulePostFrame(Future<void> Function() action) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    scheduleMicrotask(() {
       unawaited(action());
     });
   }
@@ -114,9 +122,7 @@ class RoomPlaybackController extends ChangeNotifier {
     return Future<void>.delayed(duration);
   }
 
-  static Future<void> _defaultWaitForEndOfFrame() {
-    return WidgetsBinding.instance.endOfFrame;
-  }
+  static Future<void> _defaultWaitForEndOfFrame() async {}
 
   bool _disposed = false;
   bool _playbackBootstrapScheduled = false;
@@ -234,8 +240,12 @@ class RoomPlaybackController extends ChangeNotifier {
         waitForInitialEmbeddedSurfaceBootstrap &&
         playerRuntime.supportsEmbeddedView &&
         playerRuntime.backend == PlayerBackend.mpv;
-    final isInitialTwitchBootstrap =
-        providerId == ProviderId.twitch && isInitialBootstrap;
+    final traits = roomProviderTraitsFor(providerId);
+    final needsInitialSurfaceWait =
+        isInitialBootstrap && traits.waitsForSurfaceOnInitialBootstrap;
+    final postBindSettleDelay = isInitialBootstrap
+        ? traits.initialBootstrapSettleDelay
+        : traits.playbackRebindSettleDelay;
 
     if (!targetAvailable || targetSource == null) {
       resetRecoveryState();
@@ -251,10 +261,10 @@ class RoomPlaybackController extends ChangeNotifier {
       return;
     }
 
-    if (isInitialTwitchBootstrap || shouldWaitForInitialEmbeddedBootstrap) {
+    if (needsInitialSurfaceWait || shouldWaitForInitialEmbeddedBootstrap) {
       trace(
-        isInitialTwitchBootstrap
-            ? 'twitch initial bootstrap wait-surface'
+        needsInitialSurfaceWait
+            ? '${providerId.value} initial bootstrap wait-surface'
             : 'initial embedded bootstrap wait-surface',
       );
       await _waitForEndOfFrame();
@@ -324,12 +334,8 @@ class RoomPlaybackController extends ChangeNotifier {
       if (!bound || !_isActive) {
         return;
       }
-      if (providerId == ProviderId.twitch) {
-        await _delay(
-          isInitialTwitchBootstrap
-              ? const Duration(milliseconds: 220)
-              : const Duration(milliseconds: 120),
-        );
+      if (postBindSettleDelay > Duration.zero) {
+        await _delay(postBindSettleDelay);
         if (!_isActive) {
           return;
         }

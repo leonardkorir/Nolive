@@ -8,8 +8,9 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../providers/provider_runtime_support.dart';
 import 'danmaku_web_socket.dart';
+import '../providers/stripchat/stripchat_danmaku_token.dart';
 
-class StripchatDanmakuSession implements DanmakuSession {
+class StripchatDanmakuSession extends DanmakuSession {
   StripchatDanmakuSession({
     required StripchatDanmakuToken danmakuToken,
     // Keep idle timeout generous: servers briefly pause under load (user log

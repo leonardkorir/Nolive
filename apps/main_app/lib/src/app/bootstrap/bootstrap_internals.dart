@@ -233,27 +233,28 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     secureCredentialStore: context.secureCredentialStore,
     // 局域网/WebDAV 导入写盘后必须通知 UI：否则关注页会沿用旧缓存，
     // 看起来像「没同步」，重启 App 才出现内容。
-    onAfterImport: ({
-      required bool followDataChanged,
-      required bool settingsChanged,
-    }) async {
-      if (settingsChanged) {
-        await syncThemeModeNotifierFromSettings(
-          settingsRepository: context.repositories.settingsRepository,
-          themeModeNotifier: context.state.themeMode,
-        );
-        await syncLayoutPreferencesNotifierFromSettings(
-          settingsRepository: context.repositories.settingsRepository,
-          preferencesNotifier: context.state.layoutPreferences,
-        );
-        providerRegistry.clearCache();
-        context.state.providerCatalogRevision.value += 1;
-      }
-      if (followDataChanged) {
-        context.state.followWatchlistSnapshot.value = null;
-        context.state.followDataRevision.value += 1;
-      }
-    },
+    onAfterImport:
+        ({
+          required bool followDataChanged,
+          required bool settingsChanged,
+        }) async {
+          if (settingsChanged) {
+            await syncThemeModeNotifierFromSettings(
+              settingsRepository: context.repositories.settingsRepository,
+              themeModeNotifier: context.state.themeMode,
+            );
+            await syncLayoutPreferencesNotifierFromSettings(
+              settingsRepository: context.repositories.settingsRepository,
+              preferencesNotifier: context.state.layoutPreferences,
+            );
+            providerRegistry.clearCache();
+            context.state.providerCatalogRevision.value += 1;
+          }
+          if (followDataChanged) {
+            context.state.followWatchlistSnapshot.value = null;
+            context.state.followDataRevision.value += 1;
+          }
+        },
   );
   Future<LocalSyncPeerInfo>? localPeerInfoInFlight;
 
@@ -727,9 +728,7 @@ void _ensureDouyuDeviceIdSync(_BootstrapAssemblyContext context) {
   if (existing == resolved) {
     return;
   }
-  unawaited(
-    context.repositories.settingsRepository.writeValue(key, resolved),
-  );
+  unawaited(context.repositories.settingsRepository.writeValue(key, resolved));
 }
 
 ProviderRegistry _buildProviderRegistry(
@@ -834,7 +833,8 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
             );
         final caps = context.platformCapabilities;
         final isApple = caps.isIOS || caps.isMacOS;
-        final allowExternalNativeWindow = caps.isDesktop &&
+        final allowExternalNativeWindow =
+            caps.isDesktop &&
             resolveAllowExternalNativeMpvWindow(
               preferenceEnabled: _decodeBoolSetting(
                 context.settings.stringSetting(
@@ -849,9 +849,7 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
         return MpvPlayer(
           isAndroid: caps.isAndroid,
           enableHardwareAcceleration: _decodeBoolSetting(
-            context.settings.stringSetting(
-              'player_mpv_hardware_acceleration',
-            ),
+            context.settings.stringSetting('player_mpv_hardware_acceleration'),
             fallback: true,
           ),
           compatMode: _decodeBoolSetting(
@@ -1054,8 +1052,8 @@ void _logBridgeDisabled(
   AppLog.instance.info(
     'bootstrap',
     'bridge disabled: no webview '
-    '(bridge=$bridgeName platform=$os '
-    'linuxWebViewAvailable=${platformCapabilities.linuxWebViewAvailable})',
+        '(bridge=$bridgeName platform=$os '
+        'linuxWebViewAvailable=${platformCapabilities.linuxWebViewAvailable})',
   );
 }
 

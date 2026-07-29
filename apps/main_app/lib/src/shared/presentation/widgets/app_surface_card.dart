@@ -15,6 +15,7 @@ class AppSurfaceCard extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry margin;
   final Color? color;
+
   /// Defaults to [NoliveRadii.lg] from theme tokens.
   final double? borderRadius;
 
@@ -31,10 +32,7 @@ class AppSurfaceCard extends StatelessWidget {
       ),
       child: Material(
         type: MaterialType.transparency,
-        child: Padding(
-          padding: padding,
-          child: child,
-        ),
+        child: Padding(padding: padding, child: child),
       ),
     );
   }

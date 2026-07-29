@@ -15,9 +15,7 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
         padding: kSettingsPagePadding,
-        children: [
-          SettingsEntriesBlock(entries: entries),
-        ],
+        children: [SettingsEntriesBlock(entries: entries)],
       ),
     );
   }
@@ -58,9 +56,9 @@ class SettingsEntryTile extends StatelessWidget {
       title: Text(item.title),
       subtitle: Text(
         item.subtitle,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
       ),
       trailing: const Icon(Icons.chevron_right_rounded),
       onTap: () => Navigator.of(context).pushNamed(item.routeName),

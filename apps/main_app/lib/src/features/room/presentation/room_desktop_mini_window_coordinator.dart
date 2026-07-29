@@ -2,8 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
-import 'room_fullscreen_session_platforms.dart';
-import 'room_view_ui_state.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
+import '../application/room_view_ui_state.dart';
 
 class RoomDesktopMiniWindowContext {
   const RoomDesktopMiniWindowContext({
@@ -16,7 +16,7 @@ class RoomDesktopMiniWindowContext {
   final RoomDesktopWindowFacade desktopWindow;
   final RoomViewUiState Function() readViewUiState;
   final void Function(RoomViewUiState Function(RoomViewUiState current))
-      updateViewUiState;
+  updateViewUiState;
   final bool Function() isDisposed;
 }
 
@@ -42,8 +42,8 @@ class RoomDesktopMiniWindowCoordinator {
       await exitFullscreen();
     }
     _desktopWindowBoundsBeforeMini ??= await context.desktopWindow.getBounds();
-    _desktopWindowWasAlwaysOnTop ??=
-        await context.desktopWindow.isAlwaysOnTop();
+    _desktopWindowWasAlwaysOnTop ??= await context.desktopWindow
+        .isAlwaysOnTop();
     _desktopWindowWasResizable ??= await context.desktopWindow.isResizable();
     final currentBounds = _desktopWindowBoundsBeforeMini!;
     final width = currentBounds.width.clamp(360.0, 420.0);

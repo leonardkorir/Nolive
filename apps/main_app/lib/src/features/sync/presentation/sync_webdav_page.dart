@@ -41,16 +41,21 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
   }
 
   Future<void> _editPreferences(SyncPreferences preferences) async {
-    final webDavBaseUrl =
-        TextEditingController(text: preferences.webDavBaseUrl);
-    final webDavRemotePath =
-        TextEditingController(text: preferences.webDavRemotePath);
-    final webDavUsername =
-        TextEditingController(text: preferences.webDavUsername);
-    final webDavPassword =
-        TextEditingController(text: preferences.webDavPassword);
+    final webDavBaseUrl = TextEditingController(
+      text: preferences.webDavBaseUrl,
+    );
+    final webDavRemotePath = TextEditingController(
+      text: preferences.webDavRemotePath,
+    );
+    final webDavUsername = TextEditingController(
+      text: preferences.webDavUsername,
+    );
+    final webDavPassword = TextEditingController(
+      text: preferences.webDavPassword,
+    );
 
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
           builder: (context) {
             return AlertDialog(
@@ -178,13 +183,13 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
       if (!mounted) {
         return;
       }
-      final modeLabel =
-          mode == SyncImportMode.merge ? '已双向合并' : '已覆盖恢复';
-      showAppSnackBar(context, 
-            snapshot == null
-                ? '远端暂无快照'
-                : '$modeLabel：关注 ${snapshot.follows.length} · 历史 ${snapshot.history.length}',
-          );
+      final modeLabel = mode == SyncImportMode.merge ? '已双向合并' : '已覆盖恢复';
+      showAppSnackBar(
+        context,
+        snapshot == null
+            ? '远端暂无快照'
+            : '$modeLabel：关注 ${snapshot.follows.length} · 历史 ${snapshot.history.length}',
+      );
       await _refresh();
     });
   }
@@ -304,9 +309,9 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
                             onPressed: _busy || !configured
                                 ? null
                                 : () => _restoreRemote(
-                                      data.preferences,
-                                      mode: SyncImportMode.replace,
-                                    ),
+                                    data.preferences,
+                                    mode: SyncImportMode.replace,
+                                  ),
                             icon: const Icon(Icons.cloud_download_outlined),
                             label: const Text('覆盖恢复'),
                           ),
@@ -315,9 +320,9 @@ class _SyncWebDavPageState extends State<SyncWebDavPage> {
                             onPressed: _busy || !configured
                                 ? null
                                 : () => _restoreRemote(
-                                      data.preferences,
-                                      mode: SyncImportMode.merge,
-                                    ),
+                                    data.preferences,
+                                    mode: SyncImportMode.merge,
+                                  ),
                             icon: const Icon(Icons.merge_type_outlined),
                             label: const Text('双向合并'),
                           ),

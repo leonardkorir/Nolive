@@ -64,7 +64,9 @@ class ProtoBufDanmakuDecoder {
 
       if (fieldNum == 1 && wireType == 0) {
         // Varint
-        if (pos >= bytes.length) throw const FormatException('Truncated varint');
+        if (pos >= bytes.length) {
+          throw const FormatException('Truncated varint');
+        }
         final val = bytes[pos++];
         type = switch (val) {
           1 => LiveMessageType.chat,
@@ -73,16 +75,24 @@ class ProtoBufDanmakuDecoder {
         };
       } else if (fieldNum == 2 && wireType == 2) {
         // Length-delimited
-        if (pos >= bytes.length) throw const FormatException('Truncated length');
+        if (pos >= bytes.length) {
+          throw const FormatException('Truncated length');
+        }
         final len = bytes[pos++];
-        if (pos + len > bytes.length) throw const FormatException('Truncated string payload');
+        if (pos + len > bytes.length) {
+          throw const FormatException('Truncated string payload');
+        }
         userName = utf8.decode(bytes.sublist(pos, pos + len));
         pos += len;
       } else if (fieldNum == 3 && wireType == 2) {
         // Length-delimited
-        if (pos >= bytes.length) throw const FormatException('Truncated length');
+        if (pos >= bytes.length) {
+          throw const FormatException('Truncated length');
+        }
         final len = bytes[pos++];
-        if (pos + len > bytes.length) throw const FormatException('Truncated string payload');
+        if (pos + len > bytes.length) {
+          throw const FormatException('Truncated string payload');
+        }
         content = utf8.decode(bytes.sublist(pos, pos + len));
         pos += len;
       } else {
@@ -90,7 +100,9 @@ class ProtoBufDanmakuDecoder {
         if (wireType == 0) {
           pos++;
         } else if (wireType == 2) {
-          if (pos >= bytes.length) throw const FormatException('Truncated length');
+          if (pos >= bytes.length) {
+            throw const FormatException('Truncated length');
+          }
           final len = bytes[pos++];
           pos += len;
         } else {
@@ -103,11 +115,7 @@ class ProtoBufDanmakuDecoder {
       throw const FormatException('Missing required type field');
     }
 
-    return LiveMessage(
-      type: type,
-      userName: userName,
-      content: content,
-    );
+    return LiveMessage(type: type, userName: userName, content: content);
   }
 }
 
@@ -139,8 +147,14 @@ class TarsDanmakuDecoder {
 
       if (tag == 2 && typeId == 0) {
         // INT16 (represented as 2 bytes in Tars for simplicity)
-        if (pos + 2 > bytes.length) throw const FormatException('Tars INT16 truncated');
-        final val = ByteData.sublistView(bytes, pos, pos + 2).getInt16(0, Endian.big);
+        if (pos + 2 > bytes.length) {
+          throw const FormatException('Tars INT16 truncated');
+        }
+        final val = ByteData.sublistView(
+          bytes,
+          pos,
+          pos + 2,
+        ).getInt16(0, Endian.big);
         type = switch (val) {
           1 => LiveMessageType.chat,
           2 => LiveMessageType.gift,
@@ -149,16 +163,24 @@ class TarsDanmakuDecoder {
         pos += 2;
       } else if (tag == 3 && typeId == 6) {
         // STRING1 (1 byte length)
-        if (pos >= bytes.length) throw const FormatException('Tars STRING1 len truncated');
+        if (pos >= bytes.length) {
+          throw const FormatException('Tars STRING1 len truncated');
+        }
         final len = bytes[pos++];
-        if (pos + len > bytes.length) throw const FormatException('Tars STRING1 body truncated');
+        if (pos + len > bytes.length) {
+          throw const FormatException('Tars STRING1 body truncated');
+        }
         userName = utf8.decode(bytes.sublist(pos, pos + len));
         pos += len;
       } else if (tag == 4 && typeId == 6) {
         // STRING1 (1 byte length)
-        if (pos >= bytes.length) throw const FormatException('Tars STRING1 len truncated');
+        if (pos >= bytes.length) {
+          throw const FormatException('Tars STRING1 len truncated');
+        }
         final len = bytes[pos++];
-        if (pos + len > bytes.length) throw const FormatException('Tars STRING1 body truncated');
+        if (pos + len > bytes.length) {
+          throw const FormatException('Tars STRING1 body truncated');
+        }
         content = utf8.decode(bytes.sublist(pos, pos + len));
         pos += len;
       } else {
@@ -170,11 +192,7 @@ class TarsDanmakuDecoder {
       throw const FormatException('Tars payload missing type field');
     }
 
-    return LiveMessage(
-      type: type,
-      userName: userName,
-      content: content,
-    );
+    return LiveMessage(type: type, userName: userName, content: content);
   }
 }
 
@@ -190,8 +208,14 @@ void main() {
       });
 
       test('throws FormatException on malformed json or missing field', () {
-        expect(() => JsonDanmakuDecoder.decode('{invalid json}'), throwsFormatException);
-        expect(() => JsonDanmakuDecoder.decode('{"type": "unknown"}'), throwsFormatException);
+        expect(
+          () => JsonDanmakuDecoder.decode('{invalid json}'),
+          throwsFormatException,
+        );
+        expect(
+          () => JsonDanmakuDecoder.decode('{"type": "unknown"}'),
+          throwsFormatException,
+        );
       });
     });
 
@@ -206,7 +230,10 @@ void main() {
 
       test('throws FormatException on invalid text formats', () {
         expect(() => TextDanmakuDecoder.decode(''), throwsFormatException);
-        expect(() => TextDanmakuDecoder.decode('NoDelimiterHere'), throwsFormatException);
+        expect(
+          () => TextDanmakuDecoder.decode('NoDelimiterHere'),
+          throwsFormatException,
+        );
       });
     });
 
@@ -230,20 +257,28 @@ void main() {
         expect(msg.content, 'PB works');
       });
 
-      test('throws FormatException on corrupted/truncated protobuf payload', () {
-        expect(() => ProtoBufDanmakuDecoder.decode(Uint8List(0)), throwsFormatException);
-        expect(
-          () => ProtoBufDanmakuDecoder.decode(Uint8List.fromList([1 << 3 | 0])), // tag but no value
-          throwsFormatException,
-        );
-      });
+      test(
+        'throws FormatException on corrupted/truncated protobuf payload',
+        () {
+          expect(
+            () => ProtoBufDanmakuDecoder.decode(Uint8List(0)),
+            throwsFormatException,
+          );
+          expect(
+            () => ProtoBufDanmakuDecoder.decode(
+              Uint8List.fromList([1 << 3 | 0]),
+            ), // tag but no value
+            throwsFormatException,
+          );
+        },
+      );
     });
 
     group('Tars Decoder Group', () {
       test('successfully decodes valid Tars packet', () {
         final userNameBytes = utf8.encode('David');
         final contentBytes = utf8.encode('Tars parsed');
-        
+
         final payloadBuilder = BytesBuilder()
           ..addByte((2 << 4) | 0) // Tag 2, Type 0 (INT16)
           ..add([0, 1]) // Value 1 (chat)
@@ -256,7 +291,7 @@ void main() {
 
         final payload = payloadBuilder.toBytes();
         final totalLen = 4 + payload.length;
-        
+
         final packet = BytesBuilder();
         final lenBytes = ByteData(4)..setInt32(0, totalLen, Endian.big);
         packet.add(lenBytes.buffer.asUint8List());
@@ -268,13 +303,21 @@ void main() {
         expect(msg.content, 'Tars parsed');
       });
 
-      test('throws FormatException on truncated Tars packet or mismatch length', () {
-        expect(() => TarsDanmakuDecoder.decode(Uint8List(2)), throwsFormatException);
-        expect(
-          () => TarsDanmakuDecoder.decode(Uint8List.fromList([0, 0, 0, 10, 1, 2, 3])),
-          throwsFormatException,
-        );
-      });
+      test(
+        'throws FormatException on truncated Tars packet or mismatch length',
+        () {
+          expect(
+            () => TarsDanmakuDecoder.decode(Uint8List(2)),
+            throwsFormatException,
+          );
+          expect(
+            () => TarsDanmakuDecoder.decode(
+              Uint8List.fromList([0, 0, 0, 10, 1, 2, 3]),
+            ),
+            throwsFormatException,
+          );
+        },
+      );
     });
   });
 }

@@ -397,8 +397,9 @@ class HttpDouyuSignService implements DouyuSignService {
     }
     final serverExpire = _asInt(_encKey?['expire_at']) ?? 0;
     // Non-future expire_at is treated as absent → fall back to local TTL.
-    final effectiveExpire =
-        serverExpire > nowSeconds ? serverExpire : _encKeyExpireAtSeconds;
+    final effectiveExpire = serverExpire > nowSeconds
+        ? serverExpire
+        : _encKeyExpireAtSeconds;
     return effectiveExpire > nowSeconds;
   }
 
@@ -436,9 +437,7 @@ class HttpDouyuSignService implements DouyuSignService {
     final response = await _transport.getJson(
       _encryptionApi,
       queryParameters: {'did': _deviceId},
-      headers: {
-        'user-agent': defaultUserAgent,
-      },
+      headers: {'user-agent': defaultUserAgent},
     );
     final data = _asMap(response['data']);
     if (data.isEmpty) {
@@ -448,8 +447,9 @@ class HttpDouyuSignService implements DouyuSignService {
     final expireAt = _asInt(data['expire_at']);
     // Always keep a local TTL floor so past/skewed expire_at does not thrash.
     final localFloor = nowSeconds + _encryptionCacheTtl.inSeconds;
-    _encKeyExpireAtSeconds =
-        expireAt != null && expireAt > nowSeconds ? expireAt : localFloor;
+    _encKeyExpireAtSeconds = expireAt != null && expireAt > nowSeconds
+        ? expireAt
+        : localFloor;
   }
 
   Future<String> _buildLegacySignedBody({

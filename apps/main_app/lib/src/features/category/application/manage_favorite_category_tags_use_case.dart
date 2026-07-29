@@ -36,18 +36,10 @@ class FavoriteCategoryTag {
   }
 
   @override
-  int get hashCode => Object.hash(
-        providerId,
-        categoryId,
-        groupName,
-        label,
-        imageUrl,
-      );
+  int get hashCode =>
+      Object.hash(providerId, categoryId, groupName, label, imageUrl);
 
-  bool matches({
-    required ProviderId providerId,
-    required String categoryId,
-  }) {
+  bool matches({required ProviderId providerId, required String categoryId}) {
     return this.providerId == providerId && this.categoryId == categoryId;
   }
 
@@ -78,8 +70,9 @@ class LoadFavoriteCategoryTagsUseCase {
   final SettingsRepository settingsRepository;
 
   Future<List<FavoriteCategoryTag>> call() async {
-    final rawPayload = await settingsRepository
-        .readValue<String>(_favoriteCategoryTagsStorageKey);
+    final rawPayload = await settingsRepository.readValue<String>(
+      _favoriteCategoryTagsStorageKey,
+    );
     if (rawPayload == null || rawPayload.trim().isEmpty) {
       return const <FavoriteCategoryTag>[];
     }
@@ -92,9 +85,7 @@ class LoadFavoriteCategoryTagsUseCase {
       final seen = <String>{};
       for (final raw in decoded.whereType<Map>()) {
         final item = FavoriteCategoryTag.fromJson(
-          raw.map(
-            (key, value) => MapEntry(key.toString(), value),
-          ),
+          raw.map((key, value) => MapEntry(key.toString(), value)),
         );
         if (item.providerId.value.isEmpty ||
             item.categoryId.isEmpty ||
@@ -124,21 +115,19 @@ class ToggleFavoriteCategoryTagUseCase {
       await LoadFavoriteCategoryTagsUseCase(settingsRepository).call(),
     );
     final existingIndex = current.indexWhere(
-      (item) => item.matches(
-        providerId: tag.providerId,
-        categoryId: tag.categoryId,
-      ),
+      (item) =>
+          item.matches(providerId: tag.providerId, categoryId: tag.categoryId),
     );
     if (existingIndex >= 0) {
       current.removeAt(existingIndex);
     } else {
       current.insert(0, tag);
     }
-    final payload = jsonEncode([
-      for (final item in current) item.toJson(),
-    ]);
+    final payload = jsonEncode([for (final item in current) item.toJson()]);
     await settingsRepository.writeValue(
-        _favoriteCategoryTagsStorageKey, payload);
+      _favoriteCategoryTagsStorageKey,
+      payload,
+    );
     return List<FavoriteCategoryTag>.unmodifiable(current);
   }
 }

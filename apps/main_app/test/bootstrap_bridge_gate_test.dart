@@ -71,20 +71,23 @@ void main() {
       expect(bridges.roomDetailOverride, isNotNull);
     });
 
-    test('live + Linux with WebView assembles bridges (not isMobile-gated)', () {
-      expect(linuxReady.isMobile, isFalse);
-      expect(linuxReady.supportsHeadlessWebView, isTrue);
-      final bridges = buildAppRuntimeBridgesForTesting(
-        mode: AppRuntimeMode.live,
-        platformCapabilities: linuxReady,
-        loadProviderAccountSettings: _emptyAccountLoader(),
-      );
-      expect(bridges.twitchWebPlaybackBridge, isNotNull);
-      expect(bridges.twitchAdGuardProxy, isNotNull);
-      expect(bridges.chaturbateLlHlsProxy, isNotNull);
-      expect(bridges.stripchatLlHlsProxy, isNotNull);
-      expect(bridges.youtubeNSigSolver, isNotNull);
-    });
+    test(
+      'live + Linux with WebView assembles bridges (not isMobile-gated)',
+      () {
+        expect(linuxReady.isMobile, isFalse);
+        expect(linuxReady.supportsHeadlessWebView, isTrue);
+        final bridges = buildAppRuntimeBridgesForTesting(
+          mode: AppRuntimeMode.live,
+          platformCapabilities: linuxReady,
+          loadProviderAccountSettings: _emptyAccountLoader(),
+        );
+        expect(bridges.twitchWebPlaybackBridge, isNotNull);
+        expect(bridges.twitchAdGuardProxy, isNotNull);
+        expect(bridges.chaturbateLlHlsProxy, isNotNull);
+        expect(bridges.stripchatLlHlsProxy, isNotNull);
+        expect(bridges.youtubeNSigSolver, isNotNull);
+      },
+    );
 
     test('live + Linux without WebView yields null international bridges', () {
       final bridges = buildAppRuntimeBridgesForTesting(
@@ -112,22 +115,24 @@ void main() {
   });
 
   group('shipped bridge entry short-circuit on supportsHeadlessWebView', () {
-    test('TwitchWebPlaybackBridge.call returns null without webview support',
-        () async {
-      final bridge = TwitchWebPlaybackBridge(
-        platformAdapter: _GateAdapter(supports: false),
-      );
-      final result = await bridge.call(
-        const LiveRoomDetail(
-          providerId: ProviderId.twitch,
-          roomId: 'some_streamer',
-          title: 't',
-          streamerName: 's',
-          isLive: true,
-        ),
-      );
-      expect(result, isNull);
-    });
+    test(
+      'TwitchWebPlaybackBridge.call returns null without webview support',
+      () async {
+        final bridge = TwitchWebPlaybackBridge(
+          platformAdapter: _GateAdapter(supports: false),
+        );
+        final result = await bridge.call(
+          const LiveRoomDetail(
+            providerId: ProviderId.twitch,
+            roomId: 'some_streamer',
+            title: 't',
+            streamerName: 's',
+            isLive: true,
+          ),
+        );
+        expect(result, isNull);
+      },
+    );
 
     test(
       'ChaturbateWebRoomDetailLoader.call returns null without webview',
@@ -219,6 +224,5 @@ class _GateAdapter implements HlsProxyPlatformAdapter {
     void Function(String message)? onConsoleMessage,
     void Function(int statusCode, String url)? onHttpError,
     void Function(String description, String url)? onLoadError,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 }

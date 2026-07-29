@@ -1,10 +1,10 @@
-import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_player/live_player.dart';
-import 'package:nolive_app/src/features/room/presentation/room_fullscreen_runtime_context.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_runtime_context.dart';
 import 'package:nolive_app/src/features/room/presentation/room_picture_in_picture_coordinator.dart';
-import 'package:nolive_app/src/features/room/presentation/room_view_ui_state.dart';
+import 'package:nolive_app/src/features/room/application/room_view_ui_state.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 
 import 'room_fullscreen_test_fakes.dart';
@@ -56,7 +56,7 @@ void main() {
       showFullscreenFollowDrawer: true,
     );
     harness.danmakuVisible = true;
-    harness.pipHost.nextEnableStatus = PiPStatus.disabled;
+    harness.pipHost.nextEnableStatus = RoomPipStatus.disabled;
     harness.pipHost.emitStatusOnEnable = false;
 
     await harness.coordinator.enterPictureInPicture();
@@ -82,7 +82,7 @@ void main() {
       harness.pipHost.emitStatusOnEnable = false;
 
       await harness.coordinator.enterPictureInPicture();
-      harness.pipHost.emitStatus(PiPStatus.disabled);
+      harness.pipHost.emitStatus(RoomPipStatus.disabled);
       await tester.pump();
 
       expect(harness.viewUiState.showFullscreenChrome, isTrue);
@@ -191,7 +191,7 @@ class _PipHarness {
         updateDanmakuOverlayVisible: (visible) {
           danmakuVisible = visible;
         },
-        resolvePipAspectRatio: () => Rational(16, 9),
+        resolvePipAspectRatio: () => RoomPipAspectRatio(width: 16, height: 9),
         updateVolume: (value) {
           volume = value;
         },

@@ -1,6 +1,24 @@
 export 'src/provider_registry.dart';
+// Per-site danmaku tokens live with their provider, not in the core contract.
+export 'src/providers/bilibili/bilibili_danmaku_token.dart';
+export 'src/providers/chaturbate/chaturbate_danmaku_token.dart';
+export 'src/providers/douyin/douyin_danmaku_token.dart';
+export 'src/providers/douyu/douyu_danmaku_token.dart';
+export 'src/providers/huya/huya_danmaku_token.dart';
+export 'src/providers/stripchat/stripchat_danmaku_token.dart';
+export 'src/providers/twitch/twitch_danmaku_token.dart';
+export 'src/providers/youtube/youtube_danmaku_token.dart';
+export 'src/providers/provider_runtime_support.dart'
+    show
+        ProviderRetryPolicy,
+        ProviderRetryableException,
+        isRetryableHttpStatus,
+        markProviderFailureTransient,
+        runProviderRequestWithRetry;
+export 'src/providers/provider_transport_failure.dart';
 export 'src/providers/bilibili/bilibili_provider.dart';
 export 'src/providers/chaturbate/chaturbate_provider.dart';
+export 'src/providers/chaturbate/chaturbate_cloudflare.dart';
 export 'src/providers/chaturbate/chaturbate_password.dart';
 export 'src/providers/chaturbate/chaturbate_request_scheduler.dart';
 export 'src/providers/douyin/douyin_provider.dart';

@@ -7,6 +7,7 @@ import 'package:live_core/live_core.dart';
 import 'package:live_providers/src/danmaku/bilibili_danmaku_session.dart';
 import 'package:test/test.dart';
 import 'package:web_socket_channel/io.dart';
+import 'package:live_providers/src/providers/bilibili/bilibili_danmaku_token.dart';
 
 void main() {
   test(

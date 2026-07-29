@@ -30,7 +30,9 @@ void main() {
     expect(find.byType(SnackBar), findsOneWidget);
   });
 
-  testWidgets('showAppErrorSnackBar avoids raw Exception dumps', (tester) async {
+  testWidgets('showAppErrorSnackBar avoids raw Exception dumps', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: NoliveTheme.dark(),

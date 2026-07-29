@@ -11,10 +11,11 @@ class SearchProviderRoomsUseCase {
     required String query,
     int page = 1,
   }) async {
-    final provider = registry.create(providerId);
-    final roomSearch = provider.requireContract<SupportsRoomSearch>(
-      ProviderCapability.searchRooms,
-    );
-    return roomSearch.searchRooms(query, page: page);
+    return registry.use(providerId, (provider) {
+      final roomSearch = provider.requireContract<SupportsRoomSearch>(
+        ProviderCapability.searchRooms,
+      );
+      return roomSearch.searchRooms(query, page: page);
+    });
   }
 }

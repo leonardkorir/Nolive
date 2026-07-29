@@ -88,7 +88,10 @@ void main() {
       sourceUrl: 'https://www.twitch.tv/xqc',
     );
 
-    final results = await Future.wait([bridge.call(detail), bridge.call(detail)]);
+    final results = await Future.wait([
+      bridge.call(detail),
+      bridge.call(detail),
+    ]);
     expect(results.whereType<TwitchPlaybackBootstrap>(), hasLength(2));
     // Single-flight reuse: only one headless webview.
     expect(adapter.createdWebViews, hasLength(1));

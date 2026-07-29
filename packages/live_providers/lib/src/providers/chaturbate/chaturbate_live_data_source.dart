@@ -10,6 +10,7 @@ import 'chaturbate_data_source.dart';
 import 'chaturbate_discover_policy.dart';
 import 'chaturbate_hls_master_playlist_parser.dart';
 import 'chaturbate_mapper.dart';
+import 'chaturbate_cloudflare.dart';
 import 'chaturbate_password.dart';
 import 'chaturbate_request_scheduler.dart';
 import 'chaturbate_room_page_parser.dart';
@@ -70,8 +71,7 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
         kChaturbateDefaultHlsPlaylistRequestTimeout,
     Duration discoverRequestTimeout = kChaturbateDefaultDiscoverRequestTimeout,
     Duration discoverOverallTimeout = kChaturbateDefaultDiscoverOverallTimeout,
-    ChaturbateDiscoverBudget discoverBudget =
-        kDefaultChaturbateDiscoverBudget,
+    ChaturbateDiscoverBudget discoverBudget = kDefaultChaturbateDiscoverBudget,
     void Function(String message)? diagnostics,
   }) : _apiClient = apiClient,
        _roomPageParser = roomPageParser,
@@ -314,27 +314,65 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
     required String normalizedRoomId,
     ChaturbateRequestPriority priority = ChaturbateRequestPriority.normal,
   }) async {
+    final sentCookie = _hasConfiguredCookie;
     try {
-      var html = await _fetchRoomPageHtml(roomId, priority: priority);
+      String html;
+      var source = sentCookie ? 'account-cookie' : 'anonymous';
+      try {
+        html = await _fetchRoomPageHtml(roomId, priority: priority);
+      } on Object catch (error) {
+        // A stale cf_clearance can itself provoke the interstitial that a plain
+        // anonymous request would pass, so a cookie'd challenge is worth one
+        // cookie-less retry. Any other failure (or no cookie to blame) stays a
+        // hard failure — anonymous-first on the happy path doubles traffic and
+        // triggers CF/429, which is why the cookie goes on the first request.
+        final challenged = isChaturbateCloudflareChallengeError(error);
+        if (!sentCookie || !challenged) {
+          // Say why no retry happened. Without this the log shows only the
+          // challenge, and "was a cookie even sent?" has to be deduced by
+          // elimination — which is exactly the gap that made Chaturbate hard
+          // to diagnose in the first place.
+          _diagnostic(
+            'room page request failed roomId=$normalizedRoomId '
+            'source=$source hasCookie=$sentCookie challenge=$challenged '
+            'retry=skipped (${!sentCookie ? 'no cookie to drop' : 'not a challenge'})',
+          );
+          rethrow;
+        }
+        _diagnostic(
+          'room page account-cookie hit a Cloudflare challenge '
+          'roomId=$normalizedRoomId; retrying anonymously',
+        );
+        try {
+          html = await _fetchRoomPageHtml(
+            roomId,
+            forceAnonymous: true,
+            priority: priority,
+          );
+        } on Object catch (retryError) {
+          _diagnostic(
+            'room page anonymous retry also failed roomId=$normalizedRoomId '
+            'challenge=${isChaturbateCloudflareChallengeError(retryError)}',
+          );
+          rethrow;
+        }
+        _diagnostic(
+          'room page anonymous retry succeeded roomId=$normalizedRoomId',
+        );
+        source = 'anonymous-retry';
+      }
       var realtimeBootstrap = _parseRealtimeBootstrap(
         html: html,
         roomId: normalizedRoomId,
-        source: 'anonymous',
+        source: source,
       );
-      if (!_hasRealtimeBootstrap(realtimeBootstrap) && _hasConfiguredCookie) {
+      if (!_hasRealtimeBootstrap(realtimeBootstrap)) {
+        // Distinct from a Cloudflare challenge: the page answered 200 but the
+        // shell carried no csrf. There is no second request that would help, so
+        // record the failure kind rather than burning another round trip.
         _diagnostic(
-          'room page anonymous missing realtime bootstrap '
-          'roomId=$normalizedRoomId; retrying with account cookie',
-        );
-        html = await _fetchRoomPageHtml(
-          roomId,
-          useAccountCookie: true,
-          priority: priority,
-        );
-        realtimeBootstrap = _parseRealtimeBootstrap(
-          html: html,
-          roomId: normalizedRoomId,
-          source: 'account-cookie',
+          'room page served a shell without realtime bootstrap '
+          'roomId=$normalizedRoomId source=$source hasCookie=$sentCookie',
         );
       }
       // Cookie may still carry csrftoken when the HTML shell is stripped.
@@ -452,8 +490,7 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
       HttpChaturbateApiClient client => client.cookie,
       _ => '',
     };
-    return ChaturbateRoomPageParser.tryExtractCsrfTokenFromCookie(cookie) ??
-        '';
+    return ChaturbateRoomPageParser.tryExtractCsrfTokenFromCookie(cookie) ?? '';
   }
 
   Future<LiveRoomDetail> _fetchRoomDetailFromPage(
@@ -472,12 +509,14 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
 
   Future<String> _fetchRoomPageHtml(
     String roomId, {
-    bool useAccountCookie = false,
+    bool forceAnonymous = false,
     ChaturbateRequestPriority priority = ChaturbateRequestPriority.normal,
   }) async {
     // When account cookie (often with cf_clearance) is configured, use it on
     // the first request — anonymous-first doubles traffic and triggers CF/429.
-    if (useAccountCookie || _hasConfiguredCookie) {
+    // [forceAnonymous] is the recovery path for a cookie that is itself being
+    // challenged.
+    if (!forceAnonymous && _hasConfiguredCookie) {
       return _apiClient
           .fetchRoomPage(roomId, priority: priority)
           .timeout(_roomPageRequestTimeout);
@@ -786,9 +825,7 @@ class ChaturbateLiveDataSource implements ChaturbateDataSource {
   }
 
   Future<({List<LiveRoom>? rooms, Object? error})>
-  _loadDiscoverRoomsFromRoomList({
-    required String genders,
-  }) async {
+  _loadDiscoverRoomsFromRoomList({required String genders}) async {
     Object? lastError;
     final attempts = _discoverBudget.maxRoomListAttempts < 1
         ? 1

@@ -3,34 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/app/platform/android_playback_bridge.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
 
-abstract class RoomAndroidPlaybackBridgeFacade {
-  bool get isSupported;
-
-  Future<bool> isInPictureInPictureMode();
-
-  Future<double?> getMediaVolume();
-
-  Future<bool> setMediaVolume(double value);
-
-  /// Restores app-shell orientation. Channel name is historical `lockPortrait`;
-  /// on ARC this re-arms **landscape-only** shell, not portrait.
-  Future<bool> lockPortrait();
-
-  /// Preferred name for [lockPortrait] at new call sites.
-  Future<bool> restoreShellOrientation();
-
-  Future<bool> lockLandscape();
-
-  Future<bool> lockPortraitFullscreen();
-
-  Future<bool> freezeFullscreenOrientation();
-
-  Future<bool> prepareForPictureInPicture();
-}
-
+/// Plugin-backed implementations of the room fullscreen platform ports.
+///
+/// Keep every `floating` / `window_manager` / `wakelock_plus` / method-channel
+/// touch in this file so the room application layer stays plugin-free.
 class DefaultRoomAndroidPlaybackBridgeFacade
     implements RoomAndroidPlaybackBridgeFacade {
   DefaultRoomAndroidPlaybackBridgeFacade({AppPlatformCapabilities? platform})
@@ -87,17 +67,14 @@ class DefaultRoomAndroidPlaybackBridgeFacade
   }
 }
 
-abstract class RoomPipHostFacade {
-  Future<bool> isPipAvailable();
-
-  Stream<PiPStatus> get statusStream;
-
-  Future<PiPStatus> enablePip({required Rational aspectRatio});
-
-  Widget wrapSwitcher({
-    required Widget childWhenDisabled,
-    required Widget childWhenEnabled,
-  });
+/// Maps the plugin's status onto the application-facing [RoomPipStatus].
+RoomPipStatus roomPipStatusFrom(PiPStatus status) {
+  return switch (status) {
+    PiPStatus.enabled => RoomPipStatus.enabled,
+    PiPStatus.disabled => RoomPipStatus.disabled,
+    PiPStatus.automatic => RoomPipStatus.automatic,
+    PiPStatus.unavailable => RoomPipStatus.unavailable,
+  };
 }
 
 class FloatingRoomPipHostFacade implements RoomPipHostFacade {
@@ -130,31 +107,38 @@ class FloatingRoomPipHostFacade implements RoomPipHostFacade {
   }
 
   @override
-  Stream<PiPStatus> get statusStream {
+  Stream<RoomPipStatus> get statusStream {
     if (!_pipSupported) {
       // Never subscribe to floating.pipStatusStream off-Android (10ms probe).
-      return Stream<PiPStatus>.value(PiPStatus.unavailable);
+      return Stream<RoomPipStatus>.value(RoomPipStatus.unavailable);
     }
-    return _floating!.pipStatusStream;
+    return _floating!.pipStatusStream.map(roomPipStatusFrom);
   }
 
   @override
-  Future<PiPStatus> enablePip({required Rational aspectRatio}) async {
+  Future<RoomPipStatus> enablePip({
+    required RoomPipAspectRatio aspectRatio,
+  }) async {
     if (!_pipSupported) {
-      return PiPStatus.unavailable;
+      return RoomPipStatus.unavailable;
     }
+    final rational = Rational(aspectRatio.width, aspectRatio.height);
     try {
-      return await _floating!.enable(ImmediatePiP(aspectRatio: aspectRatio));
+      final status = await _floating!.enable(
+        ImmediatePiP(aspectRatio: rational),
+      );
+      return roomPipStatusFrom(status);
     } catch (_) {
       try {
-        return await _floating!.enable(const ImmediatePiP());
+        return roomPipStatusFrom(await _floating!.enable(const ImmediatePiP()));
       } catch (_) {
-        return PiPStatus.unavailable;
+        return RoomPipStatus.unavailable;
       }
     }
   }
 
-  @override
+  /// Widget-layer decoration, kept off [RoomPipHostFacade] so the application
+  /// port stays free of both `floating` and `Widget`.
   Widget wrapSwitcher({
     required Widget childWhenDisabled,
     required Widget childWhenEnabled,
@@ -171,20 +155,23 @@ class FloatingRoomPipHostFacade implements RoomPipHostFacade {
   }
 }
 
-abstract class RoomDesktopWindowFacade {
-  bool get isSupported;
-
-  Future<Rect> getBounds();
-
-  Future<bool> isAlwaysOnTop();
-
-  Future<bool> isResizable();
-
-  Future<void> setAlwaysOnTop(bool value);
-
-  Future<void> setResizable(bool value);
-
-  Future<void> setBounds(Rect bounds, {bool animate});
+/// Wraps [childWhenDisabled] in the platform PiP switcher when [host] is the
+/// Android-backed implementation, and returns it unchanged otherwise.
+///
+/// The room page calls this instead of reaching through the application port,
+/// which is what let the port drop its `Widget`-returning member.
+Widget wrapWithRoomPipSwitcher({
+  required RoomPipHostFacade host,
+  required Widget childWhenDisabled,
+  required Widget childWhenEnabled,
+}) {
+  if (host is! FloatingRoomPipHostFacade) {
+    return childWhenDisabled;
+  }
+  return host.wrapSwitcher(
+    childWhenDisabled: childWhenDisabled,
+    childWhenEnabled: childWhenEnabled,
+  );
 }
 
 class WindowManagerRoomDesktopWindowFacade implements RoomDesktopWindowFacade {
@@ -218,10 +205,6 @@ class WindowManagerRoomDesktopWindowFacade implements RoomDesktopWindowFacade {
   }
 }
 
-abstract class RoomScreenAwakeFacade {
-  Future<void> toggle({required bool enabled});
-}
-
 class WakelockRoomScreenAwakeFacade implements RoomScreenAwakeFacade {
   const WakelockRoomScreenAwakeFacade();
 
@@ -233,14 +216,6 @@ class WakelockRoomScreenAwakeFacade implements RoomScreenAwakeFacade {
       // Linux/desktop builds may lack a wakelock plugin path; ignore.
     }
   }
-}
-
-abstract class RoomSystemUiFacade {
-  Future<void> setEnabledSystemUIMode(SystemUiMode mode);
-
-  Future<void> setPreferredOrientations(List<DeviceOrientation> orientations);
-
-  Future<void> setSystemUIOverlayStyle(SystemUiOverlayStyle style);
 }
 
 class DefaultRoomSystemUiFacade implements RoomSystemUiFacade {
@@ -262,31 +237,16 @@ class DefaultRoomSystemUiFacade implements RoomSystemUiFacade {
   }
 }
 
-class RoomFullscreenSessionPlatforms {
-  const RoomFullscreenSessionPlatforms({
-    required this.androidPlaybackBridge,
-    required this.pipHost,
-    required this.desktopWindow,
-    required this.screenAwake,
-    required this.systemUi,
-  });
-
-  factory RoomFullscreenSessionPlatforms.defaults() {
-    final platform = AppPlatformCapabilities.current();
-    return RoomFullscreenSessionPlatforms(
-      androidPlaybackBridge: DefaultRoomAndroidPlaybackBridgeFacade(
-        platform: platform,
-      ),
-      pipHost: FloatingRoomPipHostFacade(platform: platform),
-      desktopWindow: WindowManagerRoomDesktopWindowFacade(platform: platform),
-      screenAwake: const WakelockRoomScreenAwakeFacade(),
-      systemUi: const DefaultRoomSystemUiFacade(),
-    );
-  }
-
-  final RoomAndroidPlaybackBridgeFacade androidPlaybackBridge;
-  final RoomPipHostFacade pipHost;
-  final RoomDesktopWindowFacade desktopWindow;
-  final RoomScreenAwakeFacade screenAwake;
-  final RoomSystemUiFacade systemUi;
+/// Production wiring for [RoomFullscreenSessionPlatforms].
+RoomFullscreenSessionPlatforms defaultRoomFullscreenSessionPlatforms() {
+  final platform = AppPlatformCapabilities.current();
+  return RoomFullscreenSessionPlatforms(
+    androidPlaybackBridge: DefaultRoomAndroidPlaybackBridgeFacade(
+      platform: platform,
+    ),
+    pipHost: FloatingRoomPipHostFacade(platform: platform),
+    desktopWindow: WindowManagerRoomDesktopWindowFacade(platform: platform),
+    screenAwake: const WakelockRoomScreenAwakeFacade(),
+    systemUi: const DefaultRoomSystemUiFacade(),
+  );
 }

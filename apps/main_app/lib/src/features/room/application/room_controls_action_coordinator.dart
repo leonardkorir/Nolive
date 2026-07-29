@@ -2,13 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/features/room/application/load_room_use_case.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_action_context.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_playback_actions.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_settings_return_actions.dart';
-import 'package:nolive_app/src/features/room/presentation/room_controls_utility_actions.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_action_context.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_playback_actions.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_settings_return_actions.dart';
+import 'package:nolive_app/src/features/room/application/room_controls_utility_actions.dart';
 import 'package:nolive_app/src/features/settings/application/manage_player_preferences_use_case.dart';
 
-export 'room_controls_action_context.dart'
+export '../application/room_controls_action_context.dart'
     show
         RoomControlsActionContext,
         RoomPersistScreenshot,
@@ -27,18 +27,19 @@ class RoomControlsActionCoordinator extends ChangeNotifier {
     bool? mobileScreenshotPersistence,
     RoomResolveScreenshotDirectory? resolveScreenshotDirectory,
     RoomSaveScreenshotToGallery? saveScreenshotToGallery,
-  })  : _playbackActions = RoomControlsPlaybackActions(context: context),
-        _settingsReturnActions =
-            RoomControlsSettingsReturnActions(context: context),
-        _utilityActions = RoomControlsUtilityActions(
-          context: context,
-          notifyChanged: _noopNotifyChanged,
-          persistScreenshot: persistScreenshot,
-          pickScreenshotSavePath: pickScreenshotSavePath,
-          mobileScreenshotPersistence: mobileScreenshotPersistence,
-          resolveScreenshotDirectory: resolveScreenshotDirectory,
-          saveScreenshotToGallery: saveScreenshotToGallery,
-        ) {
+  }) : _playbackActions = RoomControlsPlaybackActions(context: context),
+       _settingsReturnActions = RoomControlsSettingsReturnActions(
+         context: context,
+       ),
+       _utilityActions = RoomControlsUtilityActions(
+         context: context,
+         notifyChanged: _noopNotifyChanged,
+         persistScreenshot: persistScreenshot,
+         pickScreenshotSavePath: pickScreenshotSavePath,
+         mobileScreenshotPersistence: mobileScreenshotPersistence,
+         resolveScreenshotDirectory: resolveScreenshotDirectory,
+         saveScreenshotToGallery: saveScreenshotToGallery,
+       ) {
     _utilityActions.notifyChanged = notifyListeners;
   }
 

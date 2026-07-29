@@ -1,5 +1,3 @@
-import 'dart:collection';
-
 import 'package:live_storage/live_storage.dart';
 
 import '../model/sync_snapshot.dart';
@@ -22,16 +20,14 @@ class SyncSnapshotMerger {
       local: local.history,
       remote: remote.history,
     );
-    final mergedTags = LinkedHashSet<String>.from([
+    final mergedTags = <String>{
       ...local.tags,
       ...remote.tags,
-    ]).toList(growable: false)
-      ..sort();
-    final mergedKeywords = LinkedHashSet<String>.from([
+    }.toList(growable: false)..sort();
+    final mergedKeywords = <String>{
       ...local.blockedKeywords,
       ...remote.blockedKeywords,
-    ]).toList(growable: false)
-      ..sort();
+    }.toList(growable: false)..sort();
     final mergedSettings = <String, Object?>{
       ...local.settings,
       ...remote.settings,
@@ -135,8 +131,10 @@ class SyncSnapshotMerger {
   }
 
   FollowRecord _laterFollow(FollowRecord a, FollowRecord b) {
-    final aTime = a.updatedAt ?? a.addedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-    final bTime = b.updatedAt ?? b.addedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final aTime =
+        a.updatedAt ?? a.addedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final bTime =
+        b.updatedAt ?? b.addedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
     return aTime.isAfter(bTime) ? a : b;
   }
 
@@ -157,8 +155,8 @@ class SyncSnapshotMerger {
           localItem.syncDurationSec == 0) {
         map[remoteItem.identityKey] =
             remoteItem.effectiveUpdatedAt.isAfter(localItem.effectiveUpdatedAt)
-                ? remoteItem
-                : localItem;
+            ? remoteItem
+            : localItem;
         continue;
       }
 
@@ -166,8 +164,8 @@ class SyncSnapshotMerger {
           remoteItem.watchDurationSec + localItem.syncDurationSec;
       final preferred =
           remoteItem.effectiveUpdatedAt.isAfter(localItem.effectiveUpdatedAt)
-              ? remoteItem
-              : localItem;
+          ? remoteItem
+          : localItem;
       map[remoteItem.identityKey] = preferred.copyWith(
         watchDurationSec: totalSeconds,
         syncDurationSec: 0,

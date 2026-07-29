@@ -504,31 +504,34 @@ void main() {
     },
   );
 
-  test('load room surfaces network timeout as ProviderParseException', () async {
-    final registry = ProviderRegistry()
-      ..register(
-        ProviderRegistration(
-          descriptor: _kDouyuHangDescriptor,
-          builder: _HangingDouyuProvider.new,
+  test(
+    'load room surfaces network timeout as ProviderParseException',
+    () async {
+      final registry = ProviderRegistry()
+        ..register(
+          ProviderRegistration(
+            descriptor: _kDouyuHangDescriptor,
+            builder: _HangingDouyuProvider.new,
+          ),
+        );
+      final useCase = LoadRoomUseCase(
+        registry,
+        historyRepository: InMemoryHistoryRepository(),
+        networkTimeout: const Duration(milliseconds: 80),
+      );
+
+      await expectLater(
+        () => useCase(providerId: ProviderId.douyu, roomId: '36252'),
+        throwsA(
+          isA<ProviderParseException>().having(
+            (e) => e.message,
+            'message',
+            contains('超时'),
+          ),
         ),
       );
-    final useCase = LoadRoomUseCase(
-      registry,
-      historyRepository: InMemoryHistoryRepository(),
-      networkTimeout: const Duration(milliseconds: 80),
-    );
-
-    await expectLater(
-      () => useCase(providerId: ProviderId.douyu, roomId: '36252'),
-      throwsA(
-        isA<ProviderParseException>().having(
-          (e) => e.message,
-          'message',
-          contains('超时'),
-        ),
-      ),
-    );
-  });
+    },
+  );
 }
 
 const _kDouyuHangDescriptor = ProviderDescriptor(
@@ -561,7 +564,9 @@ class _HangingDouyuProvider extends LiveProvider
   }
 
   @override
-  Future<List<LivePlayQuality>> fetchPlayQualities(LiveRoomDetail detail) async {
+  Future<List<LivePlayQuality>> fetchPlayQualities(
+    LiveRoomDetail detail,
+  ) async {
     return [LivePlayQuality(id: '0', label: '原画', isDefault: true)];
   }
 

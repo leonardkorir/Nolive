@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
-import 'room_fullscreen_session_platforms.dart';
-import 'room_gesture_ui_state.dart';
+import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
+import '../application/room_gesture_ui_state.dart';
 import 'room_layout_constants.dart';
-import 'room_view_ui_state.dart';
+import '../application/room_view_ui_state.dart';
 
 class RoomFullscreenChromeContext {
   const RoomFullscreenChromeContext({
@@ -30,11 +30,12 @@ class RoomFullscreenChromeContext {
   final void Function(double value) updateVolume;
   final RoomViewUiState Function() readViewUiState;
   final void Function(RoomViewUiState Function(RoomViewUiState current))
-      updateViewUiState;
+  updateViewUiState;
   final RoomGestureUiState Function() readGestureUiState;
   final void Function(
     RoomGestureUiState Function(RoomGestureUiState current) updater,
-  ) updateGestureUiState;
+  )
+  updateGestureUiState;
   final bool Function() isDisposed;
 
   /// When set, chrome lock also pins / restores orientation.
@@ -100,8 +101,9 @@ class RoomFullscreenChromeController {
         lockFullscreenControls: nextLocked,
         showFullscreenChrome: nextLocked ? false : true,
         showFullscreenLockButton: true,
-        showFullscreenFollowDrawer:
-            nextLocked ? false : current.showFullscreenFollowDrawer,
+        showFullscreenFollowDrawer: nextLocked
+            ? false
+            : current.showFullscreenFollowDrawer,
       ),
     );
     // Pin / restore orientation with the UI lock. If native freeze fails while
@@ -113,8 +115,7 @@ class RoomFullscreenChromeController {
         if (ok || context.isDisposed() || !nextLocked) {
           return;
         }
-        final stillWantsLock =
-            context.readViewUiState().lockFullscreenControls;
+        final stillWantsLock = context.readViewUiState().lockFullscreenControls;
         if (!stillWantsLock) {
           return;
         }
@@ -252,9 +253,7 @@ class RoomFullscreenChromeController {
   void showGestureTip(String text) {
     _gestureTipTimer?.cancel();
     _fullscreenChromeTimer?.cancel();
-    context.updateGestureUiState(
-      (current) => current.copyWith(tipText: text),
-    );
+    context.updateGestureUiState((current) => current.copyWith(tipText: text));
     if (context.readViewUiState().fullscreenSessionActive) {
       context.updateViewUiState(
         (current) => current.copyWith(
@@ -296,13 +295,16 @@ class RoomFullscreenChromeController {
     final screenSize = context.resolveScreenSize();
     // Note: screenSize.width > screenSize.height matches Orientation.landscape logic
     // where BuildContext is not directly available in this controller context.
-    final isLandscapeInline = !viewState.fullscreenSessionActive && screenSize.width > screenSize.height;
+    final isLandscapeInline =
+        !viewState.fullscreenSessionActive &&
+        screenSize.width > screenSize.height;
     if (!context.androidPlaybackBridge.isSupported ||
         (!viewState.fullscreenSessionActive && !isLandscapeInline) ||
         viewState.lockFullscreenControls) {
       return;
     }
-    final widthThreshold = (screenSize.width - kRoomLandscapeSidePanelWidth).clamp(0.0, double.infinity);
+    final widthThreshold = (screenSize.width - kRoomLandscapeSidePanelWidth)
+        .clamp(0.0, double.infinity);
     context.updateGestureUiState(
       (current) => current.copyWith(
         tracking: true,
@@ -317,9 +319,8 @@ class RoomFullscreenChromeController {
       return;
     }
     context.updateGestureUiState(
-      (current) => current.copyWith(
-        startVolume: mediaVolume ?? context.resolveVolume(),
-      ),
+      (current) =>
+          current.copyWith(startVolume: mediaVolume ?? context.resolveVolume()),
     );
     try {
       final brightness = await _readScreenBrightness();

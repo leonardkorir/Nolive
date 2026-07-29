@@ -432,7 +432,7 @@ class _OtherSettingsPageState extends State<OtherSettingsPage> {
     if (!mounted) {
       return;
     }
-        showAppSnackBar(context, message);
+    showAppSnackBar(context, message);
   }
 
   Future<void> _resetAppData() async {

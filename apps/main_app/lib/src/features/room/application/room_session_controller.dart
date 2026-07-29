@@ -11,6 +11,7 @@ import 'twitch_playback_recovery.dart';
 import '../../settings/application/manage_danmaku_preferences_use_case.dart';
 import '../../settings/application/manage_player_preferences_use_case.dart';
 import '../../settings/application/manage_room_ui_preferences_use_case.dart';
+import 'package:nolive_app/src/features/room/application/room_provider_traits.dart';
 
 @immutable
 class RoomSessionLoadResult {
@@ -40,7 +41,9 @@ TwitchStartupPlan resolveRoomStartupPlan({
   required LivePlayQuality requestedQuality,
   bool promoteTwitchAutoStartup = false,
 }) {
-  if (snapshot.providerId != ProviderId.twitch) {
+  if (!roomProviderTraitsFor(
+    snapshot.providerId,
+  ).usesLadderStartupQualityPlan) {
     return TwitchStartupPlan(startupQuality: requestedQuality);
   }
   return resolveTwitchStartupPlan(
@@ -76,10 +79,7 @@ class RoomSessionController {
     _current = null;
   }
 
-  void retargetRoom({
-    required ProviderId providerId,
-    required String roomId,
-  }) {
+  void retargetRoom({required ProviderId providerId, required String roomId}) {
     this.providerId = providerId;
     this.roomId = roomId;
     _current = null;
@@ -260,7 +260,9 @@ class RoomSessionController {
         '${playbackQuality.id}/${playbackQuality.label}',
       );
     }
-    if (snapshot.providerId == ProviderId.twitch) {
+    if (roomProviderTraitsFor(
+      snapshot.providerId,
+    ).usesLadderStartupQualityPlan) {
       final promotion = startupPlan.promotionQuality;
       _trace(
         'twitch startup plan autoQuality=${playerPreferences.autoQualityEnabled} '

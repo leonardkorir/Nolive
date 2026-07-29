@@ -19,10 +19,7 @@ class ProviderTabLabel extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _ProviderLogo(
-          descriptor: descriptor,
-          size: logoSize,
-        ),
+        _ProviderLogo(descriptor: descriptor, size: logoSize),
         const SizedBox(width: 8),
         Text(
           descriptor.displayName,
@@ -40,10 +37,7 @@ class ProviderTabLabel extends StatelessWidget {
 }
 
 class _ProviderLogo extends StatelessWidget {
-  const _ProviderLogo({
-    required this.descriptor,
-    required this.size,
-  });
+  const _ProviderLogo({required this.descriptor, required this.size});
 
   final ProviderDescriptor descriptor;
   final double size;
@@ -59,24 +53,16 @@ class _ProviderLogo extends StatelessWidget {
         fit: BoxFit.contain,
         filterQuality: FilterQuality.medium,
         semanticLabel: '${descriptor.displayName} logo',
-        errorBuilder: (context, error, stackTrace) => _ProviderLogoFallback(
-          descriptor: descriptor,
-          size: size,
-        ),
+        errorBuilder: (context, error, stackTrace) =>
+            _ProviderLogoFallback(descriptor: descriptor, size: size),
       );
     }
-    return _ProviderLogoFallback(
-      descriptor: descriptor,
-      size: size,
-    );
+    return _ProviderLogoFallback(descriptor: descriptor, size: size);
   }
 }
 
 class _ProviderLogoFallback extends StatelessWidget {
-  const _ProviderLogoFallback({
-    required this.descriptor,
-    required this.size,
-  });
+  const _ProviderLogoFallback({required this.descriptor, required this.size});
 
   final ProviderDescriptor descriptor;
   final double size;
@@ -95,9 +81,10 @@ class _ProviderLogoFallback extends StatelessWidget {
         borderRadius: BorderRadius.circular(7),
         border: Border.all(
           color: accent.withValues(
-              alpha: Theme.of(context).brightness == Brightness.dark
-                  ? 0.34
-                  : 0.22),
+            alpha: Theme.of(context).brightness == Brightness.dark
+                ? 0.34
+                : 0.22,
+          ),
         ),
       ),
       child: Icon(

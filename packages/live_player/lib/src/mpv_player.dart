@@ -248,10 +248,12 @@ class MpvPlayer implements BasePlayer {
   static const Duration _androidStartupBufferedMediaSignalTimeout = Duration(
     seconds: 10,
   );
+
   /// Phone Twitch/YouTube (desktopStableLive / ad-guard): allow proxy probe climb.
   static const Duration _androidStartupForeignLiveMediaSignalTimeout = Duration(
     seconds: 22,
   );
+
   /// Post-open delays before reading `hwdec-current`. Immediate open often
   /// still reports `current=-`; HLS/proxy rooms need multi-second samples.
   static const List<Duration> _hwdecActiveSampleDelays = <Duration>[
@@ -266,6 +268,7 @@ class MpvPlayer implements BasePlayer {
       Duration(milliseconds: 50);
   static const String _fallbackVideoOutputDriver = 'gpu-next';
   static const String _fallbackHardwareDecoder = 'auto-safe';
+
   /// Desktop/libmpv embed default when caller leaves decoder empty.
   static const String _fallbackHardwareDecoderDesktop = 'auto-copy';
 
@@ -617,7 +620,8 @@ class MpvPlayer implements BasePlayer {
     if (_runtimeConfiguration?.usesExternalNativeWindow == true) {
       return _MpvExternalNativeWindowPlaceholder(
         key: key,
-        videoOutputDriver: externalVo ?? kDefaultExternalNativeVideoOutputDriver,
+        videoOutputDriver:
+            externalVo ?? kDefaultExternalNativeVideoOutputDriver,
       );
     }
     return ValueListenableBuilder<VideoController?>(
@@ -751,10 +755,7 @@ class MpvPlayer implements BasePlayer {
       final parkedProperties = Map<String, String>.from(
         runtimeConfiguration.platformProperties,
       )..['vo'] = 'null';
-      await _configurePlayerProperties(
-        player,
-        properties: parkedProperties,
-      );
+      await _configurePlayerProperties(player, properties: parkedProperties);
     } else {
       _controller = VideoController(
         player,
@@ -854,9 +855,7 @@ class MpvPlayer implements BasePlayer {
   /// Shorter than first-open health budget so leave/stop can run after failover.
   static const Duration _arcEscalateMediaSignalTimeout = Duration(seconds: 4);
 
-  Future<void> _recreateMediaKitBackendForArcTier(
-    ArcMpvDecodeTier tier,
-  ) async {
+  Future<void> _recreateMediaKitBackendForArcTier(ArcMpvDecodeTier tier) async {
     _logEvent(
       'arc decode tier recreate from=${arcMpvDecodeTierLabel(_arcDecodeTier)} '
       'to=${arcMpvDecodeTierLabel(tier)}',
@@ -1081,10 +1080,7 @@ class MpvPlayer implements BasePlayer {
       }
     }
     await player.open(
-      mk.Media(
-        openPlan.mediaUri.toString(),
-        httpHeaders: openPlan.httpHeaders,
-      ),
+      mk.Media(openPlan.mediaUri.toString(), httpHeaders: openPlan.httpHeaders),
       play: false,
     );
     // Delay hwdec-active until decode can engage; immediate open often logs

@@ -59,6 +59,43 @@ void main() {
       expect(sanitized, isNot(contains('cf_clearance=demo')));
     });
 
+    test('diagnostic decision fields survive redaction', () {
+      // The redactor eats everything after a bare `cookie=` to the end of the
+      // line, which silently swallowed the Chaturbate failure diagnostics on
+      // device (session-2026-07-26-201606): only `... cookie=<redacted>`
+      // survived, so "was a cookie sent, and did the retry run?" was lost.
+      // Decision fields must therefore never be named `cookie`.
+      final sanitized = AppLog.sanitizeMessageForPersistence(
+        'chaturbate data source: room page request failed roomId=demo '
+        'source=anonymous hasCookie=false challenge=true '
+        'retry=skipped (no cookie to drop)',
+      );
+
+      expect(sanitized, contains('hasCookie=false'));
+      expect(sanitized, contains('challenge=true'));
+      expect(sanitized, contains('retry=skipped'));
+    });
+
+    test('the advice branch survives redaction', () {
+      final sanitized = AppLog.sanitizeMessageForPersistence(
+        'chaturbate provider: danmaku unavailable roomId=demo '
+        'hasCookie=false advice=add-cookie',
+      );
+
+      expect(sanitized, contains('hasCookie=false'));
+      expect(sanitized, contains('advice=add-cookie'));
+    });
+
+    test('a real cookie value is still redacted', () {
+      final sanitized = AppLog.sanitizeMessageForPersistence(
+        'request headers cookie=cf_clearance=realsecret; csrftoken=alsoSecret',
+      );
+
+      expect(sanitized, contains('cookie=<redacted>'));
+      expect(sanitized, isNot(contains('realsecret')));
+      expect(sanitized, isNot(contains('alsoSecret')));
+    });
+
     test('redacts signed playback URL path segments and query params', () {
       final sanitized = AppLog.sanitizeMessageForPersistence(
         'playback=https://manifest.googlevideo.com/api/manifest/hls_playlist/'

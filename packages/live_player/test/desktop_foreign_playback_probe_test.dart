@@ -16,9 +16,7 @@ void main() {
       (
         'twitch_desktopStableLive',
         PlaybackSource(
-          url: Uri.parse(
-            'http://127.0.0.1:9999/twitch-ad-guard/s/stream.m3u8',
-          ),
+          url: Uri.parse('http://127.0.0.1:9999/twitch-ad-guard/s/stream.m3u8'),
           bufferProfile: PlaybackBufferProfile.desktopStableLive,
         ),
         false,
@@ -110,12 +108,18 @@ void main() {
       if (c.$1 == 'twitch_desktopStableLive' ||
           c.$1 == 'youtube_desktopStableLive') {
         expect(props['cache'], 'yes');
-        expect(int.parse(props['demuxer-readahead-secs']!), greaterThanOrEqualTo(8));
+        expect(
+          int.parse(props['demuxer-readahead-secs']!),
+          greaterThanOrEqualTo(8),
+        );
         expect(props['cache'], isNot(equals('no')));
       }
       if (c.$1 == 'sc_loopback_desktop') {
         expect(int.parse(props['cache-secs']!), greaterThanOrEqualTo(12));
-        expect(int.parse(props['demuxer-readahead-secs']!), greaterThanOrEqualTo(12));
+        expect(
+          int.parse(props['demuxer-readahead-secs']!),
+          greaterThanOrEqualTo(12),
+        );
         expect(props['hwdec'], 'auto-copy');
       }
       if (c.$1 == 'cb_proxy_desktop') {

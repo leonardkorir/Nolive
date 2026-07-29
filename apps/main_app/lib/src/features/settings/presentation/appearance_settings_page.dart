@@ -23,10 +23,7 @@ class AppearanceSettingsPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '主题模式',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text('主题模式', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 ValueListenableBuilder<ThemeMode>(
                   valueListenable: dependencies.themeMode,

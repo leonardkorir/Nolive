@@ -86,8 +86,9 @@ class _AppShellPageState extends State<AppShellPage> {
         final currentIndex = currentTab == null
             ? -1
             : destinations.indexWhere((item) => item.id == currentTab);
-        final selectedTab =
-            currentIndex == -1 ? destinations.first.id : currentTab!;
+        final selectedTab = currentIndex == -1
+            ? destinations.first.id
+            : currentTab!;
         if (currentTab != selectedTab) {
           _currentTab = selectedTab;
         }
@@ -97,8 +98,8 @@ class _AppShellPageState extends State<AppShellPage> {
         final size = MediaQuery.sizeOf(context);
         final shortestSide = size.shortestSide;
         final orientation = MediaQuery.orientationOf(context);
-        final isWide = shortestSide >= 840 ||
-            orientation == Orientation.landscape;
+        final isWide =
+            shortestSide >= 840 || orientation == Orientation.landscape;
         // Desktop windows are often landscape with shortestSide < 1280; still
         // show labels under icons so 首页/关注 never disappear as icon-only.
         final useExtendedRail = size.width >= 1400;
@@ -157,8 +158,9 @@ class _AppShellPageState extends State<AppShellPage> {
                                 for (final destination in destinations)
                                   NavigationRailDestination(
                                     icon: Icon(destination.icon),
-                                    selectedIcon:
-                                        Icon(destination.selectedIcon),
+                                    selectedIcon: Icon(
+                                      destination.selectedIcon,
+                                    ),
                                     label: Text(
                                       destination.label,
                                       key: Key(

@@ -5,6 +5,7 @@ import 'package:live_providers/src/danmaku/stripchat_danmaku_session.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:test/test.dart';
+import 'package:live_providers/src/providers/stripchat/stripchat_danmaku_token.dart';
 
 void main() {
   group('StripchatDanmakuToken equality', () {

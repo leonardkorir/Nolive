@@ -131,14 +131,11 @@ void main() {
       expect(await bridge.lockLandscape(), isTrue);
       expect(await bridge.freezeFullscreenOrientation(), isTrue);
       expect(await bridge.prepareForPictureInPicture(), isTrue);
-      expect(
-        calls,
-        <String>[
-          'lockLandscape',
-          'freezeFullscreenOrientation',
-          'prepareForPictureInPicture',
-        ],
-      );
+      expect(calls, <String>[
+        'lockLandscape',
+        'freezeFullscreenOrientation',
+        'prepareForPictureInPicture',
+      ]);
     });
   });
 }
