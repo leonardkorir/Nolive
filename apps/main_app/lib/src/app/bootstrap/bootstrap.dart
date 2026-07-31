@@ -11,6 +11,7 @@ import 'package:live_storage/live_storage.dart';
 import 'package:live_sync/live_sync.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:nolive_app/src/app/bootstrap/default_state.dart';
+import 'package:nolive_app/src/app/bootstrap/setting_decoders.dart';
 import 'package:nolive_app/src/app/platform/android_playback_bridge.dart';
 import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
 import 'package:nolive_app/src/app/platform/douyin_danmaku_signature_service.dart';
@@ -26,20 +27,15 @@ import 'package:nolive_app/src/features/home/application/list_available_provider
 import 'package:nolive_app/src/features/home/application/load_home_dashboard_use_case.dart';
 import 'package:nolive_app/src/features/home/application/load_provider_recommend_rooms_use_case.dart';
 import 'package:nolive_app/src/features/home/application/load_reference_room_preview_use_case.dart';
-import 'package:nolive_app/src/features/library/application/clear_history_use_case.dart';
 import 'package:nolive_app/src/features/library/application/clear_tags_use_case.dart';
 import 'package:nolive_app/src/features/library/application/create_tag_use_case.dart';
-import 'package:nolive_app/src/features/library/application/is_followed_room_use_case.dart';
-import 'package:nolive_app/src/features/library/application/list_follow_records_use_case.dart';
 import 'package:nolive_app/src/features/library/application/list_library_snapshot_use_case.dart';
-import 'package:nolive_app/src/features/library/application/list_tags_use_case.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
 import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
 import 'package:nolive_app/src/features/library/application/load_library_dashboard_use_case.dart';
 import 'package:nolive_app/src/features/library/application/manage_follow_transfer_use_case.dart';
 import 'package:nolive_app/src/features/library/application/remove_follow_room_use_case.dart';
-import 'package:nolive_app/src/features/library/application/remove_history_record_use_case.dart';
 import 'package:nolive_app/src/features/library/application/remove_tag_use_case.dart';
 import 'package:nolive_app/src/features/library/application/toggle_follow_room_use_case.dart';
 import 'package:nolive_app/src/features/library/application/update_follow_tags_use_case.dart';
@@ -52,7 +48,6 @@ import 'package:nolive_app/src/features/room/application/load_room_use_case.dart
 import 'package:nolive_app/src/features/room/application/open_room_danmaku_use_case.dart';
 import 'package:nolive_app/src/features/room/application/resolve_play_source_use_case.dart';
 import 'package:nolive_app/src/features/search/application/search_provider_rooms_use_case.dart';
-import 'package:nolive_app/src/features/settings/application/load_sync_snapshot_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_danmaku_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_follow_preferences_use_case.dart';
 import 'package:nolive_app/src/features/settings/application/manage_history_preferences_use_case.dart';
@@ -72,6 +67,7 @@ import 'package:nolive_app/src/shared/application/app_log.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 import 'package:nolive_app/src/shared/application/provider_catalog_use_cases.dart';
 import 'package:nolive_app/src/app/bootstrap/llhls_proxy_lifecycle.dart';
+import 'package:nolive_app/src/shared/application/storage_query_ports.dart';
 
 part 'bootstrap_internals.dart';
 
@@ -394,7 +390,7 @@ class AppBootstrap {
   final TagRepository tagRepository;
   final ListProviderDescriptorsUseCase listProviderDescriptors;
   final FindProviderDescriptorByIdUseCase findProviderDescriptorById;
-  final ListFollowRecordsUseCase listFollowRecords;
+  final ListFollowRecords listFollowRecords;
   final ListAvailableProvidersUseCase listAvailableProviders;
   final LoadLayoutPreferencesUseCase loadLayoutPreferences;
   final UpdateLayoutPreferencesUseCase updateLayoutPreferences;
@@ -420,16 +416,16 @@ class AppBootstrap {
   final ExportFollowListJsonUseCase exportFollowListJson;
   final ImportFollowListJsonUseCase importFollowListJson;
   final ToggleFollowRoomUseCase toggleFollowRoom;
-  final IsFollowedRoomUseCase isFollowedRoom;
-  final ListTagsUseCase listTags;
+  final IsFollowedRoom isFollowedRoom;
+  final ListTags listTags;
   final CreateTagUseCase createTag;
   final RemoveTagUseCase removeTag;
   final ClearTagsUseCase clearTags;
   final UpdateFollowTagsUseCase updateFollowTags;
   final RemoveFollowRoomUseCase removeFollowRoom;
-  final RemoveHistoryRecordUseCase removeHistoryRecord;
-  final ClearHistoryUseCase clearHistory;
-  final LoadSyncSnapshotUseCase loadSyncSnapshot;
+  final RemoveHistoryRecord removeHistoryRecord;
+  final ClearHistory clearHistory;
+  final LoadSyncSnapshot loadSyncSnapshot;
   final LoadSyncPreferencesUseCase loadSyncPreferences;
   final UpdateSyncPreferencesUseCase updateSyncPreferences;
   final VerifyWebDavConnectionUseCase verifyWebDavConnection;

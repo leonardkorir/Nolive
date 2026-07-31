@@ -1,9 +1,8 @@
 import 'package:nolive_app/src/features/settings/application/manage_history_preferences_use_case.dart';
 import 'package:nolive_app/src/shared/application/provider_catalog_use_cases.dart';
 
-import 'clear_history_use_case.dart';
 import 'list_library_snapshot_use_case.dart';
-import 'remove_history_record_use_case.dart';
+import 'package:nolive_app/src/shared/application/storage_query_ports.dart';
 
 class WatchHistoryFeatureDependencies {
   const WatchHistoryFeatureDependencies({
@@ -18,7 +17,7 @@ class WatchHistoryFeatureDependencies {
   final ListLibrarySnapshotUseCase listLibrarySnapshot;
   final LoadHistoryPreferencesUseCase loadHistoryPreferences;
   final UpdateHistoryPreferencesUseCase updateHistoryPreferences;
-  final RemoveHistoryRecordUseCase removeHistoryRecord;
-  final ClearHistoryUseCase clearHistory;
+  final RemoveHistoryRecord removeHistoryRecord;
+  final ClearHistory clearHistory;
   final FindProviderDescriptorByIdUseCase findProviderDescriptorById;
 }

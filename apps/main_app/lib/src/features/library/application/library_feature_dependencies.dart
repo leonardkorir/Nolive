@@ -3,13 +3,12 @@ import 'package:nolive_app/src/features/settings/application/manage_follow_prefe
 import 'package:nolive_app/src/shared/application/provider_catalog_use_cases.dart';
 
 import 'create_tag_use_case.dart';
-import 'list_follow_records_use_case.dart';
-import 'list_tags_use_case.dart';
 import 'load_follow_watchlist_use_case.dart';
 import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
 import 'remove_follow_room_use_case.dart';
 import 'update_follow_tags_use_case.dart';
+import 'package:nolive_app/src/shared/application/storage_query_ports.dart';
 
 class LibraryFeatureDependencies {
   const LibraryFeatureDependencies({
@@ -28,8 +27,8 @@ class LibraryFeatureDependencies {
 
   final ValueListenable<int> followDataRevision;
   final ValueNotifier<FollowWatchlist?> followWatchlistSnapshot;
-  final ListFollowRecordsUseCase listFollowRecords;
-  final ListTagsUseCase listTags;
+  final ListFollowRecords listFollowRecords;
+  final ListTags listTags;
   final LoadFollowPreferencesUseCase loadFollowPreferences;
   final UpdateFollowPreferencesUseCase updateFollowPreferences;
   final LoadFollowWatchlistUseCase loadFollowWatchlist;

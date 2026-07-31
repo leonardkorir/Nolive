@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_danmaku/live_danmaku.dart';
 import 'package:nolive_app/src/app/platform/app_platform_capabilities.dart';
@@ -17,15 +18,21 @@ DanmakuBatchMask? tryCreateRustDanmakuBatchMask({
   }
   final library = _openRustMaskLibrary();
   if (library == null) {
+    debugPrint(
+      'danmaku_mask: libnolive_danmaku_mask not found; using Dart fallback',
+    );
     return null;
   }
   try {
-    return _RustDanmakuBatchMask(
+    final mask = _RustDanmakuBatchMask(
       library: library,
       window: window,
       burstLimit: burstLimit,
     );
-  } catch (_) {
+    debugPrint('danmaku_mask: native libnolive_danmaku_mask loaded');
+    return mask;
+  } catch (error) {
+    debugPrint('danmaku_mask: native init failed ($error); Dart fallback');
     return null;
   }
 }

@@ -2,10 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_core/live_core.dart';
 import 'package:live_storage/live_storage.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
-import 'package:nolive_app/src/features/library/application/list_follow_records_use_case.dart';
 import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 import 'package:nolive_app/src/features/room/application/room_preview_dependencies.dart';
 import 'package:nolive_app/src/features/room/presentation/room_follow_action_coordinator.dart';
+import 'package:nolive_app/src/shared/application/storage_query_ports.dart';
 
 void main() {
   test(
@@ -224,7 +224,7 @@ void main() {
       );
       final harness = _createCoordinator(
         bootstrap,
-        listFollowRecords: ListFollowRecordsUseCase(_EmptyFollowRepository()),
+        listFollowRecords: _EmptyFollowRepository().listAll,
       );
       final snapshot = await bootstrap.loadRoom(
         providerId: ProviderId.bilibili,
@@ -290,7 +290,7 @@ _FollowCoordinatorHarness _createCoordinator(
   AppBootstrap bootstrap, {
   RoomConfirmUnfollow? confirmUnfollow,
   bool followed = false,
-  ListFollowRecordsUseCase? listFollowRecords,
+  ListFollowRecords? listFollowRecords,
 }) {
   final dependencies = RoomFollowActionDependencies(
     followWatchlistSnapshot: bootstrap.followWatchlistSnapshot,

@@ -31,6 +31,11 @@ jobs:
           flutter-version: '3.41.4'
           cache: true
 
+      - name: Set up Rust (native danmaku mask)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
       - name: Prepare optional signing materials
         id: signing
         shell: bash
@@ -70,6 +75,9 @@ jobs:
           exit 1
 
       - name: Build Android release artifacts
+        env:
+          # Ship libnolive_danmaku_mask.so; verify script fails the job if missing.
+          NOLIVE_BUILD_RUST_DANMAKU_MASK: 'true'
         run: |
           export PATH="$HOME/.pub-cache/bin:$PATH"
           if [[ "${{ steps.signing.outputs.has_signing }}" == "true" ]]; then

@@ -1,10 +1,11 @@
 import 'package:live_sync/live_sync.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 
+import 'package:nolive_app/src/shared/application/storage_query_ports.dart';
+
 import 'manage_local_sync_use_case.dart';
 import 'manage_remote_sync_use_case.dart';
 import 'sync_preferences_use_case.dart';
-import '../../settings/application/load_sync_snapshot_use_case.dart';
 
 class SyncFeatureDependencies {
   const SyncFeatureDependencies({
@@ -35,7 +36,7 @@ class SyncFeatureDependencies {
     );
   }
 
-  final LoadSyncSnapshotUseCase loadSyncSnapshot;
+  final LoadSyncSnapshot loadSyncSnapshot;
   final LoadSyncPreferencesUseCase loadSyncPreferences;
   final UpdateSyncPreferencesUseCase updateSyncPreferences;
   final VerifyWebDavConnectionUseCase verifyWebDavConnection;

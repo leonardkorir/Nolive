@@ -182,11 +182,20 @@ case "$TARGET" in
     prepare
     cd "$APP_DIR"
     flutter build apk --release
+    # Fat APK still embeds per-ABI jni; require at least arm64 so.
+    fat_listing="$(unzip -l build/app/outputs/flutter-apk/app-release.apk 2>/dev/null || true)"
+    if [[ "$fat_listing" != *'lib/arm64-v8a/libnolive_danmaku_mask.so'* ]]; then
+      echo "fat app-release.apk missing lib/arm64-v8a/libnolive_danmaku_mask.so" >&2
+      exit 1
+    fi
+    echo "[rust-danmaku] ok: app-release.apk contains arm64-v8a libnolive_danmaku_mask.so"
     ;;
   android-apk-split)
     prepare
     cd "$APP_DIR"
     flutter build apk --release --split-per-abi
+    cd "$ROOT_DIR"
+    scripts/verify_android_rust_danmaku_mask.sh
     ;;
   android-appbundle)
     prepare
@@ -206,6 +215,7 @@ case "$TARGET" in
     ./gradlew :app:bundleRelease
     cd "$ROOT_DIR"
     scripts/verify_android_release_signing.sh
+    scripts/verify_android_rust_danmaku_mask.sh
     ;;
   android-release-acceptance)
     require_android_signing
@@ -220,6 +230,7 @@ case "$TARGET" in
     ./gradlew :app:bundleRelease
     cd "$ROOT_DIR"
     scripts/verify_android_release_signing.sh
+    scripts/verify_android_rust_danmaku_mask.sh
     scripts/install_main_app_android.sh
     scripts/verify_main_app_android_launch.sh
     ANDROID_SMOKE_RESTORE_RELEASE=1 scripts/run_main_app_android_smoke.sh
@@ -230,6 +241,8 @@ case "$TARGET" in
     prepare
     cd "$APP_DIR"
     flutter build apk --release --split-per-abi
+    cd "$ROOT_DIR"
+    scripts/verify_android_rust_danmaku_mask.sh
     cd "$APP_DIR/android"
     ./gradlew :app:bundleRelease
     cat <<ARTIFACTS

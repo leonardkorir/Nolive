@@ -2,6 +2,7 @@ import 'dart:collection';
 
 import 'package:live_core/live_core.dart';
 
+/// Batch frequency mask for chat-like messages (Dart and optional native).
 abstract class DanmakuBatchMask {
   List<LiveMessage> allowListBatch(
     Iterable<LiveMessage> messages, {
@@ -11,6 +12,7 @@ abstract class DanmakuBatchMask {
   void dispose() {}
 }
 
+/// Sliding-window burst filter — default Dart implementation.
 class WindowedDanmakuBatchMask extends DanmakuBatchMask {
   WindowedDanmakuBatchMask({
     this.window = const Duration(seconds: 8),
@@ -123,5 +125,11 @@ class WindowedDanmakuBatchMask extends DanmakuBatchMask {
     _trackedKeys
       ..clear()
       ..addAll(retainedKeys);
+  }
+
+  @override
+  void dispose() {
+    _seenAtByKey.clear();
+    _trackedKeys.clear();
   }
 }

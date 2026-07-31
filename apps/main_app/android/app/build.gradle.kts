@@ -49,11 +49,14 @@ val androidSdkDir =
     localProperties.getProperty("sdk.dir")?.trim()
         ?: System.getenv("ANDROID_SDK_ROOT")?.trim()
         ?: System.getenv("ANDROID_HOME")?.trim()
+// Default ON so release/debug APKs ship libnolive_danmaku_mask.so when
+// cargo+NDK are available. Opt out: nolive.buildRustDanmakuMask=false or
+// NOLIVE_BUILD_RUST_DANMAKU_MASK=false.
 val rustDanmakuMaskEnabled =
     (
         localProperties.getProperty("nolive.buildRustDanmakuMask")?.trim()
             ?: System.getenv("NOLIVE_BUILD_RUST_DANMAKU_MASK")?.trim()
-            ?: "false"
+            ?: "true"
         ).equals("true", ignoreCase = true)
 val rustJniLibsDir = layout.buildDirectory.dir("generated/rustJniLibs")
 val rustBuildScript = rootProject.file("../rust/build_android_danmaku_mask.sh")

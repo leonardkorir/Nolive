@@ -1,4 +1,5 @@
 import 'package:live_storage/live_storage.dart';
+import 'package:nolive_app/src/features/settings/application/settings_preference_readers.dart';
 
 enum FollowDisplayModePreference { list, grid }
 
@@ -46,11 +47,10 @@ class LoadFollowPreferencesUseCase {
     final displayMode = decodeDisplayMode(
       await settingsRepository.readValue<Object?>('follow_display_mode'),
     );
-    final autoRefreshEnabled =
-        await settingsRepository.readValue<bool>(
-          'follow_auto_refresh_enabled',
-        ) ??
-        defaults.autoRefreshEnabled;
+    final autoRefreshEnabled = await settingsRepository.readBool(
+      'follow_auto_refresh_enabled',
+      fallback: defaults.autoRefreshEnabled,
+    );
     final autoRefreshIntervalMinutes = normalizeIntervalMinutes(
       await settingsRepository.readValue<Object?>(
         'follow_auto_refresh_interval_minutes',

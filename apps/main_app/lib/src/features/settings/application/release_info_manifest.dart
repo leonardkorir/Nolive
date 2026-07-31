@@ -2,7 +2,7 @@ class ReleaseInfoManifest {
   const ReleaseInfoManifest._();
 
   static const fallbackAppName = 'Nolive';
-  static const fallbackVersion = '0.3.9+12';
+  static const fallbackVersion = '0.3.10+13';
   static const fallbackBundleId = 'app.nolive.mobile';
   static const primaryPlatform = 'Android mobile';
 

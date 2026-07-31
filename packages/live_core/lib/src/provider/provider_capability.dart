@@ -7,7 +7,4 @@ enum ProviderCapability {
   playQualities,
   playUrls,
   danmaku,
-  superChat,
-  login,
-  backupSync,
 }

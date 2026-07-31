@@ -53,5 +53,7 @@ class RoomPlayerDebugViewData {
   final String effectiveQualityLabel;
   final String currentLineLabel;
   final String scaleModeLabel;
+
+  /// True only when [libnolive_danmaku_mask] was actually loaded this session.
   final bool usingNativeDanmakuBatchMask;
 }

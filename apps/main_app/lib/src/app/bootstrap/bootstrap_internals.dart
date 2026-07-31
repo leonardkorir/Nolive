@@ -1,25 +1,5 @@
 part of 'bootstrap.dart';
 
-bool _decodeBoolSetting(String? raw, {bool fallback = false}) {
-  if (raw == null || raw.isEmpty) {
-    return fallback;
-  }
-  switch (raw.trim().toLowerCase()) {
-    case 'true':
-    case '1':
-    case 'yes':
-    case 'on':
-      return true;
-    case 'false':
-    case '0':
-    case 'no':
-    case 'off':
-      return false;
-    default:
-      return fallback;
-  }
-}
-
 const String _storageFileName = 'nolive_storage.json';
 const String _legacyStorageFileName = 'simplelive_storage.json';
 
@@ -52,13 +32,6 @@ Future<File> _resolveStorageFile(Directory directory) async {
     await legacyFile.delete();
     return storageFile;
   }
-}
-
-PlayerBackend _decodePlayerBackend(String? raw) {
-  return PlayerBackend.values.firstWhere(
-    (item) => item.name == raw,
-    orElse: () => PlayerBackend.mpv,
-  );
 }
 
 class _BootstrapStateBundle {
@@ -386,7 +359,7 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     followRepository: context.repositories.followRepository,
     tagRepository: context.repositories.tagRepository,
   );
-  final loadSyncSnapshot = LoadSyncSnapshotUseCase(snapshotService);
+  final LoadSyncSnapshot loadSyncSnapshot = snapshotService.exportSnapshot;
   final updateProviderAccountSettings = UpdateProviderAccountSettingsUseCase(
     context.repositories.settingsRepository,
     context.secureCredentialStore,
@@ -411,9 +384,8 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
   final findProviderDescriptorById = FindProviderDescriptorByIdUseCase(
     providerRegistry,
   );
-  final listFollowRecords = ListFollowRecordsUseCase(
-    context.repositories.followRepository,
-  );
+  final ListFollowRecords listFollowRecords =
+      context.repositories.followRepository.listAll;
 
   final llhlsProxyRegistry = LlhlsProxyRegistry(
     chaturbateProxy: runtimeBridges.chaturbateLlHlsProxy,
@@ -492,7 +464,7 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
     listLibrarySnapshot: listLibrarySnapshot,
     loadLibraryDashboard: LoadLibraryDashboardUseCase(
       listLibrarySnapshot: listLibrarySnapshot,
-      listTags: ListTagsUseCase(context.repositories.tagRepository),
+      listTags: context.repositories.tagRepository.listAll,
     ),
     loadFollowWatchlist: LoadFollowWatchlistUseCase(
       followRepository: context.repositories.followRepository,
@@ -520,10 +492,9 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
       context.repositories.followRepository,
       followDataRevision: context.state.followDataRevision,
     ),
-    isFollowedRoom: IsFollowedRoomUseCase(
-      context.repositories.followRepository,
-    ),
-    listTags: ListTagsUseCase(context.repositories.tagRepository),
+    isFollowedRoom: ({required String providerId, required String roomId}) =>
+        context.repositories.followRepository.exists(providerId, roomId),
+    listTags: context.repositories.tagRepository.listAll,
     createTag: CreateTagUseCase(context.repositories.tagRepository),
     removeTag: RemoveTagUseCase(
       tagRepository: context.repositories.tagRepository,
@@ -541,10 +512,10 @@ AppBootstrap _assembleAppBootstrap(_BootstrapAssemblyContext context) {
       context.repositories.followRepository,
       followDataRevision: context.state.followDataRevision,
     ),
-    removeHistoryRecord: RemoveHistoryRecordUseCase(
-      context.repositories.historyRepository,
-    ),
-    clearHistory: ClearHistoryUseCase(context.repositories.historyRepository),
+    removeHistoryRecord:
+        ({required String providerId, required String roomId}) =>
+            context.repositories.historyRepository.remove(providerId, roomId),
+    clearHistory: context.repositories.historyRepository.clear,
     loadSyncSnapshot: loadSyncSnapshot,
     loadSyncPreferences: LoadSyncPreferencesUseCase(
       context.repositories.settingsRepository,
@@ -815,20 +786,22 @@ AppRuntimeBridges _buildAppRuntimeBridges({
 }
 
 BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
-  final initialBackend = _decodePlayerBackend(
+  final initialBackend = decodePlayerBackend(
     context.settings.stringSetting('player_backend'),
   );
   if (context.mode != AppRuntimeMode.live) {
     return SwitchablePlayer.simulated(initialBackend: initialBackend);
   }
   return SwitchablePlayer(
-    initialBackend: initialBackend,
+    initialBackend: initialBackend == PlayerBackend.memory
+        ? PlayerBackend.mpv
+        : initialBackend,
     builders: {
-      PlayerBackend.memory: MemoryPlayer.new,
+      // Memory stays test/sim only (SwitchablePlayer.simulated).
       PlayerBackend.mpv: () {
         final mpvNativeLogEnabled =
             !kReleaseMode &&
-            _decodeBoolSetting(
+            decodeBoolSetting(
               context.settings.stringSetting('player_mpv_log_enable'),
             );
         final caps = context.platformCapabilities;
@@ -836,7 +809,7 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
         final allowExternalNativeWindow =
             caps.isDesktop &&
             resolveAllowExternalNativeMpvWindow(
-              preferenceEnabled: _decodeBoolSetting(
+              preferenceEnabled: decodeBoolSetting(
                 context.settings.stringSetting(
                   'player_mpv_allow_external_native_window',
                 ),
@@ -848,17 +821,17 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
         // settings so phones are unchanged; ARC overrides at runtime.
         return MpvPlayer(
           isAndroid: caps.isAndroid,
-          enableHardwareAcceleration: _decodeBoolSetting(
+          enableHardwareAcceleration: decodeBoolSetting(
             context.settings.stringSetting('player_mpv_hardware_acceleration'),
             fallback: true,
           ),
-          compatMode: _decodeBoolSetting(
+          compatMode: decodeBoolSetting(
             context.settings.stringSetting('player_mpv_compat_mode'),
           ),
-          doubleBufferingEnabled: _decodeBoolSetting(
+          doubleBufferingEnabled: decodeBoolSetting(
             context.settings.stringSetting('player_mpv_double_buffering'),
           ),
-          customOutputEnabled: _decodeBoolSetting(
+          customOutputEnabled: decodeBoolSetting(
             context.settings.stringSetting('player_mpv_custom_output'),
           ),
           allowExternalNativeWindow: allowExternalNativeWindow,
@@ -894,14 +867,14 @@ BasePlayer _buildPlayer(_BootstrapAssemblyContext context) {
         );
       },
       PlayerBackend.mdk: () => MdkPlayer(
-        lowLatency: _decodeBoolSetting(
+        lowLatency: decodeBoolSetting(
           context.settings.stringSetting('player_mdk_low_latency'),
           fallback: true,
         ),
-        androidTunnel: _decodeBoolSetting(
+        androidTunnel: decodeBoolSetting(
           context.settings.stringSetting('player_mdk_android_tunnel'),
         ),
-        androidPreferHardwareVideoDecoder: _decodeBoolSetting(
+        androidPreferHardwareVideoDecoder: decodeBoolSetting(
           context.settings.stringSetting(
             'player_mdk_android_hardware_video_decoder',
           ),

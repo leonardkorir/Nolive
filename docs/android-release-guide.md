@@ -109,6 +109,28 @@ scripts/clean_public_repo_workspace.sh
 - `apps/main_app/build/app/outputs/flutter-apk/app-x86_64-release.apk`
 - `apps/main_app/build/app/outputs/bundle/release/app-release.aab`
 
+### Native danmaku mask (`libnolive_danmaku_mask.so`)
+
+Android release **defaults to packaging** the Rust batch-mask library so the in-app
+「原生弹幕频控」setting can load native code (otherwise the app silently uses Dart).
+
+| Knob | Default | Effect |
+| --- | --- | --- |
+| Gradle `nolive.buildRustDanmakuMask` in `local.properties` | `true` if unset | Build & jniLibs-pack the `.so` |
+| Env `NOLIVE_BUILD_RUST_DANMAKU_MASK` | `true` if unset | Same (overrides for CI/scripts) |
+
+Requirements when enabled: `cargo`, `rustup`, Android NDK under `ANDROID_HOME`/`sdk.dir`.
+
+Post-build gate (wired into `android-apk-split` / `android-mobile-release` /
+`android-release-ready` / `android-release-acceptance`):
+
+```bash
+scripts/verify_android_rust_danmaku_mask.sh
+```
+
+Device check after install: debug sheet 「弹幕频控」shows **原生**, or logcat
+`danmaku_mask: native libnolive_danmaku_mask loaded`.
+
 Size baseline reference:
 
 - `docs/android-size-baseline.md`

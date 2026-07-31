@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:live_storage/live_storage.dart';
+import 'package:nolive_app/src/features/settings/application/settings_preference_readers.dart';
 
 class DanmakuPreferences {
   const DanmakuPreferences({
@@ -149,109 +150,87 @@ class LoadDanmakuPreferencesUseCase {
 
   Future<DanmakuPreferences> call() async {
     final defaults = DanmakuPreferences.defaults;
+    final s = settingsRepository;
     return DanmakuPreferences(
-      enabledByDefault:
-          await settingsRepository.readValue<bool>(
-            'danmaku_enabled_by_default',
-          ) ??
-          defaults.enabledByDefault,
-      nativeBatchMaskEnabled:
-          await settingsRepository.readValue<bool>(
-            'danmaku_native_batch_mask_enabled',
-          ) ??
-          defaults.nativeBatchMaskEnabled,
-      fontSize: _clampDouble(
-        await settingsRepository.readValue<double>('danmaku_font_size'),
+      enabledByDefault: await s.readBool(
+        'danmaku_enabled_by_default',
+        fallback: defaults.enabledByDefault,
+      ),
+      nativeBatchMaskEnabled: await s.readBool(
+        'danmaku_native_batch_mask_enabled',
+        fallback: defaults.nativeBatchMaskEnabled,
+      ),
+      fontSize: await s.readClampedDouble(
+        'danmaku_font_size',
         min: 8,
         max: 48,
         fallback: defaults.fontSize,
       ),
-      fontWeight: _clampInt(
-        await settingsRepository.readValue<int>('danmaku_font_weight'),
+      fontWeight: await s.readClampedInt(
+        'danmaku_font_weight',
         min: 0,
         max: 8,
         fallback: defaults.fontWeight,
       ),
-      area: _clampDouble(
-        await settingsRepository.readValue<double>('danmaku_area'),
+      area: await s.readClampedDouble(
+        'danmaku_area',
         min: 0.1,
         max: 1.0,
         fallback: defaults.area,
       ),
-      speed: _clampDouble(
-        await settingsRepository.readValue<double>('danmaku_speed'),
+      speed: await s.readClampedDouble(
+        'danmaku_speed',
         min: 4,
         max: 60,
         fallback: defaults.speed,
       ),
-      opacity: _clampDouble(
-        await settingsRepository.readValue<double>('danmaku_opacity'),
+      opacity: await s.readClampedDouble(
+        'danmaku_opacity',
         min: 0.1,
         max: 1.0,
         fallback: defaults.opacity,
       ),
-      strokeWidth: _clampDouble(
-        await settingsRepository.readValue<double>('danmaku_stroke_width'),
+      strokeWidth: await s.readClampedDouble(
+        'danmaku_stroke_width',
         min: 0,
         max: 4,
         fallback: defaults.strokeWidth,
       ),
-      lineHeight: _clampDouble(
-        await settingsRepository.readValue<double>('danmaku_line_height'),
+      lineHeight: await s.readClampedDouble(
+        'danmaku_line_height',
         min: 0.8,
         max: 2.0,
         fallback: defaults.lineHeight,
       ),
-      topMargin: _clampDouble(
-        await settingsRepository.readValue<double>('danmaku_top_margin'),
+      topMargin: await s.readClampedDouble(
+        'danmaku_top_margin',
         min: 0,
         max: 48,
         fallback: defaults.topMargin,
       ),
-      bottomMargin: _clampDouble(
-        await settingsRepository.readValue<double>('danmaku_bottom_margin'),
+      bottomMargin: await s.readClampedDouble(
+        'danmaku_bottom_margin',
         min: 0,
         max: 48,
         fallback: defaults.bottomMargin,
       ),
-      frequencyWindowSeconds: _clampInt(
-        await settingsRepository.readValue<int>(
-          'danmaku_frequency_window_seconds',
-        ),
+      frequencyWindowSeconds: await s.readClampedInt(
+        'danmaku_frequency_window_seconds',
         min: 2,
         max: 60,
         fallback: defaults.frequencyWindowSeconds,
       ),
-      maxFrequency: _clampInt(
-        await settingsRepository.readValue<int>('danmaku_max_frequency'),
+      maxFrequency: await s.readClampedInt(
+        'danmaku_max_frequency',
         min: 1,
         max: 20,
         fallback: defaults.maxFrequency,
       ),
-      textNormalizationEnabled:
-          await settingsRepository.readValue<bool>(
-            'danmaku_text_normalization',
-          ) ??
-          defaults.textNormalizationEnabled,
+      textNormalizationEnabled: await s.readBool(
+        'danmaku_text_normalization',
+        fallback: defaults.textNormalizationEnabled,
+      ),
     );
-  }
-
-  double _clampDouble(
-    double? value, {
-    required double min,
-    required double max,
-    required double fallback,
-  }) {
-    return (value ?? fallback).clamp(min, max).toDouble();
-  }
-
-  int _clampInt(
-    int? value, {
-    required int min,
-    required int max,
-    required int fallback,
-  }) {
-    return (value ?? fallback).clamp(min, max);
   }
 }
 

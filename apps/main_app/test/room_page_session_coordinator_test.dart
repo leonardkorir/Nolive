@@ -591,7 +591,6 @@ void main() {
           );
       final nextDanmakuPreferences = DanmakuPreferences.defaults.copyWith(
         enabledByDefault: false,
-        nativeBatchMaskEnabled: true,
       );
 
       coordinator.applyPlayerPreferences(nextPlayerPreferences);

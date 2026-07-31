@@ -2,7 +2,7 @@ name: nolive_app
 description: Main Flutter application for Nolive.
 publish_to: none
 
-version: 0.3.9+12
+version: 0.3.10+13
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -13,7 +13,6 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  cupertino_icons: ^1.0.8
   crypto: ^3.0.7
   cryptography: ^2.7.0
   qr_flutter: ^4.1.0

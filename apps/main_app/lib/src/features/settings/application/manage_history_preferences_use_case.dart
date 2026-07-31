@@ -1,4 +1,5 @@
 import 'package:live_storage/live_storage.dart';
+import 'package:nolive_app/src/features/settings/application/settings_preference_readers.dart';
 
 class HistoryPreferences {
   const HistoryPreferences({this.recordWatchHistory = true});
@@ -30,11 +31,10 @@ class LoadHistoryPreferencesUseCase {
 
   Future<HistoryPreferences> call() async {
     return HistoryPreferences(
-      recordWatchHistory:
-          await settingsRepository.readValue<bool>(
-            'history_record_watch_enabled',
-          ) ??
-          true,
+      recordWatchHistory: await settingsRepository.readBool(
+        'history_record_watch_enabled',
+        fallback: true,
+      ),
     );
   }
 }

@@ -97,9 +97,3 @@ abstract class DanmakuSession {
 abstract class SupportsDanmaku {
   Future<DanmakuSession> createDanmakuSession(LiveRoomDetail detail);
 }
-
-abstract class SupportsLogin {}
-
-abstract class SupportsSuperChat {}
-
-abstract class SupportsBackupSync {}

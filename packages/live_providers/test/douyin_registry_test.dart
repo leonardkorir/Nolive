@@ -10,8 +10,8 @@ void main() {
     expect(
       registry
           .findDescriptor(ProviderId.douyin)
-          ?.supports(ProviderCapability.login),
-      isFalse,
+          ?.supports(ProviderCapability.danmaku),
+      isTrue,
     );
 
     final provider = registry.create(ProviderId.douyin);

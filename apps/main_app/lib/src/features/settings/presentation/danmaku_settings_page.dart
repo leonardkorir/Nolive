@@ -112,7 +112,9 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
                   contentPadding: EdgeInsets.zero,
                   value: preferences.nativeBatchMaskEnabled,
                   title: const Text('原生弹幕频控'),
-                  subtitle: const Text('Android 优先尝试原生批处理过滤，失败时自动回退 Dart'),
+                  subtitle: const Text(
+                    'Android：优先 libnolive_danmaku_mask.so；失败回退 Dart。调试页可看是否真正加载',
+                  ),
                   onChanged: (value) {
                     _update(
                       preferences.copyWith(nativeBatchMaskEnabled: value),

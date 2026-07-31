@@ -145,7 +145,7 @@ void main() {
                         effectiveQualityLabel: '高清',
                         currentLineLabel: '主线路',
                         scaleModeLabel: '适应',
-                        usingNativeDanmakuBatchMask: true,
+                        usingNativeDanmakuBatchMask: false,
                       ),
                       diagnosticsStream: diagnostics.stream,
                       initialDiagnostics: const PlayerDiagnostics(

@@ -26,16 +26,8 @@ void main() {
     final provider = _FullContractProvider();
 
     expect(
-      provider.requireContract<SupportsLogin>(ProviderCapability.login),
-      same(provider),
-    );
-    expect(
-      provider.requireContract<SupportsSuperChat>(ProviderCapability.superChat),
-      same(provider),
-    );
-    expect(
-      provider.requireContract<SupportsBackupSync>(
-        ProviderCapability.backupSync,
+      provider.requireContract<SupportsRoomDetail>(
+        ProviderCapability.roomDetail,
       ),
       same(provider),
     );
@@ -45,7 +37,9 @@ void main() {
     final provider = _MisalignedCapabilityProvider();
 
     expect(
-      () => provider.requireContract<SupportsLogin>(ProviderCapability.login),
+      () => provider.requireContract<SupportsRoomDetail>(
+        ProviderCapability.roomDetail,
+      ),
       throwsA(isA<ProviderContractException>()),
     );
   });
@@ -66,19 +60,19 @@ class _FakeProvider extends LiveProvider implements SupportsRoomSearch {
   }
 }
 
-class _FullContractProvider extends LiveProvider
-    implements SupportsLogin, SupportsSuperChat, SupportsBackupSync {
+class _FullContractProvider extends LiveProvider implements SupportsRoomDetail {
   @override
   ProviderDescriptor get descriptor => const ProviderDescriptor(
     id: ProviderId('full-contract'),
     displayName: 'Full Contract',
-    capabilities: {
-      ProviderCapability.login,
-      ProviderCapability.superChat,
-      ProviderCapability.backupSync,
-    },
+    capabilities: {ProviderCapability.roomDetail},
     supportedPlatforms: {ProviderPlatform.linux},
   );
+
+  @override
+  Future<LiveRoomDetail> fetchRoomDetail(String roomId) {
+    throw UnimplementedError();
+  }
 }
 
 class _MisalignedCapabilityProvider extends LiveProvider {
@@ -86,7 +80,7 @@ class _MisalignedCapabilityProvider extends LiveProvider {
   ProviderDescriptor get descriptor => const ProviderDescriptor(
     id: ProviderId('misaligned'),
     displayName: 'Misaligned',
-    capabilities: {ProviderCapability.login},
+    capabilities: {ProviderCapability.roomDetail},
     supportedPlatforms: {ProviderPlatform.linux},
   );
 }

@@ -2,8 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:live_player/live_player.dart';
 import 'package:nolive_app/src/app/bootstrap/bootstrap.dart';
 import 'package:nolive_app/src/app/bootstrap/llhls_proxy_lifecycle.dart';
-import 'package:nolive_app/src/features/library/application/list_follow_records_use_case.dart';
-import 'package:nolive_app/src/features/library/application/is_followed_room_use_case.dart';
 import 'package:nolive_app/src/features/library/application/load_follow_watchlist_use_case.dart';
 import 'package:nolive_app/src/shared/domain/follow_watch_entry.dart';
 
@@ -19,6 +17,7 @@ import 'package:nolive_app/src/app/platform/room_fullscreen_session_platform_ada
 import 'package:nolive_app/src/features/room/application/room_fullscreen_session_ports.dart';
 import 'package:nolive_app/src/shared/application/player_runtime_controller.dart';
 import 'package:nolive_app/src/shared/application/provider_catalog_use_cases.dart';
+import 'package:nolive_app/src/shared/application/storage_query_ports.dart';
 
 class RoomPreviewDependencies {
   const RoomPreviewDependencies({
@@ -79,9 +78,9 @@ class RoomPreviewDependencies {
   final OpenRoomDanmakuUseCase openRoomDanmaku;
   final ResolvePlaySourceUseCase resolvePlaySource;
   final LoadFollowWatchlistUseCase loadFollowWatchlist;
-  final ListFollowRecordsUseCase listFollowRecords;
+  final ListFollowRecords listFollowRecords;
   final ToggleFollowRoomUseCase toggleFollowRoom;
-  final IsFollowedRoomUseCase isFollowedRoom;
+  final IsFollowedRoom isFollowedRoom;
   final FindProviderDescriptorByIdUseCase findProviderDescriptorById;
   final LoadBlockedKeywordsUseCase loadBlockedKeywords;
   final LoadDanmakuPreferencesUseCase loadDanmakuPreferences;
@@ -143,7 +142,7 @@ class RoomAncillaryDependencies {
   }
 
   final OpenRoomDanmakuUseCase openRoomDanmaku;
-  final IsFollowedRoomUseCase isFollowedRoom;
+  final IsFollowedRoom isFollowedRoom;
 }
 
 class RoomFollowWatchlistDependencies {
@@ -200,6 +199,6 @@ class RoomFollowActionDependencies {
 
   final ValueNotifier<FollowWatchlist?> followWatchlistSnapshot;
   final ToggleFollowRoomUseCase toggleFollowRoom;
-  final ListFollowRecordsUseCase listFollowRecords;
+  final ListFollowRecords listFollowRecords;
   final FindProviderDescriptorByIdUseCase findProviderDescriptorById;
 }

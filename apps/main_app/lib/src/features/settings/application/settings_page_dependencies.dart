@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:nolive_app/src/features/library/application/clear_history_use_case.dart';
 import 'package:nolive_app/src/features/library/application/clear_tags_use_case.dart';
 import 'package:nolive_app/src/features/library/application/create_tag_use_case.dart';
 import 'package:nolive_app/src/features/library/application/load_library_dashboard_use_case.dart';
@@ -17,6 +16,7 @@ import 'manage_follow_preferences_use_case.dart';
 import 'manage_layout_preferences_use_case.dart';
 import 'manage_player_preferences_use_case.dart';
 import 'manage_room_ui_preferences_use_case.dart';
+import 'package:nolive_app/src/shared/application/storage_query_ports.dart';
 
 class AppearanceSettingsDependencies {
   const AppearanceSettingsDependencies({
@@ -120,6 +120,6 @@ class FollowSettingsDependencies {
   final RemoveTagUseCase removeTag;
   final CreateTagUseCase createTag;
   final ClearFollowsUseCase clearFollows;
-  final ClearHistoryUseCase clearHistory;
+  final ClearHistory clearHistory;
   final ClearTagsUseCase clearTags;
 }

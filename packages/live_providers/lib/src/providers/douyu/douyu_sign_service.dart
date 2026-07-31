@@ -2,21 +2,10 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:live_core/live_core.dart';
 import 'package:meta/meta.dart';
 
 import '../provider_json.dart';
-import '../provider_runtime_support.dart';
-import 'douyu_quickjs_signer.dart';
 import 'douyu_transport.dart';
-
-typedef DouyuSignExecutor =
-    Future<String> Function({
-      required String script,
-      required String roomId,
-      required String deviceId,
-      required int timestamp,
-    });
 
 class DouyuSignedPlayContext {
   const DouyuSignedPlayContext({
@@ -31,7 +20,7 @@ class DouyuSignedPlayContext {
   final String deviceId;
   final int timestamp;
 
-  /// Legacy QuickJS script field; empty when using websec encryption (SlotSun path).
+  /// Reserved empty on websec path (legacy homeH5Enc archived).
   final String script;
 }
 
@@ -113,47 +102,12 @@ class DouyuDeviceId {
 /// - **per-install** `did` + Windows desktop UA
 /// - stream open with **no** custom headers (SlotSun `LivePlayUrl(urls:)` only)
 class HttpDouyuSignService implements DouyuSignService {
-  factory HttpDouyuSignService({
+  HttpDouyuSignService({
     required DouyuTransport transport,
-    DouyuSignExecutor? signExecutor,
-    DouyuQuickJsSigner? signer,
     Random? random,
     String? deviceId,
-    void Function()? scheduleSignerWarmUp,
-    void Function(String message)? diagnostics,
-  }) {
-    final ownedSigner = signExecutor == null
-        ? signer ?? DouyuQuickJsSigner()
-        : null;
-    final DouyuSignExecutor resolvedSignExecutor =
-        signExecutor ?? ownedSigner!.execute;
-    return HttpDouyuSignService._(
-      transport: transport,
-      signExecutor: resolvedSignExecutor,
-      ownedSigner: ownedSigner,
-      random: random,
-      deviceId: DouyuDeviceId.resolve(deviceId, random),
-      diagnostics: diagnostics,
-      scheduleSignerWarmUp: scheduleSignerWarmUp,
-    );
-  }
-
-  HttpDouyuSignService._({
-    required DouyuTransport transport,
-    required DouyuSignExecutor signExecutor,
-    required DouyuQuickJsSigner? ownedSigner,
-    required String deviceId,
-    Random? random,
-    void Function()? scheduleSignerWarmUp,
-    void Function(String message)? diagnostics,
   }) : _transport = transport,
-       _signExecutor = signExecutor,
-       _ownedSigner = ownedSigner,
-       _deviceId = deviceId,
-       _diagnostics = diagnostics {
-    // [random] retained for API compatibility with existing call sites.
-    scheduleSignerWarmUp?.call();
-  }
+       _deviceId = DouyuDeviceId.resolve(deviceId, random);
 
   /// SlotSun / browser-aligned UA (also used on Android).
   static const String defaultUserAgent =
@@ -170,10 +124,7 @@ class HttpDouyuSignService implements DouyuSignService {
   static const Duration _encryptionCacheTtl = Duration(hours: 20);
 
   final DouyuTransport _transport;
-  final DouyuSignExecutor _signExecutor;
-  final DouyuQuickJsSigner? _ownedSigner;
   final String _deviceId;
-  final void Function(String message)? _diagnostics;
 
   Map<String, dynamic>? _encKey;
   int _encKeyExpireAtSeconds = 0;
@@ -225,57 +176,29 @@ class HttpDouyuSignService implements DouyuSignService {
     String rate = '-1',
   }) async {
     final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
-    try {
-      return await _buildWebsecPlayBody(
-        roomId: roomId,
-        timestamp: timestamp,
-        cdn: cdn,
-        rate: rate,
-      );
-    } catch (error, stackTrace) {
-      reportProviderDiagnostic(
-        providerId: ProviderId.douyu,
-        scope: 'douyu.sign.websec',
-        message: 'websec encryption failed; falling back to legacy homeH5Enc',
-        error: error,
-        stackTrace: stackTrace,
-        diagnostics: _diagnostics,
-      );
-      final legacy = await _buildLegacyPlayContext(
-        roomId,
-        timestamp: timestamp,
-      );
-      return extendPlayBody(legacy.body, cdn: cdn, rate: rate);
-    }
+    return _buildWebsecPlayBody(
+      roomId: roomId,
+      timestamp: timestamp,
+      cdn: cdn,
+      rate: rate,
+    );
   }
 
   @override
   Future<DouyuSignedPlayContext> buildPlayContext(String roomId) async {
     final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
-    try {
-      // SlotSun quality probe signs with rate=-1, cdn=''.
-      final body = await _buildWebsecPlayBody(
-        roomId: roomId,
-        timestamp: timestamp,
-        cdn: '',
-        rate: '-1',
-      );
-      return DouyuSignedPlayContext(
-        body: body,
-        deviceId: _deviceId,
-        timestamp: timestamp,
-      );
-    } catch (error, stackTrace) {
-      reportProviderDiagnostic(
-        providerId: ProviderId.douyu,
-        scope: 'douyu.sign.websec',
-        message: 'websec encryption failed; falling back to legacy homeH5Enc',
-        error: error,
-        stackTrace: stackTrace,
-        diagnostics: _diagnostics,
-      );
-      return _buildLegacyPlayContext(roomId, timestamp: timestamp);
-    }
+    // SlotSun quality probe signs with rate=-1, cdn=''.
+    final body = await _buildWebsecPlayBody(
+      roomId: roomId,
+      timestamp: timestamp,
+      cdn: '',
+      rate: '-1',
+    );
+    return DouyuSignedPlayContext(
+      body: body,
+      deviceId: _deviceId,
+      timestamp: timestamp,
+    );
   }
 
   @override
@@ -299,40 +222,6 @@ class HttpDouyuSignService implements DouyuSignService {
         : '$withoutOrigin&';
     // SlotSun: hevc=0&fa=0&ive=0&ver=Douyu_new&iar=0
     return '${prefix}cdn=$cdn&rate=$rate&hevc=0&fa=0&ive=0&ver=Douyu_new&iar=0';
-  }
-
-  Future<DouyuSignedPlayContext> _buildLegacyPlayContext(
-    String roomId, {
-    required int timestamp,
-  }) async {
-    final response = await _transport.getJson(
-      'https://www.douyu.com/swf_api/homeH5Enc',
-      queryParameters: {'rids': roomId},
-      headers: buildRoomHeaders(roomId),
-    );
-    final data = _asMap(response['data']);
-    final script = data['room$roomId']?.toString() ?? '';
-    final deviceId = _deviceId;
-
-    final body = script.isNotEmpty
-        ? await _buildLegacySignedBody(
-            script: script,
-            roomId: roomId,
-            deviceId: deviceId,
-            timestamp: timestamp,
-          )
-        : _buildFallbackBody(
-            roomId: roomId,
-            deviceId: deviceId,
-            timestamp: timestamp,
-          );
-
-    return DouyuSignedPlayContext(
-      body: body,
-      deviceId: deviceId,
-      timestamp: timestamp,
-      script: script,
-    );
   }
 
   /// Exact SlotSun `DouyuUtils.sign` form body.
@@ -452,47 +341,6 @@ class HttpDouyuSignService implements DouyuSignService {
         : localFloor;
   }
 
-  Future<String> _buildLegacySignedBody({
-    required String script,
-    required String roomId,
-    required String deviceId,
-    required int timestamp,
-  }) async {
-    try {
-      return await _signExecutor(
-        script: script,
-        roomId: roomId,
-        deviceId: deviceId,
-        timestamp: timestamp,
-      );
-    } catch (error, stackTrace) {
-      reportProviderDiagnostic(
-        providerId: ProviderId.douyu,
-        scope: 'douyu.sign.legacy',
-        message: 'legacy sign executor failed; using fallback body',
-        error: error,
-        stackTrace: stackTrace,
-        diagnostics: _diagnostics,
-      );
-      return _buildFallbackBody(
-        roomId: roomId,
-        deviceId: deviceId,
-        timestamp: timestamp,
-      );
-    }
-  }
-
-  static String _buildFallbackBody({
-    required String roomId,
-    required String deviceId,
-    required int timestamp,
-  }) {
-    final signature = md5
-        .convert(utf8.encode('$roomId|$deviceId|$timestamp|simplelive-douyu'))
-        .toString();
-    return 'rid=$roomId&did=$deviceId&tt=$timestamp&sign=$signature';
-  }
-
   static Map<String, dynamic> _asMap(Object? value) {
     return ProviderJson.asMap(value);
   }
@@ -501,9 +349,7 @@ class HttpDouyuSignService implements DouyuSignService {
     return ProviderJson.asInt(value);
   }
 
-  void dispose() {
-    _ownedSigner?.dispose();
-  }
+  void dispose() {}
 
   @visibleForTesting
   void clearEncryptionCacheForTest() {

@@ -1,5 +1,5 @@
 import 'package:nolive_app/src/features/library/application/list_library_snapshot_use_case.dart';
-import 'package:nolive_app/src/features/library/application/list_tags_use_case.dart';
+import 'package:nolive_app/src/shared/application/storage_query_ports.dart';
 
 class LoadLibraryDashboardUseCase {
   const LoadLibraryDashboardUseCase({
@@ -8,7 +8,7 @@ class LoadLibraryDashboardUseCase {
   });
 
   final ListLibrarySnapshotUseCase listLibrarySnapshot;
-  final ListTagsUseCase listTags;
+  final ListTags listTags;
 
   Future<LibraryDashboard> call() async {
     final snapshot = await listLibrarySnapshot();

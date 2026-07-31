@@ -444,7 +444,6 @@ void main() {
       harness.nextBlockedKeywords = const ['剧透', '广告'];
       harness.nextDanmakuPreferences = DanmakuPreferences.defaults.copyWith(
         enabledByDefault: false,
-        nativeBatchMaskEnabled: false,
       );
       harness.openedDanmakuSession = _TestDanmakuSession();
       final coordinator = harness.createCoordinator();

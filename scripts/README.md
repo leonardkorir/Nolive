@@ -81,6 +81,9 @@ scripts/run_main_app_android_smoke.sh
   默认在 smoke 后重建 `lib/main.dart` 普通 debug APK 并保留到设备；如需 smoke 后恢复 release，可设置 `ANDROID_SMOKE_RESTORE_RELEASE=1`。
 
 - `scripts/verify_android_release_signing.sh`
+- `scripts/verify_android_rust_danmaku_mask.sh`  
+  校验 split release APK 是否包含 `libnolive_danmaku_mask.so`（原生弹幕频控）。  
+  已挂到 `android-apk-split` / `android-mobile-release` / `android-release-ready` / `android-release-acceptance`。
   校验 APK 或 AAB 是否由非 debug 的 release keystore 签名。
 
 - `scripts/verify_main_app_android_launch.sh`

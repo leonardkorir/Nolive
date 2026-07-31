@@ -14,6 +14,7 @@
 - 确认 `README.md` 中的下载指引仍然指向正确的 GitHub Release 页面和资产说明
 - 确认 Android 签名配置已准备好
 - 确认没有本地临时调试改动、测试假数据或未清理日志
+- 确认未把参考仓 / HAR / `.archive/` 误 `git add`（见 `docs/repo-workspace-hygiene.md`）
 - 如需在验证结束后恢复干净工作区，确认会执行 `scripts/clean_public_repo_workspace.sh`
 
 ## Engineering Gate
@@ -66,6 +67,7 @@ scripts/verify_android_release_signing.sh
 - 首页、关注页、房间页主链路正常
 - 搜索、打开房间、切换画质、切换线路、切换播放器后端正常
 - 弹幕显示与屏蔽词逻辑正常
+- （可选）调试页「弹幕频控」在开启原生时显示 **原生**（确认 so 已加载，而非 Dart 回退）
 - 关注、历史、标签在重启后仍然正确
 - 本地快照导入、导出、重置逻辑正常
 - 中文界面在真实 Android 设备上显示正常，无明显缺字、裁切或排版异常
@@ -76,6 +78,12 @@ scripts/verify_android_release_signing.sh
 - `apps/main_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
 - `apps/main_app/build/app/outputs/flutter-apk/app-x86_64-release.apk`
 - `apps/main_app/build/app/outputs/bundle/release/app-release.aab`
+- **Rust 弹幕频控 so**（默认必须进包）：每个 split APK 含对应 ABI 的  
+  `lib/*/libnolive_danmaku_mask.so`  
+  发版命令已在构建后自动跑 `scripts/verify_android_rust_danmaku_mask.sh`；也可单独执行该脚本。  
+  若 so 缺失，设置里「原生弹幕频控」会静默回退 Dart，真机体感与关开关无异。  
+  关闭原生打包（不推荐）：`NOLIVE_BUILD_RUST_DANMAKU_MASK=false` 或  
+  `apps/main_app/android/local.properties` 中 `nolive.buildRustDanmakuMask=false`。
 
 ## CI / Signing
 
